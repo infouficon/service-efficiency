@@ -1,0 +1,40 @@
+{
+  "name": "service-efficiency",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10"
+  },
+  "scripts": {
+    "dev:web": "npm run dev --workspace=@service-efficiency/web",
+    "dev:api": "npm run start:dev --workspace=@service-efficiency/api",
+    "build:web": "npm run build --workspace=@service-efficiency/web",
+    "build:api": "npm run build --workspace=@service-efficiency/api",
+    "test": "npm run build:api && npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prisma:validate": "prisma validate",
+    "prisma:generate": "prisma generate",
+    "dev": "npm run dev --workspace=@service-efficiency/web",
+    "build": "npm run build:web && npm run build:api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "eslint": "^9.39.0",
+    "eslint-config-prettier": "^10.1.0",
+    "eslint-plugin-react-hooks": "^7.0.0",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.46.0",
+    "prisma": "~6.19.0",
+    "dotenv": "^16.6.0"
+  }
+}

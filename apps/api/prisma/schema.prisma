@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  ADMIN
+  MANAGER
+  STAFF
+  STOCK
+  CASHIER
+}
+
+enum WorkflowState {
+  WALK_IN
+  DEMO
+  DECISION
+  PRODUCT_SELECTION
+  STOCK_REQUESTED
+  SEARCHING
+  FOUND
+  SENT_TO_CASHIER
+  CASHIER_RECEIVED
+  CASHIER_SCAN
+  BILL_OPENED
+  COMPLETED
+}
+
+enum Outcome {
+  NOT_BUY
+  OUT_OF_STOCK
+  CUSTOMER_CANCELLED
+}
+
+enum ProductCategory {
+  iPhone
+  iPad
+  Mac
+  Watch
+}
+
+enum EventType {
+  SESSION_CREATED
+  DEMO_STARTED
+  DEMO_ENDED
+  DECISION_MADE
+  PRODUCT_SELECTION_STARTED
+  PRODUCT_SELECTION_CONFIRMED
+  STOCK_SEARCHING
+  STOCK_FOUND
+  STOCK_SENT_TO_CASHIER
+  STOCK_OUT_OF_STOCK
+  CUSTOMER_CANCELLED
+  CASHIER_RECEIVED
+  CASHIER_SCANNED
+  BILL_OPENED
+  COMPLETED
+}
+
+model Branch {
+  id       String            @id @default(uuid()) @db.VarChar(36)
+  code     String            @db.VarChar(64)
+  name     String            @db.VarChar(191)
+  phone    String            @db.VarChar(64)
+  active   Boolean           @default(true)
+  staff    Staff[]
+  sessions CustomerSession[]
+}
+
+model Staff {
+  staffId            String            @id @db.VarChar(64)
+  firstName          String            @default("") @db.VarChar(100)
+  lastName           String            @default("") @db.VarChar(100)
+  passwordHash       String            @db.VarChar(255)
+  branchId           String?           @db.VarChar(36)
+  branch             Branch?           @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  active             Boolean           @default(true)
+  mustChangePassword Boolean           @default(true)
+  failedAttempts     Int               @default(0)
+  lockedUntil        DateTime?         @db.DateTime(3)
+  roles              StaffRole[]
+  sessions           LoginSession[]
+  customerSessions   CustomerSession[]
+}
+
+model Role {
+  code  RoleCode    @id
+  staff StaffRole[]
+}
+
+model StaffRole {
+  staffId  String   @db.VarChar(64)
+  roleCode RoleCode
+  staff    Staff    @relation(fields: [staffId], references: [staffId], onDelete: Restrict)
+  role     Role     @relation(fields: [roleCode], references: [code], onDelete: Restrict)
+
+  @@id([staffId, roleCode])
+}
+
+model LoginSession {
+  tokenHash  String   @id @db.Char(64)
+  staffId    String   @db.VarChar(64)
+  staff      Staff    @relation(fields: [staffId], references: [staffId], onDelete: Cascade)
+  lastSeenAt DateTime @db.DateTime(3)
+
+  @@index([staffId])
+  @@index([lastSeenAt])
+}
+
+// Technical mutex: serializes security-sensitive updates, including last-admin checks.
+model AccountLock {
+  id Int @id
+}
+
+model Customer {
+  id        String            @id @default(uuid()) @db.VarChar(36)
+  phone     String            @unique @db.VarChar(10)
+  createdAt DateTime          @default(now()) @db.DateTime(3)
+  sessions  CustomerSession[]
+}
+
+model Product {
+  id        String            @id @default(uuid()) @db.VarChar(36)
+  category  ProductCategory
+  name      String            @db.VarChar(191)
+  active    Boolean           @default(true)
+  models    ProductModel[]
+  sessions  CustomerSession[]
+}
+
+model ProductModel {
+  id        String            @id @default(uuid()) @db.VarChar(36)
+  productId String            @db.VarChar(36)
+  product   Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  name      String            @db.VarChar(191)
+  active    Boolean           @default(true)
+  skus      ProductSku[]
+  sessions  CustomerSession[]
+
+  @@index([productId])
+}
+
+model ProductSku {
+  id        String            @id @default(uuid()) @db.VarChar(36)
+  modelId   String            @db.VarChar(36)
+  model     ProductModel      @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  sku       String            @unique @db.VarChar(64)
+  name      String            @db.VarChar(191)
+  color     String?           @db.VarChar(64)
+  storage   String?           @db.VarChar(64)
+  active    Boolean           @default(true)
+  sessions  CustomerSession[]
+
+  @@index([modelId])
+}
+
+model CustomerSession {
+  id         String        @id @default(uuid()) @db.VarChar(36)
+  reference  String        @unique @db.VarChar(32)
+  branchId   String        @db.VarChar(36)
+  branch     Branch        @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  staffId    String        @db.VarChar(64)
+  staff      Staff         @relation(fields: [staffId], references: [staffId], onDelete: Restrict)
+  customerId String?       @db.VarChar(36)
+  customer   Customer?     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  phone      String?       @db.VarChar(10)
+  state      WorkflowState @default(WALK_IN)
+  confirmed  Boolean       @default(false)
+  outcome    Outcome?
+  reason     String?       @db.VarChar(191)
+  otherReason String?      @db.Text
+  cancelledBy String?      @db.VarChar(64)
+
+  productId  String?       @db.VarChar(36)
+  product    Product?      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  modelId    String?       @db.VarChar(36)
+  model      ProductModel? @relation(fields: [modelId], references: [id], onDelete: Restrict)
+  skuId      String?       @db.VarChar(36)
+  sku        ProductSku?   @relation(fields: [skuId], references: [id], onDelete: Restrict)
+
+  customerWalkInAt            DateTime  @default(now()) @db.DateTime(3)
+  demoStartAt                 DateTime? @db.DateTime(3)
+  demoEndAt                   DateTime? @db.DateTime(3)
+  decisionAt                  DateTime? @db.DateTime(3)
+  productSelectionStartAt     DateTime? @db.DateTime(3)
+  productSelectionConfirmedAt DateTime? @db.DateTime(3)
+  stockStartedAt              DateTime? @db.DateTime(3)
+  stockFoundAt                DateTime? @db.DateTime(3)
+  cashierReceivedAt           DateTime? @db.DateTime(3)
+  cashierScanAt               DateTime? @db.DateTime(3)
+  billOpenedAt                DateTime? @db.DateTime(3)
+  cancelledAt                 DateTime? @db.DateTime(3)
+
+  accessories SessionAccessory[]
+  ontop       SessionOntop[]
+  points      SessionPoint[]
+  burnPoints  SessionBurnPoint[]
+  payments    SessionPayment[]
+  events      SessionEvent[]
+
+  @@index([branchId])
+  @@index([staffId])
+  @@index([state])
+  @@index([customerWalkInAt])
+}
+
+model SessionAccessory {
+  id            String          @id @default(uuid()) @db.VarChar(36)
+  sessionId     String          @db.VarChar(36)
+  session       CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  accessoryName String          @db.VarChar(64)
+  quantity      Int             @default(1)
+
+  @@index([sessionId])
+}
+
+model SessionOntop {
+  id        String          @id @default(uuid()) @db.VarChar(36)
+  sessionId String          @db.VarChar(36)
+  session   CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  name      String          @db.VarChar(64)
+
+  @@index([sessionId])
+}
+
+model SessionPoint {
+  id        String          @id @default(uuid()) @db.VarChar(36)
+  sessionId String          @db.VarChar(36)
+  session   CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  name      String          @db.VarChar(64)
+
+  @@index([sessionId])
+}
+
+model SessionBurnPoint {
+  id        String          @id @default(uuid()) @db.VarChar(36)
+  sessionId String          @db.VarChar(36)
+  session   CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  name      String          @db.VarChar(64)
+
+  @@index([sessionId])
+}
+
+model SessionPayment {
+  id        String          @id @default(uuid()) @db.VarChar(36)
+  sessionId String          @db.VarChar(36)
+  session   CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  method    String          @db.VarChar(64)
+
+  @@index([sessionId])
+}
+
+model SessionEvent {
+  id           String          @id @default(uuid()) @db.VarChar(36)
+  sessionId    String          @db.VarChar(36)
+  session      CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  eventType    EventType
+  actorStaffId String          @db.VarChar(64)
+  createdAt    DateTime        @default(now()) @db.DateTime(3)
+  metadata     Json?
+
+  @@index([sessionId])
+  @@index([eventType])
+  @@index([createdAt])
+}

@@ -1,0 +1,82 @@
+import { useState } from 'react';
+import { LogIn } from 'lucide-react';
+import { Button, Notice } from '../components/ui';
+import { api } from '../services/api';
+import type { Account } from '../types/accounts';
+export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
+  const [staffId, setStaffId] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  return (
+    <div className="login">
+      <div className="login-story">
+        <span className="brand-mark">S</span>
+        <p className="eyebrow">SERVICE EFFICIENCY SYSTEM</p>
+        <h1>
+          ทุกขั้นตอน
+          <br />
+          ของการบริการ
+          <br />
+          <em>อยู่ในภาพเดียว</em>
+        </h1>
+        <p>Staff · Stock · Cashier</p>
+      </div>
+      <section className="login-form">
+        <span className="badge">STAFF ACCESS</span>
+        <h2>เข้าสู่ระบบ</h2>
+        <p className="muted">ใช้บัญชี Staff ID ที่ผู้ดูแลสร้างให้</p>
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            setError('');
+            try {
+              onLogin(
+                await api<Account>('/auth/login', 'POST', {
+                  staffId,
+                  password,
+                }),
+              );
+              setPassword('');
+            } catch (err) {
+              setError(
+                err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ',
+              );
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <label>
+            Staff ID
+            <input
+              required
+              autoComplete="username"
+              value={staffId}
+              onChange={(e) => setStaffId(e.target.value)}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              required
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          {error && <Notice error>{error}</Notice>}
+          <Button type="submit" disabled={busy}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', justifyContent: 'center', width: '100%' }}>
+              <LogIn size={16} />
+              {busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}
+            </span>
+          </Button>
+        </form>
+        <p className="fine">ออกจากระบบอัตโนมัติเมื่อไม่มีการใช้งาน 8 ชั่วโมง</p>
+      </section>
+    </div>
+  );
+}

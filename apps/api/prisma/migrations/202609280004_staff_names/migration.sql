@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `Staff` ADD COLUMN `firstName` VARCHAR(100) NOT NULL DEFAULT '',
+    ADD COLUMN `lastName` VARCHAR(100) NOT NULL DEFAULT '';

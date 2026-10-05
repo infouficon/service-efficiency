@@ -241,7 +241,7 @@ export function StockWorkspace({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Package size={24} color="#0abab5" />
           <div>
-            <h2 style={{ margin: 0 }}>คลังสินค้า (Stock Operations)</h2>
+            <h2 style={{ margin: 0 }}>คลังสินค้า</h2>
             <p className="muted" style={{ margin: 0 }}>
               จัดการรายการคำขอเบิกสินค้า ค้นหา และส่งต่อไปยังแคชเชียร์ · สาขา{' '}
               {user.branch}
@@ -516,7 +516,7 @@ export function StockWorkspace({
                 <div className="detail-actions-area">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
                     <Zap size={18} color="#0abab5" />
-                    <h3 style={{ margin: 0 }}>การดำเนินการ (Stock Actions)</h3>
+                    <h3 style={{ margin: 0 }}>การดำเนินการ</h3>
                   </div>
                   {selectedSession.state === 'STOCK_REQUESTED' && (
                     <div className="actions">
@@ -525,7 +525,7 @@ export function StockWorkspace({
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <Search size={16} />
-                          เริ่มค้นหาสินค้า (SEARCHING)
+                          เริ่มค้นหาสินค้า
                         </span>
                       </Button>
                       <Button

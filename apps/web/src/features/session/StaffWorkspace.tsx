@@ -854,7 +854,7 @@ export function StaffWorkspace({
                             <Notice>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                 <Package size={16} />
-                                คำขออยู่ในกระบวนการของฝ่าย Stock ({activeSession.state})
+                                คำขออยู่ในกระบวนการของฝ่าย Stock
                               </span>
                             </Notice>
                             <p className="muted">

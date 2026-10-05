@@ -5,6 +5,9 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # DNS Resolver for Docker and External Domains
+    resolver 127.0.0.11 1.1.1.1 8.8.8.8 valid=30s ipv6=off;
+
     # Gzip Compression
     gzip on;
     gzip_vary on;
@@ -29,6 +32,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_ssl_server_name on;
+        proxy_ssl_name $proxy_host;
         proxy_cache_bypass $http_upgrade;
     }
 

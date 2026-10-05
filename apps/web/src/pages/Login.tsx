@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { LogIn } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
+import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import type { Account } from '../types/accounts';
 export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
+  const toast = useToast();
   const [staffId, setStaffId] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -32,17 +34,17 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
             setBusy(true);
             setError('');
             try {
-              onLogin(
-                await api<Account>('/auth/login', 'POST', {
-                  staffId,
-                  password,
-                }),
-              );
+              const account = await api<Account>('/auth/login', 'POST', {
+                staffId,
+                password,
+              });
+              toast.success(`เข้าสู่ระบบสำเร็จ: ${account.name || account.staffId}`);
+              onLogin(account);
               setPassword('');
             } catch (err) {
-              setError(
-                err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ',
-              );
+              const msg = err instanceof Error ? err.message : 'เข้าสู่ระบบไม่สำเร็จ';
+              setError(msg);
+              toast.error(msg);
             } finally {
               setBusy(false);
             }

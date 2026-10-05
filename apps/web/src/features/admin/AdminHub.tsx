@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShieldCheck, Plus, Edit2, KeyRound } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
+import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
 import {
   accountRoles,
@@ -33,13 +34,13 @@ export function AdminHub({
   user: Account;
   onAccountChange: (user: Account) => void;
 }) {
+  const toast = useToast();
   const admin = user.roles.includes('ADMIN');
   const [staff, setStaff] = useState<Account[]>([]);
   const [branches, setBranches] = useState<ManagedBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [draft, setDraft] = useState<StaffDraft | null>(null);
   const [editing, setEditing] = useState(false);
   const [branch, setBranch] = useState<ManagedBranch | null>(null);
@@ -83,15 +84,16 @@ export function AdminHub({
   const save = async (work: () => Promise<unknown>, close: () => void) => {
     setBusy(true);
     setError('');
-    setSuccess('');
     try {
       await work();
       close();
       await load();
       onAccountChange(await api<Account>('/auth/me'));
-      setSuccess('บันทึกแล้ว');
+      toast.success('บันทึกข้อมูลเรียบร้อย');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ');
+      const msg = err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -122,7 +124,6 @@ export function AdminHub({
           </Button>
         </Notice>
       )}
-      {success && <Notice>{success}</Notice>}
       {loading ? (
         <Notice>กำลังโหลด…</Notice>
       ) : (

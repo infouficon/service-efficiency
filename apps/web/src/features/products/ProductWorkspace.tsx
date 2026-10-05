@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
+import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
 import type { MockUser } from '../../types/session';
 
@@ -47,11 +48,11 @@ interface ProductWorkspaceProps {
 type CategoryTab = 'ALL' | 'iPhone' | 'iPad' | 'Mac' | 'Watch';
 
 export function ProductWorkspace({ user }: ProductWorkspaceProps) {
+  const toast = useToast();
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('ALL');
   const [search, setSearch] = useState('');
 
@@ -138,7 +139,6 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
     e.preventDefault();
     setBusy(true);
     setError('');
-    setSuccess('');
     try {
       if (productModal.editingId) {
         await api(`/products/${productModal.editingId}`, 'PUT', {
@@ -146,18 +146,20 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
           name: productModal.name,
           active: productModal.active,
         });
-        setSuccess('อัปเดตข้อมูลสินค้าเรียบร้อย');
+        toast.success('อัปเดตข้อมูลสินค้าเรียบร้อย');
       } else {
         await api('/products', 'POST', {
           category: productModal.category,
           name: productModal.name,
         });
-        setSuccess('เพิ่มสินค้าใหม่เรียบร้อย');
+        toast.success('เพิ่มสินค้าใหม่เรียบร้อย');
       }
       setProductModal({ open: false, category: 'iPhone', name: '', active: true });
       await loadProducts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'บันทึกสินค้าไม่สำเร็จ');
+      const msg = err instanceof Error ? err.message : 'บันทึกสินค้าไม่สำเร็จ';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -167,24 +169,25 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
     e.preventDefault();
     setBusy(true);
     setError('');
-    setSuccess('');
     try {
       if (modelModal.editingId) {
         await api(`/products/models/${modelModal.editingId}`, 'PUT', {
           name: modelModal.name,
           active: modelModal.active,
         });
-        setSuccess('อัปเดตรุ่นสินค้าเรียบร้อย');
+        toast.success('อัปเดตรุ่นสินค้าเรียบร้อย');
       } else if (modelModal.productId) {
         await api(`/products/${modelModal.productId}/models`, 'POST', {
           name: modelModal.name,
         });
-        setSuccess('เพิ่มรุ่นสินค้าใหม่เรียบร้อย');
+        toast.success('เพิ่มรุ่นสินค้าใหม่เรียบร้อย');
       }
       setModelModal({ open: false, name: '', active: true });
       await loadProducts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'บันทึกรุ่นสินค้าไม่สำเร็จ');
+      const msg = err instanceof Error ? err.message : 'บันทึกรุ่นสินค้าไม่สำเร็จ';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -194,7 +197,6 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
     e.preventDefault();
     setBusy(true);
     setError('');
-    setSuccess('');
     try {
       if (skuModal.editingId) {
         await api(`/products/skus/${skuModal.editingId}`, 'PUT', {
@@ -204,7 +206,7 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
           storage: skuModal.storage || undefined,
           active: skuModal.active,
         });
-        setSuccess('อัปเดต SKU เรียบร้อย');
+        toast.success('อัปเดต SKU เรียบร้อย');
       } else if (skuModal.modelId) {
         await api(`/products/models/${skuModal.modelId}/skus`, 'POST', {
           sku: skuModal.sku,
@@ -212,12 +214,14 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
           color: skuModal.color || undefined,
           storage: skuModal.storage || undefined,
         });
-        setSuccess('เพิ่ม SKU ใหม่เรียบร้อย');
+        toast.success('เพิ่ม SKU ใหม่เรียบร้อย');
       }
       setSkuModal({ open: false, sku: '', name: '', color: '', storage: '', active: true });
       await loadProducts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'บันทึก SKU ไม่สำเร็จ');
+      const msg = err instanceof Error ? err.message : 'บันทึก SKU ไม่สำเร็จ';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -285,11 +289,6 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
       {error && (
         <div style={{ marginBottom: '1rem' }}>
           <Notice error>{error}</Notice>
-        </div>
-      )}
-      {success && (
-        <div style={{ marginBottom: '1rem' }}>
-          <Notice>{success}</Notice>
         </div>
       )}
 

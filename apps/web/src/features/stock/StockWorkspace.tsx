@@ -8,6 +8,8 @@ import {
   Clock,
   Zap,
   CheckCircle2,
+  ArrowLeft,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
@@ -18,10 +20,38 @@ import {
   advanceStepApi,
   cancelSessionApi,
   recordOutOfStockApi,
+  reportStockMissingApi,
 } from '../../services/sessionApi';
 import { advance, partialFulfillStock } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
+
+const DISMISSED_CANCELS_STORAGE_KEY = 'service_efficiency_stock_dismissed_cancels';
+
+function getStoredDismissedCancels(): string[] {
+  try {
+    const raw = localStorage.getItem(DISMISSED_CANCELS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function storeDismissedCancel(reference: string) {
+  try {
+    const current = getStoredDismissedCancels();
+    if (!current.includes(reference)) {
+      const updated = [...current, reference];
+      localStorage.setItem(DISMISSED_CANCELS_STORAGE_KEY, JSON.stringify(updated));
+    }
+  } catch {
+    // ignore
+  }
+}
 
 interface StockWorkspaceProps {
   user: MockUser;
@@ -38,10 +68,19 @@ export function StockWorkspace({
     'ALL' | 'REQUESTED' | 'SEARCHING' | 'FOUND'
   >('ALL');
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [stockNote, setStockNote] = useState('');
-  const [outOfStockSelection, setOutOfStockSelection] = useState<string[]>([]);
+  const [foundSelection, setFoundSelection] = useState<string[]>([]);
+  const [dismissedCancels, setDismissedCancels] = useState<string[]>(() =>
+    getStoredDismissedCancels(),
+  );
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
+
+  const handleDismissCancel = (reference: string) => {
+    storeDismissedCancel(reference);
+    setDismissedCancels((prev) => [...prev, reference]);
+  };
 
   // Filter sessions by branch (ADMIN sees all or filtered, STAFF/STOCK sees own branch)
   const branchSessions = sessions.filter((s) => {
@@ -61,10 +100,33 @@ export function StockWorkspace({
     return true;
   });
 
+  // On desktop: auto-select first item. On mobile: only show detail when explicitly chosen.
   const selectedSession =
     stockQueue.find((s) => s.reference === selectedRef) ||
-    filteredQueue[0] ||
+    (mobileShowDetail ? null : filteredQueue[0]) ||
     null;
+
+  const cancelledAlertSessions = branchSessions.filter(
+    (s) =>
+      s.outcome === 'CUSTOMER_CANCELLED' &&
+      !dismissedCancels.includes(s.reference) &&
+      (Boolean(s.timestamps.stock_requested_at) ||
+        Boolean(s.timestamps.stock_started_at) ||
+        Boolean(s.stockPendingReview) ||
+        Boolean(s.cancelledBy)),
+  );
+
+  const handleSelectCard = (reference: string) => {
+    setSelectedRef(reference);
+    setMobileShowDetail(true);
+    const target = stockQueue.find((s) => s.reference === reference);
+    if (target?.stockPendingReview) {
+      setStockNote(target.stockPendingReview.stockNote || '');
+    } else {
+      setStockNote('');
+      setFoundSelection([]);
+    }
+  };
 
   const handleAction = async (
     session: MockSession,
@@ -74,83 +136,72 @@ export function StockWorkspace({
       try {
         const updated = await advanceStepApi(session.id, action);
         onUpdateSession(updated);
-        setOutOfStockSelection([]);
+        setFoundSelection([]);
+        setStockNote('');
         return;
       } catch {
         // Fallback to in-memory on error
       }
     }
     const updated = advance(session, action, previewTime());
-    onUpdateSession(updated);
-    setOutOfStockSelection([]);
-  };
-
-  const handlePartialFulfill = async (session: MockSession) => {
-    if (session.id) {
-      try {
-        const updated = await recordOutOfStockApi(
-          session.id,
-          'PARTIAL_FULFILL',
-          stockNote || undefined,
-          outOfStockSelection,
-          'partial',
-          stockNote,
-        );
-        onUpdateSession(updated);
-        setOutOfStockSelection([]);
-        setStockNote('');
-        return;
-      } catch {
-        // Fallback
-      }
-    }
-    const updated = partialFulfillStock(
-      session,
-      outOfStockSelection,
-      previewTime(),
-    );
-    onUpdateSession(updated);
-    setOutOfStockSelection([]);
+    onUpdateSession({
+      ...updated,
+      stockPendingReview: undefined,
+    });
+    setFoundSelection([]);
     setStockNote('');
   };
 
-  const handleFullOutOfStock = async (session: MockSession) => {
-    if (session.id) {
-      try {
-        const detailedReason =
-          stockNote ||
-          (outOfStockSelection.length > 0
-            ? `สินค้าหมด: ${outOfStockSelection.join(', ')}`
-            : undefined);
-        const updated = await recordOutOfStockApi(
-          session.id,
-          'OUT_OF_STOCK',
-          detailedReason,
-          outOfStockSelection,
-          'cancel',
-          stockNote,
-        );
-        onUpdateSession(updated);
-        setOutOfStockSelection([]);
-        setStockNote('');
-        return;
-      } catch {
-        // Fallback
+  const handleSendToStaff = async (session: MockSession) => {
+    const hasProduct = Boolean(session.selection.product);
+    const missingItems: string[] = [];
+    const foundNames: string[] = [];
+
+    if (hasProduct) {
+      const prodName =
+        session.selection.product?.model ||
+        session.selection.product?.product ||
+        'สินค้าหลัก';
+      if (foundSelection.includes('MAIN_PRODUCT')) {
+        foundNames.push(prodName);
+      } else {
+        missingItems.push(prodName);
       }
     }
-    const detailedReason =
-      stockNote ||
-      (outOfStockSelection.length > 0
-        ? `สินค้าหมด: ${outOfStockSelection.join(', ')}`
-        : undefined);
+
+    Object.entries(session.selection.accessories).forEach(([acc, qty]) => {
+      if (foundSelection.includes(acc)) {
+        foundNames.push(`${acc} (x${qty})`);
+      } else {
+        missingItems.push(`${acc} (x${qty})`);
+      }
+    });
+
+    if (session.id) {
+      try {
+        const updated = await reportStockMissingApi(
+          session.id,
+          missingItems,
+          foundNames,
+          stockNote || undefined,
+        );
+        onUpdateSession(updated);
+        return;
+      } catch (err) {
+        console.error('Failed to report missing stock:', err);
+      }
+    }
+
     const updated: MockSession = {
       ...session,
-      outcome: 'OUT_OF_STOCK',
-      otherReason: detailedReason,
+      stockPendingReview: {
+        missingItems,
+        foundItems: foundNames,
+        stockNote: stockNote || undefined,
+        reportedAt: previewTime(),
+      },
     };
     onUpdateSession(updated);
-    setOutOfStockSelection([]);
-    setStockNote('');
   };
 
   const handleCancel = async (reason: string, text: string) => {
@@ -213,9 +264,41 @@ export function StockWorkspace({
         </div>
       </div>
 
+      {cancelledAlertSessions.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+          {cancelledAlertSessions.map((cs) => (
+            <Notice key={cs.reference} error>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  width: '100%',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                }}
+              >
+                <span>
+                  <strong>⚠️ แจ้งเตือนฝ่ายคลัง:</strong> Session <strong>{cs.reference}</strong> (
+                  {cs.selection.product?.model || 'สินค้า'}) ถูกยกเลิกโดย Staff <strong>{cs.cancelledBy || cs.staffId || 'Staff'}</strong> — สาเหตุ:{' '}
+                  <em>{cs.reason || cs.otherReason || 'ลูกค้าเปลี่ยนใจ'}</em>
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => handleDismissCancel(cs.reference)}
+                >
+                  รับทราบ
+                </Button>
+              </div>
+            </Notice>
+          ))}
+        </div>
+      )}
+
       {cancellingSession ? (
         <Panel
-          title="ยกเลิกคำขอบริการ (CUSTOMER_CANCELLED)"
+          title="ยกเลิกคำขอบริการ"
           eyebrow="STOCK CANCELLATION"
         >
           <p>
@@ -231,7 +314,10 @@ export function StockWorkspace({
           />
         </Panel>
       ) : (
-        <div className="stock-layout">
+        <div
+          className="stock-layout"
+          data-mobile-detail={mobileShowDetail ? 'true' : 'false'}
+        >
           <div className="stock-queue-column">
             <div className="queue-filter-tabs">
               <button
@@ -276,17 +362,30 @@ export function StockWorkspace({
                   <div
                     key={s.reference}
                     className={`queue-card ${selectedSession?.reference === s.reference ? 'selected' : ''}`}
-                    onClick={() => setSelectedRef(s.reference)}
+                    onClick={() => handleSelectCard(s.reference)}
                   >
                     <div className="card-top">
                       <span className="card-ref">{s.reference}</span>
-                      <span
-                        className={`status-tag status-${s.state.toLowerCase()}`}
-                      >
-                        {s.state === 'STOCK_REQUESTED' && 'รอค้นหา'}
-                        {s.state === 'SEARCHING' && 'กำลังค้นหา'}
-                        {s.state === 'FOUND' && 'พบสินค้าแล้ว'}
-                      </span>
+                      {s.stockPendingReview ? (
+                        <span
+                          className="status-tag status-searching"
+                          style={{
+                            background: '#fef3c7',
+                            color: '#b45309',
+                            border: '1px solid #fde68a',
+                          }}
+                        >
+                          รอลูกค้าตัดสินใจ
+                        </span>
+                      ) : (
+                        <span
+                          className={`status-tag status-${s.state.toLowerCase()}`}
+                        >
+                          {s.state === 'STOCK_REQUESTED' && 'รอค้นหา'}
+                          {s.state === 'SEARCHING' && 'กำลังค้นหา'}
+                          {s.state === 'FOUND' && 'พบสินค้าแล้ว'}
+                        </span>
+                      )}
                     </div>
                     <div className="card-product">
                       <strong>
@@ -321,8 +420,38 @@ export function StockWorkspace({
                 title={`รายละเอียดคำขอ: ${selectedSession.reference}`}
                 eyebrow={`สถานะปัจจุบัน: ${selectedSession.state}`}
               >
+                <button
+                  type="button"
+                  className="mobile-back-to-queue-btn"
+                  onClick={() => setMobileShowDetail(false)}
+                >
+                  <ArrowLeft size={14} /> คิวสินค้า ({filteredQueue.length})
+                </button>
                 <div className="detail-status-banner">
-                  {selectedSession.state === 'STOCK_REQUESTED' && (
+                  {selectedSession.stockPendingReview && (
+                    <Notice error>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                          <AlertTriangle size={16} />
+                          ส่งเรื่องให้ Staff ({selectedSession.staffId}) แล้ว — รอลูกค้าตัดสินใจ
+                        </div>
+                        <div>
+                          <strong>รายการที่ขาด/หมด:</strong>{' '}
+                          {selectedSession.stockPendingReview.missingItems.join(', ')}
+                        </div>
+                        {selectedSession.stockPendingReview.stockNote && (
+                          <div>
+                            <strong>หมายเหตุ:</strong>{' '}
+                            {selectedSession.stockPendingReview.stockNote}
+                          </div>
+                        )}
+                        <p style={{ margin: '4px 0 0', fontSize: '12px' }}>
+                          กำลังรอลูกค้าตัดสินใจและแจ้งผ่าน Staff ({selectedSession.staffId}) ว่าจะซื้อเฉพาะที่เหลือ, เปลี่ยน/เพิ่มสินค้าอื่น หรือขอยกเลิกคำขอนี้
+                        </p>
+                      </div>
+                    </Notice>
+                  )}
+                  {!selectedSession.stockPendingReview && selectedSession.state === 'STOCK_REQUESTED' && (
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Clock size={16} />
@@ -330,15 +459,15 @@ export function StockWorkspace({
                       </span>
                     </Notice>
                   )}
-                  {selectedSession.state === 'SEARCHING' && (
+                  {!selectedSession.stockPendingReview && selectedSession.state === 'SEARCHING' && (
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Search size={16} />
-                        กำลังค้นหาสินค้าในคลัง (Server เริ่มจับเวลา stock_started_at)
+                        กำลังค้นหาสินค้าในคลัง (ติ๊กเลือกเฉพาะสินค้าที่พบจริง)
                       </span>
                     </Notice>
                   )}
-                  {selectedSession.state === 'FOUND' && (
+                  {!selectedSession.stockPendingReview && selectedSession.state === 'FOUND' && (
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Check size={16} />
@@ -408,181 +537,155 @@ export function StockWorkspace({
                     </div>
                   )}
 
-                  {selectedSession.state === 'SEARCHING' && (
-                    <div className="searching-action-box">
-                      <div style={{ marginBottom: '16px' }}>
-                        <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#496357' }}>
-                          ตรวจสอบรายการสินค้า (ติ๊กเลือกหาก <strong>"ไม่พบ / สินค้าหมด"</strong>):
-                        </h4>
-                        <div className="accessory-list">
-                          {selectedSession.selection.product && (
-                            <div
-                              className={`accessory-item ${
-                                outOfStockSelection.includes('MAIN_PRODUCT')
-                                  ? 'out-of-stock-item'
-                                  : ''
-                              }`}
-                            >
-                              <label
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '8px',
-                                  cursor: 'pointer',
-                                  margin: 0,
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={outOfStockSelection.includes('MAIN_PRODUCT')}
-                                  onChange={() => {
-                                    setOutOfStockSelection((prev) =>
-                                      prev.includes('MAIN_PRODUCT')
-                                        ? prev.filter((i) => i !== 'MAIN_PRODUCT')
-                                        : [...prev, 'MAIN_PRODUCT']
-                                    );
-                                  }}
-                                />
-                                <span>
-                                  <strong>สินค้าหลัก:</strong>{' '}
-                                  {selectedSession.selection.product.model}{' '}
-                                  ({selectedSession.selection.product.sku})
-                                </span>
-                                {outOfStockSelection.includes('MAIN_PRODUCT') && (
-                                  <span
-                                    className="status-tag status-outcome"
-                                    style={{ marginLeft: 'auto' }}
-                                  >
-                                    ไม่พบ / สินค้าหมด
-                                  </span>
-                                )}
-                              </label>
-                            </div>
-                          )}
+                  {selectedSession.state === 'SEARCHING' && (() => {
+                    const hasProduct = Boolean(selectedSession.selection.product);
+                    const totalCount =
+                      (hasProduct ? 1 : 0) +
+                      Object.keys(selectedSession.selection.accessories).length;
+                    const foundCount =
+                      (hasProduct && foundSelection.includes('MAIN_PRODUCT') ? 1 : 0) +
+                      Object.keys(selectedSession.selection.accessories).filter((a) =>
+                        foundSelection.includes(a),
+                      ).length;
+                    const isAllFound = totalCount > 0 && foundCount === totalCount;
 
-                          {Object.entries(selectedSession.selection.accessories).map(
-                            ([name, qty]) => {
-                              const isOos = outOfStockSelection.includes(name);
-                              return (
-                                <div
-                                  key={name}
-                                  className={`accessory-item ${
-                                    isOos ? 'out-of-stock-item' : ''
-                                  }`}
+                    return (
+                      <div className="searching-action-box">
+                        <div style={{ marginBottom: '16px' }}>
+                          <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#496357' }}>
+                            เลือกรายการสินค้าที่ <strong>"พบแล้ว"</strong> (เริ่มต้นไม่เลือกชิ้นใดเลย):
+                          </h4>
+                          <div className="accessory-list">
+                            {selectedSession.selection.product && (
+                              <div
+                                className={`accessory-item ${
+                                  foundSelection.includes('MAIN_PRODUCT')
+                                    ? ''
+                                    : 'out-of-stock-item'
+                                }`}
+                              >
+                                <label
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    cursor: 'pointer',
+                                    margin: 0,
+                                  }}
                                 >
-                                  <label
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '8px',
-                                      cursor: 'pointer',
-                                      margin: 0,
+                                  <input
+                                    type="checkbox"
+                                    checked={foundSelection.includes('MAIN_PRODUCT')}
+                                    onChange={() => {
+                                      setFoundSelection((prev) =>
+                                        prev.includes('MAIN_PRODUCT')
+                                          ? prev.filter((i) => i !== 'MAIN_PRODUCT')
+                                          : [...prev, 'MAIN_PRODUCT'],
+                                      );
                                     }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={isOos}
-                                      onChange={() => {
-                                        setOutOfStockSelection((prev) =>
-                                          prev.includes(name)
-                                            ? prev.filter((i) => i !== name)
-                                            : [...prev, name]
-                                        );
-                                      }}
-                                    />
-                                    <span>
-                                      <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน:{' '}
-                                      {qty} ชิ้น)
+                                  />
+                                  <span>
+                                    <strong>สินค้าหลัก:</strong>{' '}
+                                    {selectedSession.selection.product.model}{' '}
+                                    ({selectedSession.selection.product.sku})
+                                  </span>
+                                  {foundSelection.includes('MAIN_PRODUCT') ? (
+                                    <span
+                                      className="status-tag status-found"
+                                      style={{ marginLeft: 'auto' }}
+                                    >
+                                      พบแล้ว
                                     </span>
-                                    {isOos && (
-                                      <span
-                                        className="status-tag status-outcome"
-                                        style={{ marginLeft: 'auto' }}
-                                      >
-                                        ไม่พบ / สินค้าหมด
+                                  ) : (
+                                    <span
+                                      className="status-tag status-searching"
+                                      style={{ marginLeft: 'auto' }}
+                                    >
+                                      ยังไม่พบ
+                                    </span>
+                                  )}
+                                </label>
+                              </div>
+                            )}
+
+                            {Object.entries(selectedSession.selection.accessories).map(
+                              ([name, qty]) => {
+                                const isFound = foundSelection.includes(name);
+                                return (
+                                  <div
+                                    key={name}
+                                    className={`accessory-item ${
+                                      isFound ? '' : 'out-of-stock-item'
+                                    }`}
+                                  >
+                                    <label
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        cursor: 'pointer',
+                                        margin: 0,
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isFound}
+                                        onChange={() => {
+                                          setFoundSelection((prev) =>
+                                            prev.includes(name)
+                                              ? prev.filter((i) => i !== name)
+                                              : [...prev, name],
+                                          );
+                                        }}
+                                      />
+                                      <span>
+                                        <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน:{' '}
+                                        {qty} ชิ้น)
                                       </span>
-                                    )}
-                                  </label>
-                                </div>
-                              );
-                            }
-                          )}
+                                      {isFound ? (
+                                        <span
+                                          className="status-tag status-found"
+                                          style={{ marginLeft: 'auto' }}
+                                        >
+                                          พบแล้ว
+                                        </span>
+                                      ) : (
+                                        <span
+                                          className="status-tag status-searching"
+                                          style={{ marginLeft: 'auto' }}
+                                        >
+                                          ยังไม่พบ
+                                        </span>
+                                      )}
+                                    </label>
+                                  </div>
+                                );
+                              },
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="out-of-stock-section">
-                        <label>
-                          หมายเหตุการค้นหา / สินค้าหมด (Note)
-                          <input
-                            placeholder="ระบุสาเหตุ เช่น ไม่พบในระบบ, มีการจองไว้แล้ว"
-                            value={stockNote}
-                            onChange={(e) => setStockNote(e.target.value)}
-                          />
-                        </label>
-                      </div>
-
-                      <div className="actions" style={{ marginTop: '16px' }}>
-                        {outOfStockSelection.length === 0 ? (
-                          <Button
-                            onClick={() => handleAction(selectedSession, 'found')}
-                          >
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                              }}
-                            >
-                              <Check size={16} />
-                              พบสินค้าครบทั้งหมด (FOUND)
-                            </span>
-                          </Button>
-                        ) : (
-                          (selectedSession.selection.product ? 1 : 0) +
-                            Object.keys(selectedSession.selection.accessories).length >
-                          outOfStockSelection.length ? (
-                            <>
-                              <Button
-                                onClick={() =>
-                                  handlePartialFulfill(selectedSession)
-                                }
-                              >
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                  }}
-                                >
-                                  <Check size={16} />
-                                  ลูกค้าซื้อต่อ (ตัด {outOfStockSelection.length}{' '}
-                                  รายการที่ไม่มีออก)
-                                </span>
-                              </Button>
-                              <Button
-                                variant="danger"
-                                onClick={() =>
-                                  handleFullOutOfStock(selectedSession)
-                                }
-                              >
-                                <span
-                                  style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '6px',
-                                  }}
-                                >
-                                  <X size={16} />
-                                  ลูกค้ายกเลิกทั้งหมด
-                                </span>
-                              </Button>
-                            </>
-                          ) : (
-                            <Button
-                              variant="danger"
-                              onClick={() =>
-                                handleFullOutOfStock(selectedSession)
+                        <div className={`stock-note-section ${isAllFound ? '' : 'has-missing'}`}>
+                          <label>
+                            {isAllFound
+                              ? 'หมายเหตุเพิ่มเติม (ถ้ามี)'
+                              : 'หมายเหตุการค้นหา / รายละเอียดสินค้าที่ไม่พบ (Note)'}
+                            <input
+                              placeholder={
+                                isAllFound
+                                  ? 'ระบุหมายเหตุเพิ่มเติม (ถ้ามี)'
+                                  : 'ระบุสาเหตุ เช่น สินค้าหมดสต็อก, ชำรุด, รอเติมของ'
                               }
+                              value={stockNote}
+                              onChange={(e) => setStockNote(e.target.value)}
+                            />
+                          </label>
+                        </div>
+
+                        <div className="actions" style={{ marginTop: '16px' }}>
+                          {isAllFound ? (
+                            <Button
+                              onClick={() => handleAction(selectedSession, 'found')}
                             >
                               <span
                                 style={{
@@ -591,21 +694,39 @@ export function StockWorkspace({
                                   gap: '6px',
                                 }}
                               >
-                                <X size={16} />
-                                สินค้าหมดทุกรายการ (ยกเลิกคำขอ)
+                                <Check size={16} />
+                                พบสินค้าครบทั้งหมด ({foundCount}/{totalCount}) → บันทึก FOUND
                               </span>
                             </Button>
-                          )
-                        )}
-                        <Button
-                          variant="secondary"
-                          onClick={() => setCancellingSession(selectedSession)}
-                        >
-                          ลูกค้ายกเลิกขณะค้นหา
-                        </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              onClick={() => handleSendToStaff(selectedSession)}
+                            >
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  color: '#b45309',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <AlertTriangle size={16} />
+                                แจ้งสินค้าไม่ครบ/หมด ({foundCount}/{totalCount}) → ส่งเรื่องให้ Staff
+                              </span>
+                            </Button>
+                          )}
+                          <Button
+                            variant="danger"
+                            onClick={() => setCancellingSession(selectedSession)}
+                          >
+                            ลูกค้ายกเลิก
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {selectedSession.state === 'FOUND' && (
                     <div className="actions">

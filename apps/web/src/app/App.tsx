@@ -32,6 +32,7 @@ function getDefaultView(u: MockUser): AppView {
   return 'logs';
 }
 
+
 export function App({
   account,
   onLogout,
@@ -58,28 +59,28 @@ export function App({
         const data = await fetchSessionsApi(branchFilter);
         if (mounted) {
           setSessions((prev) => {
-            if (prev.length === 0) return data;
             return data.map((serverS) => {
               const local = prev.find((p) => p.reference === serverS.reference);
+              const merged: MockSession = {
+                ...serverS,
+              };
+
               if (local && !local.confirmed && !local.outcome) {
-                return {
-                  ...serverS,
-                  phone: local.phone || serverS.phone,
-                  selection:
-                    local.selection &&
-                    (local.selection.product || Object.keys(local.selection.accessories).length > 0)
-                      ? {
-                          ...serverS.selection,
-                          ...local.selection,
-                          accessories: {
-                            ...serverS.selection.accessories,
-                            ...local.selection.accessories,
-                          },
-                        }
-                      : serverS.selection,
-                };
+                merged.phone = local.phone || serverS.phone;
+                merged.selection =
+                  local.selection &&
+                  (local.selection.product || Object.keys(local.selection.accessories).length > 0)
+                    ? {
+                        ...serverS.selection,
+                        ...local.selection,
+                        accessories: {
+                          ...serverS.selection.accessories,
+                          ...local.selection.accessories,
+                        },
+                      }
+                    : serverS.selection;
               }
-              return serverS;
+              return merged;
             });
           });
         }
@@ -337,10 +338,6 @@ export function App({
             )}
           </details> */}
 
-          <footer>
-            Service Efficiency System{' '}
-            <span>Multi-role Frontend Architecture · Phase 1 Execution</span>
-          </footer>
         </main>
       </div>
     </div>

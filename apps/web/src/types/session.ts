@@ -117,6 +117,12 @@ export interface MockSession {
   reason?: string;
   otherReason?: string;
   cancelledBy?: string;
+  stockPendingReview?: {
+    missingItems: string[];
+    foundItems: string[];
+    stockNote?: string;
+    reportedAt: string;
+  };
   timestamps: Partial<Record<Timestamp, string>>;
   events?: SessionEventItem[];
 }

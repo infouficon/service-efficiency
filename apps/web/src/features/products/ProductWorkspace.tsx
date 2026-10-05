@@ -308,7 +308,7 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
           ))}
         </div>
 
-        <div style={{ marginLeft: 'auto', minWidth: '260px' }}>
+        <div className="product-search-input-wrap">
           <input
             type="search"
             placeholder="ค้นหาสินค้า, รุ่น หรือ SKU..."
@@ -672,7 +672,7 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
                 }
               />
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-grid-2col">
               <label>
                 ความจุ (Storage)
                 <input

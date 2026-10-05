@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   User as UserIcon,
   Plus,
@@ -9,6 +9,7 @@ import {
   CreditCard,
   ArrowLeft,
   ArrowRight,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { cancelReasons, notBuyReasons, stages } from '../../constants/options';
@@ -29,6 +30,7 @@ import {
   confirmPurchaseApi,
   createWalkInApi,
   recordNotBuyApi,
+  resolveStockReviewApi,
   updateSelectionApi,
 } from '../../services/sessionApi';
 
@@ -106,6 +108,124 @@ export function StaffWorkspace({
   const finished = Boolean(
     activeSession?.outcome || activeSession?.state === 'COMPLETED',
   );
+
+  const progressContainerRef = useRef<HTMLOListElement>(null);
+
+  // Auto-scroll to progress stepper or top on stage change, form change, or session switch
+  useEffect(() => {
+    if (activeSessionRef) {
+      if (progressContainerRef.current) {
+        progressContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } else {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }
+  }, [activeSessionRef, activeSession?.state, activeSession?.confirmed, form]);
+
+  const handleCustomerAcceptPartial = async (session: MockSession) => {
+    if (!session.stockPendingReview) return;
+    const { missingItems } = session.stockPendingReview;
+
+    setBusy(true);
+    setError('');
+    try {
+      if (session.id) {
+        try {
+          const updated = await resolveStockReviewApi(session.id, 'ACCEPT_PARTIAL');
+          onUpdateSession(updated);
+          return;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+          return;
+        }
+      }
+
+      // Fallback in-memory
+      const newAccessories: Record<string, string> = {};
+      Object.entries(session.selection.accessories).forEach(([k, v]) => {
+        if (!missingItems.includes(k)) {
+          newAccessories[k] = v;
+        }
+      });
+
+      const isMainProductMissing =
+        session.selection.product &&
+        missingItems.some((item) =>
+          item.includes(session.selection.product?.model || '') ||
+          item.includes(session.selection.product?.sku || '') ||
+          item.includes(session.selection.product?.product || ''),
+        );
+
+      const newSelection: Selection = {
+        ...session.selection,
+        product: isMainProductMissing ? null : session.selection.product,
+        accessories: newAccessories,
+      };
+
+      const updated: MockSession = {
+        ...session,
+        selection: newSelection,
+        state: 'FOUND',
+        stockPendingReview: undefined,
+      };
+      onUpdateSession(updated);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCustomerChangeItems = async (session: MockSession) => {
+    setBusy(true);
+    setError('');
+    try {
+      if (session.id) {
+        try {
+          const updated = await resolveStockReviewApi(session.id, 'CHANGE_ITEMS');
+          onUpdateSession(updated);
+          setForm('normal');
+          return;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+          return;
+        }
+      }
+
+      // Fallback in-memory
+      const { missingItems = [] } = session.stockPendingReview || {};
+      const newAccessories: Record<string, string> = {};
+      Object.entries(session.selection.accessories).forEach(([k, v]) => {
+        if (!missingItems.includes(k)) {
+          newAccessories[k] = v;
+        }
+      });
+
+      const isMainProductMissing =
+        session.selection.product &&
+        missingItems.some((item) =>
+          item.includes(session.selection.product?.model || '') ||
+          item.includes(session.selection.product?.sku || '') ||
+          item.includes(session.selection.product?.product || ''),
+        );
+
+      const newSelection: Selection = {
+        ...session.selection,
+        product: isMainProductMissing ? null : session.selection.product,
+        accessories: newAccessories,
+      };
+
+      const updated: MockSession = {
+        ...session,
+        selection: newSelection,
+        state: 'PRODUCT_SELECTION',
+        confirmed: false,
+        stockPendingReview: undefined,
+      };
+      onUpdateSession(updated);
+      setForm('normal');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const startNewWalkIn = async () => {
     setBusy(true);
@@ -241,6 +361,15 @@ export function StaffWorkspace({
     }
   };
 
+  const pendingStockSessions = branchSessions.filter(
+    (s) =>
+      !s.outcome &&
+      Boolean(s.stockPendingReview) &&
+      (user.roles.includes('ADMIN') ||
+        user.roles.includes('MANAGER') ||
+        s.staffId === user.staffId),
+  );
+
   return (
     <div className="staff-workspace">
       <div className="workspace-header-bar">
@@ -269,6 +398,43 @@ export function StaffWorkspace({
         </div>
       )}
 
+      {pendingStockSessions.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+          {pendingStockSessions.map((ps) => (
+            <Notice key={ps.reference} error>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  width: '100%',
+                  flexWrap: 'wrap',
+                  gap: '8px',
+                }}
+              >
+                <span>
+                  <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <AlertTriangle size={16} color="#dc2626" />
+                    ฝ่ายคลัง (Stock) แจ้งเตือน:
+                  </strong>{' '}
+                  Session <strong>{ps.reference}</strong> ({ps.selection.product?.model || 'สินค้า'}) —{' '}
+                  มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
+                </span>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setActiveSessionRef(ps.reference);
+                    setForm('normal');
+                  }}
+                >
+                  เปิดดูและถามลูกค้า
+                </Button>
+              </div>
+            </Notice>
+          ))}
+        </div>
+      )}
+
       <div className="staff-layout">
         <div className="staff-sessions-sidebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
@@ -287,11 +453,24 @@ export function StaffWorkspace({
               >
                 <div className="card-top">
                   <span className="card-ref">{s.reference}</span>
-                  <span
-                    className={`status-tag ${s.outcome ? 'status-outcome' : `status-${s.state.toLowerCase()}`}`}
-                  >
-                    {s.outcome ?? s.state}
-                  </span>
+                  {s.stockPendingReview ? (
+                    <span
+                      className="status-tag status-outcome"
+                      style={{
+                        background: '#fef2f2',
+                        color: '#b91c1c',
+                        border: '1px solid #fecaca',
+                      }}
+                    >
+                      ⚠️ สินค้าไม่ครบ
+                    </span>
+                  ) : (
+                    <span
+                      className={`status-tag ${s.outcome ? 'status-outcome' : `status-${s.state.toLowerCase()}`}`}
+                    >
+                      {s.outcome ?? s.state}
+                    </span>
+                  )}
                 </div>
                 <div className="card-product">
                   {s.selection.product?.model || 'ยังไม่ระบุสินค้า'}
@@ -354,7 +533,7 @@ export function StaffWorkspace({
                 </span>
               </section>
 
-              <ol className="progress">
+              <ol className="progress" ref={progressContainerRef}>
                 {stages.map((label, index) => (
                   <li
                     key={label}
@@ -428,11 +607,75 @@ export function StaffWorkspace({
                       <ReasonForm
                         options={cancelReasons}
                         onBack={() => setForm('normal')}
-                        label="ยืนยัน"
+                        label="ยืนยันการยกเลิก"
                         onSubmit={handleCancelCurrent}
                       />
                     ) : (
                       <>
+                        {activeSession.stockPendingReview && (
+                          <div style={{ marginBottom: '1.25rem' }}>
+                            <Notice error>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                                  <AlertTriangle size={18} color="#dc2626" />
+                                  ฝ่าย Stock แจ้ง: สินค้าบางรายการไม่พบ / หมด
+                                </div>
+                                {activeSession.stockPendingReview.stockNote && (
+                                  <div>
+                                    <strong>หมายเหตุจาก Stock:</strong> <em>"{activeSession.stockPendingReview.stockNote}"</em>
+                                  </div>
+                                )}
+                                <div>
+                                  <strong style={{ color: '#991b1b' }}>รายการที่ไม่พบ/หมด:</strong>{' '}
+                                  {activeSession.stockPendingReview.missingItems.join(', ')}
+                                </div>
+                                {activeSession.stockPendingReview.foundItems.length > 0 && (
+                                  <div>
+                                    <strong style={{ color: '#0d8a72' }}>รายการที่มีพร้อมส่ง:</strong>{' '}
+                                    {activeSession.stockPendingReview.foundItems.join(', ')}
+                                  </div>
+                                )}
+                                <p style={{ margin: '4px 0 8px', fontSize: '13px' }}>
+                                  กรุณาสอบถามลูกค้าและเลือกดำเนินการตามความประสงค์:
+                                </p>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
+                                  {activeSession.stockPendingReview.foundItems.length > 0 && (
+                                    <Button
+                                      size="sm"
+                                      onClick={() => handleCustomerAcceptPartial(activeSession)}
+                                      disabled={busy}
+                                    >
+                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                        <Check size={14} /> 1. ยืนยันซื้อเฉพาะที่เหลือ
+                                      </span>
+                                    </Button>
+                                  )}
+                                  <Button
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() => handleCustomerChangeItems(activeSession)}
+                                    disabled={busy}
+                                  >
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                      <Plus size={14} /> 2. เพิ่ม/เปลี่ยนสินค้าอื่น
+                                    </span>
+                                  </Button>
+                                  <Button
+                                    variant="danger"
+                                    size="sm"
+                                    onClick={() => setForm('cancel')}
+                                    disabled={busy}
+                                  >
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                      <X size={14} /> 3. ลูกค้ายกเลิกทั้งหมด
+                                    </span>
+                                  </Button>
+                                </div>
+                              </div>
+                            </Notice>
+                          </div>
+                        )}
+
                         {activeSession.state === 'WALK_IN' && (
                           <>
                             <p className="muted">
@@ -643,17 +886,14 @@ export function StaffWorkspace({
                           </>
                         )}
 
-                        {['DEMO', 'PRODUCT_SELECTION'].includes(
-                          activeSession.state,
-                        ) &&
-                          !activeSession.confirmed &&
+                        {!finished &&
                           form !== 'review' && (
-                            <div className="cancel-action">
+                            <div className="cancel-action" style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #e2ebe6' }}>
                               <Button
                                 variant="danger"
                                 onClick={() => setForm('cancel')}
                               >
-                                ยกเลิก
+                                ยกเลิกคำขอบริการ
                               </Button>
                             </div>
                           )}
@@ -662,7 +902,7 @@ export function StaffWorkspace({
                   </Panel>
                 </div>
 
-                <div>
+                {/* <div>
                   <Panel
                     title="ประวัติเวลาการบริการ"
                     eyebrow="SERVER TIMESTAMPS"
@@ -680,7 +920,7 @@ export function StaffWorkspace({
                       )}
                     </ol>
                   </Panel>
-                </div>
+                </div> */}
               </div>
             </>
           )}

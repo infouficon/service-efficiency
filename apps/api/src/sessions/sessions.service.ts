@@ -12,6 +12,8 @@ import type {
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
+  ReportStockMissingDto,
+  ResolveStockReviewDto,
   StepAction,
   UpdateSelectionDto,
 } from './dto';
@@ -801,4 +803,287 @@ export class SessionsService {
       });
     });
   }
+
+  async reportStockMissing(user: PublicAccount, id: string, dto: ReportStockMissingDto) {
+    this.checkRole(user, 'STOCK');
+    const session = await this.getById(user, id);
+
+    if (session.outcome || !['STOCK_REQUESTED', 'SEARCHING'].includes(session.state)) {
+      throw new BadRequestException('Can only report missing stock during stock searching');
+    }
+
+    if (!dto.missingItems || dto.missingItems.length === 0) {
+      throw new BadRequestException('At least one missing item is required');
+    }
+
+    const now = new Date();
+    const stockReviewData = {
+      missingItems: dto.missingItems,
+      foundItems: dto.foundItems || [],
+      stockNote: dto.stockNote?.trim() || null,
+      reportedAt: now.toISOString(),
+      reportedBy: user.staffId,
+    };
+
+    return this.prisma.$transaction(async (tx) => {
+      return tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          stockReview: stockReviewData,
+          events: {
+            create: {
+              eventType: 'STOCK_REPORTED_MISSING',
+              actorStaffId: user.staffId,
+              createdAt: now,
+              metadata: stockReviewData,
+            },
+          },
+        },
+        include: {
+          branch: true,
+          staff: { select: { staffId: true, branchId: true } },
+          product: true,
+          model: true,
+          sku: {
+            include: {
+              model: {
+                include: {
+                  product: true,
+                },
+              },
+            },
+          },
+          accessories: true,
+          ontop: true,
+          points: true,
+          burnPoints: true,
+          payments: true,
+          events: {
+            orderBy: { createdAt: 'asc' },
+          },
+        },
+      });
+    });
+  }
+
+  async resolveStockReview(user: PublicAccount, id: string, dto: ResolveStockReviewDto) {
+    const session = await this.getById(user, id);
+
+    // Permission check: assigned staff, or manager of the branch, or admin
+    const isAssignedStaff = session.staffId === user.staffId;
+    const isManagerOfBranch = user.roles.includes('MANAGER') && user.branchId === session.branchId;
+    const isAdmin = user.roles.includes('ADMIN');
+
+    if (!isAssignedStaff && !isManagerOfBranch && !isAdmin) {
+      throw new ForbiddenException('Only the assigned staff, branch manager, or admin can resolve customer review');
+    }
+
+    if (session.outcome) {
+      throw new BadRequestException('Session is already finished');
+    }
+
+    if (!session.stockReview) {
+      throw new BadRequestException('No pending stock review found on this session');
+    }
+
+    const now = new Date();
+    const stockReviewObj = session.stockReview as { missingItems?: string[]; foundItems?: string[] };
+    const missingItems = Array.isArray(stockReviewObj?.missingItems) ? stockReviewObj.missingItems : [];
+
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.action === 'ACCEPT_PARTIAL') {
+        // Remove missing accessories
+        for (const missing of missingItems) {
+          await tx.sessionAccessory.deleteMany({
+            where: {
+              sessionId: session.id,
+              accessoryName: missing.replace(/\s*\(x\d+\)$/, '').trim(),
+            },
+          });
+        }
+
+        // Check if main product was among missing items
+        const isMainProductMissing =
+          session.product &&
+          missingItems.some((item) =>
+            item.includes(session.product?.name || '') ||
+            (session.model && item.includes(session.model.name))
+          );
+
+        return tx.customerSession.update({
+          where: { id: session.id },
+          data: {
+            state: 'FOUND',
+            stockFoundAt: now,
+            stockReview: null as unknown as undefined,
+            productId: isMainProductMissing ? null : session.productId,
+            modelId: isMainProductMissing ? null : session.modelId,
+            skuId: isMainProductMissing ? null : session.skuId,
+            events: {
+              create: [
+                {
+                  eventType: 'STAFF_RESOLVED_STOCK_REVIEW',
+                  actorStaffId: user.staffId,
+                  createdAt: now,
+                  metadata: { action: 'ACCEPT_PARTIAL', missingItems },
+                },
+                {
+                  eventType: 'STOCK_FOUND',
+                  actorStaffId: user.staffId,
+                  createdAt: now,
+                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL' },
+                },
+              ],
+            },
+          },
+          include: {
+            branch: true,
+            staff: { select: { staffId: true, branchId: true } },
+            product: true,
+            model: true,
+            sku: {
+              include: {
+                model: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            },
+            accessories: true,
+            ontop: true,
+            points: true,
+            burnPoints: true,
+            payments: true,
+            events: {
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        });
+      }
+
+      if (dto.action === 'CHANGE_ITEMS') {
+        // Remove missing accessories
+        for (const missing of missingItems) {
+          await tx.sessionAccessory.deleteMany({
+            where: {
+              sessionId: session.id,
+              accessoryName: missing.replace(/\s*\(x\d+\)$/, '').trim(),
+            },
+          });
+        }
+
+        // Check if main product was among missing items
+        const isMainProductMissing =
+          session.product &&
+          missingItems.some((item) =>
+            item.includes(session.product?.name || '') ||
+            (session.model && item.includes(session.model.name))
+          );
+
+        return tx.customerSession.update({
+          where: { id: session.id },
+          data: {
+            state: 'PRODUCT_SELECTION',
+            confirmed: false,
+            stockReview: null as unknown as undefined,
+            productId: isMainProductMissing ? null : session.productId,
+            modelId: isMainProductMissing ? null : session.modelId,
+            skuId: isMainProductMissing ? null : session.skuId,
+            events: {
+              create: {
+                eventType: 'STAFF_RESOLVED_STOCK_REVIEW',
+                actorStaffId: user.staffId,
+                createdAt: now,
+                metadata: { action: 'CHANGE_ITEMS', missingItems },
+              },
+            },
+          },
+          include: {
+            branch: true,
+            staff: { select: { staffId: true, branchId: true } },
+            product: true,
+            model: true,
+            sku: {
+              include: {
+                model: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            },
+            accessories: true,
+            ontop: true,
+            points: true,
+            burnPoints: true,
+            payments: true,
+            events: {
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        });
+      }
+
+      if (dto.action === 'CANCEL') {
+        if (!dto.reason || (dto.reason === 'อื่น ๆ' && !dto.otherReason?.trim())) {
+          throw new BadRequestException('Cancellation reason is required');
+        }
+
+        return tx.customerSession.update({
+          where: { id: session.id },
+          data: {
+            outcome: 'CUSTOMER_CANCELLED',
+            reason: dto.reason,
+            otherReason: dto.otherReason?.trim() || null,
+            cancelledBy: user.staffId,
+            cancelledAt: now,
+            stockReview: null as unknown as undefined,
+            events: {
+              create: [
+                {
+                  eventType: 'STAFF_RESOLVED_STOCK_REVIEW',
+                  actorStaffId: user.staffId,
+                  createdAt: now,
+                  metadata: { action: 'CANCEL', reason: dto.reason },
+                },
+                {
+                  eventType: 'CUSTOMER_CANCELLED',
+                  actorStaffId: user.staffId,
+                  createdAt: now,
+                  metadata: { reason: dto.reason, otherReason: dto.otherReason },
+                },
+              ],
+            },
+          },
+          include: {
+            branch: true,
+            staff: { select: { staffId: true, branchId: true } },
+            product: true,
+            model: true,
+            sku: {
+              include: {
+                model: {
+                  include: {
+                    product: true,
+                  },
+                },
+              },
+            },
+            accessories: true,
+            ontop: true,
+            points: true,
+            burnPoints: true,
+            payments: true,
+            events: {
+              orderBy: { createdAt: 'asc' },
+            },
+          },
+        });
+      }
+
+      throw new BadRequestException('Invalid resolve action');
+    });
+  }
 }
+

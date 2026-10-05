@@ -55,6 +55,13 @@ export interface ApiSession {
   points?: { name: string }[];
   burnPoints?: { name: string }[];
   payments?: { method: string }[];
+  stockReview?: {
+    missingItems: string[];
+    foundItems?: string[];
+    stockNote?: string | null;
+    reportedAt?: string;
+    reportedBy?: string;
+  } | null;
   events?: {
     id: string;
     eventType: string;
@@ -133,6 +140,14 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       burnPoints: s.burnPoints ? s.burnPoints.map((b) => b.name) : [],
       payments: s.payments ? s.payments.map((p) => p.method) : [],
     },
+    stockPendingReview: s.stockReview
+      ? {
+          missingItems: s.stockReview.missingItems || [],
+          foundItems: s.stockReview.foundItems || [],
+          stockNote: s.stockReview.stockNote || undefined,
+          reportedAt: s.stockReview.reportedAt || '',
+        }
+      : undefined,
     events: s.events,
   };
 }
@@ -221,6 +236,34 @@ export async function recordOutOfStockApi(
 
 export async function cancelSessionApi(id: string, reason: string, otherReason?: string): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cancel`, 'POST', {
+    reason,
+    otherReason,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
+export async function reportStockMissingApi(
+  id: string,
+  missingItems: string[],
+  foundItems?: string[],
+  stockNote?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/report-missing`, 'POST', {
+    missingItems,
+    foundItems,
+    stockNote,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
+export async function resolveStockReviewApi(
+  id: string,
+  action: 'ACCEPT_PARTIAL' | 'CHANGE_ITEMS' | 'CANCEL',
+  reason?: string,
+  otherReason?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/staff/resolve-stock-review`, 'POST', {
+    action,
     reason,
     otherReason,
   });

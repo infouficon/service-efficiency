@@ -53,3 +53,16 @@ export interface UpdateSelectionDto {
   burnPoints?: string[];
   payments?: string[];
 }
+
+export interface ReportStockMissingDto {
+  missingItems: string[];
+  foundItems?: string[];
+  stockNote?: string;
+}
+
+export interface ResolveStockReviewDto {
+  action: 'ACCEPT_PARTIAL' | 'CHANGE_ITEMS' | 'CANCEL';
+  reason?: string;
+  otherReason?: string;
+}
+

@@ -338,7 +338,7 @@ export function AdminHub({
                 }
               />
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div className="form-grid-2col">
               <label>
                 ชื่อจริง (First Name)
                 <input

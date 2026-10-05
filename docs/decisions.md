@@ -656,3 +656,16 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
 - Branch has a technical UUID; Branch Code uniqueness scope remains OPEN and is not constrained by this phase. Staff ID identifies login accounts; role codes are fixed. DTO maximum lengths are implementation storage/request bounds, not new business format rules.
 - Local development uses isolated MySQL 8.4 on port 3307, API 3001. Existing unrelated MySQL/.env configuration is preserved. Tests use a separate database and remove only their own fixtures.
 - The initial account bootstrap is explicit, refuses a nonempty Staff table and never resets existing accounts. No seed passwords are committed.
+
+## D40 — Confirmed Stock Missing Items & Staff Decision Flow (2026-09-30)
+
+- When Stock reports missing or out-of-stock items for a session during `SEARCHING` or `STOCK_REQUESTED` stage:
+  - Stock posts `POST /sessions/:id/stock/report-missing` with `missingItems: string[]`, `foundItems?: string[]`, and optional `stockNote`.
+  - Backend stores `stockReview` on `CustomerSession` and records immutable `SessionEvent` with type `STOCK_REPORTED_MISSING`.
+- Notification & Resolution:
+  - The assigned Staff (or Branch Manager / Global Admin) sees an alert banner on the session in Staff Workspace across all devices/browsers.
+  - Customer decision is resolved via `POST /sessions/:id/staff/resolve-stock-review` with one of three choices:
+    1. `ACCEPT_PARTIAL`: Updates selection to remove missing items, transitions state to `FOUND` (with server `stockFoundAt = now()`), clears `stockReview`, logs `STAFF_RESOLVED_STOCK_REVIEW` and `STOCK_FOUND` events.
+    2. `CHANGE_ITEMS`: Clears `stockReview`, resets `confirmed = false`, transitions state back to `PRODUCT_SELECTION`, logs `STAFF_RESOLVED_STOCK_REVIEW` event.
+    3. `CANCEL`: Clears `stockReview`, transitions outcome to `CUSTOMER_CANCELLED` with reasons, logs `STAFF_RESOLVED_STOCK_REVIEW` and `CUSTOMER_CANCELLED` events.
+

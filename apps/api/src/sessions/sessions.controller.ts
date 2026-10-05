@@ -16,6 +16,8 @@ import type {
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
+  ReportStockMissingDto,
+  ResolveStockReviewDto,
   UpdateSelectionDto,
 } from './dto';
 import { SessionsService } from './sessions.service';
@@ -103,4 +105,25 @@ export class SessionsController {
     const user = await this.accounts.authenticate(req);
     return this.sessions.cancelSession(user, id, dto);
   }
+
+  @Post(':id/stock/report-missing')
+  async reportStockMissing(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: ReportStockMissingDto,
+  ) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.reportStockMissing(user, id, dto);
+  }
+
+  @Post(':id/staff/resolve-stock-review')
+  async resolveStockReview(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: ResolveStockReviewDto,
+  ) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.resolveStockReview(user, id, dto);
+  }
 }
+

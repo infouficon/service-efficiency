@@ -15,19 +15,16 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
       <div className="login-story">
         <span className="brand-mark">S</span>
         <p className="eyebrow">SERVICE EFFICIENCY SYSTEM</p>
-        <h1>
+        <h1><em>
           ทุกขั้นตอน
           <br />
           ของการบริการ
-          <br />
-          <em>อยู่ในภาพเดียว</em>
+          <br /></em>
         </h1>
         <p>Staff · Stock · Cashier</p>
       </div>
       <section className="login-form">
-        <span className="badge">STAFF ACCESS</span>
         <h2>เข้าสู่ระบบ</h2>
-        <p className="muted">ใช้บัญชี Staff ID ที่ผู้ดูแลสร้างให้</p>
         <form
           onSubmit={async (e) => {
             e.preventDefault();
@@ -77,7 +74,6 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
             </span>
           </Button>
         </form>
-        <p className="fine">ออกจากระบบอัตโนมัติเมื่อไม่มีการใช้งาน 8 ชั่วโมง</p>
       </section>
     </div>
   );

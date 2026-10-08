@@ -774,29 +774,67 @@ export function SessionLogsWorkspace({
     return Array.from(map.entries()).map(([code, name]) => ({ code, name }));
   }, [branchScopedSessions]);
 
-  // Apply filters
+  // Base filtered sessions (filtered by Branch, Date range, and Search query - before applying Status tab filter)
+  const baseFilteredSessions = useMemo(() => {
+    return branchScopedSessions.filter((s) => {
+      // Branch filter (Admin only)
+      if (isAdmin && selectedBranch !== 'ALL') {
+        const matchBranch =
+          s.branchCode === selectedBranch || s.branchName === selectedBranch;
+        if (!matchBranch) return false;
+      }
+
+      // Date range filter
+      if (startDate) {
+        const walkIn = s.timestamps.customer_walk_in_at;
+        if (!walkIn) return false;
+        if (new Date(walkIn) < new Date(`${startDate}T00:00:00`)) return false;
+      }
+      if (endDate) {
+        const walkIn = s.timestamps.customer_walk_in_at;
+        if (!walkIn) return false;
+        if (new Date(walkIn) > new Date(`${endDate}T23:59:59.999`)) return false;
+      }
+
+      // Search query
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const matchRef = s.reference.toLowerCase().includes(q);
+        const matchPhone = s.phone?.toLowerCase().includes(q) || false;
+        const matchStaff = s.staffId?.toLowerCase().includes(q) || false;
+        const matchProduct =
+          s.selection?.product?.model?.toLowerCase().includes(q) ||
+          s.selection?.product?.product?.toLowerCase().includes(q) ||
+          s.selection?.product?.sku?.toLowerCase().includes(q) ||
+          false;
+        const matchBranch =
+          s.branchCode?.toLowerCase().includes(q) ||
+          s.branchName?.toLowerCase().includes(q) ||
+          false;
+        return (
+          matchRef ||
+          matchPhone ||
+          matchStaff ||
+          matchProduct ||
+          matchBranch
+        );
+      }
+
+      return true;
+    });
+  }, [
+    branchScopedSessions,
+    isAdmin,
+    selectedBranch,
+    startDate,
+    endDate,
+    search,
+  ]);
+
+  // Apply Status tab filter & sorting
   const filteredSessions = useMemo(() => {
-    return branchScopedSessions
+    return baseFilteredSessions
       .filter((s) => {
-        // Branch filter (Admin only)
-        if (isAdmin && selectedBranch !== 'ALL') {
-          const matchBranch =
-            s.branchCode === selectedBranch || s.branchName === selectedBranch;
-          if (!matchBranch) return false;
-        }
-
-        // Date range filter
-        if (startDate) {
-          const walkIn = s.timestamps.customer_walk_in_at;
-          if (!walkIn) return false;
-          if (new Date(walkIn) < new Date(`${startDate}T00:00:00`)) return false;
-        }
-        if (endDate) {
-          const walkIn = s.timestamps.customer_walk_in_at;
-          if (!walkIn) return false;
-          if (new Date(walkIn) > new Date(`${endDate}T23:59:59.999`)) return false;
-        }
-
         // Status filter
         if (statusFilter === 'ACTIVE') {
           if (s.outcome || s.state === 'COMPLETED') return false;
@@ -808,30 +846,6 @@ export function SessionLogsWorkspace({
           if (s.outcome !== 'OUT_OF_STOCK') return false;
         } else if (statusFilter === 'CANCELLED') {
           if (s.outcome !== 'CUSTOMER_CANCELLED') return false;
-        }
-
-        // Search query
-        if (search.trim()) {
-          const q = search.trim().toLowerCase();
-          const matchRef = s.reference.toLowerCase().includes(q);
-          const matchPhone = s.phone?.toLowerCase().includes(q) || false;
-          const matchStaff = s.staffId?.toLowerCase().includes(q) || false;
-          const matchProduct =
-            s.selection?.product?.model?.toLowerCase().includes(q) ||
-            s.selection?.product?.product?.toLowerCase().includes(q) ||
-            s.selection?.product?.sku?.toLowerCase().includes(q) ||
-            false;
-          const matchBranch =
-            s.branchCode?.toLowerCase().includes(q) ||
-            s.branchName?.toLowerCase().includes(q) ||
-            false;
-          return (
-            matchRef ||
-            matchPhone ||
-            matchStaff ||
-            matchProduct ||
-            matchBranch
-          );
         }
 
         return true;
@@ -847,13 +861,8 @@ export function SessionLogsWorkspace({
         return timeB - timeA;
       });
   }, [
-    branchScopedSessions,
-    isAdmin,
-    selectedBranch,
-    startDate,
-    endDate,
+    baseFilteredSessions,
     statusFilter,
-    search,
   ]);
 
   // Pagination calculation
@@ -890,21 +899,21 @@ export function SessionLogsWorkspace({
     setCurrentPage(1);
   };
 
-  // Stats calculation
-  const totalCount = branchScopedSessions.length;
-  const activeCount = branchScopedSessions.filter(
+  // Stats calculation based on baseFilteredSessions (dynamic according to active date, branch, and search filters)
+  const totalCount = baseFilteredSessions.length;
+  const activeCount = baseFilteredSessions.filter(
     (s) => !s.outcome && s.state !== 'COMPLETED',
   ).length;
-  const completedCount = branchScopedSessions.filter(
+  const completedCount = baseFilteredSessions.filter(
     (s) => s.state === 'COMPLETED' && !s.outcome,
   ).length;
-  const notBuyCount = branchScopedSessions.filter(
+  const notBuyCount = baseFilteredSessions.filter(
     (s) => s.outcome === 'NOT_BUY',
   ).length;
-  const outOfStockCount = branchScopedSessions.filter(
+  const outOfStockCount = baseFilteredSessions.filter(
     (s) => s.outcome === 'OUT_OF_STOCK',
   ).length;
-  const cancelledCount = branchScopedSessions.filter(
+  const cancelledCount = baseFilteredSessions.filter(
     (s) => s.outcome === 'CUSTOMER_CANCELLED',
   ).length;
 
@@ -1055,17 +1064,6 @@ export function SessionLogsWorkspace({
 
             {/* Order & Payment Summary */}
             <div className="session-summary-section">
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  marginBottom: '8px',
-                }}
-              >
-                <Package size={18} color="#0abab5" />
-                <h3 style={{ margin: 0 }}>ข้อมูลสินค้าและรายการชำระเงิน</h3>
-              </div>
               <Summary session={selectedSession} />
             </div>
           </Panel>
@@ -1255,7 +1253,7 @@ export function SessionLogsWorkspace({
                   setCurrentPage(1);
                 }}
               >
-                {f === 'ALL' && `ทั้งหมด (${branchScopedSessions.length})`}
+                {f === 'ALL' && `ทั้งหมด (${totalCount})`}
                 {f === 'ACTIVE' && `กำลังบริการ (${activeCount})`}
                 {f === 'COMPLETED' && `สำเร็จ (${completedCount})`}
                 {f === 'NOT_BUY' && `ไม่ซื้อ (${notBuyCount})`}

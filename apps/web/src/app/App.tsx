@@ -24,6 +24,33 @@ import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
 import { AdminHub } from '../features/admin/AdminHub';
 import { fetchSessionsApi } from '../services/sessionApi';
 
+function parseHashView(hash: string): AppView | null {
+  const clean = hash.replace(/^#\/?/, '');
+  if (!clean) return null;
+  const [pathPart] = clean.split('?');
+  const mainView = pathPart.split('/')[0] as AppView;
+  const validViews: AppView[] = [
+    'staff',
+    'stock',
+    'cashier',
+    'logs',
+    'products',
+    'admin',
+  ];
+  return validViews.includes(mainView) ? mainView : null;
+}
+
+function isViewAllowed(v: AppView, u: MockUser): boolean {
+  if (v === 'staff') return u.roles.includes('STAFF');
+  if (v === 'stock') return u.roles.includes('STOCK');
+  if (v === 'cashier') return u.roles.includes('CASHIER');
+  if (v === 'products')
+    return u.roles.includes('ADMIN') || u.roles.includes('MANAGER');
+  if (v === 'admin')
+    return u.roles.includes('ADMIN') || u.roles.includes('MANAGER');
+  return true; // 'logs' is accessible
+}
+
 function getDefaultView(u: MockUser): AppView {
   if (u.roles.includes('ADMIN') || u.roles.includes('MANAGER')) return 'logs';
   if (u.roles.includes('STAFF')) return 'staff';
@@ -32,6 +59,15 @@ function getDefaultView(u: MockUser): AppView {
   return 'logs';
 }
 
+function getInitialView(u: MockUser): AppView {
+  if (typeof window !== 'undefined') {
+    const parsed = parseHashView(window.location.hash);
+    if (parsed && isViewAllowed(parsed, u)) {
+      return parsed;
+    }
+  }
+  return getDefaultView(u);
+}
 
 export function App({
   account,
@@ -47,9 +83,29 @@ export function App({
     branchCode: account.branchCode ?? account.branchId ?? undefined,
   };
   const [sessions, setSessions] = useState<MockSession[]>([]);
-  const [view, setView] = useState<AppView>(() => getDefaultView(user));
+  const [view, setView] = useState<AppView>(() => getInitialView(user));
   const [notice, setNotice] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Sync view state with browser hash routing (Back/Forward buttons)
+  useEffect(() => {
+    const syncFromHash = () => {
+      const parsed = parseHashView(window.location.hash);
+      if (parsed && isViewAllowed(parsed, user)) {
+        setView(parsed);
+      } else {
+        const def = getDefaultView(user);
+        setView(def);
+        if (window.location.hash !== `#/${def}`) {
+          window.history.replaceState(null, '', `#/${def}`);
+        }
+      }
+    };
+
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, [user]);
 
   useEffect(() => {
     let mounted = true;
@@ -139,7 +195,11 @@ export function App({
   };
 
   const handleSelectView = (newView: AppView) => {
-    setView(newView);
+    if (window.location.hash !== `#/${newView}`) {
+      window.location.hash = `#/${newView}`;
+    } else {
+      setView(newView);
+    }
     setIsMobileMenuOpen(false);
   };
 
@@ -156,7 +216,14 @@ export function App({
 
       <aside className={`sidebar ${isMobileMenuOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-header-row">
-          <a className="brand" href="#main" onClick={() => setIsMobileMenuOpen(false)}>
+          <a
+            className="brand"
+            href={`#/${getDefaultView(user)}`}
+            onClick={(e) => {
+              e.preventDefault();
+              handleSelectView(getDefaultView(user));
+            }}
+          >
             <span className="brand-mark">S</span>
             <span>
               Service

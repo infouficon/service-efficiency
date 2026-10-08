@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ClipboardList,
   Building2,
@@ -733,6 +733,25 @@ function ExportModal({
   );
 }
 
+function getRefFromHash(): string | null {
+  if (typeof window === 'undefined') return null;
+  const hash = window.location.hash;
+  const clean = hash.replace(/^#\/?/, '');
+  if (!clean.startsWith('logs')) return null;
+
+  const queryIdx = clean.indexOf('?');
+  if (queryIdx !== -1) {
+    const sp = new URLSearchParams(clean.slice(queryIdx + 1));
+    const ref = sp.get('ref');
+    if (ref) return ref;
+  }
+  const parts = clean.split('?')[0].split('/');
+  if (parts.length > 1 && parts[1]) {
+    return decodeURIComponent(parts[1]);
+  }
+  return null;
+}
+
 export function SessionLogsWorkspace({
   user,
   sessions,
@@ -744,8 +763,26 @@ export function SessionLogsWorkspace({
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState<PageSize>(15);
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  const [selectedRef, setSelectedRef] = useState<string | null>(() => getRefFromHash());
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  // Sync selectedRef with browser hash changes (Back/Forward buttons)
+  useEffect(() => {
+    const handleHashChange = () => {
+      setSelectedRef(getRefFromHash());
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const handleSelectRef = (ref: string | null) => {
+    if (ref) {
+      window.location.hash = `#/logs?ref=${encodeURIComponent(ref)}`;
+    } else {
+      window.location.hash = `#/logs`;
+    }
+    setSelectedRef(ref);
+  };
 
   const isAdmin = user.roles.includes('ADMIN');
   const isManager = user.roles.includes('MANAGER');
@@ -925,7 +962,13 @@ export function SessionLogsWorkspace({
           <button
             type="button"
             className="back-btn"
-            onClick={() => setSelectedRef(null)}
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                handleSelectRef(null);
+              }
+            }}
           >
             <ArrowLeft size={16} /> กลับไปหน้ารายการตาราง
           </button>
@@ -1320,7 +1363,7 @@ export function SessionLogsWorkspace({
                 <tr
                   key={s.reference}
                   className="clickable-row"
-                  onClick={() => setSelectedRef(s.reference)}
+                  onClick={() => handleSelectRef(s.reference)}
                 >
                   <td>
                     <span className="logs-table-ref">{s.reference}</span>
@@ -1401,7 +1444,7 @@ export function SessionLogsWorkspace({
                       }}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedRef(s.reference);
+                        handleSelectRef(s.reference);
                       }}
                     >
                       <Eye size={13} /> ดูรายละเอียด
@@ -1428,7 +1471,7 @@ export function SessionLogsWorkspace({
             <div
               key={s.reference}
               className="mobile-log-card"
-              onClick={() => setSelectedRef(s.reference)}
+              onClick={() => handleSelectRef(s.reference)}
             >
               <div className="card-top">
                 <span className="card-ref">{s.reference}</span>
@@ -1464,7 +1507,7 @@ export function SessionLogsWorkspace({
                 style={{ width: '100%', marginTop: '6px', minHeight: '38px', fontSize: '13px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedRef(s.reference);
+                  handleSelectRef(s.reference);
                 }}
               >
                 <Eye size={14} /> ดูรายละเอียด & Timeline

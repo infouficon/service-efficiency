@@ -51,7 +51,7 @@ API และ Prisma CLI โหลด `apps/api/.env.development` ก่อน `
 | DATABASE_URL | MySQL connection; never expose to frontend                      |
 | NODE_ENV     | development or production                                       |
 | HOST / PORT  | API bind address; local 127.0.0.1:3001                          |
-| CORS_ORIGINS | exact allowed Web origins, comma-separated; local 5173 and 5174 |
+| CORS_ORIGINS | exact allowed Web origins, comma-separated; local 5173 and 5174; production must list every Web domain (e.g. `https://ses.uficon.com`) or POSTs fail with 403 `Invalid request origin` (see `docs/coolify-deployment.md`) |
 
 ## Validation
 

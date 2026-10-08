@@ -56,6 +56,13 @@
    BOOTSTRAP_FIRST_NAME=System
    BOOTSTRAP_LAST_NAME=Admin
    ```
+
+   > **`CORS_ORIGINS` ต้องมี "ทุกโดเมน" ที่ผู้ใช้เปิด Web ได้** (เพิ่มโดเมนใหม่ให้ Web เมื่อไหร่ ต้องมาเพิ่มที่นี่ด้วยทุกครั้ง)
+   > - รูปแบบ: origin แบบตรงตัว คั่นด้วย `,` ไม่มี `/` ท้าย ไม่มีช่องว่างพิเศษ
+   > - Production ปัจจุบัน: `https://service-efficiency.coolify.pve01.prod.uficon.com,https://ses.uficon.com`
+   > - API (`OriginGuard` ใน `accounts.controller.ts`) ปฏิเสธทุก request ที่ไม่ใช่ GET/HEAD/OPTIONS ด้วย **HTTP 403 `Invalid request origin`** ถ้า `Origin` ไม่อยู่ใน `CORS_ORIGINS` หรือไม่มี header `X-Requested-With: ServiceEfficiency`
+   > - อาการเมื่อลืมเพิ่ม: หน้า Login ได้ 403 ที่ `POST /api/auth/login` แต่ `GET /api/auth/me` ได้ 401 ปกติ และ console **ไม่มี** ข้อความ "blocked by CORS policy" (อย่าเข้าใจผิดว่าเป็น Cloudflare/Caddy ให้ดู response body ว่าเป็น `Invalid request origin`)
+   > - แก้ค่านี้แล้วต้อง **Restart** API Application ถึงจะมีผล
 5. กด **Save** และ **Deploy**
 
 ---

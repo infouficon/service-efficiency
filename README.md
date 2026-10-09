@@ -2,7 +2,7 @@
 
 React/Vite + NestJS + Prisma/MySQL ใน npm monorepo. Login และการจัดการ Staff/Role/Branch ใช้ API และฐานข้อมูลจริงแล้ว ส่วน Customer Session, Product และ workflow ยังเป็น mock ในหน่วยความจำและไม่บันทึกข้อมูลจริง
 
-ข้อกำหนด: [requirements](docs/requirements.md), [decisions D39](docs/decisions.md), [permissions](docs/permissions.md), [open questions](docs/open-questions.md)
+ข้อกำหนด: [requirements](docs/requirements.md), [decisions D39](docs/decisions.md), [permissions](docs/permissions.md), [open questions](docs/open-questions.md), [user guide](docs/user-guide.md), [user journey](docs/user-journey.md), [manual test (multi-role)](docs/manual-test-journey.md), [manual test (staff)](docs/manual-test-staff-journey.md)
 
 ## Development setup
 

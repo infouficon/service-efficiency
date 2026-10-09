@@ -601,7 +601,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <p className="muted">ยังไม่มีสินค้าในหมวดหมู่นี้ หรือไม่ตรงกับคำค้นหา</p>
             </Panel>
           ) : (
-            <div className="table-responsive" style={{ background: '#fff', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+            <div className="table-responsive" style={{ background: '#fff', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
               <table className="admin-table">
                 <thead>
                   <tr>
@@ -720,7 +720,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <p className="muted">ไม่มี SKU ตรงกับเงื่อนไขที่เลือก</p>
             </Panel>
           ) : (
-            <div className="table-responsive" style={{ background: '#fff', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)' }}>
+            <div className="table-responsive" style={{ background: '#fff', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
               <table className="admin-table">
                 <thead>
                   <tr>

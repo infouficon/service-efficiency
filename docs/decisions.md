@@ -768,5 +768,18 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
 3. **Master Catalog**:
    - In Product Management (`/products`), `Accessories` remains available as a full catalog category with models and branch stock levels.
 
+## D49 — Confirmed System-Wide Sticky Table Headers (2026-10-09)
 
+1. **Sticky Header Behavior**:
+   - All data table headers (`<th>`) across the application (`.admin-table th`, `.logs-table th`) use `position: sticky; top: 0; z-index: 5;` to remain fixed at the top when scrolling through data.
+   - Covers Product Catalog table, Stock Overview table, Branch Stock Modal, Transaction History Logs, and Admin Management tables.
+2. **Visual Hierarchy & Depth**:
+   - Opaque background (`#f0f7f6` / `#f0f7f5`) with bottom borders and subtle box-shadow ensure data rows slide cleanly underneath without visual clutter.
 
+## D50 — Confirmed In-Table Scroll Container & Sticky Header Architecture (2026-10-09)
+
+1. **In-Table Scroll Scoping**:
+   - In Transaction History (`SessionLogsWorkspace.tsx`) and Data Tables, the table wrapper container maintains its own scroll viewport (`max-height: calc(100vh - 290px); overflow-y: auto; overflow-x: auto;`).
+   - Top search bars, quick date filters, and action headers remain visible while table rows scroll beneath the pinned `<th>` headers.
+2. **CSS Sticky Compatibility**:
+   - Eliminated `overflow: hidden` on `<table>` elements and set `border-collapse: separate; border-spacing: 0;` so sticky headers (`position: sticky; top: 0; z-index: 10;`) lock reliably without border flickering or disappearing.

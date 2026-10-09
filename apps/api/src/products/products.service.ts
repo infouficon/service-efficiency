@@ -135,9 +135,57 @@ export class ProductsService implements OnModuleInit {
             },
           ],
         },
+        {
+          category: 'Accessories' as const,
+          name: 'Power & Cables',
+          models: [
+            {
+              name: 'Apple 20W USB-C Power Adapter',
+              skus: [
+                { sku: 'ACC-20W-ADPT', name: '20W Power Adapter', storage: '', color: 'White' },
+              ],
+            },
+            {
+              name: '60W USB-C Charge Cable (1m)',
+              skus: [
+                { sku: 'ACC-USBC-1M', name: 'USB-C Cable (1m)', storage: '', color: 'White' },
+              ],
+            },
+          ],
+        },
+        {
+          category: 'Accessories' as const,
+          name: 'AirPods',
+          models: [
+            {
+              name: 'AirPods 4',
+              skus: [
+                { sku: 'ACC-AIRPODS4-STD', name: 'AirPods 4 Standard', storage: '', color: 'White' },
+                { sku: 'ACC-AIRPODS4-ANC', name: 'AirPods 4 with ANC', storage: '', color: 'White' },
+              ],
+            },
+          ],
+        },
+        {
+          category: 'Accessories' as const,
+          name: 'Cases & Protection',
+          models: [
+            {
+              name: 'iPhone 16 Pro Clear Case with MagSafe',
+              skus: [
+                { sku: 'ACC-IP16P-CLRCASE', name: 'Clear Case MagSafe', storage: '', color: 'Clear' },
+              ],
+            },
+          ],
+        },
       ];
 
       for (const item of catalog) {
+        const existing = await this.prisma.product.findFirst({
+          where: { name: item.name },
+        });
+        if (existing) continue;
+
         const product = await this.prisma.product.create({
           data: {
             category: item.category,

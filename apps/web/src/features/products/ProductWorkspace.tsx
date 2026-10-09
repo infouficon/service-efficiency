@@ -18,6 +18,7 @@ import {
   Building2,
   AlertCircle,
   Save,
+  Headphones,
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
@@ -53,7 +54,7 @@ export interface ModelItem {
 
 export interface ProductItem {
   id: string;
-  category: 'iPhone' | 'iPad' | 'Mac' | 'Watch';
+  category: 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
   name: string;
   active: boolean;
   models: ModelItem[];
@@ -65,7 +66,7 @@ interface ProductWorkspaceProps {
   onSubViewChange?: (view: 'MAIN' | 'STOCK') => void;
 }
 
-type CategoryTab = 'ALL' | 'iPhone' | 'iPad' | 'Mac' | 'Watch';
+type CategoryTab = 'ALL' | 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
 
 export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWorkspaceProps) {
   const toast = useToast();
@@ -144,7 +145,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   const [productModal, setProductModal] = useState<{
     open: boolean;
     editingId?: string;
-    category: 'iPhone' | 'iPad' | 'Mac' | 'Watch';
+    category: 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
     name: string;
     active: boolean;
   }>({
@@ -414,6 +415,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         return <Laptop size={15} />;
       case 'Watch':
         return <Watch size={15} />;
+      case 'Accessories':
+        return <Headphones size={15} />;
       default:
         return <Box size={15} />;
     }
@@ -527,7 +530,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       >
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <div className="category-tabs" style={{ display: 'flex', gap: '0.5rem' }}>
-            {(['ALL', 'iPhone', 'iPad', 'Mac', 'Watch'] as CategoryTab[]).map((cat) => (
+            {(['ALL', 'iPhone', 'iPad', 'Mac', 'Watch', 'Accessories'] as CategoryTab[]).map((cat) => (
               <button
                 key={cat}
                 className={`tab-btn ${categoryTab === cat ? 'active' : ''}`}
@@ -1007,7 +1010,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 onChange={(e) =>
                   setProductModal({
                     ...productModal,
-                    category: e.target.value as 'iPhone' | 'iPad' | 'Mac' | 'Watch',
+                    category: e.target.value as 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories',
                   })
                 }
               >
@@ -1015,6 +1018,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 <option value="iPad">iPad</option>
                 <option value="Mac">Mac</option>
                 <option value="Watch">Watch</option>
+                <option value="Accessories">Accessories</option>
               </select>
             </label>
             <label>

@@ -41,6 +41,7 @@ enum ProductCategory {
   iPad
   Mac
   Watch
+  Accessories
 }
 
 enum EventType {

@@ -6,6 +6,7 @@ import {
   Watch,
   Box,
   ArrowRight,
+  Headphones,
 } from 'lucide-react';
 import {
   accessories,
@@ -34,6 +35,8 @@ function getCategoryIcon(cat: string) {
       return <Laptop size={16} />;
     case 'Watch':
       return <Watch size={16} />;
+    case 'Accessories':
+      return <Headphones size={16} />;
     default:
       return <Box size={16} />;
   }

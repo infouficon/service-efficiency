@@ -379,6 +379,8 @@ Mac
 
 Watch
 
+Accessories
+
 The system must support product information down to:
 
 ```text
@@ -889,6 +891,8 @@ iPad
 Mac
 
 Watch
+
+Accessories
 
 Other master option lists are also confirmed:
 

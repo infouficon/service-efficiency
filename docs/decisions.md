@@ -738,3 +738,13 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
 2. **Bidirectional Navigation State**:
    - Clicking either sub-item in the sidebar switches the view mode (`MAIN` vs `STOCK`).
    - Clicking "ดู Stock" on any table row or "← กลับหน้ารายการสินค้า" in the workspace updates the active sub-item indicator in the sidebar automatically.
+
+## D46 — Confirmed Accessories Product Category Expansion (2026-10-09)
+
+1. **Category & LOB Expansion**:
+   - Expanded `ProductCategory` enum to `['iPhone', 'iPad', 'Mac', 'Watch', 'Accessories']`.
+   - Migration `202610090002_add_accessories_category` applied to MySQL `Product` table.
+2. **Initial Seed & Iconography**:
+   - Standard accessory products (e.g. *Apple 20W USB-C Power Adapter*, *AirPods 4*, *MagSafe Cases*) seeded with multi-branch stock.
+   - Frontend UI uses `Headphones` icon for the `Accessories` category in filters, table badges, and selection views.
+

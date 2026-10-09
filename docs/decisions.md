@@ -758,4 +758,15 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
 3. **Historical Audit**:
    - Full history across all dates remains accessible via Session Logs (`/logs`).
 
+## D48 — Confirmed Staff Service Main Device Tabs & Dedicated Accessories Section (2026-10-09)
+
+1. **Staff Service Category Tabs**:
+   - In Staff Workspace product selection (`SelectionEditor.tsx`), the primary device tabs display only the four main hardware device categories: `['iPhone', 'iPad', 'Mac', 'Watch']`.
+   - `Accessories` is excluded from the top tabs to avoid confusion with main device selection.
+2. **Dedicated Accessories Section**:
+   - Accessories are selected via the dedicated section below the main device grid with checkbox and quantity controls.
+3. **Master Catalog**:
+   - In Product Management (`/products`), `Accessories` remains available as a full catalog category with models and branch stock levels.
+
+
 

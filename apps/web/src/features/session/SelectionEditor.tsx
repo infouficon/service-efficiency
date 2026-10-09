@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import {
   accessories,
-  categories,
+  deviceCategories,
   ontop,
   payments,
   points,
@@ -53,7 +53,7 @@ export function SelectionEditor({
 }) {
   const [productCatalog, setProductCatalog] = useState<Product[]>([]);
   const [category, setCategory] = useState(
-    value.product?.category ?? categories[0],
+    value.product?.category ?? deviceCategories[0],
   );
 
   useEffect(() => {
@@ -124,7 +124,7 @@ export function SelectionEditor({
         เลือกประเภทสินค้าและรุ่นที่ลูกค้าต้องการ
       </p>
       <div className="category-tabs">
-        {categories.map((item) => (
+        {deviceCategories.map((item) => (
           <button
             type="button"
             className={item === category ? 'active' : ''}

@@ -1,4 +1,5 @@
 export const categories = ['iPhone', 'iPad', 'Mac', 'Watch', 'Accessories'] as const;
+export const deviceCategories = ['iPhone', 'iPad', 'Mac', 'Watch'] as const;
 export const accessories = [
   'Apple Pencil',
   'Apple Keyboard',

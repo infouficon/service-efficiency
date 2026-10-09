@@ -748,3 +748,14 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
    - Standard accessory products (e.g. *Apple 20W USB-C Power Adapter*, *AirPods 4*, *MagSafe Cases*) seeded with multi-branch stock.
    - Frontend UI uses `Headphones` icon for the `Accessories` category in filters, table badges, and selection views.
 
+## D47 — Confirmed Today-Only Operational Scope for Stock & Cashier (2026-10-09)
+
+1. **Active Queue Scope**:
+   - The operational queues in Stock Workspace (`/stock`) and Cashier Workspace (`/cashier`) strictly filter sessions initiated today (`customerWalkInAt` falls on current calendar day: 00:00:00 - 23:59:59).
+   - Past-date sessions are excluded from active operational queues so staff focus entirely on today's tasks.
+2. **Sidebar Badge Counters**:
+   - Queue badge indicators on the sidebar for Stock (items in `STOCK_REQUESTED` / `SEARCHING`) and Cashier (items in `SENT_TO_CASHIER` through `BILL_OPENED`) also filter strictly by today's date to match the workspace queue counts.
+3. **Historical Audit**:
+   - Full history across all dates remains accessible via Session Logs (`/logs`).
+
+

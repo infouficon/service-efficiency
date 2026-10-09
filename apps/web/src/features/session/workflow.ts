@@ -174,3 +174,18 @@ export function partialFulfillStock(
   };
 }
 
+export function isSameDay(dateStr?: string | null, targetDate: Date = new Date()): boolean {
+  if (!dateStr) return false;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return false;
+  return (
+    d.getFullYear() === targetDate.getFullYear() &&
+    d.getMonth() === targetDate.getMonth() &&
+    d.getDate() === targetDate.getDate()
+  );
+}
+
+export function isToday(dateStr?: string | null): boolean {
+  return isSameDay(dateStr, new Date());
+}
+

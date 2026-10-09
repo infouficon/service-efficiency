@@ -23,6 +23,7 @@ import { ProductWorkspace } from '../features/products/ProductWorkspace';
 import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
 import { AdminHub } from '../features/admin/AdminHub';
 import { fetchSessionsApi } from '../services/sessionApi';
+import { isToday } from '../features/session/workflow';
 
 function parseHashView(hash: string): AppView | null {
   const clean = hash.replace(/^#\/?/, '');
@@ -171,12 +172,16 @@ export function App({
   });
 
   const stockPendingCount = branchSessions.filter(
-    (s) => !s.outcome && ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
+    (s) =>
+      !s.outcome &&
+      isToday(s.timestamps.customer_walk_in_at) &&
+      ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
   ).length;
 
   const cashierPendingCount = branchSessions.filter(
     (s) =>
       !s.outcome &&
+      isToday(s.timestamps.customer_walk_in_at) &&
       [
         'SENT_TO_CASHIER',
         'CASHIER_RECEIVED',

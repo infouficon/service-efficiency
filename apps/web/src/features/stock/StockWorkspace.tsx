@@ -22,7 +22,7 @@ import {
   recordOutOfStockApi,
   reportStockMissingApi,
 } from '../../services/sessionApi';
-import { advance, partialFulfillStock } from '../session/workflow';
+import { advance, isToday, partialFulfillStock } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
 
@@ -82,10 +82,11 @@ export function StockWorkspace({
     setDismissedCancels((prev) => [...prev, reference]);
   };
 
-  // Filter sessions by branch (ADMIN sees all or filtered, STAFF/STOCK sees own branch)
+  // Filter sessions by branch and today only (D47)
   const branchSessions = sessions.filter((s) => {
-    if (user.roles.includes('ADMIN')) return true;
-    return s.branchCode === (user.branchCode ?? '');
+    const isTargetBranch = user.roles.includes('ADMIN') || s.branchCode === (user.branchCode ?? '');
+    const isTodaySession = isToday(s.timestamps.customer_walk_in_at);
+    return isTargetBranch && isTodaySession;
   });
 
   const stockQueue = branchSessions.filter(

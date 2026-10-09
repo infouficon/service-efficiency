@@ -27,7 +27,7 @@ import {
   advanceStepApi,
   cancelSessionApi,
 } from '../../services/sessionApi';
-import { advance } from '../session/workflow';
+import { advance, isToday } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
 
@@ -50,9 +50,11 @@ export function CashierWorkspace({
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
 
+  // Filter sessions by branch and today only (D47)
   const branchSessions = sessions.filter((s) => {
-    if (user.roles.includes('ADMIN')) return true;
-    return s.branchCode === (user.branchCode ?? '');
+    const isTargetBranch = user.roles.includes('ADMIN') || s.branchCode === (user.branchCode ?? '');
+    const isTodaySession = isToday(s.timestamps.customer_walk_in_at);
+    return isTargetBranch && isTodaySession;
   });
 
   const cashierQueue = branchSessions.filter(

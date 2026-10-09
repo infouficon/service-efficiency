@@ -605,10 +605,10 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <table className="admin-table">
                 <thead>
                   <tr>
-                    <th style={{ width: '32%' }}>Product</th>
-                    <th style={{ width: '15%' }}>LOB</th>
-                    <th style={{ width: '15%' }}>Status</th>
-                    <th style={{ width: '22%' }}>Inventory</th>
+                    <th style={{ width: '36%' }}>Product</th>
+                    <th style={{ width: '16%' }}>LOB</th>
+                    <th style={{ width: '16%' }}>Status</th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>Inventory</th>
                     <th style={{ width: '16%', textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
@@ -657,9 +657,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' , textAlign: 'center'}}>
                             <strong style={{ color: totalStock > 0 ? '#047857' : '#b91c1c', fontSize: '0.9rem' }}>
-                              มีสินค้าทั้งหมด {totalStock} ชิ้น
+                              {totalStock}
                             </strong>
                             <span className="fine muted">{totalSkus} SKUs</span>
                           </div>
@@ -789,7 +789,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <strong style={{ color: isAvailable ? '#047857' : '#b91c1c' }}>
-                              {totalStock} ชิ้น
+                              {totalStock} 
                             </strong>
                             <span className={`status-tag ${isAvailable ? 'status-found' : 'status-outcome'}`} style={{ fontSize: '0.75rem', padding: '1px 6px' }}>
                               {isAvailable ? 'พร้อมจำหน่าย' : 'สินค้าหมด'}

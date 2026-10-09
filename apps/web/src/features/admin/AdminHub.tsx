@@ -150,11 +150,11 @@ export function AdminHub({
                 <thead>
                   <tr>
                     <th>Staff ID</th>
-                    <th>ชื่อ - นามสกุล</th>
+                    <th>Name</th>
                     <th>Branch</th>
                     <th>Roles</th>
-                    <th>สถานะ</th>
-                    <th>จัดการ</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -251,8 +251,8 @@ export function AdminHub({
                     <th>Code</th>
                     <th>Name</th>
                     <th>Phone</th>
-                    <th>สถานะ</th>
-                    <th>จัดการ</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>

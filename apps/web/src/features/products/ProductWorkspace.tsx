@@ -609,7 +609,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                     <th style={{ width: '15%' }}>LOB</th>
                     <th style={{ width: '15%' }}>Status</th>
                     <th style={{ width: '22%' }}>Inventory</th>
-                    <th style={{ width: '16%', textAlign: 'right' }}>Actions</th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -726,9 +726,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                   <tr>
                     <th style={{ width: '22%' }}>SKU</th>
                     <th style={{ width: '33%' }}>Product</th>
-                    <th style={{ width: '18%' }}>สาขา</th>
+                    <th style={{ width: '18%' }}>Branches</th>
                     <th style={{ width: '15%' }}>Available</th>
-                    <th style={{ width: '12%', textAlign: 'right' }}>จัดการ</th>
+                    <th style={{ width: '12%', textAlign: 'center' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>

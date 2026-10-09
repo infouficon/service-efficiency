@@ -728,3 +728,13 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
 2. **Batch Save Capability**:
    - In addition to per-row "บันทึก" buttons, the Branch Stock Breakdown Modal provides a "บันทึกทั้งหมด" (Save All) action in the modal footer when any branch stock has been modified.
    - Clicking "บันทึกทั้งหมด" submits all dirty branches simultaneously and clears the dirty tracking upon success.
+
+## D45 — Confirmed Product Management Sidebar Sub-Navigation (2026-10-09)
+
+1. **Sidebar Sub-Menu Expansion**:
+   - When the user navigates to "จัดการสินค้า" (`view === 'products'`), the sidebar navigation expands to display two indented sub-items:
+     - `รายการสินค้า` (Main Products Catalog) with icon
+     - `Stock สินค้า` (Stock Overview per SKU & Branch) with icon
+2. **Bidirectional Navigation State**:
+   - Clicking either sub-item in the sidebar switches the view mode (`MAIN` vs `STOCK`).
+   - Clicking "ดู Stock" on any table row or "← กลับหน้ารายการสินค้า" in the workspace updates the active sub-item indicator in the sidebar automatically.

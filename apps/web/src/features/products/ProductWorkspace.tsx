@@ -61,16 +61,27 @@ export interface ProductItem {
 
 interface ProductWorkspaceProps {
   user: MockUser;
+  subView?: 'MAIN' | 'STOCK';
+  onSubViewChange?: (view: 'MAIN' | 'STOCK') => void;
 }
 
 type CategoryTab = 'ALL' | 'iPhone' | 'iPad' | 'Mac' | 'Watch';
 
-export function ProductWorkspace({ user }: ProductWorkspaceProps) {
+export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWorkspaceProps) {
   const toast = useToast();
   const isAdmin = user.roles.includes('ADMIN');
 
   // Navigation & View state
-  const [viewMode, setViewMode] = useState<'MAIN' | 'STOCK'>('MAIN');
+  const [internalViewMode, setInternalViewMode] = useState<'MAIN' | 'STOCK'>('MAIN');
+  const viewMode = subView !== undefined ? subView : internalViewMode;
+
+  const handleSetViewMode = (mode: 'MAIN' | 'STOCK') => {
+    if (onSubViewChange) {
+      onSubViewChange(mode);
+    }
+    setInternalViewMode(mode);
+  };
+
   const [selectedProductId, setSelectedProductId] = useState<string | 'ALL'>('ALL');
 
   // Data state
@@ -459,18 +470,7 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
       <div className="workspace-header-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {viewMode === 'STOCK' ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                setViewMode('MAIN');
-                setSelectedProductId('ALL');
-              }}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              <ArrowLeft size={16} />
-              กลับหน้ารายการสินค้า
-            </Button>
+            <Package size={24} color="#0abab5" />
           ) : (
             <ShoppingBag size={24} color="#0abab5" />
           )}
@@ -687,12 +687,12 @@ export function ProductWorkspace({ user }: ProductWorkspaceProps) {
                               size="sm"
                               onClick={() => {
                                 setSelectedProductId(prod.id);
-                                setViewMode('STOCK');
+                                handleSetViewMode('STOCK');
                               }}
                             >
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <Boxes size={13} />
-                                ดูStock
+                                <Package size={13} />
+                                Stock
                               </span>
                             </Button>
                           </div>

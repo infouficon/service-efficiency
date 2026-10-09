@@ -82,6 +82,7 @@ export function App({
     ...account,
     branchCode: account.branchCode ?? account.branchId ?? undefined,
   };
+  const [productSubView, setProductSubView] = useState<'MAIN' | 'STOCK'>('MAIN');
   const [sessions, setSessions] = useState<MockSession[]>([]);
   const [view, setView] = useState<AppView>(() => getInitialView(user));
   const [notice, setNotice] = useState('');
@@ -283,12 +284,39 @@ export function App({
           </button>
 
           {canAccessProducts && (
-            <button
-              className={view === 'products' ? 'nav-active' : ''}
-              onClick={() => handleSelectView('products')}
-            >
-              <ShoppingBag size={18} /> <span>จัดการสินค้า</span>
-            </button>
+            <div>
+              <button
+                className={view === 'products' ? 'nav-active' : ''}
+                onClick={() => handleSelectView('products')}
+              >
+                <ShoppingBag size={18} /> <span>จัดการสินค้า</span>
+              </button>
+
+              {view === 'products' && (
+                <div className="nav-submenu">
+                  <button
+                    type="button"
+                    className={`nav-subitem ${productSubView === 'MAIN' ? 'nav-subitem-active' : ''}`}
+                    onClick={() => {
+                      setProductSubView('MAIN');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <ShoppingBag size={14} /> <span>รายการสินค้า</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`nav-subitem ${productSubView === 'STOCK' ? 'nav-subitem-active' : ''}`}
+                    onClick={() => {
+                      setProductSubView('STOCK');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <Package size={14} /> <span>Stock สินค้า</span>
+                  </button>
+                </div>
+              )}
+            </div>
           )}
           
           {canAccessAdmin && (
@@ -362,7 +390,11 @@ export function App({
           )}
 
           {view === 'products' && canAccessProducts && (
-            <ProductWorkspace user={user} />
+            <ProductWorkspace
+              user={user}
+              subView={productSubView}
+              onSubViewChange={setProductSubView}
+            />
           )}
 
           {view === 'logs' && (

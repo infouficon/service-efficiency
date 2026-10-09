@@ -71,6 +71,7 @@ model Branch {
   active   Boolean           @default(true)
   staff    Staff[]
   sessions CustomerSession[]
+  inventory BranchInventory[]
 }
 
 model Staff {
@@ -156,8 +157,25 @@ model ProductSku {
   storage   String?           @db.VarChar(64)
   active    Boolean           @default(true)
   sessions  CustomerSession[]
+  inventory BranchInventory[]
 
   @@index([modelId])
+}
+
+model BranchInventory {
+  id        String     @id @default(uuid()) @db.VarChar(36)
+  branchId  String     @db.VarChar(36)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  skuId     String     @db.VarChar(36)
+  sku       ProductSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  stock     Int        @default(0)
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now()) @db.DateTime(3)
+  updatedAt DateTime   @updatedAt @db.DateTime(3)
+
+  @@unique([branchId, skuId])
+  @@index([branchId])
+  @@index([skuId])
 }
 
 model CustomerSession {

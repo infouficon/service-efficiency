@@ -9,6 +9,8 @@ erDiagram
   Branch ||--o{ Staff : "membership; ADMIN-only has no Branch (D39)"
   Staff ||--o{ StaffRole : has
   Role ||--o{ StaffRole : assigned
+  Branch ||--o{ BranchInventory : maintains
+  SKU ||--o{ BranchInventory : stocked_in
   Branch ||--o{ CustomerSession : hosts
   Customer ||--o{ CustomerSession : has
   Staff ||--o{ CustomerSession : "DEMO responsibility; assignment lifecycle OPEN"
@@ -55,6 +57,7 @@ This is the unfinalized hierarchy from D13, not approved foreign keys. SubCatego
 | Customer                                 | Customer ID, Phone Number only                                                                                                              | Multiple Sessions over time and concurrently; exactly 10 ASCII digits before product selection; uniqueness OPEN                           |
 | CustomerSession                          | Customer, Branch, responsible Staff, lifecycle/decision/result, selected Category/Product/Model/SKU, milestone fields, selections           | Session reference `SES-YYYYMMDD-NNNNNN`, daily sequence (D6); day timezone/scope OPEN. Assignment timing and physical state encoding OPEN |
 | Product Category / Product / Model / SKU | Categories and selection down to SKU; D13 master labels `product_Category`, `product_SubCategory`, `product_SubSubCategory`, `product_name` | Local master; ADMIN CRUD; exact hierarchy, keys and FK deletion behavior OPEN                                                             |
+| BranchInventory                          | `branchId`, `skuId`, `stock` (quantity), `active` (boolean status)                                                                          | Mapped per Branch and SKU; Admin controls stock quantity; Admin and Branch Manager control active status                                   |
 | SessionAccessory                         | Session, selected accessory, quantity                                                                                                       | Multiple selections; positive integer quantity, initial value 1; maximum/duplicate handling OPEN                                          |
 | SessionOntop                             | Session, selected Ontop                                                                                                                     | Multiple selections; no amount/value                                                                                                      |
 | SessionPoint                             | Session, selected Points option                                                                                                             | Multiple selections; no quantity/amount/value                                                                                             |

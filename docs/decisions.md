@@ -669,3 +669,62 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
     2. `CHANGE_ITEMS`: Clears `stockReview`, resets `confirmed = false`, transitions state back to `PRODUCT_SELECTION`, logs `STAFF_RESOLVED_STOCK_REVIEW` event.
     3. `CANCEL`: Clears `stockReview`, transitions outcome to `CUSTOMER_CANCELLED` with reasons, logs `STAFF_RESOLVED_STOCK_REVIEW` and `CUSTOMER_CANCELLED` events.
 
+## D41 — Confirmed Branch-Isolated Product & Stock System (2026-10-09)
+
+1. **Master Catalog & Branch Inventory**:
+   - Master Catalog (`Product`, `ProductModel`, `ProductSku`) is managed centrally by ADMIN.
+   - Branch-level inventory and status are tracked in `BranchInventory` (`branchId`, `skuId`, `stock`, `active`).
+   - Defaults when a new SKU or Branch is created: `stock = 0`, `active = true`.
+2. **Permissions & Visibility**:
+   - **ADMIN**: Global visibility. Can create/edit Master Catalog, update stock quantities (`stock`) across all branches, and toggle `active` per branch.
+   - **MANAGER**: Branch-level visibility. Can toggle `active` (Enable/Disable) for SKUs in their own branch. Cannot modify stock quantity.
+   - **STAFF / STOCK / CASHIER**: Branch-level visibility based on trusted session `branchId`. Only sees SKUs with `active = true` in their branch.
+     - SKUs with `stock > 0` are selectable.
+     - SKUs with `stock == 0` display as "สินค้าหมด" (Out of Stock) and cannot be selected.
+     - SKUs with `active == false` are completely hidden from branch staff.
+3. **Workflow Stock Deduction & Restoration**:
+   - At `FOUND` (`STOCK_FOUND`): System deducts 1 from `BranchInventory.stock` for the selected SKU at that branch within a database transaction.
+   - At `CUSTOMER_CANCELLED` after `FOUND`: System automatically restores 1 to `BranchInventory.stock`.
+   - At `OUT_OF_STOCK` (or reported missing):
+     - System immediately resets `BranchInventory.stock` of that SKU at that branch to 0 to prevent further selection.
+     - Creates alert/notification for Branch Manager to investigate loss vs misplaced item. Misplaced items found later are adjusted back by Admin.
+
+## D42 — Confirmed Cascading Deactivation & Consolidated Stock Status UI (2026-10-09)
+
+1. **Cascading Deactivation Behavior**:
+   - When Admin deactivates a Master Product (`active = false`), the system automatically cascades `active = false` to all child Models, child SKUs, and all `BranchInventory` rows across all branches.
+   - When Admin deactivates a Master Model (`active = false`), the system cascades `active = false` to all child SKUs and all their `BranchInventory` rows across all branches.
+   - When Admin deactivates a Master SKU (`active = false`), the system cascades `active = false` to all `BranchInventory` rows of that SKU across all branches.
+   - When reactivating (`active = true`) at a Master level, only that specific Master record is enabled; branch-level statuses remain as set previously.
+2. **Consolidated Stock & Status UI**:
+   - The product management table combines the "Stock Quantity" and "Branch Active Status" into a single consolidated column: `สต็อกคงเหลือ & สถานะสาขา`.
+   - Each branch displays: `[Branch Code] [Toggle Button (Active/Inactive)] [Stock Badge] [Adjust Stock Button (Admin)]`.
+
+## D43 — Confirmed Unified Product Table & Stock View Navigation (2026-10-09)
+
+1. **Main Product Management Table**:
+   - The bottom section of Product Management is redesigned into a single unified table where each row represents one Master Product.
+   - Columns:
+     - `Product`: Product Name (e.g. iPhone 16 Pro)
+     - `LOB`: Category (iPhone, iPad, Mac, Watch)
+     - `Status`: Active / Inactive status
+     - `Inventory`: 2 lines (Line 1: `มีสินค้าทั้งหมด X ชิ้น` total available units across all branches; Line 2: `Y SKUs` count of child SKUs)
+     - `Actions`:
+       - `แก้ไข`: Opens modal to edit Product details, Models, and SKUs.
+       - `ดู Stock`: Switches to the in-page Stock View.
+2. **Stock View & Branch Breakdown Modal**:
+   - In-page view switch with a `← กลับหน้ารายการสินค้า` button and a Product selector dropdown.
+   - Table columns: `SKU`, `Product`, `สาขา` (e.g. `16/17 สาขา` indicating branches with stock > 0), `Available` (total units + in-stock/out-of-stock badge), and an action button to open the breakdown modal.
+   - Branch Stock Breakdown Modal: Displays all branches with their branch code/name, inline toggle `[● เปิด / ○ ปิด]` for active status, and editable stock quantity with direct save.
+
+## D44 — Confirmed Unsaved Branch Stock Warning & Batch Save UI (2026-10-09)
+
+1. **Unsaved Modifications Warning**:
+   - In the Branch Stock Breakdown Modal, when Admin edits stock quantity values (`stockInputs[branchId] !== inv.stock`) and attempts to close the modal (via close 'X', backdrop click, or Escape key), system prompts with an in-app Custom Confirmation Dialog.
+   - Dialog provides two clear actions:
+     - `ละทิ้งและปิด`: Discards unsaved edits and closes the modal.
+     - `กลับไปแก้ไข`: Retains unsaved inputs and returns to editing.
+   - Status toggle `[● เปิด / ○ ปิด]` remains immediate persistence to the backend and does not trigger unsaved prompt.
+2. **Batch Save Capability**:
+   - In addition to per-row "บันทึก" buttons, the Branch Stock Breakdown Modal provides a "บันทึกทั้งหมด" (Save All) action in the modal footer when any branch stock has been modified.
+   - Clicking "บันทึกทั้งหมด" submits all dirty branches simultaneously and clears the dirty tracking upon success.

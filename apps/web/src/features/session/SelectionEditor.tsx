@@ -73,6 +73,8 @@ export function SelectionEditor({
                 sku: string;
                 name: string;
                 active: boolean;
+                stock?: number;
+                branchActive?: boolean;
               }>;
             }>;
           }>) {
@@ -83,12 +85,15 @@ export function SelectionEditor({
                 if (Array.isArray(m.skus)) {
                   for (const s of m.skus) {
                     if (!s.active) continue;
+                    if (s.branchActive === false) continue;
                     flattened.push({
                       id: s.id,
                       category: p.category,
                       product: p.name,
                       model: s.name || m.name,
                       sku: s.sku,
+                      stock: s.stock,
+                      branchActive: s.branchActive,
                     });
                   }
                 }
@@ -135,25 +140,47 @@ export function SelectionEditor({
       <div className="product-grid">
         {currentProducts
           .filter((p) => p.category === category)
-          .map((p) => (
-            <label
-              key={p.id}
-              className={`product-card ${value.product?.id === p.id ? 'selected' : ''}`}
-            >
-              <input
-                type="radio"
-                name="product"
-                checked={value.product?.id === p.id}
-                onChange={() => onChange({ ...value, product: p })}
-              />
-              {/* <span className="device" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {getCategoryIcon(p.category)}
-              </span> */}
-              <strong>{p.product}</strong>
-              <span>{p.model}</span>
-              <small>{p.sku}</small>
-            </label>
-          ))}
+          .map((p) => {
+            const isOutOfStock = typeof p.stock === 'number' && p.stock <= 0;
+            return (
+              <label
+                key={p.id}
+                className={`product-card ${value.product?.id === p.id ? 'selected' : ''} ${isOutOfStock ? 'out-of-stock' : ''}`}
+                style={isOutOfStock ? { opacity: 0.6, cursor: 'not-allowed', borderColor: '#fca5a5' } : {}}
+              >
+                <input
+                  type="radio"
+                  name="product"
+                  disabled={isOutOfStock}
+                  checked={value.product?.id === p.id}
+                  onChange={() => {
+                    if (!isOutOfStock) {
+                      onChange({ ...value, product: p });
+                    }
+                  }}
+                />
+                <strong>{p.product}</strong>
+                <span>{p.model}</span>
+                <small>{p.sku}</small>
+                {typeof p.stock === 'number' && (
+                  <span
+                    style={{
+                      marginTop: '6px',
+                      display: 'inline-block',
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                      backgroundColor: isOutOfStock ? '#fee2e2' : '#ecfdf5',
+                      color: isOutOfStock ? '#b91c1c' : '#047857',
+                    }}
+                  >
+                    {isOutOfStock ? 'สินค้าหมด (0 ชิ้น)' : `คงเหลือ ${p.stock} ชิ้น`}
+                  </span>
+                )}
+              </label>
+            );
+          })}
       </div>
       <fieldset>
         <legend>Accessories</legend>

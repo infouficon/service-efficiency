@@ -317,6 +317,13 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
+      if (dto.action === 'found' && session.skuId && session.branchId) {
+        await tx.branchInventory.updateMany({
+          where: { branchId: session.branchId, skuId: session.skuId },
+          data: { stock: { decrement: 1 } },
+        });
+      }
+
       const updated = await tx.customerSession.update({
         where: { id: session.id },
         data: {
@@ -641,6 +648,18 @@ export class SessionsService {
           (session.sku?.sku && outOfStockItems.includes(session.sku.sku)) ||
           (session.product?.name && outOfStockItems.includes(session.product.name));
 
+        if (removeMainProduct && session.skuId && session.branchId) {
+          await tx.branchInventory.updateMany({
+            where: { branchId: session.branchId, skuId: session.skuId },
+            data: { stock: 0 },
+          });
+        } else if (!removeMainProduct && session.skuId && session.branchId) {
+          await tx.branchInventory.updateMany({
+            where: { branchId: session.branchId, skuId: session.skuId },
+            data: { stock: { decrement: 1 } },
+          });
+        }
+
         if (outOfStockItems.length > 0) {
           await tx.sessionAccessory.deleteMany({
             where: {
@@ -696,6 +715,13 @@ export class SessionsService {
       }
 
       // Customer cancels entire session due to out of stock
+      if (session.skuId && session.branchId) {
+        await tx.branchInventory.updateMany({
+          where: { branchId: session.branchId, skuId: session.skuId },
+          data: { stock: 0 },
+        });
+      }
+
       const detailedReason =
         dto.otherReason ||
         (outOfStockItems.length > 0 ? `สินค้าหมด: ${outOfStockItems.join(', ')}` : null);
@@ -768,6 +794,21 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
+      // Restore stock if session was already at FOUND or beyond
+      if (
+        session.skuId &&
+        session.branchId &&
+        (session.stockFoundAt ||
+          ['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(
+            session.state,
+          ))
+      ) {
+        await tx.branchInventory.updateMany({
+          where: { branchId: session.branchId, skuId: session.skuId },
+          data: { stock: { increment: 1 } },
+        });
+      }
+
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
@@ -826,6 +867,14 @@ export class SessionsService {
     };
 
     return this.prisma.$transaction(async (tx) => {
+      // Set branch stock to 0 for reported missing items/SKU
+      if (session.skuId && session.branchId) {
+        await tx.branchInventory.updateMany({
+          where: { branchId: session.branchId, skuId: session.skuId },
+          data: { stock: 0 },
+        });
+      }
+
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
@@ -909,6 +958,13 @@ export class SessionsService {
             item.includes(session.product?.name || '') ||
             (session.model && item.includes(session.model.name))
           );
+
+        if (!isMainProductMissing && session.skuId && session.branchId) {
+          await tx.branchInventory.updateMany({
+            where: { branchId: session.branchId, skuId: session.skuId },
+            data: { stock: { decrement: 1 } },
+          });
+        }
 
         return tx.customerSession.update({
           where: { id: session.id },

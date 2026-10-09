@@ -8,6 +8,46 @@ export class ProductsService implements OnModuleInit {
 
   async onModuleInit() {
     await this.seedCatalogIfEmpty();
+    await this.syncBranchInventory();
+  }
+
+  async syncBranchInventory() {
+    try {
+      const [branches, skus] = await Promise.all([
+        this.prisma.branch.findMany({ select: { id: true } }),
+        this.prisma.productSku.findMany({ select: { id: true } }),
+      ]);
+
+      if (!branches.length || !skus.length) return;
+
+      const existing = await this.prisma.branchInventory.findMany({
+        select: { branchId: true, skuId: true },
+      });
+      const existingSet = new Set(existing.map((e) => `${e.branchId}:${e.skuId}`));
+
+      const toCreate: { branchId: string; skuId: string; stock: number; active: boolean }[] = [];
+      for (const b of branches) {
+        for (const s of skus) {
+          if (!existingSet.has(`${b.id}:${s.id}`)) {
+            toCreate.push({
+              branchId: b.id,
+              skuId: s.id,
+              stock: 0,
+              active: true,
+            });
+          }
+        }
+      }
+
+      if (toCreate.length > 0) {
+        await this.prisma.branchInventory.createMany({
+          data: toCreate,
+          skipDuplicates: true,
+        });
+      }
+    } catch {
+      // Ignore if DB connection fails during build time
+    }
   }
 
   async seedCatalogIfEmpty() {
@@ -134,6 +174,63 @@ export class ProductsService implements OnModuleInit {
     }
   }
 
+  async findByBranch(branchId: string) {
+    await this.syncBranchInventory();
+
+    const products = await this.prisma.product.findMany({
+      where: { active: true },
+      include: {
+        models: {
+          where: { active: true },
+          include: {
+            skus: {
+              where: {
+                active: true,
+                inventory: {
+                  some: {
+                    branchId,
+                    active: true,
+                  },
+                },
+              },
+              include: {
+                inventory: {
+                  where: { branchId },
+                },
+              },
+              orderBy: { sku: 'asc' },
+            },
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // Map each SKU with its branch stock and filter out empty models/products
+    return products
+      .map((p) => ({
+        ...p,
+        models: p.models
+          .map((m) => ({
+            ...m,
+            skus: m.skus.map((s) => ({
+              id: s.id,
+              modelId: s.modelId,
+              sku: s.sku,
+              name: s.name,
+              color: s.color,
+              storage: s.storage,
+              active: s.active,
+              stock: s.inventory[0]?.stock ?? 0,
+              branchActive: s.inventory[0]?.active ?? true,
+            })),
+          }))
+          .filter((m) => m.skus.length > 0),
+      }))
+      .filter((p) => p.models.length > 0);
+  }
+
   async findAll() {
     return this.prisma.product.findMany({
       where: { active: true },
@@ -143,20 +240,6 @@ export class ProductsService implements OnModuleInit {
           include: {
             skus: {
               where: { active: true },
-            },
-          },
-        },
-      },
-      orderBy: { name: 'asc' },
-    });
-  }
-
-  async findAllAdmin() {
-    return this.prisma.product.findMany({
-      include: {
-        models: {
-          include: {
-            skus: {
               orderBy: { sku: 'asc' },
             },
           },
@@ -164,6 +247,95 @@ export class ProductsService implements OnModuleInit {
         },
       },
       orderBy: { name: 'asc' },
+    });
+  }
+
+  async findAllAdmin(branchId?: string) {
+    await this.syncBranchInventory();
+
+    return this.prisma.product.findMany({
+      include: {
+        models: {
+          include: {
+            skus: {
+              include: {
+                inventory: branchId
+                  ? { where: { branchId }, include: { branch: true } }
+                  : { include: { branch: true } },
+              },
+              orderBy: { sku: 'asc' },
+            },
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async getBranchInventory(branchId?: string) {
+    await this.syncBranchInventory();
+
+    return this.prisma.branchInventory.findMany({
+      where: branchId ? { branchId } : undefined,
+      include: {
+        branch: true,
+        sku: {
+          include: {
+            model: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: [
+        { branch: { code: 'asc' } },
+        { sku: { sku: 'asc' } },
+      ],
+    });
+  }
+
+  async updateBranchStock(branchId: string, skuId: string, stock: number) {
+    return this.prisma.branchInventory.upsert({
+      where: {
+        branchId_skuId: { branchId, skuId },
+      },
+      create: {
+        branchId,
+        skuId,
+        stock,
+        active: true,
+      },
+      update: {
+        stock,
+      },
+      include: {
+        branch: true,
+        sku: true,
+      },
+    });
+  }
+
+  async toggleBranchActive(branchId: string, skuId: string, active: boolean) {
+    return this.prisma.branchInventory.upsert({
+      where: {
+        branchId_skuId: { branchId, skuId },
+      },
+      create: {
+        branchId,
+        skuId,
+        stock: 0,
+        active,
+      },
+      update: {
+        active,
+      },
+      include: {
+        branch: true,
+        sku: true,
+      },
     });
   }
 
@@ -183,14 +355,35 @@ export class ProductsService implements OnModuleInit {
   }
 
   async updateProduct(id: string, data: { category?: ProductCategory; name?: string; active?: boolean }) {
-    return this.prisma.product.update({
-      where: { id },
-      data,
-      include: {
-        models: {
-          include: { skus: true },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.product.update({
+        where: { id },
+        data,
+        include: {
+          models: {
+            include: { skus: true },
+          },
         },
-      },
+      });
+
+      if (data.active === false) {
+        await tx.productModel.updateMany({
+          where: { productId: id },
+          data: { active: false },
+        });
+
+        await tx.productSku.updateMany({
+          where: { model: { productId: id } },
+          data: { active: false },
+        });
+
+        await tx.branchInventory.updateMany({
+          where: { sku: { model: { productId: id } } },
+          data: { active: false },
+        });
+      }
+
+      return updated;
     });
   }
 
@@ -206,15 +399,31 @@ export class ProductsService implements OnModuleInit {
   }
 
   async updateModel(modelId: string, data: { name?: string; active?: boolean }) {
-    return this.prisma.productModel.update({
-      where: { id: modelId },
-      data,
-      include: { skus: true },
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.productModel.update({
+        where: { id: modelId },
+        data,
+        include: { skus: true },
+      });
+
+      if (data.active === false) {
+        await tx.productSku.updateMany({
+          where: { modelId },
+          data: { active: false },
+        });
+
+        await tx.branchInventory.updateMany({
+          where: { sku: { modelId } },
+          data: { active: false },
+        });
+      }
+
+      return updated;
     });
   }
 
   async createSku(modelId: string, data: { sku: string; name: string; color?: string; storage?: string }) {
-    return this.prisma.productSku.create({
+    const sku = await this.prisma.productSku.create({
       data: {
         modelId,
         sku: data.sku,
@@ -224,12 +433,41 @@ export class ProductsService implements OnModuleInit {
         active: true,
       },
     });
+
+    // Create branch inventory for all existing branches
+    const branches = await this.prisma.branch.findMany({ select: { id: true } });
+    if (branches.length > 0) {
+      await this.prisma.branchInventory.createMany({
+        data: branches.map((b) => ({
+          branchId: b.id,
+          skuId: sku.id,
+          stock: 0,
+          active: true,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return sku;
   }
 
   async updateSku(skuId: string, data: { sku?: string; name?: string; color?: string; storage?: string; active?: boolean }) {
-    return this.prisma.productSku.update({
-      where: { id: skuId },
-      data,
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.productSku.update({
+        where: { id: skuId },
+        data,
+      });
+
+      if (data.active === false) {
+        await tx.branchInventory.updateMany({
+          where: { skuId },
+          data: { active: false },
+        });
+      }
+
+      return updated;
     });
   }
 }
+
+

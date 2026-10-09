@@ -69,6 +69,8 @@ export interface Product {
   product: string;
   model: string;
   sku: string;
+  stock?: number;
+  branchActive?: boolean;
 }
 
 export interface Selection {

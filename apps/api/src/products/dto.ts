@@ -2,9 +2,11 @@ import { ProductCategory } from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -102,3 +104,15 @@ export class SkuUpdateDto {
   @IsBoolean()
   active?: boolean;
 }
+
+export class BranchStockUpdateDto {
+  @IsInt()
+  @Min(0)
+  stock!: number;
+}
+
+export class BranchActiveToggleDto {
+  @IsBoolean()
+  active!: boolean;
+}
+

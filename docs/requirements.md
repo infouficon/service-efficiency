@@ -392,6 +392,22 @@ The actual Product / Model / SKU master data exists externally.
 For the initial version, use mock/master data inside this application's
 own database.
 
+Branch-Isolated Inventory & Stock Rules (Confirmed):
+- Master catalog (Product, Model, SKU) is centrally managed by Admin.
+- Inventory is tracked per branch and SKU (`BranchInventory` with `stock` and `active`).
+- Defaults for new SKU / new Branch: `stock = 0`, `active = true`.
+- Visibility: Branch staff (Staff, Stock, Cashier) only see active SKUs of their own branch.
+  - In-stock (`stock > 0`): Visible and selectable.
+  - Out-of-stock (`stock = 0`): Visible with "สินค้าหมด" badge, cannot be selected.
+  - Inactive (`active = false`): Hidden from branch staff.
+- Permissions:
+  - Admin: Global access, creates/edits master catalog, sets branch stock quantity, toggles branch active status.
+  - Manager: Branch access, toggles branch active status for own branch. Cannot modify stock quantity.
+- Stock Deduction & Restoration Lifecycle:
+  - When Stock marks `FOUND`: Deducts 1 from branch stock.
+  - When Session cancelled after `FOUND`: Restores 1 to branch stock.
+  - When Stock marks `OUT_OF_STOCK`: Sets branch stock to 0 immediately and alerts Branch Manager to investigate loss vs misplaced item.
+
 External master-data integration is a future requirement and must not be
 implemented unless separately specified.
 

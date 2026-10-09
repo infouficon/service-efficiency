@@ -200,7 +200,6 @@ demoStartedAt demo_start_at
 demoEndedAt demo_end_at
 Product Selection started product_selection_start_at
 Product Selection confirmed product_selection_confirmed_at
-Stock requested stock_requested_at
 Stock started stock_started_at
 Stock found stock_found_at
 Cashier received cashier_received_at
@@ -783,3 +782,13 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
    - Top search bars, quick date filters, and action headers remain visible while table rows scroll beneath the pinned `<th>` headers.
 2. **CSS Sticky Compatibility**:
    - Eliminated `overflow: hidden` on `<table>` elements and set `border-collapse: separate; border-spacing: 0;` so sticky headers (`position: sticky; top: 0; z-index: 10;`) lock reliably without border flickering or disappearing.
+
+## D51 — Removal of Redundant `stock_requested_at` in Favor of `product_selection_confirmed_at` (2026-10-09)
+
+1. **Single Milestone Timestamp**:
+   - The timestamp when a staff member confirms customer purchase/selection (`product_selection_confirmed_at`) and when the stock request is dispatched to the stock queue are identical in workflow execution.
+   - Removed the redundant `stock_requested_at` timestamp field across frontend types, UI log columns, workflow checks, and system documentation.
+2. **Source of Truth**:
+   - `product_selection_confirmed_at` serves as the authoritative server timestamp representing both selection confirmation and stock request initiation.
+   - Logs table and CSV export display `Product Selection Confirmed At` without duplicate columns.
+

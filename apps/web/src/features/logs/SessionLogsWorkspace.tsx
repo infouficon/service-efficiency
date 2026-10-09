@@ -344,13 +344,6 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
           getSessionTimestamp(s, 'product_selection_confirmed_at', [
             'CONFIRMATION',
             'PURCHASE_CONFIRMED',
-          ]),
-      },
-      {
-        key: 'ts_stock_requested_at',
-        label: 'Stock Requested At',
-        getValue: (s) =>
-          getSessionTimestamp(s, 'stock_requested_at', [
             'STOCK_REQUESTED',
           ]),
       },

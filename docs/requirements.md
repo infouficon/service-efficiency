@@ -265,7 +265,6 @@ demo_start_at
 demo_end_at
 product_selection_start_at
 product_selection_confirmed_at
-stock_requested_at
 stock_started_at
 stock_found_at
 cashier_received_at

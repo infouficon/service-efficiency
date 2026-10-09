@@ -111,7 +111,7 @@ export function StockWorkspace({
     (s) =>
       s.outcome === 'CUSTOMER_CANCELLED' &&
       !dismissedCancels.includes(s.reference) &&
-      (Boolean(s.timestamps.stock_requested_at) ||
+      (Boolean(s.timestamps.product_selection_confirmed_at) ||
         Boolean(s.timestamps.stock_started_at) ||
         Boolean(s.stockPendingReview) ||
         Boolean(s.cancelledBy)),

@@ -103,8 +103,7 @@ Technical design: explicit Session milestone fields plus immutable SessionEvent 
 | `demoStartedAt`              | `demo_start_at`                  | Begin DEMO                       | DEMO_STARTED                |
 | `demoEndedAt`                | `demo_end_at`                    | End DEMO                         | DEMO_ENDED                  |
 | Product Selection started    | `product_selection_start_at`     | Begin product selection          | PRODUCT_SELECTION_STARTED   |
-| Product Selection confirmed  | `product_selection_confirmed_at` | Accept confirmation              | PRODUCT_SELECTION_CONFIRMED |
-| Stock requested              | `stock_requested_at`             | Send request to Stock            | STOCK_REQUESTED             |
+| Product Selection confirmed  | `product_selection_confirmed_at` | Accept confirmation & Stock req  | PRODUCT_SELECTION_CONFIRMED |
 | Stock started                | `stock_started_at`               | Press SEARCHING, not merely view | STOCK_SEARCHING             |
 | Stock found                  | `stock_found_at`                 | Mark FOUND                       | STOCK_FOUND                 |
 | Cashier received             | `cashier_received_at`            | Press รับสินค้า                  | CASHIER_RECEIVED            |

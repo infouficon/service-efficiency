@@ -867,7 +867,9 @@ Owner, asked for the scope of the temporary "unlimited stock" request: "สว�
 
 ## D60 — Bill opening on U POS works both ways (2026-10-13)
 
-Owner, asked how SES and U POS (`infouficon/UFPOS`) should meet so the cashier no longer does the work twice and the KPI can be measured: "สองทาง (แนะนำ)". SES sends the order lines to U POS so the bill is pre-filled; U POS reports back when the bill is really opened, and SES records that moment (instead of the click on "เปิดบิล"). It needs a contract with the U POS team (a GitHub issue labelled `integration:pos` in `infouficon/UFPOS`); nothing has been opened there yet. **Not built yet.**
+Owner, asked how SES and U POS (`infouficon/UFPOS`) should meet so the cashier no longer does the work twice and the KPI can be measured: "สองทาง (แนะนำ)". SES sends the order lines to U POS so the bill is pre-filled; U POS reports back when the bill is really opened, and SES records that moment (instead of the click on "เปิดบิล"). It needs a contract with the U POS team (a GitHub issue labelled `integration:pos` in `infouficon/UFPOS`); nothing has been opened there yet.
+
+**SES side built 2026-10-13, U POS side not started.** `GET /api/integrations/pos/orders?branch=<code>[&queue=]` (the orders at the cashier with their lines, no prices) and `POST /api/integrations/pos/bills {reference, billNo, openedAt}` (moves an order at the cashier to BILL_OPENED at the real time, or stores the bill beside the cashier's own click; idempotent), behind a bearer key `POS_API_KEY` (unset or shorter than 32 characters = the routes answer 404). The contract and the request to paste into UFPOS: [docs/agents/pos-integration.md](agents/pos-integration.md).
 
 ## D61 — A session holds several main products, each with a quantity (2026-10-13)
 

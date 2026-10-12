@@ -18,6 +18,7 @@ by reading the code. These files describe **what the code really does**; the old
 | 8 | [erp-integration.md](erp-integration.md) | before any work on ERP stock (warroom) or FMP staff login (OData, daily 10:00) |
 | 9 | [warroom-products.md](warroom-products.md) | products and stock read from the warroom database: modes, rules, switching on |
 | 10 | [meeting-feedback-2026-10-13.md](meeting-feedback-2026-10-13.md) | the 17 requests from the 2026-10-13 meeting (queue numbers, phone first, multiple products, receipt/QR, cancel/reject, A/B, U POS) with current behaviour, impact and open questions |
+| 11 | [pos-integration.md](pos-integration.md) | the U POS door (D60): the contract SES offers, the key, and the request to paste into `infouficon/UFPOS` |
 | — | [../adr/README.md](../adr/README.md) | when recording an architectural decision |
 
 ## Source of truth (when documents disagree)

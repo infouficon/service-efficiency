@@ -37,6 +37,8 @@ export interface ApiSession {
   cancelledBy?: string | null;
   stockAckAt?: string | null;
   stockAckBy?: string | null;
+  posBillNo?: string | null;
+  posBillOpenedAt?: string | null;
   rebuyOf?: { id: string; reference: string } | null;
   rebuiltAs?: { id: string; reference: string } | null;
   /** F3: the main products, each with its SKU, model and product. */
@@ -136,6 +138,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     reason: s.reason || undefined,
     otherReason: s.otherReason || undefined,
     cancelledBy: s.cancelledBy || undefined,
+    posBillNo: s.posBillNo || undefined,
+    posBillOpenedAt: s.posBillOpenedAt || undefined,
     stockAckAt: s.stockAckAt || undefined,
     stockAckBy: s.stockAckBy || undefined,
     rebuyOf: s.rebuyOf || undefined,

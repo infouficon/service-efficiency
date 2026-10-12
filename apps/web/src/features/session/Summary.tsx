@@ -151,6 +151,17 @@ export function Summary({
                 )}
               </div>
             </div>
+            {session.posBillNo && (
+              <div className="info-item-row">
+                <span className="info-item-label">บิลใน U POS:</span>
+                <span className="info-item-value">
+                  {session.posBillNo}
+                  {session.posBillOpenedAt
+                    ? ` · เปิดเมื่อ ${new Date(session.posBillOpenedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`
+                    : ''}
+                </span>
+              </div>
+            )}
             {s?.ontop && s.ontop.length > 0 && (
               <div className="info-item-row">
                 <span className="info-item-label">Ontop:</span>

@@ -412,6 +412,125 @@ export class SessionsService {
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
+  /**
+   * F17 (D60): the orders of a branch that have reached the cashier and have no bill yet, with their lines, for U POS to
+   * prefill a bill from. `queue` ("A012") narrows to one queue number. Read-only; the caller is U POS, not a user.
+   */
+  async posOrders(branchCode: string, queue?: string) {
+    const branch = await this.prisma.branch.findFirst({
+      where: { code: branchCode },
+      orderBy: { active: 'desc' },
+    });
+    if (!branch) throw new NotFoundException('Unknown branch');
+    const sessions = await this.prisma.customerSession.findMany({
+      where: {
+        branchId: branch.id,
+        outcome: null,
+        state: { in: ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'] },
+      },
+      include: sessionInclude,
+      orderBy: { customerWalkInAt: 'asc' },
+    });
+    const wanted = queue?.toUpperCase();
+    return {
+      branch: { code: branch.code, name: branch.name },
+      orders: sessions
+        .map((s) => ({
+          reference: s.reference,
+          queue: s.queueNo === null ? s.reference : formatQueue(s.queueLetter, s.queueNo),
+          state: s.state,
+          customerPhone: s.phone,
+          staffId: s.staffId,
+          confirmedAt: s.productSelectionConfirmedAt,
+          items: s.items.map((i) => ({
+            partNo: i.sku.sku,
+            name: i.sku.name,
+            quantity: i.quantity,
+          })),
+          accessories: s.accessories.map((a) => ({
+            name: a.accessoryName,
+            quantity: a.quantity,
+          })),
+          payments: s.payments.map((p) => p.method),
+          ontop: s.ontop.map((o) => o.name),
+          points: s.points.map((p) => p.name),
+          burnPoints: s.burnPoints.map((b) => b.name),
+          posBillNo: s.posBillNo,
+        }))
+        .filter((order) => !wanted || order.queue === wanted),
+    };
+  }
+
+  /**
+   * F17 (D60): U POS opened the bill of an order. The bill number and its real time are recorded; an order that is still at
+   * the cashier moves on to BILL_OPENED (milestone = the real time, the cashier does not press anything in SES). When the
+   * cashier pressed first, SES's own milestone stays and the U POS bill is added beside it. The same report again changes
+   * nothing; another bill number for the same order is a conflict.
+   */
+  async recordPosBill(dto: { reference: string; billNo: string; openedAt: string }) {
+    const session = await this.prisma.customerSession.findUnique({
+      where: { reference: dto.reference },
+      include: sessionInclude,
+    });
+    if (!session) throw new NotFoundException('Unknown order');
+    if (session.outcome) throw new ConflictException('The order has ended');
+    const summary = (s: { reference: string; state: string; posBillNo: string | null; posBillOpenedAt: Date | null; billOpenedAt: Date | null }) => ({
+      reference: s.reference,
+      state: s.state,
+      posBillNo: s.posBillNo,
+      posBillOpenedAt: s.posBillOpenedAt,
+      billOpenedAt: s.billOpenedAt,
+    });
+    if (session.posBillNo !== null) {
+      if (session.posBillNo === dto.billNo) return summary(session);
+      throw new ConflictException('This order already has another bill');
+    }
+
+    const openedAt = new Date(dto.openedAt);
+    const now = Date.now();
+    if (
+      openedAt.getTime() > now + 5 * 60_000 ||
+      openedAt.getTime() < now - 366 * 86_400_000 ||
+      openedAt < session.customerWalkInAt
+    ) {
+      throw new BadRequestException('openedAt is not a plausible time for this order');
+    }
+    const atCashier = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state);
+    if (!atCashier && !['BILL_OPENED', 'COMPLETED'].includes(session.state)) {
+      throw new ConflictException('The order has not reached the cashier');
+    }
+
+    // the event keeps its place in the history even if the bill was opened before SES saw the last step
+    const lastEvent = session.events.at(-1)?.createdAt ?? openedAt;
+    const eventAt = openedAt > lastEvent ? openedAt : lastEvent;
+    const updated = await this.prisma.customerSession.update({
+      where: { id: session.id },
+      data: {
+        posBillNo: dto.billNo,
+        posBillOpenedAt: openedAt,
+        ...(atCashier
+          ? {
+              state: 'BILL_OPENED',
+              billOpenedAt: openedAt,
+              events: {
+                create: {
+                  eventType: 'BILL_OPENED',
+                  actorStaffId: 'U-POS',
+                  createdAt: eventAt,
+                  metadata: {
+                    source: 'U-POS',
+                    billNo: dto.billNo,
+                    openedAt: openedAt.toISOString(),
+                  },
+                },
+              },
+            }
+          : {}),
+      },
+    });
+    return summary(updated);
+  }
+
   async advanceStep(user: PublicAccount, id: string, dto: AdvanceStepDto) {
     const session = await this.getById(user, id);
 

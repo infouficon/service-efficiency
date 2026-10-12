@@ -335,6 +335,16 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         getValue: (s) => s.stockAckBy || '',
       },
       {
+        key: 'posBillNo',
+        label: 'เลขบิลใน U POS',
+        getValue: (s) => s.posBillNo || '',
+      },
+      {
+        key: 'posBillOpenedAt',
+        label: 'เวลาเปิดบิลจริงใน U POS',
+        getValue: (s) => formatTimestampForExport(s.posBillOpenedAt),
+      },
+      {
         key: 'rebuyOf',
         label: 'ซื้อใหม่จาก (รหัสอ้างอิงเดิม)',
         getValue: (s) => s.rebuyOf?.reference || '',

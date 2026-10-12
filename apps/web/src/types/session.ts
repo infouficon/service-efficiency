@@ -165,6 +165,9 @@ export interface MockSession {
   reason?: string;
   otherReason?: string;
   cancelledBy?: string;
+  /** F17 (D60): the bill U POS opened for this order, as U POS reported it: its number and the real time. */
+  posBillNo?: string;
+  posBillOpenedAt?: string;
   /** F12: when and by whom stock acknowledged this cancel; absent while stock still has to act. */
   stockAckAt?: string;
   stockAckBy?: string;

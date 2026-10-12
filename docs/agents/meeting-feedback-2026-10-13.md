@@ -16,7 +16,7 @@ Decisions are recorded as `D56+` in [../decisions.md](../decisions.md); this fil
 | F14 export with the time of each step | **built** (same PR) | `stepDurations`, export category 6 |
 | F16 "stock data as of …" | **built** (same PR) | line above the product grid |
 | F9 print receipt without prices | decided (D58), not built | |
-| F17 U POS two-way | decided (D60), not built, no issue opened in UFPOS yet | |
+| F17 U POS two-way | **SES side built** (PR `feat/pos-integration`), U POS side not started, no issue opened in UFPOS yet | D60, [pos-integration.md](pos-integration.md) |
 | F2 step-by-step picker like trade-in | **built** (PR `feat/session-items-wizard`; the trade-in app itself could not be viewed) | D62, `SelectionEditor` |
 | F3 several main products + `+ / −` on their quantity | **built** (same PR) | D61, `SessionItem`, migration `202610130003` |
 | F11 change reasons + "buy again" | **built** (PR `feat/cancel-reject-rebuy`) | D65, `rebuyOfId`, `POST /rebuy` |

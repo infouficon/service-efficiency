@@ -267,6 +267,9 @@ model CustomerSession {
   stockAckAt     DateTime?     @db.DateTime(3)
   stockAckBy     String?       @db.VarChar(64)
   // F11: the cancelled session this one was opened from with "buy again" (it keeps the queue number); once per session
+  // F17 (D60): the bill U POS opened for this order, reported by U POS: its number and the real time it was opened
+  posBillNo       String?       @db.VarChar(64)
+  posBillOpenedAt DateTime?     @db.DateTime(3)
   rebuyOfId      String?       @unique @db.VarChar(36)
   rebuyOf        CustomerSession? @relation("Rebuy", fields: [rebuyOfId], references: [id], onDelete: SetNull)
   rebuiltAs      CustomerSession? @relation("Rebuy")

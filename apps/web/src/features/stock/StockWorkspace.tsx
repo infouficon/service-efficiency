@@ -76,6 +76,7 @@ export function StockWorkspace({
   );
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
+  const [error, setError] = useState('');
 
   const handleDismissCancel = (reference: string) => {
     storeDismissedCancel(reference);
@@ -120,6 +121,7 @@ export function StockWorkspace({
   const handleSelectCard = (reference: string) => {
     setSelectedRef(reference);
     setMobileShowDetail(true);
+    setError('');
     const target = stockQueue.find((s) => s.reference === reference);
     if (target?.stockPendingReview) {
       setStockNote(target.stockPendingReview.stockNote || '');
@@ -133,6 +135,7 @@ export function StockWorkspace({
     session: MockSession,
     action: 'search' | 'found' | 'send',
   ) => {
+    setError('');
     if (session.id) {
       try {
         const updated = await advanceStepApi(session.id, action);
@@ -140,8 +143,11 @@ export function StockWorkspace({
         setFoundSelection([]);
         setStockNote('');
         return;
-      } catch {
-        // Fallback to in-memory on error
+      } catch (err: unknown) {
+        console.error('Failed to advance stock step:', err);
+        const msg = err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ';
+        setError(msg);
+        return;
       }
     }
     const updated = advance(session, action, previewTime());
@@ -154,6 +160,7 @@ export function StockWorkspace({
   };
 
   const handleSendToStaff = async (session: MockSession) => {
+    setError('');
     const hasProduct = Boolean(session.selection.product);
     const missingItems: string[] = [];
     const foundNames: string[] = [];
@@ -178,6 +185,11 @@ export function StockWorkspace({
       }
     });
 
+    if (missingItems.length === 0) {
+      setError('กรุณาระบุสินค้าที่ขาด/หมดอย่างน้อย 1 รายการ');
+      return;
+    }
+
     if (session.id) {
       try {
         const updated = await reportStockMissingApi(
@@ -188,8 +200,11 @@ export function StockWorkspace({
         );
         onUpdateSession(updated);
         return;
-      } catch (err) {
+      } catch (err: unknown) {
         console.error('Failed to report missing stock:', err);
+        const msg = err instanceof Error ? err.message : 'ไม่สามารถแจ้งสินค้าไม่ครบได้';
+        setError(msg);
+        return;
       }
     }
 
@@ -207,6 +222,7 @@ export function StockWorkspace({
 
   const handleCancel = async (reason: string, text: string) => {
     if (!cancellingSession) return;
+    setError('');
     if (cancellingSession.id) {
       try {
         const updated = await cancelSessionApi(
@@ -217,8 +233,12 @@ export function StockWorkspace({
         onUpdateSession(updated);
         setCancellingSession(null);
         return;
-      } catch {
-        // Fallback
+      } catch (err: unknown) {
+        console.error('Failed to cancel session:', err);
+        const msg = err instanceof Error ? err.message : 'ยกเลิกรายการไม่สำเร็จ';
+        setError(msg);
+        setCancellingSession(null);
+        return;
       }
     }
     const updated: MockSession = {
@@ -264,6 +284,27 @@ export function StockWorkspace({
           </span>
         </div>
       </div>
+
+      {error && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Notice error>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: '100%',
+                gap: '8px',
+              }}
+            >
+              <span>{error}</span>
+              <Button size="sm" variant="secondary" onClick={() => setError('')}>
+                ปิด
+              </Button>
+            </div>
+          </Notice>
+        </div>
+      )}
 
       {cancelledAlertSessions.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
@@ -553,9 +594,12 @@ export function StockWorkspace({
                     return (
                       <div className="searching-action-box">
                         <div style={{ marginBottom: '16px' }}>
-                          <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#496357' }}>
-                            เลือกรายการสินค้าที่ <strong>"พบแล้ว"</strong> (เริ่มต้นไม่เลือกชิ้นใดเลย):
+                          <h4 style={{ margin: '0 0 4px', fontSize: '13px', color: '#496357' }}>
+                            เลือกรายการสินค้าที่ <strong>"พบแล้ว"</strong> (ชิ้นที่ไม่ได้ติ๊ก จะถือว่าไม่พบ/ของขาด):
                           </h4>
+                          <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280' }}>
+                            * ติ๊กเครื่องหมายถูกเฉพาะชิ้นที่หยิบพบจริงในคลัง ชิ้นที่ไม่ได้ติ๊กจะถูกส่งเรื่องให้ Staff ดำเนินการ
+                          </p>
                           <div className="accessory-list">
                             {selectedSession.selection.product && (
                               <div

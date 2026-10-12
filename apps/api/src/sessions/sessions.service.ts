@@ -866,9 +866,25 @@ export class SessionsService {
       reportedBy: user.staffId,
     };
 
+    const isMainProductMissing = (() => {
+      if (!session.skuId && !session.productId) return false;
+      const prodName =
+        session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
+      if (dto.foundItems?.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
+        return false;
+      }
+      return dto.missingItems.some((item) => {
+        if (item === 'สินค้าหลัก') return true;
+        if (session.model?.name && item === session.model.name) return true;
+        if (session.sku?.name && item === session.sku.name) return true;
+        if (session.sku?.sku && item === session.sku.sku) return true;
+        return false;
+      });
+    })();
+
     return this.prisma.$transaction(async (tx) => {
-      // Set branch stock to 0 for reported missing items/SKU
-      if (session.skuId && session.branchId) {
+      // Set branch stock to 0 ONLY if the main product SKU was reported missing
+      if (isMainProductMissing && session.skuId && session.branchId) {
         await tx.branchInventory.updateMany({
           where: { branchId: session.branchId, skuId: session.skuId },
           data: { stock: 0 },
@@ -952,12 +968,22 @@ export class SessionsService {
         }
 
         // Check if main product was among missing items
-        const isMainProductMissing =
-          session.product &&
-          missingItems.some((item) =>
-            item.includes(session.product?.name || '') ||
-            (session.model && item.includes(session.model.name))
-          );
+        const isMainProductMissing = (() => {
+          if (!session.skuId && !session.productId) return false;
+          const prodName =
+            session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
+          const found = stockReviewObj.foundItems || [];
+          if (found.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
+            return false;
+          }
+          return missingItems.some((item) => {
+            if (item === 'สินค้าหลัก') return true;
+            if (session.model?.name && item === session.model.name) return true;
+            if (session.sku?.name && item === session.sku.name) return true;
+            if (session.sku?.sku && item === session.sku.sku) return true;
+            return false;
+          });
+        })();
 
         if (!isMainProductMissing && session.skuId && session.branchId) {
           await tx.branchInventory.updateMany({
@@ -1030,12 +1056,22 @@ export class SessionsService {
         }
 
         // Check if main product was among missing items
-        const isMainProductMissing =
-          session.product &&
-          missingItems.some((item) =>
-            item.includes(session.product?.name || '') ||
-            (session.model && item.includes(session.model.name))
-          );
+        const isMainProductMissing = (() => {
+          if (!session.skuId && !session.productId) return false;
+          const prodName =
+            session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
+          const found = stockReviewObj.foundItems || [];
+          if (found.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
+            return false;
+          }
+          return missingItems.some((item) => {
+            if (item === 'สินค้าหลัก') return true;
+            if (session.model?.name && item === session.model.name) return true;
+            if (session.sku?.name && item === session.sku.name) return true;
+            if (session.sku?.sku && item === session.sku.sku) return true;
+            return false;
+          });
+        })();
 
         return tx.customerSession.update({
           where: { id: session.id },

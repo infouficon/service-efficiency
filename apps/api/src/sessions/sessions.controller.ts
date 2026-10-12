@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AccountsService } from '../accounts/accounts.service';
-import type {
+import {
   AdvanceStepDto,
   CancelSessionDto,
   CreateSessionDto,

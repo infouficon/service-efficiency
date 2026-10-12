@@ -160,13 +160,21 @@ export function StaffWorkspace({
         }
       });
 
-      const isMainProductMissing =
-        session.selection.product &&
-        missingItems.some((item) =>
-          item.includes(session.selection.product?.model || '') ||
-          item.includes(session.selection.product?.sku || '') ||
-          item.includes(session.selection.product?.product || ''),
-        );
+      const isMainProductMissing = (() => {
+        if (!session.selection.product) return false;
+        const prod = session.selection.product;
+        const found = session.stockPendingReview?.foundItems || [];
+        const prodName = prod.model || prod.product || 'สินค้าหลัก';
+        if (found.some((f) => f === prodName || (prod.model && f.includes(prod.model)))) {
+          return false;
+        }
+        return missingItems.some((item) => {
+          if (item === 'สินค้าหลัก') return true;
+          if (prod.model && item === prod.model) return true;
+          if (prod.sku && item === prod.sku) return true;
+          return false;
+        });
+      })();
 
       const newSelection: Selection = {
         ...session.selection,
@@ -226,13 +234,21 @@ export function StaffWorkspace({
         }
       });
 
-      const isMainProductMissing =
-        session.selection.product &&
-        missingItems.some((item) =>
-          item.includes(session.selection.product?.model || '') ||
-          item.includes(session.selection.product?.sku || '') ||
-          item.includes(session.selection.product?.product || ''),
-        );
+      const isMainProductMissing = (() => {
+        if (!session.selection.product) return false;
+        const prod = session.selection.product;
+        const found = session.stockPendingReview?.foundItems || [];
+        const prodName = prod.model || prod.product || 'สินค้าหลัก';
+        if (found.some((f) => f === prodName || (prod.model && f.includes(prod.model)))) {
+          return false;
+        }
+        return missingItems.some((item) => {
+          if (item === 'สินค้าหลัก') return true;
+          if (prod.model && item === prod.model) return true;
+          if (prod.sku && item === prod.sku) return true;
+          return false;
+        });
+      })();
 
       const newSelection: Selection = {
         ...session.selection,

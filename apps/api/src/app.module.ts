@@ -1,6 +1,7 @@
 import { AccountsModule } from './accounts/accounts.module';
 import { ErpModule } from './erp/erp.module';
 import { WarroomModule } from './warroom/warroom.module';
+import { PaymentsModule } from './payments/payments.module';
 import { ProductsModule } from './products/products.module';
 import { QueueModule } from './queue/queue.module';
 import { SettingsModule } from './settings/settings.module';
@@ -16,6 +17,7 @@ import { HealthController } from './health.controller';
     ErpModule,
     WarroomModule,
     ProductsModule,
+    PaymentsModule,
     QueueModule,
     SettingsModule,
     SessionsModule,

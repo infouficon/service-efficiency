@@ -147,6 +147,9 @@ export async function cleanup(ctx, world) {
       where: { name: { startsWith: world.prefix } },
     });
     await db.setting.deleteMany({ where: { name: 'stockUnlimited' } });
+    await db.paymentMethod.deleteMany({
+      where: { name: { startsWith: world.prefix } },
+    });
     await db.loginSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staffRole.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staff.deleteMany({ where: { staffId: { in: staffIds } } });

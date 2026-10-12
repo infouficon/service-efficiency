@@ -22,8 +22,15 @@ import { ErpSyncPanel } from './ErpSyncPanel';
 import { WarroomSyncPanel } from './WarroomSyncPanel';
 import { CustomerTypesPanel } from './CustomerTypesPanel';
 import { StockUnlimitedPanel } from './StockUnlimitedPanel';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp` and `queue`. */
-export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp' | 'queue';
+import { PaymentMethodsPanel } from './PaymentMethodsPanel';
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue` and `payments`. */
+export type AdminSubView =
+  | 'users'
+  | 'branches'
+  | 'audit'
+  | 'erp'
+  | 'queue'
+  | 'payments';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -146,7 +153,9 @@ export function AdminHub({
                 ? 'ซิงก์ข้อมูลจาก ERP (ERP Sync)'
                 : subTab === 'queue'
                   ? 'ประเภทลูกค้าและคิว (Customer Types)'
-                  : 'จัดการผู้ใช้ (Staff Members)'}
+                  : subTab === 'payments'
+                    ? 'ช่องทางชำระเงิน (Payment Methods)'
+                    : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -163,6 +172,8 @@ export function AdminHub({
         </>
       ) : admin && subTab === 'queue' ? (
         <CustomerTypesPanel />
+      ) : admin && subTab === 'payments' ? (
+        <PaymentMethodsPanel />
       ) : (
         <>
           {error && (

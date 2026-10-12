@@ -30,7 +30,10 @@ import {
   stepItem,
   toggleAccessory,
 } from './workflow';
-import { fetchProductsApi } from '../../services/sessionApi';
+import {
+  fetchPaymentMethodsApi,
+  fetchProductsApi,
+} from '../../services/sessionApi';
 
 function getCategoryIcon(cat: string, size = 16) {
   switch (cat) {
@@ -181,6 +184,8 @@ export function SelectionEditor({
 }) {
   const [catalog, setCatalog] = useState<CatalogProduct[] | null>(null);
   const [loadError, setLoadError] = useState('');
+  // F6: the payment methods ADMIN keeps; the built-in list is the fallback when they cannot be loaded
+  const [paymentNames, setPaymentNames] = useState<readonly string[]>(payments);
   const [open, setOpen] = useState(value.items.length === 0);
   // with nothing chosen the picker is always open
   const wizardOpen = open || value.items.length === 0;
@@ -199,6 +204,20 @@ export function SelectionEditor({
           setLoadError(
             err instanceof Error ? err.message : 'โหลดรายการสินค้าไม่สำเร็จ',
           );
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetchPaymentMethodsApi()
+      .then((list) => {
+        if (active && list.length > 0) setPaymentNames(list.map((m) => m.name));
+      })
+      .catch(() => {
+        // keep the built-in list
       });
     return () => {
       active = false;
@@ -592,7 +611,11 @@ export function SelectionEditor({
       <MultiSelect
         label="Payment"
         none={false}
-        options={payments}
+        options={[
+          ...paymentNames,
+          // a method that was switched off after it was picked on this session stays visible
+          ...value.payments.filter((p) => !paymentNames.includes(p)),
+        ]}
         value={value.payments}
         onChange={(payments) => onChange({ ...value, payments })}
       />

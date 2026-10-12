@@ -154,6 +154,16 @@ model Setting {
   updatedBy String?  @db.VarChar(64)
 }
 
+// F6: the payment methods staff can pick on a session, kept by ADMIN. The name is the value stored on a session's payments
+// (history), so a method is switched off, never renamed or deleted. `position` is the order shown.
+model PaymentMethod {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  name      String   @unique @db.VarChar(64)
+  active    Boolean  @default(true)
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+}
+
 // Atomic running numbers that restart every Asia/Bangkok day: scope `reference` (SES-YYYYMMDD-NNNNNN) and
 // `queue:<branchId>:<letter>` (D57). Incremented with INSERT ... ON DUPLICATE KEY UPDATE inside the caller's transaction.
 model DailyCounter {

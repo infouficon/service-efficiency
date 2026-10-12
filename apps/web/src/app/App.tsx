@@ -17,6 +17,7 @@ import {
   Activity,
   RefreshCw,
   Ticket,
+  Wallet,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -457,6 +458,17 @@ export function App({
                         }}
                       >
                         <Ticket size={14} /> <span>ประเภทลูกค้า / คิว</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'payments' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('payments');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Wallet size={14} /> <span>ช่องทางชำระเงิน</span>
                       </button>
                     </>
                   )}

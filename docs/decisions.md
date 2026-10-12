@@ -905,3 +905,11 @@ Owner: "เหตุผลในการเปลี่ยน เปลี่�
 1. **Reasons.** Four new cancel reasons: `เปลี่ยนรุ่น`, `เปลี่ยนสี`, `เปลี่ยนความจุ`, `พนักงานเลือกสินค้าผิดพลาด`.
 2. **Buy again.** A session cancelled with one of them shows "ซื้อใหม่ (คิว A012)" to STAFF. It creates a **new** session (D20: nothing is reopened) pre-filled with the customer, customer type, the queue letter **and number** (the counter does not move), items, accessories, Ontop, Points, Burn Points and payments. It starts at product selection (the customer already decided to buy; no DEMO), belongs to the staff who pressed the button, and points back with `rebuyOfId`. Each cancelled session can be bought again once; a bought-again session can itself be changed again.
 3. **Time.** The new session has its own milestones (walk-in = the moment of the rebuy). The visit as a whole (first walk-in to the end of the last session) is a column of the export, next to columns that link the two references; the stock side of the old session is an ordinary cancel (D63).
+
+## D66 — Payment methods are a list the back office keeps (2026-10-13)
+
+Owner, relaying the meeting: "เพิ่มช่องทางชำระเงินอีก 3 ช่องทาง". The names were not given, so instead of three hard-coded guesses the list becomes data ADMIN keeps; the owner adds the three (and any later ones) at Admin → ช่องทางชำระเงิน with no deploy. **This relaxes D15 for this one list** (the fixed option lists stay fixed in code, and "admin UI for the fixed option lists" in CONTEXT §5 is no longer true for payments). Default, not confirmed: say if three fixed names are preferred.
+
+1. **List.** `PaymentMethod` (name unique, active, position). The migration seeds the eleven methods the app offered, in their order.
+2. **What ADMIN can do.** Add a method (it goes to the end), switch one off or on, move it up or down. A name is what a session stores, so it is **never renamed or deleted**; at least one method stays active.
+3. **Staff** see the active methods in that order when they pick payments (the built-in list is the fallback when it cannot be loaded). A method switched off after it was picked on a session stays visible on that session. The server still does not check the picked names against the list (H-11 stays open for payments).

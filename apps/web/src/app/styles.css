@@ -3463,3 +3463,15 @@ input[aria-invalid='true'] {
 .rebuy-box p {
   margin: 0 0 8px;
 }
+
+/* F6: add form of the payment-methods panel */
+.payment-add-form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.payment-add-form input {
+  flex: 1;
+  min-width: 0;
+}

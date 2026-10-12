@@ -2,6 +2,7 @@ import { api } from './api';
 import type {
   AppSettings,
   CustomerType,
+  PaymentMethod,
   MockSession,
   Outcome,
   Selection,
@@ -192,6 +193,23 @@ export function fetchSettingsApi(): Promise<AppSettings> {
 
 export function saveStockUnlimitedApi(stockUnlimited: boolean): Promise<AppSettings> {
   return api<AppSettings>('/settings', 'PUT', { stockUnlimited });
+}
+
+/** Payment methods in display order (F6); `all` (ADMIN) includes the switched-off ones. */
+export function fetchPaymentMethodsApi(all = false): Promise<PaymentMethod[]> {
+  return api<PaymentMethod[]>(`/payment-methods${all ? '?all=true' : ''}`);
+}
+
+export function createPaymentMethodApi(name: string): Promise<PaymentMethod> {
+  return api<PaymentMethod>('/payment-methods', 'POST', { name });
+}
+
+export function setPaymentMethodActiveApi(id: string, active: boolean): Promise<PaymentMethod> {
+  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}`, 'PUT', { active });
+}
+
+export function movePaymentMethodApi(id: string, direction: 'up' | 'down'): Promise<PaymentMethod> {
+  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/move`, 'POST', { direction });
 }
 
 /** Active customer types in letter order; `all` (ADMIN) includes the switched-off ones. */

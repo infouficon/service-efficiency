@@ -62,7 +62,7 @@ D56 makes the phone number the first step of a walk-in, required (10 ASCII digit
 
 ## OQ-14 — The three new payment methods (meeting 2026-10-13, F6)
 
-Names of the three extra payment methods. D15 keeps the option lists fixed in code and CONTEXT §5 lists "admin UI for the fixed option lists" as a non-goal: should payment methods become a list the back office can edit, or three more fixed names?
+Names of the three extra payment methods. **Handled by D66 (2026-10-13):** the payment methods became a list ADMIN keeps (Admin → ช่องทางชำระเงิน), so the owner adds the three names there with no deploy. Still open: the owner's preference, if three fixed names in code are wanted instead.
 
 ## OQ-15 — Registration URL printed as a QR on the receipt (F10)
 

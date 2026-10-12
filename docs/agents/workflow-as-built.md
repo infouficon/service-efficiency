@@ -59,6 +59,17 @@ Every endpoint returns the session in **one shape** (`sessionInclude`: branch, s
 
 Any role of the branch can cancel any session that has not ended, at any stage (the stage-based role table of the first release, H-13, is gone). Only `getById`'s branch check applies: another branch gets 403.
 
+### Payment methods (F6, D66)
+
+Controller: `apps/api/src/payments/payments.controller.ts` (behind `OriginGuard`). Service: `payments.service.ts`.
+
+| Endpoint | Who | Effect |
+| --- | --- | --- |
+| `GET /payment-methods` | any signed-in role | the **active** methods in display order; ADMIN with `?all=true` also gets the switched-off ones |
+| `POST /payment-methods` `{name}` | ADMIN | appended at the end; a name is used once, the database compares without regard to case (409) |
+| `PUT /payment-methods/:id` `{active}` | ADMIN | switch on / off; the name cannot be sent (400); the last active method cannot be switched off (400) |
+| `POST /payment-methods/:id/move` `{direction: 'up'\|'down'}` | ADMIN | swaps with the neighbour in the full list and renumbers 1..n |
+
 ### Settings (D59)
 
 Controller: `apps/api/src/settings/settings.controller.ts` (behind `OriginGuard`). Service: `settings.service.ts` (`stockUnlimited(db?)` reads inside a transaction).

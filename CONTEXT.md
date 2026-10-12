@@ -2,7 +2,7 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D65);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D66);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
@@ -54,7 +54,7 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | LOB / Category | `ProductCategory`: `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`. | enum `ProductCategory` |
 | Ontop | Telco/partner add-on (`AIS`, `True`, `CATH`, `KTS`). Multi-select, no amount. | `SessionOntop.name` |
 | Points / Burn Point | Loyalty programs earned / redeemed (`MCard`, `The 1`, `UJOY`). Two separate lists. | `SessionPoint`, `SessionBurnPoint` |
-| Payment | Payment methods, multi-select, **no amounts** (`Cash`, `Transfer`, `SPayLater`, …). | `SessionPayment.method` |
+| Payment | Payment methods, multi-select, **no amounts**. The choices are the active rows of the back-office list `PaymentMethod` (D66; seeded `Cash`, `Transfer`, `SPayLater`, …; ADMIN adds, switches off, reorders, never renames); a session stores the name. | `SessionPayment.method`, `GET/POST/PUT /api/payment-methods` |
 | None | A UI-only "no selection" option. Never persisted: no selection = zero child rows. | filtered in `updateSelection` (`sessions.service.ts`) |
 | Stock Request / Stock queue | A confirmed session waiting for STOCK (`STOCK_REQUESTED`). Queues show **today's** sessions only (D47, UI-side). | |
 | SEARCHING / FOUND | STOCK pressed "searching" (sets `stockStartedAt`), then found the items (sets `stockFoundAt` and **deducts each item's quantity** from branch stock, D41, unless the D59 switch is on). | `search`, `found` steps |
@@ -187,5 +187,5 @@ The `EventType` enum in code has 19 values (`CASHIER_REJECTED` and `STOCK_ACKNOW
 
 KPI or efficiency formulas, durations, SLA targets (OQ-11) · money amounts on payments or
 Ontop · customer personal data beyond phone · invoice or bill numbers, FileMaker integration
-(D26) · admin UI for the fixed option lists (D15) · auto-timeout or auto-close of sessions (D7)
+(D26) · admin UI for the fixed option lists (D15; payment methods are the exception, D66) · auto-timeout or auto-close of sessions (D7)
 · external product or stock integration · microservices or event buses (architecture.md).

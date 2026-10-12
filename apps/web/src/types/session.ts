@@ -77,6 +77,14 @@ export interface Product {
   branchActive?: boolean;
 }
 
+/** A payment method staff can pick (F6): kept by ADMIN. The name is what a session stores. */
+export interface PaymentMethod {
+  id: string;
+  name: string;
+  active: boolean;
+  position: number;
+}
+
 /** Global ADMIN switches (D59). `updatedAt` / `updatedBy` are sent to ADMIN only. */
 export interface AppSettings {
   stockUnlimited: boolean;

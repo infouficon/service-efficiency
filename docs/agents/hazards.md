@@ -74,6 +74,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 
 ### H-11: Fixed option lists are not validated by the server · S3 · confirmed
 - **Where:** `UpdateSelectionDto` (`sessions/dto.ts:95-130`), plus the NOT_BUY and cancel `reason` fields, accept any string. Payments are not filtered for `None`. Duplicates are allowed (OQ-09).
+- **Update 2026-10-13 (D66):** the payment methods are now a list in the database (`PaymentMethod`) and the web loads them; the server still does not check a session's `payments` against it.
 - **Fix direction:** move the fixed lists (currently in `apps/web/src/constants/options.ts`) into `packages/shared` (it is empty: `export {}`) and validate with `@IsIn` in the DTOs.
 
 ### H-12: One `reason`/`otherReason` pair serves three meanings · S3 · confirmed

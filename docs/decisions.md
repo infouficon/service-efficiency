@@ -820,3 +820,14 @@ Owner answers to G-12 questions 1 to 3 (see `docs/agents/erp-integration.md` §3
 7. **Password owner.** The ERP, always. Synced accounts have no forced password change, and SES change-password and reset-password are refused for them (the daily sync would overwrite them).
 8. **Roles.** The owner will give the role mapping later. Until then the sync grants only STAFF/STOCK/CASHIER from `position` (one table in the code, easy to change) and never grants or removes ADMIN/MANAGER.
 OPEN: leavers and closed branches (proposal in `erp-integration.md` §3.4), how failures are reported, the exact role table (owner, later).
+
+## D55 — Products and stock are read from the warroom database (2026-10-12)
+
+Owner instruction: "products come from warroom" and the read-only connection of warroom's own `DATABASE_URL_READONLY` was handed over; the API route proposed earlier (warroom PR #1) is therefore not used. Defaults below were proposed in the conversation and then "go" was given; correct them here if the owner disagrees.
+
+1. **Source.** SES reads `mart.stock_mv` in the warroom Postgres with a READ ONLY connection (`WARROOM_DATABASE_URL`), from inside Coolify. Warroom refreshes it from the ERP only 5 times a day (12:15, 15:15, 18:15, 21:15, 23:45 Bangkok), so every number carries `erpAsOf`.
+2. **Modes.** `off` | `shadow` (default; stores ERP numbers for SKUs SES already has, nothing visible changes, no catalog) | `on` (creates/updates the catalog and uses the ERP numbers). First use is a dry run, then `shadow`, then `on`.
+3. **Availability (D52 formula, defaults chosen).** available = ERP `ready` − sessions that reached FOUND in the last 24 h without an outcome and not completed before the snapshot; 0 when a D41 missing/out-of-stock report is newer than the snapshot. D41's other rules stay for rows without ERP data.
+4. **Locks in mode `on`.** Manual stock edits are refused for rows with ERP data (ADMIN may still switch `active`); names, codes, colour, storage and category of `erpManaged` products/models/SKUs are read-only.
+5. **Scope.** All categories found in `stock_mv`, only parts that some SES branch stocks, branches matched by `Branch.code`. Category text that the rules do not recognise is skipped and reported, never guessed.
+OPEN: the final category rules (after the first dry run), a dedicated read-only database role for SES, and whether the 12.5 h overnight gap needs an extra warroom slot.

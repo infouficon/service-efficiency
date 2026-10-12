@@ -1,4 +1,5 @@
 import { AccountsModule } from './accounts/accounts.module';
+import { ErpModule } from './erp/erp.module';
 import { ProductsModule } from './products/products.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { Module } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { HealthController } from './health.controller';
 @Module({
   imports: [
     AccountsModule,
+    ErpModule,
     ProductsModule,
     SessionsModule,
     ConfigModule.forRoot({

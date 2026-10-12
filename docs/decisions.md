@@ -792,3 +792,31 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
    - `product_selection_confirmed_at` serves as the authoritative server timestamp representing both selection confirmation and stock request initiation.
    - Logs table and CSV export display `Product Selection Confirmed At` without duplicate columns.
 
+
+## D52 — Confirmed ERP stock source and availability rule (2026-10-12)
+
+Owner answers to the questions in `docs/agents/erp-integration.md` §2.
+
+1. **Source.** Product and stock data already pulled from the ERP into the warroom database (`taspotae-lab/dashboard-npi-warroom`) are used as they are. SES does not pull products or stock from FileMaker itself; it consumes warroom through an API.
+2. **Product key.** SES follows the product identifiers used by warroom ("use warroom's, they are right"). OPEN detail: which warroom column is the key (`product_upc` or the Apple part number in `ProductStore::product_model`, e.g. `MG8G4ZP/A`) and the rule for loading SES `ProductSku.sku` from it.
+3. **Availability.** First version: available = ERP `ready` stock − sessions that SES has taken to `FOUND` and that the ERP has not billed yet. OPEN details: how SES learns that a unit has been billed in the ERP, what happens to D41's manual quantity edits and its zero-on-missing rule, and the API/auth for warroom (G-11).
+
+## D53 — Confirmed Branch master comes from the ERP (2026-10-12)
+
+1. **Scope.** Only ERP branches whose `branch_group` is `iStudio` or `U-Store` (20 rows on 2026-10-12: 8 iStudio, 12 U-Store).
+2. **Key.** `branch_code` (unique and never empty across the 45 ERP rows).
+3. **Direction.** SES `Branch` rows are created and updated from the ERP; SES is updated from the ERP, not the other way round. OPEN details: which fields are copied (proposal in `erp-integration.md` §3.2), how often, and what happens to a branch the ERP marks closed while SES still has active Staff (D39 forbids deactivating a Branch with active Staff).
+
+## D54 — Confirmed staff import from the ERP (2026-10-12)
+
+Owner answers to G-12 questions 1 to 3 (see `docs/agents/erp-integration.md` §3).
+
+1. **Source.** SES staff and their login are taken from the ERP `staff` table through OData, refreshed daily at 10:00 (Bangkok time), together with the D53 branch list.
+2. **Who counts as employed.** `status` is `active` (the ERP also has `Active`; treated as the same value, ignoring case).
+3. **Who gets an account.** Staff whose branch is one of the D53 branches (`branch_group` iStudio or U-Store).
+4. **Passwords.** "Use them as they are for now, no encryption needed" (owner). Settled afterwards: SES hashes the ERP password with scrypt at import (owner: "OK"). Users log in with the same password as in the ERP and the existing login code is unchanged.
+5. **Existing SES accounts are kept** for testing. The sync never changes, deactivates or deletes an account it did not create.
+6. **Login id.** `staffId` = the ERP `staff_id` (the ERP `user name` equals it for all 65 people who have one, so typing either works; the 24 people without `user name` log in with `staff_id`). A row whose `user name` differs from `staff_id` is reported, not aliased.
+7. **Password owner.** The ERP, always. Synced accounts have no forced password change, and SES change-password and reset-password are refused for them (the daily sync would overwrite them).
+8. **Roles.** The owner will give the role mapping later. Until then the sync grants only STAFF/STOCK/CASHIER from `position` (one table in the code, easy to change) and never grants or removes ADMIN/MANAGER.
+OPEN: leavers and closed branches (proposal in `erp-integration.md` §3.4), how failures are reported, the exact role table (owner, later).

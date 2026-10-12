@@ -34,7 +34,7 @@ function token(request: Request): string | undefined {
     ?.slice(cookieName.length + 1);
 }
 @Injectable()
-class OriginGuard implements CanActivate {
+export class OriginGuard implements CanActivate {
   constructor(private readonly config: ConfigService) {}
   canActivate(context: ExecutionContext): boolean {
     context

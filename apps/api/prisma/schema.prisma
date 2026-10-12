@@ -70,6 +70,8 @@ model Branch {
   name     String            @db.VarChar(191)
   phone    String            @db.VarChar(64)
   active   Boolean           @default(true)
+  // ERP branch_id when the row is kept in sync with the ERP (D53); null for hand-made branches
+  erpBranchId Int?           @unique
   staff    Staff[]
   sessions CustomerSession[]
   inventory BranchInventory[]
@@ -86,6 +88,9 @@ model Staff {
   mustChangePassword Boolean           @default(true)
   failedAttempts     Int               @default(0)
   lockedUntil        DateTime?         @db.DateTime(3)
+  // ERP staff_id when the account is created and kept in sync by the ERP import (D54); null for hand-made accounts
+  erpStaffId         Int?              @unique
+  erpSyncedAt        DateTime?         @db.DateTime(3)
   roles              StaffRole[]
   sessions           LoginSession[]
   customerSessions   CustomerSession[]
@@ -288,4 +293,23 @@ model SessionEvent {
   @@index([sessionId])
   @@index([eventType])
   @@index([createdAt])
+}
+
+// One row per ERP import run (D53/D54). `slot` makes a scheduled run claimable once per time slot across containers.
+model ErpSyncRun {
+  id           String    @id @default(uuid()) @db.VarChar(36)
+  kind         String    @db.VarChar(32)
+  slot         String    @db.VarChar(40)
+  trigger      String    @db.VarChar(16)
+  dryRun       Boolean   @default(false)
+  attempts     Int       @default(1)
+  startedAt    DateTime  @default(now()) @db.DateTime(3)
+  finishedAt   DateTime? @db.DateTime(3)
+  ok           Boolean?
+  summary      Json?
+  error        String?   @db.Text
+  actorStaffId String?   @db.VarChar(64)
+
+  @@unique([kind, slot])
+  @@index([startedAt])
 }

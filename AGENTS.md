@@ -25,3 +25,15 @@
 12. Keep domain boundaries clear.
 13. Run relevant tests/build after changes.
 14. Do not claim completion if validation fails.
+
+## Agent docs
+
+Start at [docs/agents/README.md](docs/agents/README.md). Domain language and invariants are in
+[CONTEXT.md](CONTEXT.md); keep it updated when a term or entity changes. Architectural decisions go in
+[docs/adr/](docs/adr/README.md); business decisions go in `docs/decisions.md` (next free number: D52).
+
+Source of truth when documents disagree: the code, then `docs/decisions.md` (newer D-numbers win),
+then the rest of `docs/`. Known gaps are listed in [docs/agents/hazards.md](docs/agents/hazards.md); do not
+"fix" one as a drive-by, because most need a business decision first.
+
+Never push directly to `main`: a push deploys to production through Coolify.

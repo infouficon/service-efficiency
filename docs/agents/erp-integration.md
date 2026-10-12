@@ -10,11 +10,13 @@ log SES users in with the Staff table from FileMaker (FMP), refreshed daily at 1
 
 | Phase | State |
 | --- | --- |
-| 1. Backend: branch + staff import (D53/D54), run log, ADMIN endpoints | **Built and tested** against a fake ERP and a real (MariaDB 12) database: `apps/api/src/erp/`, migration `202610120001_erp_sync`, `apps/api/tests/erp-sync.test.mjs` (22 tests) |
-| 2. Web: "ซิงก์ ERP" panel, ERP badge/locked fields in the staff table | **Built**, `npm run build` passes, checked in headless Chrome against a mock API. Not checked against the real backend |
-| 3. Stock from warroom (D52) | **Not built.** Blocked: warroom has no machine-to-machine stock endpoint and its owner has not agreed (see §2). Contract proposal in §2.1 |
+| 1. Backend: branch + staff import (D53/D54), run log, ADMIN endpoints | **Built, tested, merged and deployed** (squash `a199c6b`, PR #2, live on ses.uficon.com since 2026-10-12 16:20): `apps/api/src/erp/`, migration `202610120001_erp_sync`, `apps/api/tests/erp-sync.test.mjs` (24 tests). The job is **off** until `ERP_ODATA_BASE_URL/USER/PASS` are set in Coolify |
+| 2. Web: "ซิงก์ ERP" panel, ERP badge/locked fields in the staff table | **Built, merged, deployed** (bundle `index-Bg1qHHmf.js`). Checked in headless Chrome against a mock API only |
+| 3. Stock from warroom (D52) | **Endpoint written, not deployed**: warroom PR #1 (`taspotae-lab/dashboard-npi-warroom`, draft) adds `GET /api/ses/stock` + `sql/74` + `docs/SES_API.md`, tested against a local replay of all warroom SQL. **SES does not call it yet** (rest of D52 and G-11 are open) |
 
-**NOT verified against the live ERP.** A real end-to-end dry run was started at about 15:35 and never completed: the ERP's OData service stopped answering
+**Still NOT verified against the live ERP.** A health probe at 16:18 (after the owner said the ERP was normal) got HTTP 503 from `branch/$count`; no further ERP request has been made since.
+
+(Earlier note:) A real end-to-end dry run was started at about 15:35 and never completed: the ERP's OData service stopped answering
 (even `branch/$count` and the unauthenticated OData root hung for 12 to 90 s while the web root answered in 0.1 s). The only live facts used are the read-only
 aggregates in §3.1 and the field syntax. **The first run on any environment must be "ทดลองรัน" (dry run), watched, and only when the ERP is healthy.**
 Suspected cause, unproven: my first version asked for `$filter=status eq 'active' or status eq 'Active'` on `staff`; the same table without `$filter` answered in 0.3 s

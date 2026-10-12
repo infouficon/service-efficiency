@@ -73,6 +73,7 @@ Why first: it is a small, self-contained rule, and it is where code and the conf
 - Where does real MySQL for CI come from (service container)?
 
 ## G-11 ERP stock in SES (read [erp-integration.md](erp-integration.md) §2 first). Supersedes the stock-source part of G-4
+**Status:** the warroom endpoint exists as draft PR #1 in `taspotae-lab/dashboard-npi-warroom` (`docs/SES_API.md` there is the contract); SES has no client yet. Owner said "write the endpoint yourself" (2026-10-12).
 Already decided by the owner on 2026-10-12 (D52): stock comes from warroom, SES follows warroom's product keys, first-version availability = ERP ready − SES sessions at FOUND not yet billed in the ERP.
 Still to grill:
 - Which warroom column is the key (`product_upc` or the Apple part number) and how `ProductSku.sku` gets loaded from `mart.sku_catalog` (and what to do with the demo-seeded SKUs).

@@ -12,7 +12,7 @@ log SES users in with the Staff table from FileMaker (FMP), refreshed daily at 1
 | --- | --- |
 | 1. Backend: branch + staff import (D53/D54), run log, ADMIN endpoints | **Built, tested, merged and deployed** (squash `a199c6b`, PR #2, live on ses.uficon.com since 2026-10-12 16:20): `apps/api/src/erp/`, migration `202610120001_erp_sync`, `apps/api/tests/erp-sync.test.mjs` (24 tests). The job is **off** until `ERP_ODATA_BASE_URL/USER/PASS` are set in Coolify |
 | 2. Web: "ซิงก์ ERP" panel, ERP badge/locked fields in the staff table | **Built, merged, deployed** (bundle `index-Bg1qHHmf.js`). Checked in headless Chrome against a mock API only |
-| 3. Stock from warroom (D52) | **Endpoint written, not deployed**: warroom PR #1 (`taspotae-lab/dashboard-npi-warroom`, draft) adds `GET /api/ses/stock` + `sql/74` + `docs/SES_API.md`, tested against a local replay of all warroom SQL. **SES does not call it yet** (rest of D52 and G-11 are open) |
+| 3. Products and stock from the warroom database (D52, D55) | **Built, tested (17 tests against a Postgres stub of `mart.stock_mv`), not deployed until merged and `WARROOM_DATABASE_URL` is set**: SES reads `mart.stock_mv` read-only itself; modes off / shadow (default) / on. See [warroom-products.md](warroom-products.md). The API route written first (warroom PR #1, `GET /api/ses/stock`) is not needed and was closed. **Never run against the real warroom database yet** (its host is internal to Coolify): the first dry run in the admin panel is the first real read |
 
 **Still NOT verified against the live ERP.** A health probe at 16:18 (after the owner said the ERP was normal) got HTTP 503 from `branch/$count`; no further ERP request has been made since.
 
@@ -64,7 +64,7 @@ time; never `$orderby` without `$filter` on a large table. SES must not call the
 - The live host answered **HTTP 403 with an empty body** to a plain GET from this machine. The app itself would answer `/` with
   a 302 to `/login`, so the 403 most likely comes from the proxy in front (an allow-list?). Unverified; ask the owner.
 
-### Ways SES can get stock (decide in G-11)
+### Ways SES can get stock (decided 2026-10-12, D55: option B, direct read-only; kept here for the reasoning)
 
 | Option | How | For | Against |
 | --- | --- | --- | --- |

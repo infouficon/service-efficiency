@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type RoleCode } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -21,6 +21,10 @@ const include = { roles: true, branch: true } satisfies Prisma.StaffInclude;
 export type Account = Prisma.StaffGetPayload<{ include: typeof include }>;
 export type PublicAccount = ReturnType<typeof publicAccount>;
 type Tx = Prisma.TransactionClient;
+/** Roles that follow the ERP for accounts created by the ERP import (D54); ADMIN and MANAGER stay manual. */
+export const ERP_MANAGED_ROLES: RoleCode[] = ['STAFF', 'STOCK', 'CASHIER'];
+const ERP_PASSWORD_MESSAGE =
+  'บัญชีนี้ใช้รหัสผ่านเดียวกับ ERP กรุณาเปลี่ยนรหัสผ่านที่ ERP (ระบบซิงก์ทุกวัน 10:00)';
 export function publicAccount(account: Account) {
   const fullName = [account.firstName, account.lastName].filter(Boolean).join(' ');
   return {
@@ -34,6 +38,7 @@ export function publicAccount(account: Account) {
     branch: account.branch?.name ?? 'Global',
     active: account.active,
     mustChangePassword: account.mustChangePassword,
+    erpManaged: account.erpStaffId !== null,
   };
 }
 @Injectable()
@@ -175,6 +180,7 @@ export class AccountsService {
   changePassword(token: string | undefined, current: string, next: string) {
     return this.transaction(async (tx) => {
       const actor = await this.actor(tx, token, true);
+      if (actor.erpStaffId !== null) throw new ForbiddenException(ERP_PASSWORD_MESSAGE);
       if (!(await verifyPassword(current, actor.passwordHash)))
         throw new BadRequestException('รหัสผ่านปัจจุบันไม่ถูกต้อง');
       if (current === next)
@@ -287,6 +293,21 @@ export class AccountsService {
       if (!target) throw new BadRequestException('ไม่พบบัญชี');
       this.assertManagement(actor, data, target);
       await this.validateAssignment(tx, data);
+      if (target.erpStaffId !== null) {
+        // The daily ERP import owns these fields (D54); only ADMIN/MANAGER roles can still be set by hand.
+        const managed = (roles: RoleCode[]) =>
+          roles.filter((r) => ERP_MANAGED_ROLES.includes(r)).sort().join();
+        if (
+          (data.firstName !== undefined && data.firstName !== target.firstName) ||
+          (data.lastName !== undefined && data.lastName !== target.lastName) ||
+          data.branchId !== target.branchId ||
+          data.active !== target.active ||
+          managed(data.roles) !== managed(target.roles.map((r) => r.roleCode))
+        )
+          throw new ConflictException(
+            'บัญชีนี้ซิงก์จาก ERP: แก้ชื่อ สาขา สถานะ และสิทธิ์ STAFF/STOCK/CASHIER ได้ที่ ERP เท่านั้น (ตั้ง ADMIN/MANAGER ได้ใน SES)',
+          );
+      }
       if (
         target.active &&
         target.roles.some((r) => r.roleCode === 'ADMIN') &&
@@ -328,6 +349,7 @@ export class AccountsService {
         throw new ForbiddenException();
       const target = await tx.staff.findUnique({ where: { staffId } });
       if (!target) throw new BadRequestException('ไม่พบบัญชี');
+      if (target.erpStaffId !== null) throw new ConflictException(ERP_PASSWORD_MESSAGE);
       await tx.staff.update({
         where: { staffId },
         data: {
@@ -346,6 +368,11 @@ export class AccountsService {
       const actor = await this.actor(tx, token);
       if (!actor.roles.some((r) => r.roleCode === 'ADMIN'))
         throw new ForbiddenException();
+      if (existing) {
+        const current = await tx.branch.findUnique({ where: { id: existing } });
+        if (current?.erpBranchId != null)
+          throw new ConflictException('สาขานี้ซิงก์จาก ERP (D53) แก้ที่ ERP เท่านั้น');
+      }
       if (
         existing &&
         !data.active &&

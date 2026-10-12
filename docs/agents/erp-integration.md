@@ -19,8 +19,7 @@ log SES users in with the Staff table from FileMaker (FMP), refreshed daily at 1
 (Earlier note:) A real end-to-end dry run was started at about 15:35 and never completed: the ERP's OData service stopped answering
 (even `branch/$count` and the unauthenticated OData root hung for 12 to 90 s while the web root answered in 0.1 s). The only live facts used are the read-only
 aggregates in §3.1 and the field syntax. **The first run on any environment must be "ทดลองรัน" (dry run), watched, and only when the ERP is healthy.**
-Suspected cause, unproven: my first version asked for `$filter=status eq 'active' or status eq 'Active'` on `staff`; the same table without `$filter` answered in 0.3 s
-earlier. The code now never sends `$filter` to the ERP, treats a timeout as final (no retry), and never sends more than one request at a time.
+**Cause unknown, and probably not my query.** Warroom's own freshness (`GET /api/freshness`, public, needs a browser User-Agent) at 17:14 showed the last successful stock load at **12:31 Bangkok** and sales at 12:21, i.e. the **15:15 slot never loaded anything**, before or while my first request hung (about 15:35). Warroom itself sends `status eq 'ready' or status eq 'transfer'` filters on a table 1000 times bigger at every slot, so my `$filter` on `staff` is an unlikely cause. The code still never sends `$filter` to the ERP (precaution), treats a timeout as final (no retry), and sends one request at a time.
 
 ## 1. The three systems
 
@@ -48,7 +47,7 @@ Columns SES would use: `product_upc`, `ProductStore::product_model` (Apple part 
 `ProductStore::product_name`, `product_sn`, `status`, `BranchStore_id`, `StockBranch::branch_code`,
 `StockBranch::branch_name`, category / sub-category, `ProductStore::Price_Sell`, `transfer_id`, `date_transfer`, `Branch_From_id`.
 
-**Freshness.** The ERP is pulled at `ODATA_TIMES = 12:15,15:15,18:15,21:15,23:45` (`src/lib/syncSchedule.ts`).
+**Freshness (verified 2026-10-12).** Stock is **not** updated every N minutes: warroom pulls the ERP **5 times a day** at `ODATA_TIMES = 12:15,15:15,18:15,21:15,23:45` Bangkok (`src/lib/syncSchedule.ts`; the Coolify env pasted by the owner has no `ODATA_TIMES`/`ODATA_ENABLED`, so the defaults apply; a DB switch `app.switch` can also pause it). Every slot pulls ALL stock (about 88k+ serial numbers) and then refreshes `stock_mv`: today's 12:15 slot loaded sales at 12:21 and stock at **12:31** (about 16 minutes). Gaps: 3 h, 3 h, 3 h, 2.5 h, then **12.5 h overnight**. A slot that fails is **not retried** (the next chance is the next slot). Before 2026-09-24 it ran every 30 minutes (48 a day); the owner cut it to protect the ERP. SES therefore needs to read `max(snapshot_at)` only occasionally and re-read when it changes.
 The owner (โปเต้) cut this from 48 runs a day on 2026-09-24 to protect the ERP that the shops sell on, and accepted
 that the dashboard is stale from 23:45 until 12:15 next day. **At shop opening SES would see last night's stock.**
 `GET /api/dashboard/_meta` returns a data version; the README mentions `/api/freshness`.

@@ -123,6 +123,8 @@ export interface MockSession {
     foundItems: string[];
     stockNote?: string;
     reportedAt: string;
+    acknowledgedAt?: string;
+    acknowledgedBy?: string;
   };
   timestamps: Partial<Record<Timestamp, string>>;
   events?: SessionEventItem[];

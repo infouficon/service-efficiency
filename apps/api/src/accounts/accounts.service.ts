@@ -358,4 +358,162 @@ export class AccountsService {
       return tx.branch.create({ data });
     });
   }
+
+  async getAuditLogs(limit = 200) {
+    const [events, loginSessions, staffMembers, sessionsWithAck] = await Promise.all([
+      this.prisma.sessionEvent.findMany({
+        take: Math.min(limit, 500),
+        orderBy: { createdAt: 'desc' },
+        include: {
+          session: {
+            select: {
+              id: true,
+              reference: true,
+              branch: { select: { name: true, code: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.loginSession.findMany({
+        take: 50,
+        orderBy: { lastSeenAt: 'desc' },
+        include: {
+          staff: {
+            select: {
+              staffId: true,
+              firstName: true,
+              lastName: true,
+              branch: { select: { name: true, code: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.staff.findMany({
+        select: { staffId: true, firstName: true, lastName: true },
+      }),
+      this.prisma.customerSession.findMany({
+        where: {
+          stockReview: { not: Prisma.DbNull },
+        },
+        select: {
+          id: true,
+          reference: true,
+          stockReview: true,
+          branch: { select: { name: true, code: true } },
+        },
+        take: 100,
+        orderBy: { customerWalkInAt: 'desc' },
+      }),
+    ]);
+
+    const staffNameMap = new Map<string, string>();
+    for (const s of staffMembers) {
+      const fullName = [s.firstName, s.lastName].filter(Boolean).join(' ');
+      staffNameMap.set(s.staffId, fullName || s.staffId);
+    }
+
+    const auditItems: Array<{
+      id: string;
+      timestamp: string;
+      category: 'AUTH' | 'WORKFLOW' | 'STOCK' | 'ALERT';
+      action: string;
+      actionLabel: string;
+      actorStaffId: string;
+      actorName: string;
+      branchName: string;
+      sessionId?: string;
+      sessionReference?: string;
+      metadata?: Record<string, unknown> | null;
+    }> = [];
+
+    // 1. Session Events
+    for (const e of events) {
+      let category: 'WORKFLOW' | 'STOCK' | 'ALERT' = 'WORKFLOW';
+      let label = e.eventType as string;
+
+      if (e.eventType.startsWith('STOCK_')) {
+        category = e.eventType === 'STOCK_REPORTED_MISSING' ? 'ALERT' : 'STOCK';
+      } else if (e.eventType === 'STAFF_RESOLVED_STOCK_REVIEW') {
+        category = 'ALERT';
+      }
+
+      switch (e.eventType) {
+        case 'SESSION_CREATED': label = 'สร้างรายการบริการ (Walk-in)'; break;
+        case 'DEMO_STARTED': label = 'เริ่มสาธิตสินค้า (Demo)'; break;
+        case 'DEMO_ENDED': label = 'สิ้นสุดการสาธิตสินค้า'; break;
+        case 'DECISION_MADE': label = 'บันทึกการตัดสินใจของลูกค้า'; break;
+        case 'PRODUCT_SELECTION_STARTED': label = 'เริ่มเลือกสินค้าและอุปกรณ์'; break;
+        case 'PRODUCT_SELECTION_CONFIRMED': label = 'ยืนยันรายการสินค้า'; break;
+        case 'STOCK_SEARCHING': label = 'คลังกำลังค้นหาสินค้า'; break;
+        case 'STOCK_FOUND': label = 'พบสินค้าในคลังพร้อมส่ง'; break;
+        case 'STOCK_SENT_TO_CASHIER': label = 'ส่งสินค้าไปแคชเชียร์'; break;
+        case 'STOCK_REPORTED_MISSING': label = 'คลังแจ้งสินค้าไม่พบ / ของขาด'; break;
+        case 'STAFF_RESOLVED_STOCK_REVIEW': label = 'พนักงานจัดการสินค้าขาดกับลูกค้า'; break;
+        case 'STOCK_OUT_OF_STOCK': label = 'ลูกค้ายกเลิกเนื่องจากของหมด'; break;
+        case 'CUSTOMER_CANCELLED': label = 'ลูกค้ายกเลิกรายการ'; break;
+        case 'CASHIER_RECEIVED': label = 'แคชเชียร์รับรายการ'; break;
+        case 'CASHIER_SCANNED': label = 'แคชเชียร์ยิงบาร์โค้ด'; break;
+        case 'BILL_OPENED': label = 'เปิดบิลชำระเงิน'; break;
+        case 'COMPLETED': label = 'ทำรายการเสร็จสมบูรณ์'; break;
+      }
+
+      auditItems.push({
+        id: e.id,
+        timestamp: e.createdAt.toISOString(),
+        category,
+        action: e.eventType,
+        actionLabel: label,
+        actorStaffId: e.actorStaffId,
+        actorName: staffNameMap.get(e.actorStaffId) || e.actorStaffId,
+        branchName: e.session?.branch?.name || '-',
+        sessionId: e.sessionId,
+        sessionReference: e.session?.reference,
+        metadata: (e.metadata as Record<string, unknown>) || null,
+      });
+    }
+
+    // 2. Manager Acknowledged Alerts
+    for (const s of sessionsWithAck) {
+      const sr = s.stockReview as Record<string, unknown> | null;
+      if (sr && typeof sr.acknowledgedAt === 'string' && typeof sr.acknowledgedBy === 'string') {
+        auditItems.push({
+          id: `ack-${s.id}`,
+          timestamp: sr.acknowledgedAt,
+          category: 'ALERT',
+          action: 'MANAGER_ACKNOWLEDGED_ALERT',
+          actionLabel: 'ผู้จัดการรับทราบแจ้งเตือนของขาด',
+          actorStaffId: sr.acknowledgedBy,
+          actorName: staffNameMap.get(sr.acknowledgedBy) || sr.acknowledgedBy,
+          branchName: s.branch?.name || '-',
+          sessionId: s.id,
+          sessionReference: s.reference,
+          metadata: { acknowledgedAt: sr.acknowledgedAt, acknowledgedBy: sr.acknowledgedBy },
+        });
+      }
+    }
+
+    // 3. Login Sessions
+    for (const ls of loginSessions) {
+      const staffName = ls.staff
+        ? [ls.staff.firstName, ls.staff.lastName].filter(Boolean).join(' ') || ls.staff.staffId
+        : ls.staffId;
+      auditItems.push({
+        id: `login-${ls.tokenHash.slice(0, 16)}`,
+        timestamp: ls.lastSeenAt.toISOString(),
+        category: 'AUTH',
+        action: 'ACTIVE_LOGIN_SESSION',
+        actionLabel: 'เข้าสู่ระบบ / กำลังใช้งาน',
+        actorStaffId: ls.staffId,
+        actorName: staffName,
+        branchName: ls.staff?.branch?.name || 'Global',
+        metadata: { lastSeenAt: ls.lastSeenAt.toISOString() },
+      });
+    }
+
+    // Sort all by timestamp descending
+    auditItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    return auditItems.slice(0, limit);
+  }
 }
+

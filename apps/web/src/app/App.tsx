@@ -13,6 +13,8 @@ import {
   Menu,
   X,
   AlertTriangle,
+  Users,
+  Activity,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -23,7 +25,7 @@ import { CashierWorkspace } from '../features/cashier/CashierWorkspace';
 import { ProductWorkspace } from '../features/products/ProductWorkspace';
 import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
 import { AdminHub } from '../features/admin/AdminHub';
-import { fetchSessionsApi } from '../services/sessionApi';
+import { fetchSessionsApi, acknowledgeManagerAlertApi } from '../services/sessionApi';
 import { isToday } from '../features/session/workflow';
 
 function parseHashView(hash: string): AppView | null {
@@ -85,6 +87,7 @@ export function App({
     branchCode: account.branchCode ?? account.branchId ?? undefined,
   };
   const [productSubView, setProductSubView] = useState<'MAIN' | 'STOCK'>('MAIN');
+  const [adminSubView, setAdminSubView] = useState<'users' | 'branches' | 'audit'>('users');
   const [sessions, setSessions] = useState<MockSession[]>([]);
   const [view, setView] = useState<AppView>(() => getInitialView(user));
   const [notice, setNotice] = useState('');
@@ -198,14 +201,28 @@ export function App({
     return branchSessions.filter(
       (s) =>
         !dismissedAlertRefs.includes(s.reference) &&
+        !s.stockPendingReview?.acknowledgedAt &&
         (Boolean(s.stockPendingReview) ||
           (s.outcome === 'OUT_OF_STOCK' && isToday(s.timestamps.customer_walk_in_at))),
     );
   }, [isManagerOrAdmin, branchSessions, dismissedAlertRefs]);
 
   const handleDismissAlerts = () => {
-    const currentRefs = managerAlertSessions.map((s) => s.reference);
+    const targets = [...managerAlertSessions];
+    const currentRefs = targets.map((s) => s.reference);
     setDismissedAlertRefs((prev) => Array.from(new Set([...prev, ...currentRefs])));
+
+    for (const s of targets) {
+      if (s.id) {
+        acknowledgeManagerAlertApi(s.id)
+          .then((updated) => {
+            handleUpdateSession(updated);
+          })
+          .catch(() => {
+            // Keep dismissed in local state
+          });
+      }
+    }
   };
 
   const handleUpdateSession = (updated: MockSession) => {
@@ -343,12 +360,55 @@ export function App({
           )}
           
           {canAccessAdmin && (
-            <button
-              className={view === 'admin' ? 'nav-active' : ''}
-              onClick={() => handleSelectView('admin')}
-            >
-              <ShieldCheck size={18} /> <span>จัดการระบบ</span>
-            </button>
+            <div>
+              <button
+                className={view === 'admin' ? 'nav-active' : ''}
+                onClick={() => handleSelectView('admin')}
+              >
+                <ShieldCheck size={18} /> <span>จัดการระบบ</span>
+              </button>
+
+              {view === 'admin' && (
+                <div className="nav-submenu">
+                  <button
+                    type="button"
+                    className={`nav-subitem ${adminSubView === 'users' ? 'nav-subitem-active' : ''}`}
+                    onClick={() => {
+                      setAdminSubView('users');
+                      setIsMobileMenuOpen(false);
+                    }}
+                  >
+                    <Users size={14} /> <span>จัดการผู้ใช้</span>
+                  </button>
+
+                  {user.roles.includes('ADMIN') && (
+                    <>
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'branches' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('branches');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Building2 size={14} /> <span>จัดการสาขา</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'audit' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('audit');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Activity size={14} /> <span>ประวัติ</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </nav>
       </aside>
@@ -505,7 +565,12 @@ export function App({
           )}
 
           {view === 'admin' && canAccessAdmin && (
-            <AdminHub user={account} onAccountChange={onAccountChange} />
+            <AdminHub
+              user={account}
+              onAccountChange={onAccountChange}
+              subView={adminSubView}
+              onSubViewChange={setAdminSubView}
+            />
           )}
 
           {/* <details className="preview-controls">

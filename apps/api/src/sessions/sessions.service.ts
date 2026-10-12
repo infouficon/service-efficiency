@@ -1141,5 +1141,55 @@ export class SessionsService {
       throw new BadRequestException('Invalid resolve action');
     });
   }
+
+  async acknowledgeAlert(user: PublicAccount, id: string) {
+    const session = await this.getById(user, id);
+
+    const isManagerOfBranch = user.roles.includes('MANAGER') && user.branchId === session.branchId;
+    const isAdmin = user.roles.includes('ADMIN');
+
+    if (!isManagerOfBranch && !isAdmin) {
+      throw new ForbiddenException('Only the branch manager or admin can acknowledge alerts');
+    }
+
+    const now = new Date();
+    const currentReview = (session.stockReview as Record<string, unknown>) || {};
+    const updatedReview = {
+      ...currentReview,
+      acknowledgedAt: now.toISOString(),
+      acknowledgedBy: user.staffId,
+    };
+
+    return this.prisma.customerSession.update({
+      where: { id: session.id },
+      data: {
+        stockReview: updatedReview,
+      },
+      include: {
+        branch: true,
+        staff: { select: { staffId: true, branchId: true } },
+        product: true,
+        model: true,
+        sku: {
+          include: {
+            model: {
+              include: {
+                product: true,
+              },
+            },
+          },
+        },
+        accessories: true,
+        ontop: true,
+        points: true,
+        burnPoints: true,
+        payments: true,
+        events: {
+          orderBy: { createdAt: 'asc' },
+        },
+      },
+    });
+  }
 }
+
 

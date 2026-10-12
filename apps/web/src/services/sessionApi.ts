@@ -56,11 +56,13 @@ export interface ApiSession {
   burnPoints?: { name: string }[];
   payments?: { method: string }[];
   stockReview?: {
-    missingItems: string[];
+    missingItems?: string[];
     foundItems?: string[];
     stockNote?: string | null;
     reportedAt?: string;
     reportedBy?: string;
+    acknowledgedAt?: string | null;
+    acknowledgedBy?: string | null;
   } | null;
   events?: {
     id: string;
@@ -146,6 +148,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
           foundItems: s.stockReview.foundItems || [],
           stockNote: s.stockReview.stockNote || undefined,
           reportedAt: s.stockReview.reportedAt || '',
+          acknowledgedAt: s.stockReview.acknowledgedAt || undefined,
+          acknowledgedBy: s.stockReview.acknowledgedBy || undefined,
         }
       : undefined,
     events: s.events,
@@ -273,3 +277,27 @@ export async function resolveStockReviewApi(
 export async function fetchProductsApi(): Promise<Record<string, unknown>[]> {
   return api<Record<string, unknown>[]>('/products');
 }
+
+export async function acknowledgeManagerAlertApi(id: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/manager/acknowledge-alert`, 'POST');
+  return mapApiSessionToMockSession(data);
+}
+
+export interface AuditLogItem {
+  id: string;
+  timestamp: string;
+  category: 'AUTH' | 'WORKFLOW' | 'STOCK' | 'ALERT';
+  action: string;
+  actionLabel: string;
+  actorStaffId: string;
+  actorName: string;
+  branchName: string;
+  sessionId?: string;
+  sessionReference?: string;
+  metadata?: Record<string, unknown> | null;
+}
+
+export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
+  return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
+}
+

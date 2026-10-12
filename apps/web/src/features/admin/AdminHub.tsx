@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck, Plus, Edit2, KeyRound } from 'lucide-react';
+import { ShieldCheck, Plus, Edit2, KeyRound, Users, Activity, Building2 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
@@ -9,6 +9,7 @@ import {
   type ManagedBranch,
 } from '../../types/accounts';
 import type { Role } from '../../types/session';
+import { SystemAuditLogs } from './SystemAuditLogs';
 interface StaffDraft {
   staffId: string;
   firstName: string;
@@ -30,9 +31,13 @@ const blankStaff = (): StaffDraft => ({
 export function AdminHub({
   user,
   onAccountChange,
+  subView,
+  onSubViewChange,
 }: {
   user: Account;
   onAccountChange: (user: Account) => void;
+  subView?: 'users' | 'branches' | 'audit';
+  onSubViewChange?: (view: 'users' | 'branches' | 'audit') => void;
 }) {
   const toast = useToast();
   const admin = user.roles.includes('ADMIN');
@@ -40,6 +45,8 @@ export function AdminHub({
   const [branches, setBranches] = useState<ManagedBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [internalSubTab, setInternalSubTab] = useState<'users' | 'branches' | 'audit'>('users');
+  const subTab = subView !== undefined ? subView : internalSubTab;
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<StaffDraft | null>(null);
   const [editing, setEditing] = useState(false);
@@ -105,30 +112,42 @@ export function AdminHub({
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
         <ShieldCheck size={28} color="#0abab5" />
-        <h1 style={{ margin: 0 }}>จัดการ Staff / Role / Branch</h1>
+        <h1 style={{ margin: 0 }}>
+          {subTab === 'branches'
+            ? 'จัดการสาขา (Branches)'
+            : subTab === 'audit'
+            ? 'ประวัติการทำงานของระบบ (System Audit Logs)'
+            : 'จัดการผู้ใช้ (Staff Members)'}
+        </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
         {admin ? 'ทุกสาขา' : `สาขา ${user.branch}`}
       </p>
-      {error && (
-        <Notice error>
-          {error}
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setError('');
-              void load();
-            }}
-          >
-            ลองโหลดใหม่
-          </Button>
-        </Notice>
-      )}
-      {loading ? (
-        <Notice>กำลังโหลด…</Notice>
+
+      {admin && subTab === 'audit' ? (
+        <SystemAuditLogs />
       ) : (
         <>
-          <Panel title="Staff Members">
+          {error && (
+            <Notice error>
+              {error}
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setError('');
+                  void load();
+                }}
+              >
+                ลองโหลดใหม่
+              </Button>
+            </Notice>
+          )}
+          {loading ? (
+            <Notice>กำลังโหลด…</Notice>
+          ) : (
+            <>
+              {subTab === 'users' && (
+                <Panel title="Staff Members">
             <div className="panel-actions-top">
               <Button
                 onClick={() => {
@@ -222,28 +241,28 @@ export function AdminHub({
             </div>
             {!staff.length && <p>ยังไม่มี Staff</p>}
           </Panel>
+        )}
+        {subTab === 'branches' && admin && (
           <Panel title="Branches">
-            {admin && (
-              <div className="panel-actions-top">
-                <Button
-                  onClick={() => {
-                    setBranchEditing(false);
-                    setBranch({
-                      id: '',
-                      code: '',
-                      name: '',
-                      phone: '',
-                      active: true,
-                    });
-                  }}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <Plus size={16} />
-                    เพิ่ม Branch
-                  </span>
-                </Button>
-              </div>
-            )}
+            <div className="panel-actions-top">
+              <Button
+                onClick={() => {
+                  setBranchEditing(false);
+                  setBranch({
+                    id: '',
+                    code: '',
+                    name: '',
+                    phone: '',
+                    active: true,
+                  });
+                }}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <Plus size={16} />
+                  เพิ่ม Branch
+                </span>
+              </Button>
+            </div>
             <div className="table-responsive">
               <table className="admin-table">
                 <thead>
@@ -267,21 +286,19 @@ export function AdminHub({
                         </span>
                       </td>
                       <td>
-                        {admin && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => {
-                              setBranchEditing(true);
-                              setBranch({ ...b });
-                            }}
-                          >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                              <Edit2 size={13} />
-                              แก้ไข
-                            </span>
-                          </Button>
-                        )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => {
+                            setBranchEditing(true);
+                            setBranch({ ...b });
+                          }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Edit2 size={13} />
+                            แก้ไข
+                          </span>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -292,6 +309,9 @@ export function AdminHub({
               <p>ยังไม่มี Branch — เพิ่ม Branch ก่อนสร้างบัญชีปฏิบัติงาน</p>
             )}
           </Panel>
+        )}
+        </>
+      )}
         </>
       )}
       {draft && (

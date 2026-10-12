@@ -125,5 +125,11 @@ export class SessionsController {
     const user = await this.accounts.authenticate(req);
     return this.sessions.resolveStockReview(user, id, dto);
   }
+
+  @Post(':id/manager/acknowledge-alert')
+  async acknowledgeAlert(@Req() req: Request, @Param('id') id: string) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.acknowledgeAlert(user, id);
+  }
 }
 

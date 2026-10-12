@@ -5,6 +5,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -144,5 +145,16 @@ export class AccountsController {
     @Body() body: BranchDto,
   ) {
     return this.accounts.saveBranch(token(request), body, id);
+  }
+  @Get('admin/audit-logs')
+  async getAuditLogs(
+    @Req() request: Request,
+    @Query('limit') limit?: string,
+  ) {
+    const user = await this.accounts.authenticate(request);
+    if (!user.roles.includes('ADMIN')) {
+      throw new ForbiddenException('Access restricted to ADMIN');
+    }
+    return this.accounts.getAuditLogs(limit ? parseInt(limit, 10) : 200);
   }
 }

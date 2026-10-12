@@ -21,6 +21,9 @@ ERP (FileMaker) ──5×/day──▶ warroom Postgres: mart.stock_mv ──rea
    COMPLETED before `erpAsOf` (the ERP still counts their unit) → never below 0; and 0 when a D41 "missing / out of stock" report
    (`outOfStockAt`) is newer than `erpAsOf`. A newer snapshot ends the override. Rows without ERP data keep the manual `stock` (D41).
 
+`erpAsOf` is `max(snapshot_at)` of `stock_mv`: the last time a stock row changed in warroom (unchanged rows are dropped as duplicates),
+so it can be somewhat older than the real pull; that errs on the safe side (see H-32).
+
 ## Modes (`WARROOM_STOCK_MODE`, default `shadow`; nothing runs without `WARROOM_DATABASE_URL`)
 
 | Mode | Stores ERP numbers | Creates/updates catalog | Staff screen | Manual stock edit |

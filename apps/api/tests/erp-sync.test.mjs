@@ -85,6 +85,7 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
       row(17, { 'user name': '999' }),
       row(18),
       row(18),
+      row(5_000_000_000),
     ],
     branches,
   );
@@ -105,6 +106,7 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
     '14',
     '18',
     '18',
+    '5000000000',
   ]);
   assert.ok(
     out.people.every(

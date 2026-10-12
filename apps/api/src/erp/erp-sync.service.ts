@@ -158,8 +158,11 @@ const text = (value: unknown): string =>
     : typeof value === 'number'
       ? String(value)
       : '';
+// The SES columns are 32-bit INT: one larger ERP id would fail the whole run, so such a row is treated as invalid.
+const INT_MAX = 2_147_483_647;
 const integer = (value: unknown): number | null => {
-  if (typeof value === 'number') return Number.isInteger(value) ? value : null;
+  if (typeof value === 'number')
+    return Number.isInteger(value) && Math.abs(value) <= INT_MAX ? value : null;
   if (typeof value === 'string' && /^\d{1,9}$/.test(value.trim()))
     return Number(value.trim());
   return null;

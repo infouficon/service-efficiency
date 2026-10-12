@@ -36,6 +36,8 @@ ADMIN Product/Model/SKU CRUD is confirmed. What happens to referenced records on
 
 ## OQ-08 — Session reference details
 
+**Resolved for what staff see by D57 (2026-10-13):** the day is Asia/Bangkok; staff see a queue number per Branch, per customer-type letter, per day (four digits after 999). The internal `SES-YYYYMMDD-NNNNNN` reference stays global per Bangkok day (a day above 999999 is not handled and not expected).
+
 For confirmed `SES-YYYYMMDD-NNNNNN` daily numbering, what business timezone defines YYYYMMDD, is the sequence global or per Branch, and what happens after 999999 in a day? No numbering rule is inferred from the developer machine timezone.
 
 ## OQ-09 — Remaining field constraints
@@ -53,3 +55,15 @@ Confirm KPI/Efficiency formulas, targets, SLA thresholds, Dashboard metrics, Dat
 ## OQ-12 — Deployment
 
 Provide Coolify web/API domains, reverse-proxy configuration, MySQL instance/version, production database settings, CORS origins and environment variables (D38). These remain deployment-phase decisions.
+
+## OQ-13 — A customer who refuses to give a phone number
+
+D56 makes the phone number the first step of a walk-in, required (10 ASCII digits), with no skip. Must a customer who refuses still be servable? If yes: how is it recorded (a reason, a flag, a placeholder number) and does it still get a queue number?
+
+## OQ-14 — The three new payment methods (meeting 2026-10-13, F6)
+
+Names of the three extra payment methods. D15 keeps the option lists fixed in code and CONTEXT §5 lists "admin UI for the fixed option lists" as a non-goal: should payment methods become a list the back office can edit, or three more fixed names?
+
+## OQ-15 — Registration URL printed as a QR on the receipt (F10)
+
+One QR per branch at the bottom of the receipt for the customer to register. Which URL does each branch encode (U POS `/register` has no branch parameter today; it would need `?branch=<code>`)? Until answered the plan is a per-branch URL field that ADMIN fills in.

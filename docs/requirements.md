@@ -103,6 +103,8 @@ Phone Number
 Do not add customer name, email, address, birthday, gender, or other
 personal fields unless explicitly required later.
 
+> **Superseded by D56 (2026-10-13):** the phone number is now the first step of a walk-in (it is kept for NOT_BUY and cancelled visits too). The paragraph below is the original rule.
+
 Customer phone number is manually collected by asking the customer only after the customer decides BUY. Do not collect a phone number at Walk-in, during DEMO, or for NOT_BUY. After BUY, Customer Phone Number is required and must contain exactly 10 ASCII digits (0–9), with no required starting digit. The phone number must be valid before product selection is available.
 
 ### 7. Branch

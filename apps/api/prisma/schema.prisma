@@ -132,6 +132,28 @@ model Customer {
   sessions  CustomerSession[]
 }
 
+// D57: back-office list of customer types. The letter (A-Z, unique) is the queue letter and the sort order.
+model CustomerType {
+  id          String            @id @default(uuid()) @db.VarChar(36)
+  letter      String            @unique @db.VarChar(1)
+  name        String            @db.VarChar(64)
+  description String?           @db.VarChar(191)
+  active      Boolean           @default(true)
+  createdAt   DateTime          @default(now()) @db.DateTime(3)
+  updatedAt   DateTime          @updatedAt @db.DateTime(3)
+  sessions    CustomerSession[]
+}
+
+// Atomic running numbers that restart every Asia/Bangkok day: scope `reference` (SES-YYYYMMDD-NNNNNN) and
+// `queue:<branchId>:<letter>` (D57). Incremented with INSERT ... ON DUPLICATE KEY UPDATE inside the caller's transaction.
+model DailyCounter {
+  scope   String @db.VarChar(80)
+  day     String @db.VarChar(10)
+  lastNo  Int
+
+  @@id([scope, day])
+}
+
 model Product {
   id        String            @id @default(uuid()) @db.VarChar(36)
   category  ProductCategory
@@ -211,6 +233,13 @@ model CustomerSession {
   otherReason String?      @db.Text
   cancelledBy String?      @db.VarChar(64)
   stockReview Json?
+  // D57: the type chosen at the phone step and the queue number it produced ("A012"); the letter is frozen here so
+  // renaming or re-lettering a type never rewrites history. Null on sessions created before D57 (queueNo then holds
+  // the old per-day running number).
+  customerTypeId String?       @db.VarChar(36)
+  customerType   CustomerType? @relation(fields: [customerTypeId], references: [id], onDelete: Restrict)
+  queueLetter    String?       @db.VarChar(1)
+  queueNo        Int?
 
   productId  String?       @db.VarChar(36)
   product    Product?      @relation(fields: [productId], references: [id], onDelete: Restrict)

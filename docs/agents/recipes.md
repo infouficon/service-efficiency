@@ -1,6 +1,6 @@
 # Recipes: commands and rules for working in this repo
 
-Verified against `package.json`, `README.md`, `compose.dev.yml` and the Dockerfiles at `1c9eaf1`.
+Verified against `package.json`, `README.md`, `compose.dev.yml` and the Dockerfiles at `1c9eaf1`; §3, §5 and §7 updated 2026-10-13.
 
 ## 1. Before you edit
 
@@ -56,7 +56,7 @@ npm run test               # builds api, then API integration tests, then web un
   ```
 - Web only: `npm run test --workspace=@service-efficiency/web`.
 - Never point the tests, or a destructive script, at the dev or production database.
-- Only `accounts.test.mjs` is a real integration test. For workflow changes, **add a real test first** (H-15).
+- `accounts.test.mjs`, `erp-sync.test.mjs`, `warroom-sync.test.mjs` and `queue.test.mjs` are real integration tests. For workflow changes, **add a real test first** (H-15): import the shared harness `apps/api/tests/support.mjs` (`startApi`, `seedWorld` = two branches + one account per role, `cleanup` removes it and stops the app; `TEST_LOG=1` prints server errors). If a test fails before `cleanup` runs, its rows stay behind in the test database: delete them (branches/staff named `t-…`) before the next run, otherwise `accounts.test.mjs`'s last-ADMIN check fails.
 - Don't claim completion if any command above fails (rule 14). Say which one failed and show its output.
 
 ## 4. Schema changes (rule 6)
@@ -69,7 +69,7 @@ npm run test               # builds api, then API integration tests, then web un
 
 ## 5. Adding or changing a decision (the docs workflow)
 
-- Business decisions go in `docs/decisions.md` as the next `D##` (last is **D51**). Use the format of D40–D51: title, date, numbered bullets.
+- Business decisions go in `docs/decisions.md` as the next `D##` (last is **D60**). Use the format of D40–D51: title, date, numbered bullets.
 - Architecture-level or hard-to-reverse choices (a locking strategy, how to model stock movement) also get an ADR: see [docs/adr/README.md](../adr/README.md).
 - New vocabulary or a changed entity: edit [CONTEXT.md](../../CONTEXT.md) in the same change.
 - A newly found risk: add an `H-##` entry to [hazards.md](hazards.md). When fixed, mark it `fixed in <sha>/PR#`, never delete it.
@@ -101,6 +101,7 @@ DATABASE_URL=<same url> npx prisma migrate deploy && npm run build:api && (cd ap
 
 ## 7. Gotchas
 
+- **Hot rows and MariaDB.** The local test database is MariaDB 12, where `innodb_snapshot_isolation=ON` makes a REPEATABLE READ transaction fail with error 1020 ("Record has changed since last read") when it touches a row that another transaction committed after its first read. Production MySQL 8.4 does not. Code that increments a shared row (counters, stock) runs at READ COMMITTED (`$transaction(fn, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted })`), see [ADR 0001](../adr/0001-atomic-daily-counters-for-queue-numbers.md). The test run stays quiet about it: a failing parallel test shows `P2010` with `code: 1020`.
 - `Prisma Json?` columns: use `Prisma.DbNull` to clear (H-08); use `Prisma.DbNull` (not `null`) in `where` filters.
 - Branch parameters accept the **UUID or the Branch Code**. Don't assume which one the web sends: `MockUser.branchCode` may hold a UUID (see the frontend notes in hazards.md).
 - `GET /sessions` returns everything (H-06): don't build a feature that depends on it staying small.

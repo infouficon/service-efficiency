@@ -104,9 +104,24 @@ export interface SessionEventItem {
   metadata?: Record<string, unknown> | null;
 }
 
+/** A back-office customer type (D57): its letter is the queue letter ("A012") and the sort order. */
+export interface CustomerType {
+  id: string;
+  letter: string;
+  name: string;
+  description?: string | null;
+  active: boolean;
+}
+
 export interface MockSession {
   id?: string;
+  /** Internal key (SES-YYYYMMDD-NNNNNN): React keys, lookups, links. Staff see `queue` instead (D57). */
   reference: string;
+  /** What staff call the customer by, e.g. "A012" (letter + number); sessions from before D57 have no letter ("007"). */
+  queue: string;
+  customerTypeId?: string;
+  customerTypeLetter?: string;
+  customerTypeName?: string;
   branchCode: string;
   branchName: string;
   phone: string;

@@ -20,8 +20,9 @@ import type { Role } from '../../types/session';
 import { SystemAuditLogs } from './SystemAuditLogs';
 import { ErpSyncPanel } from './ErpSyncPanel';
 import { WarroomSyncPanel } from './WarroomSyncPanel';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit` and `erp`. */
-export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp';
+import { CustomerTypesPanel } from './CustomerTypesPanel';
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp` and `queue`. */
+export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp' | 'queue';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -142,7 +143,9 @@ export function AdminHub({
               ? 'ประวัติการทำงานของระบบ (System Audit Logs)'
               : subTab === 'erp'
                 ? 'ซิงก์ข้อมูลจาก ERP (ERP Sync)'
-                : 'จัดการผู้ใช้ (Staff Members)'}
+                : subTab === 'queue'
+                  ? 'ประเภทลูกค้าและคิว (Customer Types)'
+                  : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -156,6 +159,8 @@ export function AdminHub({
           <ErpSyncPanel />
           <WarroomSyncPanel />
         </>
+      ) : admin && subTab === 'queue' ? (
+        <CustomerTypesPanel />
       ) : (
         <>
           {error && (

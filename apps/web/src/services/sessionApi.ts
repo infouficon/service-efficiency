@@ -1,11 +1,13 @@
 import { api } from './api';
 import type {
+  CustomerType,
   MockSession,
   Outcome,
   Selection,
   Timestamp,
   WorkflowState,
 } from '../types/session';
+import { formatQueue } from '../features/session/workflow';
 
 export interface ApiSession {
   id: string;
@@ -15,6 +17,10 @@ export interface ApiSession {
   staffId: string;
   customerId?: string | null;
   phone?: string | null;
+  customerTypeId?: string | null;
+  customerType?: { id: string; letter: string; name: string } | null;
+  queueLetter?: string | null;
+  queueNo?: number | null;
   state: WorkflowState;
   confirmed: boolean;
   outcome?: Outcome | null;
@@ -115,6 +121,11 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
   return {
     id: s.id,
     reference: s.reference,
+    queue:
+      s.queueNo != null ? formatQueue(s.queueLetter, s.queueNo) : s.reference,
+    customerTypeId: s.customerTypeId || undefined,
+    customerTypeLetter: s.customerType?.letter || s.queueLetter || undefined,
+    customerTypeName: s.customerType?.name || undefined,
     branchCode: s.branch?.code || s.branchId,
     branchName: s.branch?.name || '',
     phone: s.phone || '',
@@ -162,9 +173,40 @@ export async function fetchSessionsApi(branchId?: string): Promise<MockSession[]
   return data.map(mapApiSessionToMockSession);
 }
 
-export async function createWalkInApi(branchId?: string): Promise<MockSession> {
-  const data = await api<ApiSession>('/sessions', 'POST', { branchId });
+/** D56/D57: a walk-in starts with the customer's phone number and a customer type; the server gives it the queue number. */
+export async function createWalkInApi(
+  branchId: string | undefined,
+  phone: string,
+  customerTypeId?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>('/sessions', 'POST', {
+    branchId,
+    phone,
+    customerTypeId,
+  });
   return mapApiSessionToMockSession(data);
+}
+
+/** Active customer types in letter order; `all` (ADMIN) includes the switched-off ones. */
+export function fetchCustomerTypesApi(all = false): Promise<CustomerType[]> {
+  return api<CustomerType[]>(`/customer-types${all ? '?all=true' : ''}`);
+}
+
+export function saveCustomerTypeApi(
+  type: { letter?: string; name: string; description?: string | null; active?: boolean },
+  existingId?: string,
+): Promise<CustomerType> {
+  return existingId
+    ? api<CustomerType>(`/customer-types/${encodeURIComponent(existingId)}`, 'PUT', {
+        name: type.name,
+        description: type.description ?? null,
+        active: type.active,
+      })
+    : api<CustomerType>('/customer-types', 'POST', {
+        letter: type.letter || undefined,
+        name: type.name,
+        description: type.description || undefined,
+      });
 }
 
 export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
@@ -294,6 +336,8 @@ export interface AuditLogItem {
   branchName: string;
   sessionId?: string;
   sessionReference?: string;
+  /** "A012" (D57): what staff call the customer by. */
+  sessionQueue?: string;
   metadata?: Record<string, unknown> | null;
 }
 

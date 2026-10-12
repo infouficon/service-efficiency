@@ -202,7 +202,7 @@ export function CashierWorkspace({
           eyebrow="CASHIER CANCELLATION"
         >
           <p>
-            ยกเลิก Session: <strong>{cancellingSession.reference}</strong> (
+            ยกเลิกคิว <strong>{cancellingSession.queue}</strong> (
             {cancellingSession.selection.product?.model})
           </p>
           <ReasonForm
@@ -282,7 +282,7 @@ export function CashierWorkspace({
                     }}
                   >
                     <div className="card-top">
-                      <span className="card-ref">{s.reference}</span>
+                      <span className="card-ref">คิว {s.queue}</span>
                       <span
                         className={`status-tag status-${s.state.toLowerCase()}`}
                       >
@@ -336,7 +336,7 @@ export function CashierWorkspace({
                       <div className="eyebrow">
                         CASHIER TRANSACTION · {selectedSession.branchName || `สาขา ${user.branch}`}
                       </div>
-                      <h2 className="cashier-ref-title">{selectedSession.reference}</h2>
+                      <h2 className="cashier-ref-title">คิว {selectedSession.queue}</h2>
                     </div>
                     <span
                       className={`status-tag status-${selectedSession.state.toLowerCase()} cashier-status-badge`}

@@ -9,6 +9,7 @@ import {
 import { Prisma, type RoleCode } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatQueue } from '../queue/queue.service';
 import {
   hashPassword,
   IDLE_MS,
@@ -25,6 +26,12 @@ type Tx = Prisma.TransactionClient;
 export const ERP_MANAGED_ROLES: RoleCode[] = ['STAFF', 'STOCK', 'CASHIER'];
 const ERP_PASSWORD_MESSAGE =
   'บัญชีนี้ใช้รหัสผ่านเดียวกับ ERP กรุณาเปลี่ยนรหัสผ่านที่ ERP (ระบบซิงก์ทุกวัน 10:00)';
+const queueOf = (
+  session?: { queueLetter: string | null; queueNo: number | null } | null,
+) =>
+  session?.queueNo != null
+    ? formatQueue(session.queueLetter, session.queueNo)
+    : undefined;
 export function publicAccount(account: Account) {
   const fullName = [account.firstName, account.lastName].filter(Boolean).join(' ');
   return {
@@ -404,6 +411,8 @@ export class AccountsService {
             select: {
               id: true,
               reference: true,
+              queueLetter: true,
+              queueNo: true,
               branch: { select: { name: true, code: true } },
             },
           },
@@ -433,6 +442,8 @@ export class AccountsService {
         select: {
           id: true,
           reference: true,
+          queueLetter: true,
+          queueNo: true,
           stockReview: true,
           branch: { select: { name: true, code: true } },
         },
@@ -458,6 +469,8 @@ export class AccountsService {
       branchName: string;
       sessionId?: string;
       sessionReference?: string;
+      /** What staff call the customer by (D57), e.g. "A012". */
+      sessionQueue?: string;
       metadata?: Record<string, unknown> | null;
     }> = [];
 
@@ -503,6 +516,7 @@ export class AccountsService {
         branchName: e.session?.branch?.name || '-',
         sessionId: e.sessionId,
         sessionReference: e.session?.reference,
+        sessionQueue: queueOf(e.session),
         metadata: (e.metadata as Record<string, unknown>) || null,
       });
     }
@@ -522,6 +536,7 @@ export class AccountsService {
           branchName: s.branch?.name || '-',
           sessionId: s.id,
           sessionReference: s.reference,
+          sessionQueue: queueOf(s),
           metadata: { acknowledgedAt: sr.acknowledgedAt, acknowledgedBy: sr.acknowledgedBy },
         });
       }

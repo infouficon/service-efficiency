@@ -17,6 +17,7 @@ import type { MockSession, MockUser, Selection } from '../../types/session';
 import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
+import { WalkInForm } from './WalkInForm';
 import {
   advance,
   confirmSelection,
@@ -270,11 +271,11 @@ export function StaffWorkspace({
     }
   };
 
-  const startNewWalkIn = async () => {
+  const startNewWalkIn = async (phone: string, customerTypeId?: string) => {
     setBusy(true);
     setError('');
     try {
-      const newS = await createWalkInApi(user.branchCode);
+      const newS = await createWalkInApi(user.branchCode, phone, customerTypeId);
       onAddSession(newS);
       setActiveSessionRef(newS.reference);
       setForm('normal');
@@ -426,10 +427,16 @@ export function StaffWorkspace({
           </div>
         </div>
         <div>
-          <Button onClick={startNewWalkIn} disabled={busy}>
+          <Button
+            onClick={() => {
+              setActiveSessionRef(null);
+              setForm('normal');
+            }}
+            disabled={busy}
+          >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <Plus size={16} />
-              {busy ? 'กำลังสร้าง…' : 'ลงทะเบียนลูกค้าใหม่'}
+              รับลูกค้าใหม่
             </span>
           </Button>
         </div>
@@ -460,7 +467,7 @@ export function StaffWorkspace({
                     <AlertTriangle size={16} color="#dc2626" />
                     ฝ่ายคลัง (Stock) แจ้งเตือน:
                   </strong>{' '}
-                  Session <strong>{ps.reference}</strong> ({ps.selection.product?.model || 'สินค้า'}) —{' '}
+                  คิว <strong>{ps.queue}</strong> ({ps.selection.product?.model || 'สินค้า'}) —{' '}
                   มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
                 </span>
                 <Button
@@ -495,7 +502,7 @@ export function StaffWorkspace({
                 }}
               >
                 <div className="card-top">
-                  <span className="card-ref">{s.reference}</span>
+                  <span className="card-ref">คิว {s.queue}</span>
                   {s.stockPendingReview ? (
                     <span
                       className="status-tag status-outcome"
@@ -519,7 +526,10 @@ export function StaffWorkspace({
                   {s.selection.product?.model || 'ยังไม่ระบุสินค้า'}
                 </div>
                 <div className="card-meta">
-                  <span>ผู้ดูแล: {s.staffId}</span>
+                  <span>
+                    ผู้ดูแล: {s.staffId}
+                    {s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
+                  </span>
                   <span>{s.phone || 'ยังไม่มีเบอร์'}</span>
                 </div>
               </div>
@@ -531,23 +541,10 @@ export function StaffWorkspace({
           {!activeSession ? (
             <div className="content-grid">
               <Panel
-                title="เริ่มต้อนรับลูกค้า (Walk-in)"
+                title="รับลูกค้าใหม่ (Walk-in)"
                 eyebrow="01 / CUSTOMER ARRIVAL"
               >
-                <p className="muted">
-                  สร้าง Customer Session ทันทีที่ลูกค้าเดินเข้ามาในร้าน
-                </p>
-                <div style={{ marginTop: '1.5rem' }}>
-                  <Button onClick={startNewWalkIn} disabled={busy}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <Plus size={16} />
-                      {busy ? 'กำลังสร้าง Session…' : 'ลูกค้าเดินเข้าร้าน'}
-                    </span>
-                  </Button>
-                </div>
-                <p className="fine" style={{ marginTop: '1rem' }}>
-                  * เบอร์โทรศัพท์จะถูกขอเมื่อลูกค้าตัดสินใจ "ซื้อ" เท่านั้น
-                </p>
+                <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
               </Panel>
             </div>
           ) : (
@@ -562,13 +559,15 @@ export function StaffWorkspace({
                     <ArrowLeft size={14} /> รายการ Session ({branchSessions.length})
                   </button>
                   <span className="eyebrow">
-                    SESSION REFERENCE · {activeSession.branchName}
+                    QUEUE · {activeSession.branchName}
                   </span>
-                  <h2>{activeSession.reference}</h2>
+                  <h2 className="queue-title">คิว {activeSession.queue}</h2>
                   <span className="muted">
+                    {activeSession.customerTypeName
+                      ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
+                      : ''}
                     Customer Phone ·{' '}
-                    {activeSession.phone ||
-                      'ยังไม่ได้เก็บเบอร์โทร (รอหลังตัดสินใจ BUY)'}
+                    {activeSession.phone || 'ไม่มีเบอร์โทร'}
                   </span>
                 </div>
                 <span className={`state-pill ${finished ? 'terminal' : ''}`}>
@@ -760,7 +759,7 @@ export function StaffWorkspace({
                                 Decision: BUY
                               </Notice>
                               <label>
-                                หมายเลขโทรศัพท์ลูกค้า (Customer Phone Number)
+                                ยืนยันเบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
                                 <input
                                   type="tel"
                                   inputMode="numeric"

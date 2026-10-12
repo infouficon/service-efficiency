@@ -112,9 +112,9 @@ export function SystemAuditLogs() {
         const matchStaff =
           item.actorStaffId.toLowerCase().includes(q) ||
           item.actorName.toLowerCase().includes(q);
-        const matchSession = item.sessionReference
-          ? item.sessionReference.toLowerCase().includes(q)
-          : false;
+        const matchSession =
+          (item.sessionQueue?.toLowerCase().includes(q) ?? false) ||
+          (item.sessionReference?.toLowerCase().includes(q) ?? false);
         const matchAction =
           item.action.toLowerCase().includes(q) ||
           item.actionLabel.toLowerCase().includes(q);
@@ -250,7 +250,7 @@ export function SystemAuditLogs() {
           <div className="logs-search-wrap">
             <input
               type="search"
-              placeholder="ค้นหา Staff ID, ชื่อ, Session Ref, กิจกรรม..."
+              placeholder="ค้นหา Staff ID, ชื่อ, คิว, กิจกรรม..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -383,7 +383,7 @@ export function SystemAuditLogs() {
                 <th style={{ minWidth: '220px' }}>กิจกรรม (Action)</th>
                 <th style={{ minWidth: '160px', whiteSpace: 'nowrap' }}>ผู้ดำเนินการ (Actor)</th>
                 <th style={{ minWidth: '130px', whiteSpace: 'nowrap' }}>สาขา (Branch)</th>
-                <th style={{ width: '120px', minWidth: '120px', whiteSpace: 'nowrap' }}>Session Ref</th>
+                <th style={{ width: '120px', minWidth: '120px', whiteSpace: 'nowrap' }}>คิว</th>
                 <th style={{ minWidth: '190px' }}>รายละเอียด</th>
               </tr>
             </thead>
@@ -418,7 +418,7 @@ export function SystemAuditLogs() {
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>{item.branchName}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {item.sessionReference ? (
+                      {item.sessionQueue || item.sessionReference ? (
                         <span
                           style={{
                             fontFamily: 'monospace',
@@ -430,7 +430,9 @@ export function SystemAuditLogs() {
                             border: '1px solid #bbf7d0',
                           }}
                         >
-                          {item.sessionReference}
+                          {item.sessionQueue
+                            ? `คิว ${item.sessionQueue}`
+                            : item.sessionReference}
                         </span>
                       ) : (
                         <span style={{ color: '#94a3b8' }}>—</span>

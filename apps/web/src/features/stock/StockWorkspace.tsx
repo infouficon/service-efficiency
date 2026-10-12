@@ -321,7 +321,7 @@ export function StockWorkspace({
                 }}
               >
                 <span>
-                  <strong>⚠️ แจ้งเตือนฝ่ายคลัง:</strong> Session <strong>{cs.reference}</strong> (
+                  <strong>⚠️ แจ้งเตือนฝ่ายคลัง:</strong> คิว <strong>{cs.queue}</strong> (
                   {cs.selection.product?.model || 'สินค้า'}) ถูกยกเลิกโดย Staff <strong>{cs.cancelledBy || cs.staffId || 'Staff'}</strong> — สาเหตุ:{' '}
                   <em>{cs.reason || cs.otherReason || 'ลูกค้าเปลี่ยนใจ'}</em>
                 </span>
@@ -344,8 +344,8 @@ export function StockWorkspace({
           eyebrow="STOCK CANCELLATION"
         >
           <p>
-            ยกเลิกคำขอสำหรับ Session:{' '}
-            <strong>{cancellingSession.reference}</strong> (
+            ยกเลิกคำขอสำหรับคิว{' '}
+            <strong>{cancellingSession.queue}</strong> (
             {cancellingSession.selection.product?.model})
           </p>
           <ReasonForm
@@ -407,7 +407,7 @@ export function StockWorkspace({
                     onClick={() => handleSelectCard(s.reference)}
                   >
                     <div className="card-top">
-                      <span className="card-ref">{s.reference}</span>
+                      <span className="card-ref">คิว {s.queue}</span>
                       {s.stockPendingReview ? (
                         <span
                           className="status-tag status-searching"
@@ -459,7 +459,7 @@ export function StockWorkspace({
           <div className="stock-detail-column">
             {selectedSession ? (
               <Panel
-                title={`รายละเอียดคำขอ: ${selectedSession.reference}`}
+                title={`รายละเอียดคำขอ: คิว ${selectedSession.queue}`}
                 eyebrow={`สถานะปัจจุบัน: ${selectedSession.state}`}
               >
                 <button

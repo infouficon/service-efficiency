@@ -8,6 +8,7 @@ import {
   phoneIsValid,
   quantityIsValid,
   toggleAccessory,
+  formatQueue,
 } from '../src/features/session/workflow.ts';
 const fixture = () => ({
   reference: 'fixture',
@@ -139,4 +140,13 @@ test('partialFulfillStock removes missing accessories or main product and advanc
   assert.equal(noMain.state, 'FOUND');
   assert.equal(noMain.selection.product, null);
   assert.deepEqual(noMain.selection.accessories, { Case: '1', Pencil: '2' });
+});
+
+test('queue label: letter plus three digits, four after 999, no letter for sessions from before D57', () => {
+  assert.equal(formatQueue('A', 1), 'A001');
+  assert.equal(formatQueue('B', 12), 'B012');
+  assert.equal(formatQueue('C', 999), 'C999');
+  assert.equal(formatQueue('A', 1000), 'A1000');
+  assert.equal(formatQueue(null, 7), '007');
+  assert.equal(formatQueue(undefined, 123), '123');
 });

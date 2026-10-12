@@ -6,6 +6,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -31,6 +32,19 @@ export class CreateSessionDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  /** D56: a walk-in starts at the customer's phone number: exactly 10 ASCII digits. */
+  @IsString()
+  @Matches(/^[0-9]{10}$/, {
+    message: 'Phone number must contain exactly 10 digits (0-9)',
+  })
+  phone!: string;
+
+  /** D57: the customer type picked at the phone step. Left out, the active type with the lowest letter is used. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  customerTypeId?: string;
 }
 
 export class AdvanceStepDto {

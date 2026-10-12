@@ -2,8 +2,19 @@
 
 Source: the owner (M2Dev) relayed the meeting's feedback on 2026-10-13. The raw list is kept verbatim in §1 so no wording is lost.
 Everything else here was derived by reading the code (`main` @ `ecd82e0`) and, for U POS, the `infouficon/UFPOS` repo (read only).
-Status of every item: **NOT built, not decided** unless §4 says otherwise. Decisions, once the owner confirms them, become `D56+` in
-[../decisions.md](../decisions.md); this file is the working brief for `/grill-with-docs`.
+Decisions are recorded as `D56+` in [../decisions.md](../decisions.md); this file is the working brief for `/grill-with-docs`.
+
+## 0. Status board (updated as each step ships)
+
+| Item | Status | Where |
+| --- | --- | --- |
+| F1 phone first | **built** (PR `feat/queue-types-phone-first`) | D56, `WalkInForm`, `CreateSessionDto` |
+| F7 queue numbers, F8 "คิว" wording | **built** (same PR) | D57, ADR 0001, `queue/` module |
+| F15 customer types (back office, A-Z) | **built** (same PR) | D57, Admin → "ประเภทลูกค้า / คิว" |
+| F5 unlimited stock (global ADMIN switch) | decided (D59), not built | |
+| F9 print receipt without prices | decided (D58), not built | |
+| F17 U POS two-way | decided (D60), not built, no issue opened in UFPOS yet | |
+| F2, F3, F4, F6, F10, F11, F12, F13, F14, F16 | not built | see §2 and §4 |
 
 ## 1. The feedback, verbatim
 
@@ -32,7 +43,8 @@ Status of every item: **NOT built, not decided** unless §4 says otherwise. Deci
 Legend: **Now** = what the code does today · **Change** · **Touches** · **Decision / default** (the default is what I would build if the owner says
 "as proposed"; `?` = needs an answer that cannot be defaulted).
 
-### F1 Start the work at the phone number
+### F1 Start the work at the phone number · **built (D56)**
+> The *Now* line below describes the code before this change.
 - **Now:** walk-in creates the session with no customer; the phone is asked only after BUY, at product selection (requirements §6, ERD "phone collection timing";
   `updateSelection` upserts `Customer`, `confirmPurchase` requires 10 digits). NOT_BUY sessions never have a phone.
 - **Change:** step 1 of a walk-in is the 10-digit phone; `Customer` is created/linked immediately. **Supersedes** the "phone only after BUY" rule (new D-entry).
@@ -66,7 +78,8 @@ Legend: **Now** = what the code does today · **Change** · **Touches** · **Dec
 - **Now:** a fixed client-side list of 11 (`constants/options.ts` `payments`); the server accepts any string (H-11).
 - **Change:** add three names. `?` **the three names.** Optional improvement: move the list to the server (one source of truth).
 
-### F7 + F8 Queue numbers that are easy to call; "SES-…" becomes "คิว" everywhere
+### F7 + F8 Queue numbers that are easy to call; "SES-…" becomes "คิว" everywhere · **built (D57)**
+> The *Now* line below describes the code before this change. Built as: letter + 3 digits per branch, per type, per Bangkok day; `reference` stays internal; see D57 and ADR 0001.
 - **Now:** `reference = SES-YYYYMMDD-NNNNNN` (D6, one running number per day for all branches; allocation is racy, H-05). It is the lookup key (`getById` accepts it),
   the deep link (`#/logs?ref=`), shown in Staff/Stock/Cashier/Logs and in the CSV, and parsed in `StaffWorkspace.tsx:72` to find the day.
 - **Change:** a short per-branch, per-day queue number (e.g. `A012`) shown as "คิว A012"; `reference` stays as the internal unique id (not shown).
@@ -110,7 +123,8 @@ Legend: **Now** = what the code does today · **Change** · **Touches** · **Dec
 - **Touches:** web export (computed from timestamps/events); optionally a server endpoint later.
 - **Default:** as written.
 
-### F15 Customer type A / B (B = takes long)
+### F15 Customer type A / B (B = takes long) · **built (D57)**
+> Built as a back-office list (letters A-Z, owner-created); the staff member picks at the phone step; the letter is the queue letter.
 - **Now:** none. (U POS's repair queue has ticket types A/B/D, which are unrelated: pick-up / drop-off.)
 - **`?`** who decides and when: see §5 Q2. **Default:** the staff member chooses at the phone-number step; the letter becomes the queue letter (F7); reports compare A and B durations.
 
@@ -140,8 +154,13 @@ Each step = one PR with tests first (see [recipes.md](recipes.md) §3), docs and
 
 ## 5. Questions that cannot be defaulted (asked to the owner 2026-10-13)
 
-- Q1 Receipt: prices and total or not (F9)?
-- Q2 Customer type A/B: who decides, and does the queue letter follow it (F15, F7)?
-- Q3 U POS bill opening: which integration (F17)?
-- Q4 Unlimited stock: scope of the switch (F5)?
-- Text: the three payment method names (F6); the registration URL pattern (F10); whether a customer may refuse to give a phone number (F1).
+Answered by the owner on 2026-10-13:
+- Q1 Receipt: **no prices** (D58).
+- Q2 Customer type A/B: **configured in the back office, the owner creates the types, ordered A-Z**; the queue letter is the type's letter (D57). Defaults still to confirm: the staff member picks the type at the phone step, and it cannot change afterwards.
+- Q3 U POS bill opening: **two-way** (D60).
+- Q4 Unlimited stock: **one global ADMIN switch**, on by default (D59).
+
+Still open (nothing blocks the work; defaults in brackets; recorded as OQ-13, OQ-14, OQ-15 in [../open-questions.md](../open-questions.md)):
+- the three payment method names (F6) (a list the back office can edit is the fallback, so no deploy is needed to add them);
+- the registration URL to encode in each branch's QR (F10) (a per-branch URL field, set in the back office);
+- whether a customer may refuse to give a phone number (F1) (no: the phone is required, D56).

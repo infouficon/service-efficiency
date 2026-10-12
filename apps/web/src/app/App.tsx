@@ -16,6 +16,7 @@ import {
   Users,
   Activity,
   RefreshCw,
+  Ticket,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -431,6 +432,17 @@ export function App({
                       >
                         <RefreshCw size={14} /> <span>ซิงก์ ERP</span>
                       </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'queue' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('queue');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Ticket size={14} /> <span>ประเภทลูกค้า / คิว</span>
+                      </button>
                     </>
                   )}
                 </div>
@@ -536,7 +548,7 @@ export function App({
                           lineHeight: 1.4,
                         }}
                       >
-                        <strong>{s.reference}:</strong>
+                        <strong>คิว {s.queue}:</strong>
                         <span>{missingText}</span>
                         {note && (
                           <span

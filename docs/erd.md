@@ -169,6 +169,8 @@ OQ-04–09 cover workflow state storage/action boundaries, master hierarchy/hist
 
 ## Confirmed phone collection timing
 
+> **Superseded by D56 (2026-10-13):** the phone number is collected at walk-in. `CustomerSession.customerId` is set from the first moment; the original text follows.
+
 Collect Customer Phone Number only after BUY. Walk-in/DEMO and NOT_BUY do not collect a phone number. This timing does not settle Customer identity creation/linking or physical nullability; those remain part of OQ-06/OQ-09.
 
 ## Implemented account-only physical model (D39)

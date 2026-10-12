@@ -134,12 +134,24 @@ test('availability: ERP ready minus promised units; completed before the snapsho
     0,
     'never negative',
   );
+  // `now` is fixed: the missing-report rule expires after OUT_OF_STOCK_HOURS, so the real clock must not decide this test
+  const reportedAt = new Date('2026-10-12T05:30:00Z');
   assert.equal(
     products.availableUnits(
-      { ...inv, outOfStockAt: new Date('2026-10-12T05:30:00Z') },
+      { ...inv, outOfStockAt: reportedAt },
       new Map(),
+      new Date('2026-10-12T06:00:00Z'),
     ),
     0,
+  );
+  assert.equal(
+    products.availableUnits(
+      { ...inv, outOfStockAt: reportedAt },
+      new Map(),
+      new Date('2026-10-12T12:00:00Z'),
+    ),
+    3,
+    'a report older than 6 hours stops blocking the SKU',
   );
   assert.equal(
     products.availableUnits(

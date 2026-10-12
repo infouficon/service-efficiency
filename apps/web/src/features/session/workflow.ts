@@ -125,6 +125,14 @@ export function progressIndex(session: MockSession): number {
   return 6;
 }
 
+/** "A012": the type letter plus at least three digits ("A1000" after 999). Mirrors `formatQueue` in the API. */
+export function formatQueue(
+  letter: string | null | undefined,
+  no: number,
+): string {
+  return `${letter ?? ''}${String(no).padStart(3, '0')}`;
+}
+
 export function phoneIsValid(phone: string): boolean {
   return /^[0-9]{10}$/.test(phone);
 }

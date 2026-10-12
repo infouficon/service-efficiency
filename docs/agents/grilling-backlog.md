@@ -92,7 +92,8 @@ Agreed proposal, not yet challenged: leavers and closed branches (deactivate onl
 
 ## G-13 Meeting feedback of 2026-10-13 (17 requests). Read [meeting-feedback-2026-10-13.md](meeting-feedback-2026-10-13.md) first
 It supersedes parts of G-1 (cancellation: any role can cancel, F12), G-3 (ownership), G-5 (queue numbers replace `SES-…` references, F7/F8) and the old rule "phone only after BUY" (F1).
-Open questions (Q1 receipt prices, Q2 A/B definition, Q3 U POS bill-opening integration, Q4 unlimited-stock scope, payment names, registration URL, phone refusal) are listed in §5 there.
+Answered 2026-10-13: Q1 receipt without prices (D58), Q2 types configured in the back office, A-Z (D57), Q3 U POS two-way (D60), Q4 one global ADMIN switch (D59). Still open: payment method names, registration URL, whether a customer may refuse to give a phone number (§5 there).
+**Built:** F1 phone first (D56), F7/F8 queue numbers and wording, F15 customer types (D57, ADR 0001) on branch `feat/queue-types-phone-first`.
 Order: quick wins → small schema → model changes (phone first, multiple main products, buy again, cashier reject) → cross-repo U POS.
 
 ---

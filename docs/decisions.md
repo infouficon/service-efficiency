@@ -831,3 +831,36 @@ Owner instruction: "products come from warroom" and the read-only connection of 
 4. **Locks in mode `on`.** Manual stock edits are refused for rows with ERP data (ADMIN may still switch `active`); names, codes, colour, storage and category of `erpManaged` products/models/SKUs are read-only.
 5. **Scope.** All categories found in `stock_mv`, only parts that some SES branch stocks, branches matched by `Branch.code`. Category text that the rules do not recognise is skipped and reported, never guessed.
 OPEN: the final category rules (after the first dry run), a dedicated read-only database role for SES, and whether the 12.5 h overnight gap needs an extra warroom slot.
+
+## D56 — A walk-in starts at the customer's phone number (2026-10-13)
+
+Owner, relaying the 2026-10-13 meeting: "เริ่มการทำงานที่ กรอก เบอร์โทร". **Supersedes** requirements §6 and `erd.md` "Confirmed phone collection timing" (phone only after BUY, never at walk-in or NOT_BUY).
+
+1. **First step.** `POST /api/sessions` needs `phone` (exactly 10 ASCII digits, as before). The `Customer` row is created or linked in the same transaction and the session stores `phone` and `customerId` from the first moment.
+2. **Consequences.** A NOT_BUY or cancelled visit now keeps the customer's phone number (the privacy wording and any retention rule are the owner's call). The phone field at the BUY step stays, pre-filled, so a typo can still be corrected before confirmation (the 10-digit check at confirmation is unchanged).
+3. **Walk-in time.** `customerWalkInAt` is the moment the start form is submitted; the phone is typed before the session exists.
+4. **Default, not yet confirmed.** The phone is required and there is no "customer refused" path. OPEN: must a customer who refuses still be servable? If yes, say how it is recorded (a reason, a flag).
+
+## D57 — Customer types and queue numbers replace the `SES-…` reference on screen (2026-10-13)
+
+Owner: "เปลี่ยนการรันคิวแบบดูง่ายเพื่อให้เรียกลูกค้าง่าย", "ให้ทุกที่ที่เป็น SES-XXXXX เปลี่ยนเป็น คิว ให้หมด", "แยกประเภทลูกค้าเป็น A B โดยแบ่ง B พวกใช้เวลานาน"; asked how the types are made, the owner chose: "ทำให้ตั้งค่าหลังบ้าน สร้าง type เอง เรียงจาก a-z". Supersedes D6 for what is shown; D6's format stays as the internal key.
+
+1. **Customer types** are a back-office list (ADMIN: Admin → "ประเภทลูกค้า / คิว"): a letter A-Z (unique, the sort order, never changed after creation), a name, a description, an active flag. The migration seeds `A ลูกค้าทั่วไป` and `B ลูกค้าใช้เวลานาน`; the owner renames them or adds more (a new type takes the next free letter unless one is given). Types are switched off, never deleted, and at least one stays active.
+2. **Choosing.** The staff member picks the type at the phone step; the active type with the lowest letter is the default. The type cannot be changed afterwards (default, not yet confirmed).
+3. **Queue number** = type letter + a running number, **per branch, per type letter, per Bangkok calendar day** (restarts at 00:00 Asia/Bangkok): `A001`, `B012`; four digits after 999. It is stored on the session (`queueLetter`, `queueNo`, the letter frozen at creation) and shown as "คิว A012" on every screen (staff, stock, cashier, logs, alerts, audit view, export).
+4. **`reference` stays** as the internal unique key (`SES-YYYYMMDD-NNNNNN`, now with the Bangkok date): lookups, deep links, React keys. It is not shown, except as the last identification column of the CSV export, because queue numbers repeat across branches, types and days.
+5. **Sessions from before this change** show their old per-day running number without a letter ("คิว 007").
+6. **"B = takes long"** is only the name the owner gives. Reports compare durations by type; the export has a "ประเภทลูกค้า" column (the per-step durations arrive with the export change).
+7. **Allocation** is atomic (`DailyCounter`, one INSERT … ON DUPLICATE KEY UPDATE inside the walk-in transaction) and fixes H-05. See [ADR 0001](adr/0001-atomic-daily-counters-for-queue-numbers.md).
+
+## D58 — Receipt shows no prices (2026-10-13)
+
+Owner, asked whether the printed receipt shows prices: "ไม่แสดงราคา (แนะนำ)". The "พิมพ์ใบเสร็จ" button prints an **order summary**: branch name and phone, date and time, queue number, staff, items with quantities, payment method names and the branch registration QR. No prices or totals; the legal receipt stays in U POS. SES keeps storing no money amounts (requirements §20, D26). Defaults, not yet confirmed: 80 mm paper, printable once the order is confirmed. **Not built yet.**
+
+## D59 — "Stock unlimited" is one global ADMIN switch (2026-10-13)
+
+Owner, asked for the scope of the temporary "unlimited stock" request: "สวิตช์รวมของ ADMIN (แนะนำ)". One setting, stored in the database (not an env var), switched by ADMIN; **on** by default until the warroom sync is switched to `on` (D55). While on: no SKU is blocked by stock (D41's "สินค้าหมด" does not apply), the screens show "ไม่จำกัด", FOUND does not decrement and a cancel does not give a unit back; it overrides the ERP numbers. **Not built yet.**
+
+## D60 — Bill opening on U POS works both ways (2026-10-13)
+
+Owner, asked how SES and U POS (`infouficon/UFPOS`) should meet so the cashier no longer does the work twice and the KPI can be measured: "สองทาง (แนะนำ)". SES sends the order lines to U POS so the bill is pre-filled; U POS reports back when the bill is really opened, and SES records that moment (instead of the click on "เปิดบิล"). It needs a contract with the U POS team (a GitHub issue labelled `integration:pos` in `infouficon/UFPOS`); nothing has been opened there yet. **Not built yet.**

@@ -1,6 +1,6 @@
 # Workflow as built: the API contract of the CustomerSession lifecycle
 
-What the code **actually does** today (`main` @ `1c9eaf1`, 2026-10-12). The design intent is in
+What the code **actually does** today (`main` @ `ecd82e0` plus the D56/D57 change, 2026-10-13). The design intent is in
 [docs/state-machine.md](../state-machine.md) and [docs/permissions.md](../permissions.md); both
 were written in Phase 1 and are older than this code. Where they disagree, the differences
 are listed in §5. Vocabulary: [CONTEXT.md](../../CONTEXT.md).
@@ -11,18 +11,18 @@ Every handler first calls `AccountsService.authenticate(req)` (cookie `se_sessio
 
 ## 1. The step table (`POST /api/sessions/:id/step` `{ action }`)
 
-Source: the `STEPS` map in `apps/api/src/sessions/sessions.service.ts:22-107`, executed by
-`advanceStep()` (`:293-359`). Guards: the session is not finished (`outcome` null and state ≠
-`COMPLETED`), the actor has `requiredRole` (**ADMIN always passes**, `:114`) and `state === from`.
+Source: the `STEPS` map in `apps/api/src/sessions/sessions.service.ts`, executed by
+`advanceStep()`. Guards: the session is not finished (`outcome` null and state ≠
+`COMPLETED`), the actor has `requiredRole` (**ADMIN always passes**, see `checkRole`) and `state === from`.
 
 | action | from → to | role | timestamp column | event | side effect |
 | --- | --- | --- | --- | --- | --- |
 | `startDemo` | WALK_IN → DEMO | STAFF | `demoStartAt` | DEMO_STARTED | none (the one-DEMO-per-Staff rule is **not** checked, H-04) |
 | `endDemo` | DEMO → DECISION | STAFF | `demoEndAt` | DEMO_ENDED | |
 | `buy` | DECISION → DECISION | STAFF | `decisionAt` | DECISION_MADE | records BUY; the state does not move |
-| `startSelection` | DECISION → PRODUCT_SELECTION | STAFF | `productSelectionStartAt` | PRODUCT_SELECTION_STARTED | requires `decisionAt` (`:313`) |
+| `startSelection` | DECISION → PRODUCT_SELECTION | STAFF | `productSelectionStartAt` | PRODUCT_SELECTION_STARTED | requires `decisionAt` |
 | `search` | STOCK_REQUESTED → SEARCHING | STOCK | `stockStartedAt` | STOCK_SEARCHING | |
-| `found` | SEARCHING → FOUND | STOCK | `stockFoundAt` | STOCK_FOUND | **BranchInventory.stock −1** for the session SKU (`:320-325`), no floor (H-07) |
+| `found` | SEARCHING → FOUND | STOCK | `stockFoundAt` | STOCK_FOUND | **BranchInventory.stock −1** for the session SKU, no floor (H-07) |
 | `send` | FOUND → SENT_TO_CASHIER | STOCK | — | STOCK_SENT_TO_CASHIER | |
 | `receive` | SENT_TO_CASHIER → CASHIER_RECEIVED | CASHIER | `cashierReceivedAt` | CASHIER_RECEIVED | |
 | `scan` | CASHIER_RECEIVED → CASHIER_SCAN | CASHIER | `cashierScanAt` | CASHIER_SCANNED | |
@@ -35,23 +35,24 @@ check, so a double-clicked `found` deducts stock twice, writes two events and ov
 
 ## 2. Other session endpoints
 
-Controller: `apps/api/src/sessions/sessions.controller.ts`. Service: `sessions.service.ts`.
+Controller: `apps/api/src/sessions/sessions.controller.ts`. Service: `sessions.service.ts` (cited by method name: line numbers drift).
+Every endpoint returns the session in **one shape** (`sessionInclude`: branch, staff, `customerType`, product, model, sku with model and product, accessories, ontop, points, burnPoints, payments, events) including `queueLetter` / `queueNo` (H-19 fixed).
 
-| Endpoint (controller line) | Service (line) | Who | Allowed when | Effect |
+| Endpoint | Service method | Who | Allowed when | Effect |
 | --- | --- | --- | --- | --- |
-| `GET /sessions?branchId=` (:32) | `list` (:127) | any role | — | Non-ADMIN is forced to their own branch. ADMIN may filter by branch UUID **or code**. Returns **every** session of the branch (all dates) with all child rows and events, newest first. No paging (H-06). |
-| `GET /sessions/:id` (:41) | `getById` (:173) | branch-scoped | — | `:id` may be the UUID **or** the `SES-…` reference |
-| `POST /sessions` `{branchId?}` (:47) | `createWalkIn` (:211) | STAFF | an active branch exists | New session in WALK_IN, reference `SES-YYYYMMDD-NNNNNN` (H-05), event SESSION_CREATED. ADMIN: `dto.branchId` → own branch → **first active branch by code** (silent fallback, `:225-230`) |
-| `POST /sessions/:id/decision/not-buy` `{reason, otherReason?}` (:63) | `recordNotBuy` (:361) | STAFF | state DECISION, not finished | `outcome=NOT_BUY`, `decisionAt`, event DECISION_MADE `{outcome, reason}`. `otherReason` is required when reason = `อื่น ๆ`. The reason value is not checked against the fixed list. |
-| `PUT /sessions/:id/selection` (:73) | `updateSelection` (:411) | STAFF | `!confirmed && !outcome && (PRODUCT_SELECTION \|\| (DECISION && decisionAt))` | Upserts Customer by phone. Replaces each provided child list wholesale (drops `None`; payments are not filtered). Resolves `skuId` (UUID or SKU code) → model → product. **No event, no timestamp.** No inventory or `active` check on the SKU (H-10). |
-| `POST /sessions/:id/confirm` (:83) | `confirmPurchase` (:580) | STAFF | PRODUCT_SELECTION, not confirmed, phone is 10 digits, sku or product set | `confirmed=true`, → **STOCK_REQUESTED**, `productSelectionConfirmedAt`, event PRODUCT_SELECTION_CONFIRMED (this is also the stock request, D51) |
-| `POST /sessions/:id/out-of-stock` `{action:'cancel'\|'partial', outOfStockItems?, reason?, otherReason?, note?}` (:89) | `recordOutOfStock` (:632) | STOCK | SEARCHING | **partial**: drops the listed accessories (by name); if the main product is listed (`'MAIN_PRODUCT'`, SKU code or product name) it clears product/model/sku and sets stock to 0, otherwise stock −1; → FOUND, `stockFoundAt`, STOCK_FOUND `{partialFulfillment:true}`. **cancel/default**: SKU stock set to 0, `outcome=OUT_OF_STOCK`, `reason` defaults to `'OUT_OF_STOCK'`, event STOCK_OUT_OF_STOCK |
-| `POST /sessions/:id/cancel` `{reason, otherReason?}` (:99) | `cancelSession` (:774) | role by stage, see below | not finished | `outcome=CUSTOMER_CANCELLED`, `cancelledAt`, `cancelledBy`, event CUSTOMER_CANCELLED. **+1 stock** if `stockFoundAt` is set or the state is FOUND or later |
-| `POST /sessions/:id/stock/report-missing` `{missingItems[], foundItems?, stockNote?}` (:109) | `reportStockMissing` (:848) | STOCK | STOCK_REQUESTED or SEARCHING | Writes the `stockReview` JSON `{missingItems, foundItems, stockNote, reportedAt, reportedBy}`, event STOCK_REPORTED_MISSING. **State unchanged.** Sets SKU stock to 0 if the main product is missing (matched by `'สินค้าหลัก'`, model name, SKU name or SKU code) |
-| `POST /sessions/:id/staff/resolve-stock-review` `{action, reason?, otherReason?}` (:119) | `resolveStockReview` (:934) | creator Staff (`session.staffId === actor`), branch MANAGER, or ADMIN; **no role needed** | `stockReview` set, not finished | `ACCEPT_PARTIAL`: drop missing accessories (strips the ` (xN)` suffix), clear the main product if missing (else stock −1), → FOUND, events STAFF_RESOLVED_STOCK_REVIEW + STOCK_FOUND. `CHANGE_ITEMS`: → PRODUCT_SELECTION, `confirmed=false` (reopens the purchase). `CANCEL`: outcome CUSTOMER_CANCELLED + 2 events. All three clear `stockReview` with `null as unknown as undefined` (H-08) |
-| `POST /sessions/:id/manager/acknowledge-alert` (:129) | `acknowledgeAlert` (:1181) | branch MANAGER or ADMIN | any | Merges `acknowledgedAt/By` into `stockReview`. **No transaction, no event.** |
+| `GET /sessions?branchId=` | `list` | any role | — | Non-ADMIN is forced to their own branch. ADMIN may filter by branch UUID **or code**. Returns **every** session of the branch (all dates) with all child rows and events, newest first. No paging (H-06). |
+| `GET /sessions/:id` | `getById` | branch-scoped | — | `:id` may be the UUID **or** the `SES-…` reference (the reference is the internal key, D57) |
+| `POST /sessions` `{phone, customerTypeId?, branchId?}` | `createWalkIn` | STAFF | an active branch exists, `phone` = exactly 10 ASCII digits, the type (default: the active type with the lowest letter) is active | One transaction at **READ COMMITTED** (ADR 0001): upserts the Customer by phone (D56), takes the queue number (`QueueService.allocate`: per branch, per type letter, per Bangkok day) and a `reference` (`SES-YYYYMMDD-NNNNNN`, Bangkok day, an already-taken number is skipped), creates the session in WALK_IN with `phone`, `customerId`, `customerTypeId`, `queueLetter`, `queueNo`, event SESSION_CREATED `{queue}`. The client can send neither the queue number nor the reference (400). ADMIN: `dto.branchId` → own branch → **first active branch by code** (silent fallback, H-20) |
+| `POST /sessions/:id/decision/not-buy` `{reason, otherReason?}` | `recordNotBuy` | STAFF | state DECISION, not finished | `outcome=NOT_BUY`, `decisionAt`, event DECISION_MADE `{outcome, reason}`. `otherReason` is required when reason = `อื่น ๆ`. The reason value is not checked against the fixed list. |
+| `PUT /sessions/:id/selection` | `updateSelection` | STAFF | `!confirmed && !outcome && (PRODUCT_SELECTION \|\| (DECISION && decisionAt))` | Upserts Customer by phone. Replaces each provided child list wholesale (drops `None`; payments are not filtered). Resolves `skuId` (UUID or SKU code) → model → product. **No event, no timestamp.** No inventory or `active` check on the SKU (H-10). |
+| `POST /sessions/:id/confirm` | `confirmPurchase` | STAFF | PRODUCT_SELECTION, not confirmed, phone is 10 digits, sku or product set | `confirmed=true`, → **STOCK_REQUESTED**, `productSelectionConfirmedAt`, event PRODUCT_SELECTION_CONFIRMED (this is also the stock request, D51) |
+| `POST /sessions/:id/out-of-stock` `{action:'cancel'\|'partial', outOfStockItems?, reason?, otherReason?, note?}` | `recordOutOfStock` | STOCK | SEARCHING | **partial**: drops the listed accessories (by name); if the main product is listed (`'MAIN_PRODUCT'`, SKU code or product name) it clears product/model/sku and sets stock to 0, otherwise stock −1; → FOUND, `stockFoundAt`, STOCK_FOUND `{partialFulfillment:true}`. **cancel/default**: SKU stock set to 0, `outcome=OUT_OF_STOCK`, `reason` defaults to `'OUT_OF_STOCK'`, event STOCK_OUT_OF_STOCK |
+| `POST /sessions/:id/cancel` `{reason, otherReason?}` | `cancelSession` | role by stage, see below | not finished | `outcome=CUSTOMER_CANCELLED`, `cancelledAt`, `cancelledBy`, event CUSTOMER_CANCELLED. **+1 stock** if `stockFoundAt` is set or the state is FOUND or later |
+| `POST /sessions/:id/stock/report-missing` `{missingItems[], foundItems?, stockNote?}` | `reportStockMissing` | STOCK | STOCK_REQUESTED or SEARCHING | Writes the `stockReview` JSON `{missingItems, foundItems, stockNote, reportedAt, reportedBy}`, event STOCK_REPORTED_MISSING. **State unchanged.** Sets SKU stock to 0 if the main product is missing (matched by `'สินค้าหลัก'`, model name, SKU name or SKU code) |
+| `POST /sessions/:id/staff/resolve-stock-review` `{action, reason?, otherReason?}` | `resolveStockReview` | creator Staff (`session.staffId === actor`), branch MANAGER, or ADMIN; **no role needed** | `stockReview` set, not finished | `ACCEPT_PARTIAL`: drop missing accessories (strips the ` (xN)` suffix), clear the main product if missing (else stock −1), → FOUND, events STAFF_RESOLVED_STOCK_REVIEW + STOCK_FOUND. `CHANGE_ITEMS`: → PRODUCT_SELECTION, `confirmed=false` (reopens the purchase). `CANCEL`: outcome CUSTOMER_CANCELLED + 2 events. All three clear `stockReview` with `null as unknown as undefined` (H-08) |
+| `POST /sessions/:id/manager/acknowledge-alert` | `acknowledgeAlert` | branch MANAGER or ADMIN | any | Merges `acknowledgedAt/By` into `stockReview`. **No transaction, no event.** |
 
-### Cancellation role by stage (`sessions.service.ts:781-788`)
+### Cancellation role by stage (`cancelSession` in `sessions.service.ts`)
 
 | Current state | Role checked |
 | --- | --- |
@@ -59,6 +60,16 @@ Controller: `apps/api/src/sessions/sessions.controller.ts`. Service: `sessions.s
 | STOCK_REQUESTED, SEARCHING, FOUND | **STOCK** |
 | SENT_TO_CASHIER, CASHIER_RECEIVED, CASHIER_SCAN, BILL_OPENED | **CASHIER** |
 | WALK_IN, DECISION | **none**: any authenticated user of that branch (H-13) |
+
+### Customer types (D57)
+
+Controller: `apps/api/src/queue/queue.controller.ts` (behind `OriginGuard`). Service: `queue.service.ts`.
+
+| Endpoint | Who | Effect |
+| --- | --- | --- |
+| `GET /customer-types` | any signed-in role | the **active** types in letter order; ADMIN with `?all=true` also gets the switched-off ones |
+| `POST /customer-types` `{letter?, name, description?}` | ADMIN | `letter` A-Z (lower case is upper-cased), unique (409); left out = the next free letter (400 when all 26 are used) |
+| `PUT /customer-types/:id` `{name?, description?, active?}` | ADMIN | the letter cannot be sent (400): queue numbers already given out carry it. Switching off the last active type is refused (400). No delete. |
 
 ## 3. Catalog and inventory endpoints
 
@@ -112,3 +123,5 @@ MANAGER manages only STAFF/STOCK/CASHIER in their own branch (D39).
 | Duplicate/concurrent clicks | must not double-apply | can double-apply (H-01) |
 | Who records the decision (OQ-05) | open | STAFF (`buy`, `not-buy`) |
 | Phone uniqueness (OQ-09) | open | `Customer.phone @unique`; the session keeps its own copy |
+| Phone timing (requirements §6, erd.md) | only after BUY, never at walk-in or NOT_BUY | at walk-in (D56): NOT_BUY and cancelled visits keep the phone |
+| Session number shown to staff (D6, OQ-08) | `SES-YYYYMMDD-NNNNNN` | the queue number "คิว A012" (D57); the reference stays internal. Bangkok day (H-05 fixed) |

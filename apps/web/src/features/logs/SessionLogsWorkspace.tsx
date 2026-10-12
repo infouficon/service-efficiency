@@ -212,7 +212,15 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
   {
     category: '1. ข้อมูลพื้นฐาน Session',
     columns: [
-      { key: 'reference', label: 'Session Reference', getValue: (s) => s.reference },
+      { key: 'queue', label: 'คิว (Queue)', getValue: (s) => s.queue },
+      {
+        key: 'customerType',
+        label: 'ประเภทลูกค้า',
+        getValue: (s) =>
+          s.customerTypeLetter
+            ? `${s.customerTypeLetter}${s.customerTypeName ? ` - ${s.customerTypeName}` : ''}`
+            : '',
+      },
       {
         key: 'walkInAt',
         label: 'วันที่และเวลา Walk-in',
@@ -223,6 +231,8 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       { key: 'branchName', label: 'ชื่อสาขา', getValue: (s) => s.branchName || '' },
       { key: 'staffId', label: 'ผู้ดูแล (Staff ID)', getValue: (s) => s.staffId },
       { key: 'phone', label: 'เบอร์โทรศัพท์ลูกค้า', getValue: (s) => s.phone || '' },
+      // The queue number repeats (per branch, type and day); this key is unique, so rows can still be joined.
+      { key: 'reference', label: 'รหัสอ้างอิงระบบ (ไม่ซ้ำ)', getValue: (s) => s.reference },
     ],
   },
   {
@@ -843,7 +853,9 @@ export function SessionLogsWorkspace({
       // Search query
       if (search.trim()) {
         const q = search.trim().toLowerCase();
-        const matchRef = s.reference.toLowerCase().includes(q);
+        const matchRef =
+          s.queue.toLowerCase().includes(q) ||
+          s.reference.toLowerCase().includes(q);
         const matchPhone = s.phone?.toLowerCase().includes(q) || false;
         const matchStaff = s.staffId?.toLowerCase().includes(q) || false;
         const matchProduct =
@@ -988,7 +1000,7 @@ export function SessionLogsWorkspace({
 
         {selectedSession ? (
           <Panel
-            title={`Session: ${selectedSession.reference}`}
+            title={`คิว ${selectedSession.queue}`}
             eyebrow={`สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''} · สถานะ: ${detailStatusLabel}`}
           >
             <div
@@ -1212,7 +1224,7 @@ export function SessionLogsWorkspace({
           <div className="logs-search-wrap">
             <input
               type="search"
-              placeholder="ค้นหา Session Ref, เบอร์โทรลูกค้า, ผู้ดูแล, สินค้า..."
+              placeholder="ค้นหาคิว, เบอร์โทรลูกค้า, ผู้ดูแล, สินค้า..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -1341,7 +1353,7 @@ export function SessionLogsWorkspace({
         <table className="logs-table">
           <thead>
             <tr>
-              <th style={{ width: '150px' }}>Session Ref</th>
+              <th style={{ width: '150px' }}>คิว</th>
               <th style={{ width: '120px' }}>เบอร์ลูกค้า</th>
               <th>รายการล่าสุด</th>
               <th style={{ width: '170px' }}>สถานะ</th>
@@ -1378,7 +1390,7 @@ export function SessionLogsWorkspace({
                   onClick={() => handleSelectRef(s.reference)}
                 >
                   <td>
-                    <span className="logs-table-ref">{s.reference}</span>
+                    <span className="logs-table-ref">คิว {s.queue}</span>
                   </td>
                   <td>
                     <span
@@ -1486,7 +1498,7 @@ export function SessionLogsWorkspace({
               onClick={() => handleSelectRef(s.reference)}
             >
               <div className="card-top">
-                <span className="card-ref">{s.reference}</span>
+                <span className="card-ref">คิว {s.queue}</span>
                 {renderStatusTag(s)}
               </div>
               <div className="mobile-log-product">

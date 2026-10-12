@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import type { PublicAccount } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
 import type {
   AdvanceStepDto,
   CancelSessionDto,
@@ -17,7 +18,7 @@ import type {
   StepAction,
   UpdateSelectionDto,
 } from './dto';
-import { EventType, WorkflowState } from '@prisma/client';
+import { EventType, Prisma, WorkflowState } from '@prisma/client';
 
 const STEPS: Record<
   StepAction,
@@ -106,9 +107,28 @@ const STEPS: Record<
   },
 };
 
+/** What every endpoint returns for a Customer Session: one shape, so the web mapper can rely on it (H-19). */
+const sessionInclude = {
+  branch: true,
+  staff: { select: { staffId: true, branchId: true } },
+  customerType: { select: { id: true, letter: true, name: true } },
+  product: true,
+  model: true,
+  sku: { include: { model: { include: { product: true } } } },
+  accessories: true,
+  ontop: true,
+  points: true,
+  burnPoints: true,
+  payments: true,
+  events: { orderBy: { createdAt: 'asc' } },
+} satisfies Prisma.CustomerSessionInclude;
+
 @Injectable()
 export class SessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queue: QueueService,
+  ) {}
 
   private checkRole(user: PublicAccount, role: 'STAFF' | 'STOCK' | 'CASHIER' | 'MANAGER' | 'ADMIN') {
     if (user.roles.includes('ADMIN')) return;
@@ -143,29 +163,7 @@ export class SessionsService {
 
     return this.prisma.customerSession.findMany({
       where: branchId ? { branchId } : undefined,
-      include: {
-        branch: true,
-        staff: { select: { staffId: true, branchId: true } },
-        product: true,
-        model: true,
-        sku: {
-          include: {
-            model: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        accessories: true,
-        ontop: true,
-        points: true,
-        burnPoints: true,
-        payments: true,
-        events: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
+      include: sessionInclude,
       orderBy: { customerWalkInAt: 'desc' },
     });
   }
@@ -175,29 +173,7 @@ export class SessionsService {
       where: {
         OR: [{ id: idOrRef }, { reference: idOrRef }],
       },
-      include: {
-        branch: true,
-        staff: { select: { staffId: true, branchId: true } },
-        product: true,
-        model: true,
-        sku: {
-          include: {
-            model: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        accessories: true,
-        ontop: true,
-        points: true,
-        burnPoints: true,
-        payments: true,
-        events: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
+      include: sessionInclude,
     });
 
     if (!session) {
@@ -233,34 +209,46 @@ export class SessionsService {
       throw new BadRequestException('ยังไม่มีสาขา (Branch) ในระบบ กรุณาสร้างสาขาก่อนเริ่มบันทึก Session');
     }
 
+    // READ COMMITTED (see the options at the end): the counters are hot rows, so each statement must see the latest
+    // committed number. Under MariaDB's snapshot isolation a REPEATABLE READ walk-in would fail on a row another one just
+    // committed (ADR 0001).
     return this.prisma.$transaction(async (tx) => {
-      // Generate sequential reference SES-YYYYMMDD-NNNNNN
       const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      const datePrefix = `SES-${yyyy}${mm}${dd}-`;
+      const day = bangkokDay(now);
 
-      const lastForDay = await tx.customerSession.findFirst({
-        where: { reference: { startsWith: datePrefix } },
-        orderBy: { reference: 'desc' },
+      // D56: a walk-in starts at the phone number, so the Customer exists from the first moment.
+      const customer = await tx.customer.upsert({
+        where: { phone: dto.phone },
+        create: { phone: dto.phone },
+        update: {},
       });
+      const queue = await this.queue.allocate(
+        tx,
+        targetBranch.id,
+        dto.customerTypeId,
+        now,
+      );
+      // SES-YYYYMMDD-NNNNNN is the internal key (lookups, links); staff see the queue number instead (D57). A number
+      // that is already taken (a session from before the counters existed, a restored backup) is skipped, never failed.
+      let reference: string;
+      do {
+        const referenceNo = await this.queue.nextNumber(tx, 'reference', day);
+        reference = `SES-${day.replaceAll('-', '')}-${String(referenceNo).padStart(6, '0')}`;
+      } while (
+        await tx.customerSession.findUnique({
+          where: { reference },
+          select: { id: true },
+        })
+      );
 
-      let nextNum = 1;
-      if (lastForDay) {
-        const lastSeq = parseInt(lastForDay.reference.replace(datePrefix, ''), 10);
-        if (!Number.isNaN(lastSeq)) {
-          nextNum = lastSeq + 1;
-        }
-      }
-
-      const reference = `${datePrefix}${String(nextNum).padStart(6, '0')}`;
-
-      const session = await tx.customerSession.create({
+      return tx.customerSession.create({
         data: {
           reference,
           branchId: targetBranch.id,
           staffId: user.staffId,
+          customerId: customer.id,
+          phone: dto.phone,
+          ...queue,
           state: 'WALK_IN',
           customerWalkInAt: now,
           events: {
@@ -268,26 +256,15 @@ export class SessionsService {
               eventType: 'SESSION_CREATED',
               actorStaffId: user.staffId,
               createdAt: now,
+              metadata: {
+                queue: formatQueue(queue.queueLetter, queue.queueNo),
+              },
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: true,
-        },
+        include: sessionInclude,
       });
-
-      return session;
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
   }
 
   async advanceStep(user: PublicAccount, id: string, dto: AdvanceStepDto) {
@@ -337,21 +314,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
 
       return updated;
@@ -389,21 +352,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -550,29 +499,7 @@ export class SessionsService {
           modelId: resolvedModelId,
           skuId: resolvedSkuId,
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: {
-            include: {
-              model: {
-                include: {
-                  product: true,
-                },
-              },
-            },
-          },
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -610,21 +537,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -688,29 +601,7 @@ export class SessionsService {
               },
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
@@ -744,29 +635,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: {
-            include: {
-              model: {
-                include: {
-                  product: true,
-                },
-              },
-            },
-          },
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -826,21 +695,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -904,29 +759,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: {
-            include: {
-              model: {
-                include: {
-                  product: true,
-                },
-              },
-            },
-          },
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -1018,29 +851,7 @@ export class SessionsService {
               ],
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
@@ -1091,29 +902,7 @@ export class SessionsService {
               },
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
@@ -1148,29 +937,7 @@ export class SessionsService {
               ],
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
@@ -1201,29 +968,7 @@ export class SessionsService {
       data: {
         stockReview: updatedReview,
       },
-      include: {
-        branch: true,
-        staff: { select: { staffId: true, branchId: true } },
-        product: true,
-        model: true,
-        sku: {
-          include: {
-            model: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        accessories: true,
-        ontop: true,
-        points: true,
-        burnPoints: true,
-        payments: true,
-        events: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
+      include: sessionInclude,
     });
   }
 }

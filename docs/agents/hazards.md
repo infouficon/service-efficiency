@@ -1,7 +1,7 @@
 # Hazards register: known gaps, risks and doc drift
 
-A numbered list of problems found by reading the code (`main` @ `1c9eaf1`, 2026-10-12).
-**Nothing here has been fixed.** Each item is a candidate topic for `/grill-with-docs` or a
+A numbered list of problems found by reading the code (`main` @ `1c9eaf1`, 2026-10-12; updated 2026-10-13).
+Items marked `fixed in …` have been fixed (H-05, H-19 so far); **everything else is still open.** Each item is a candidate topic for `/grill-with-docs` or a
 GitHub issue. Fixing one usually needs a business decision first, so record that decision
 as a new `D5x` entry in [docs/decisions.md](../decisions.md) before or with the code.
 
@@ -23,7 +23,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 ---
 
 ### H-01: State is checked outside the transaction, so actions can double-apply · S1 · confirmed
-- **Where:** `apps/api/src/sessions/sessions.service.ts`: each mutating method calls `getById()` (a plain read) and then `$transaction(... update({ where: { id } }))` without re-checking state inside the transaction. Example: `advanceStep` `:294` reads, `:307` checks, `:319-358` writes.
+- **Where:** `apps/api/src/sessions/sessions.service.ts`: each mutating method calls `getById()` (a plain read) and then `$transaction(... update({ where: { id } }))` without re-checking state inside the transaction. Example: `advanceStep` reads with `getById`, checks `state === from`, and only then writes in `$transaction`.
 - **Impact:** a double-click or a retry of `found` deducts `BranchInventory.stock` twice and writes two `STOCK_FOUND` events, and the second request overwrites `stockFoundAt`. `cancel` and `found` racing can leave the stock off by one. This breaks state-machine.md: "Duplicate clicks/retries must not overwrite timestamps or create a second accepted transition".
 - **Fix direction:** a conditional write inside the transaction, `updateMany({ where: { id, state: from, outcome: null } })`, then treat `count === 0` as 409 Conflict (or `SELECT … FOR UPDATE` on the row). Decide the HTTP contract for a duplicate (409 or idempotent 200); that is OQ-06.
 
@@ -38,13 +38,12 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Fix direction:** move `OriginGuard` to a shared file and register it globally (`APP_GUARD`) or on all three controllers. Check that the web client always sends `X-Requested-With: ServiceEfficiency` (see codebase-map §Frontend).
 
 ### H-04: "One active DEMO per Staff" (D5) is not enforced · S2 · confirmed
-- **Where:** the `startDemo` step (`sessions.service.ts:32-38`) checks only the session's own state.
+- **Where:** the `startDemo` entry of the `STEPS` map (`sessions.service.ts`) checks only the session's own state.
 - **Fix direction:** inside the transaction, count the actor's sessions in `DEMO` with `outcome IS NULL` and reject when the count is above 0. Concurrency needs the same care as H-01. OQ-06 (ownership and handoff) affects whose workload counts.
 
-### H-05: The session reference allocator collides under concurrency and uses server-local time · S2 · confirmed (TZ part: verify)
-- **Where:** `createWalkIn` `sessions.service.ts:238-257` reads the day's highest reference and adds 1, with no lock. `reference` is `@unique`, so two walk-ins at the same moment produce P2002 → **HTTP 500** (this service does not map P2002).
-- **TZ:** `getFullYear()/getMonth()/getDate()` use the container's timezone. If the API container runs in UTC (verify on Coolify), sessions created between 00:00 and 07:00 Bangkok time get the previous day's date prefix. The business timezone is OQ-08.
-- **Fix direction:** a counter table per day (or per branch, after OQ-08) incremented with `SELECT … FOR UPDATE`, or retry on P2002. Compute the date in `Asia/Bangkok` explicitly once OQ-08 is decided.
+### H-05: The session reference allocator collides under concurrency and uses server-local time · S2 · **fixed in the D56/D57 PR** (feat/queue-types-phone-first)
+- **Was:** `createWalkIn` read the day's highest reference and added 1 with no lock; two walk-ins at the same moment produced P2002 → HTTP 500, and the date prefix came from the container's time zone.
+- **Fix:** the reference and the new queue number (D57) both come from `DailyCounter` rows incremented atomically inside the walk-in transaction, per Asia/Bangkok day ([ADR 0001](../adr/0001-atomic-daily-counters-for-queue-numbers.md)). A number that is already taken is skipped; the migration seeds the `reference` counters from existing sessions. Covered by `apps/api/tests/queue.test.mjs` (8 parallel walk-ins, the Bangkok midnight boundary, a taken reference).
 
 ### H-06: `GET /sessions` is unbounded, and history visibility exists only in the UI · S2 · confirmed
 - **Where:** `list()` `sessions.service.ts:127-171` returns every session of the branch (ADMIN: all branches) with all child rows and the full event history. There is no date filter and no paging.
@@ -52,12 +51,12 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Fix direction:** server-side filters (`date`, `state`, `mine`) chosen by role, plus paging for the logs view. This needs a decision on the STAFF "own current work" predicate (OQ-06).
 
 ### H-07: Branch stock can go negative, and stock changes leave no audit trail · S2 · confirmed
-- **Where:** `stock: { decrement: 1 }` at `sessions.service.ts:323, 659, 991` has no floor. ADMIN `PUT …/stock` sets an absolute value (`products.service.ts:358-377`) with no event. Cancelling after FOUND adds `+1` (`:798-810`) even when out-of-stock or missing-item handling already set the stock to 0.
+- **Where:** `stock: { decrement: 1 }` in `advanceStep` (`found`), `recordOutOfStock` (partial) and `resolveStockReview` (ACCEPT_PARTIAL) has no floor. ADMIN `PUT …/stock` sets an absolute value (`products.service.ts:358-377`) with no event. Cancelling after FOUND adds `+1` (`cancelSession`) even when out-of-stock or missing-item handling already set the stock to 0.
 - **Impact:** the inventory can drift from reality, and nobody can tell who changed a quantity or when.
 - **Fix direction:** guard with `stock > 0` (or decide that negative stock is allowed and shown). Add an inventory movement log if the business wants an audit trail (this needs a decision).
 
 ### H-08: Clearing `stockReview` with a plain `null` · S1 if real · verify
-- **Where:** `stockReview: null as unknown as undefined` at `sessions.service.ts:1000, 1081, 1133`. Prisma requires `Prisma.DbNull`/`Prisma.JsonNull` to null a `Json?` column. The cast hides the type error, but the runtime may still reject the value, and then all three resolve actions would return 500.
+- **Where:** `stockReview: null as unknown as undefined` in the three branches of `resolveStockReview` (`sessions.service.ts`). Prisma requires `Prisma.DbNull`/`Prisma.JsonNull` to null a `Json?` column. The cast hides the type error, but the runtime may still reject the value, and then all three resolve actions would return 500.
 - **Verify:** call resolve-stock-review against the dev DB. If it works, mark this item "not a bug" and replace the cast with `Prisma.DbNull` for clarity.
 
 ### H-09: Two divergent "partial fulfilment" paths that match items by display name · S2 · confirmed
@@ -78,7 +77,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - NOT_BUY result, cancellation reason, and out-of-stock reason (which defaults to `'OUT_OF_STOCK'`) share the same two columns. docs/erd.md says NOT_BUY text and cancellation text "must not be merged into an ambiguous shared reason field". Today `outcome` tells them apart, so reports must always read `reason` together with `outcome`. Decide whether to keep this (and update the ERD) or to split the columns.
 
 ### H-13: Cancellation permissions differ from the confirmed matrix · S1 · confirmed
-- **Where:** `cancelSession` `:781-788`.
+- **Where:** `cancelSession` (the role check by state, `sessions.service.ts`).
 - **Differences:** (a) STAFF cannot cancel in the Stock and Cashier stages without the STOCK or CASHIER role, although requirements §25 and permissions.md confirm STAFF *can* cancel in DEMO, PRODUCT_SELECTION, STOCK and CASHIER. (b) In WALK_IN and DECISION there is **no role check at all**: any authenticated user of the branch (for example a CASHIER-only account) can cancel. Cancelling in those states is not in the confirmed flow either. (c) OQ-02 (which exact substates allow cancellation) is still open.
 - **Fix direction:** settle OQ-02 and record it as a decision, then encode one explicit `stage → allowedRoles` table.
 
@@ -91,6 +90,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 ### H-15: The session and product workflow has no real tests · S2 · confirmed
 - **Update 2026-10-12:** `apps/api/tests/accounts.test.mjs`, the one real integration test, **fails on `main`** (7 of 8 subtests): `StaffUpdateDto.firstName/lastName` are `@IsString()` without `@IsOptional()` (added by migration `202609280004_staff_names`) but the test's `account()` helper does not send them, so `POST /staff` returns 400. Not caused by the ERP work. **Fixed on `feat/erp-sync`**: the helpers now send the names and the suite passes 8/8 (note: its last-ADMIN test counts ADMIN accounts in the whole database, so run it on an empty test DB). Whether the DTO fields should be optional is still open (`createStaff` already supports `?? ''`).
 - `apps/api/tests/sessions.test.mjs` asserts literal constants (for example "an array of strings does not include `stockRequestedAt`") and never calls the API or the database. Only `accounts.test.mjs` is a real HTTP + MySQL integration test. `apps/web/tests/workflow.test.mjs` tests the pure helpers in `features/session/workflow.ts`.
+- **Update 2026-10-13:** `apps/api/tests/queue.test.mjs` is the first real integration test of the session workflow (walk-in, queue numbers, customer types); it uses the shared harness `apps/api/tests/support.mjs` (boot the app, seed a branch world with one account per role, clean up; `TEST_LOG=1` shows server errors). The step/stock/cancel paths are still untested.
 - **Rule:** before fixing H-01, H-04, H-07, H-10 or H-13, add a failing integration test in the style of `accounts.test.mjs`. It uses an isolated `service_efficiency_test` DB and refuses any other DB name.
 
 ### H-16: A push to `main` deploys production, and a bad migration stops the API · S1 (process) · confirmed
@@ -102,13 +102,14 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Fix direction:** create the BranchInventory rows when a branch or SKU is created (D41 says "Defaults when a new SKU or Branch is created"), and move the seed behind an explicit script.
 
 ### H-18: Weak trail for stock review resolution and alert acknowledgment · S3 · confirmed
-- "Assigned staff" means `session.staffId === actor`, with no role check (`:938`). The session creator is the only Staff link, and there is no reassignment (OQ-06). `acknowledgeAlert` (`:1181-1228`) runs outside a transaction and writes no `SessionEvent`; the acknowledgment survives only inside the JSON blob, which resolve then wipes.
+- "Assigned staff" means `session.staffId === actor`, with no role check . The session creator is the only Staff link, and there is no reassignment (OQ-06). `acknowledgeAlert` runs outside a transaction and writes no `SessionEvent`; the acknowledgment survives only inside the JSON blob, which resolve then wipes.
 
-### H-19: Copy-pasted Prisma `include` blocks · S3 · confirmed
-- The same `include: { branch, staff, product, model, sku…, events }` block appears about 12 times in `sessions.service.ts`, with small differences (some include `sku.model.product`, some do not). Responses therefore differ in shape between endpoints. Extract one `const sessionInclude` (in the same file, following the cohesion rule) when you touch this code.
+### H-19: Copy-pasted Prisma `include` blocks · S3 · **fixed in the D56/D57 PR** (feat/queue-types-phone-first)
+- **Was:** the same `include: { branch, staff, product, model, sku…, events }` block appeared 15 times in `sessions.service.ts` with small differences, so responses differed in shape between endpoints.
+- **Fix:** one `sessionInclude` constant (`satisfies Prisma.CustomerSessionInclude`) used by every method; every endpoint now returns the same shape (sku with model and product, `customerType`, events oldest first).
 
 ### H-20: ADMIN walk-in silently picks a branch · S3 · confirmed
-- `createWalkIn` (`:225-230`): an ADMIN with no `branchId` and no home branch gets the first active branch ordered by code, so sessions can land in an arbitrary branch. Prefer requiring `branchId` for ADMIN (400).
+- `createWalkIn`: an ADMIN with no `branchId` and no home branch gets the first active branch ordered by code, so sessions can land in an arbitrary branch. Prefer requiring `branchId` for ADMIN (400).
 
 ---
 

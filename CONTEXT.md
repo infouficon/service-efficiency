@@ -2,14 +2,14 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D51);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D60);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `1c9eaf1` (2026-10-12).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57 change (2026-10-13).
 
 ## 1. What the system is for
 
@@ -38,20 +38,23 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 
 | Term (UI / Thai) | Meaning | Code |
 | --- | --- | --- |
-| Customer Session | One customer visit in one Branch. Created at walk-in, before any product or phone number is known. | `CustomerSession` (`schema.prisma:182`) |
-| Session Reference | Human ID `SES-YYYYMMDD-NNNNNN`, per-day running number (D6). | `CustomerSession.reference`, generated in `sessions.service.ts:236-257`. Timezone/scope/overflow are OQ-08; see H-05. |
-| Walk-in | Creating the session when the customer enters. Sets `customerWalkInAt`. | `POST /api/sessions` |
+| Customer Session | One customer visit in one Branch. Created at walk-in from the customer's phone number and customer type (D56, D57); the product is chosen later. | `CustomerSession` (`schema.prisma`) |
+| Session Reference | Internal key `SES-YYYYMMDD-NNNNNN` (Bangkok day, one running number for all branches, D6). Used for lookups, deep links and React keys; **not shown to staff** since D57. | `CustomerSession.reference`, allocated in `createWalkIn` from a `DailyCounter` row (ADR 0001, H-05 fixed). |
+| Queue number / คิว | What staff call the customer by: the customer type's letter + a running number per branch, per letter, per Bangkok day (`A012`, `B003`; four digits after 999). Shown as "คิว A012" on every screen. Sessions from before D57 have no letter ("คิว 007"). Not unique: a re-buy will keep the old number (F11). | `CustomerSession.queueLetter` / `queueNo` (letter frozen at creation), allocated by `QueueService.allocate`; label built by `formatQueue` (API and web) |
+| Customer type / ประเภทลูกค้า | Back-office list (ADMIN) chosen by staff at the phone step: letter A-Z (unique, never changes, the sort order), name, description, active. Seeded A `ลูกค้าทั่วไป`, B `ลูกค้าใช้เวลานาน` ("B takes long" is only the name the owner gives). Switched off, never deleted; one stays active. Not to be confused with U POS's repair-queue ticket types A/B/D (unrelated). | `CustomerType`, `apps/api/src/queue/`, `GET/POST/PUT /api/customer-types`, Admin → "ประเภทลูกค้า / คิว" (D57) |
+| Daily counter | One row per counter and Bangkok day (`reference`, `queue:<branchId>:<letter>`), incremented atomically inside the walk-in transaction (READ COMMITTED). | `DailyCounter`, `QueueService.nextNumber` (ADR 0001) |
+| Walk-in | Creating the session when the customer is at the counter: phone number + customer type in, queue number out (D56, D57). Sets `customerWalkInAt` (the moment the form is submitted). | `POST /api/sessions` `{phone, customerTypeId?, branchId?}` |
 | DEMO | A Staff member demonstrating products. A Staff member may run only one active DEMO at a time (D5), **[documented]** (not enforced, H-04). | states `DEMO`; `demoStartAt` / `demoEndAt` |
 | Decision | The customer's choice after DEMO: `BUY` or `NOT_BUY`. `NOT_PURCHASE` is forbidden (D11). | `buy` step sets `decisionAt`; `POST /decision/not-buy` sets `outcome=NOT_BUY` |
 | NOT_BUY result | Exactly: `ราคา`, `ยังไม่ตัดสินใจ`, `เปลี่ยนใจ`, `สินค้าไม่ตรงความต้องการ`, `ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ`, `อื่น ๆ` (+ required text). | `reason` / `otherReason`; lists in `apps/web/src/constants/options.ts` |
-| Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected only after BUY (requirements §6). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
+| Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected **at walk-in** (D56; supersedes requirements §6 "only after BUY", so NOT_BUY visits keep a phone too). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
 | Product Selection / Purchase data | The purchase being assembled: **main product** (Product → Model → SKU), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
 | Main Product | At most one per session, set during selection (D8). Stored as `productId` / `modelId` / `skuId`. | Can be cleared by partial fulfilment |
 | LOB / Category | `ProductCategory`: `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`. | enum `ProductCategory` |
 | Ontop | Telco/partner add-on (`AIS`, `True`, `CATH`, `KTS`). Multi-select, no amount. | `SessionOntop.name` |
 | Points / Burn Point | Loyalty programs earned / redeemed (`MCard`, `The 1`, `UJOY`). Two separate lists. | `SessionPoint`, `SessionBurnPoint` |
 | Payment | Payment methods, multi-select, **no amounts** (`Cash`, `Transfer`, `SPayLater`, …). | `SessionPayment.method` |
-| None | A UI-only "no selection" option. Never persisted: no selection = zero child rows. | filtered in `sessions.service.ts:460,472,484` |
+| None | A UI-only "no selection" option. Never persisted: no selection = zero child rows. | filtered in `updateSelection` (`sessions.service.ts`) |
 | Stock Request / Stock queue | A confirmed session waiting for STOCK (`STOCK_REQUESTED`). Queues show **today's** sessions only (D47, UI-side). | |
 | SEARCHING / FOUND | STOCK pressed "searching" (sets `stockStartedAt`), then found the item (sets `stockFoundAt` and **deducts 1** from branch stock, D41). | `search`, `found` steps |
 | OUT_OF_STOCK | STOCK cannot fulfil; terminal outcome. Sets that SKU's branch stock to 0 (D41). | `POST /out-of-stock` (`action:'cancel'`) |
@@ -63,10 +66,10 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | Milestone timestamp | One server-time column per real action (12 columns, listed in §4). Written once, never back-filled for skipped steps, never user-editable. | `*At` columns on `CustomerSession` |
 | SessionEvent | Append-only history row per accepted action: `eventType`, trusted `actorStaffId`, server `createdAt`, small JSON `metadata`. | `SessionEvent` (schema:279); 17 event types |
 | Actor | The authenticated Staff member doing an action, always taken from the Login Session and never from the request body. | `PublicAccount.staffId` |
-| Branch / Branch Code | A store. Code is not unique-constrained (OQ-09). APIs accept either the UUID or the code as `branchId` (`sessions.service.ts:136-138,217-221`). | `Branch` |
+| Branch / Branch Code | A store. Code is not unique-constrained (OQ-09). APIs accept either the UUID or the code as `branchId` (`list` and `createWalkIn` in `sessions.service.ts`). | `Branch` |
 | Staff ID | The login username and the primary key of `Staff`. Bootstrap admin is `0001`. | `Staff.staffId` |
 | Role | `ADMIN`, `MANAGER`, `STAFF`, `STOCK`, `CASHIER`. A Staff member can hold several; grants are the **union** (D1). | `StaffRole` |
-| Branch scope | ADMIN = all branches (no home branch). Everyone else has exactly one home Branch and sees only it (D2, D39). | `checkBranchAccess` (`sessions.service.ts:120`) |
+| Branch scope | ADMIN = all branches (no home branch). Everyone else has exactly one home Branch and sees only it (D2, D39). | `checkBranchAccess` (`sessions.service.ts`) |
 | Master Catalog | `Product` → `ProductModel` → `ProductSku`. ADMIN-only CRUD. Deactivation cascades down and to all branch rows; reactivation does not cascade (D42). | `products.service.ts:415-530` |
 | Branch Inventory | Per Branch × SKU: `stock` quantity + `active`. ADMIN sets the quantity; ADMIN or the branch's MANAGER toggles `active` (D41). Rows are auto-created (stock 0, active) for every Branch × SKU pair. | `BranchInventory`; `syncBranchInventory()` |
 | Audit Logs | ADMIN-only merged feed of SessionEvents, recent Login Sessions and stock-review alerts. | `GET /api/admin/audit-logs` (`accounts.service.ts:362`) |
@@ -95,8 +98,10 @@ Branch  1──* BranchInventory *──1 ProductSku   (unique branchId+skuId)
 
 Branch   1──* CustomerSession
 Staff    1──* CustomerSession     (staffId = creator / "assigned staff")
-Customer 1──* CustomerSession     (customerId nullable until phone is entered)
+Customer 1──* CustomerSession     (customerId set at walk-in since D56; nullable for sessions from before)
 CustomerSession *──0..1 Product / ProductModel / ProductSku   (main product, all nullable)
+CustomerType 1──* CustomerSession  (customerTypeId; the queue letter is copied onto the session)
+DailyCounter                       (scope + Bangkok day → lastNo; no foreign keys, see ADR 0001)
 CustomerSession 1──* SessionAccessory | SessionOntop | SessionPoint | SessionBurnPoint | SessionPayment
 CustomerSession 1──* SessionEvent  (append-only by convention; FK cascades on delete)
 ```
@@ -143,8 +148,8 @@ introduced by D40.
 | I-5 | One active DEMO per Staff (D5) | **NOT enforced** (H-04) |
 | I-6 | Purchase data is immutable after confirmation (§22) | **[built]** for `PUT /selection`; deliberately broken by D40 `CHANGE_ITEMS` |
 | I-7 | Terminal outcomes are final, no reopen (D7, D20) | **[built]**: every mutating method rejects `outcome != null` / `COMPLETED` |
-| I-8 | Phone = exactly 10 ASCII digits, required before confirmation (§6) | **[built]**: `sessions.service.ts:425,588` (UI also validates) |
-| I-9 | Phone collected only after BUY (§6) | **[built]**: selection is editable only in `PRODUCT_SELECTION` or `DECISION` with `decisionAt` set |
+| I-8 | Phone = exactly 10 ASCII digits, required at walk-in (D56) and again before confirmation | **[built]**: `CreateSessionDto` (`@Matches`), `updateSelection` and `confirmPurchase` (UI also validates) |
+| I-9 | ~~Phone collected only after BUY (§6)~~ | **Superseded by D56**: the phone is collected at walk-in. Selection stays editable only in `PRODUCT_SELECTION` or `DECISION` with `decisionAt` set |
 | I-10 | Option values come from the fixed lists (D15) | **NOT enforced server-side**: any string is accepted (H-11) |
 | I-11 | Selectable SKU: active chain + branch active + stock > 0 (D41) | **UI-only**: `updateSelection` accepts any SKU id or code (H-10) |
 | I-12 | Branch stock never negative | **NOT enforced**: `decrement: 1` without a floor (H-07) |
@@ -152,13 +157,13 @@ introduced by D40.
 | I-14 | Stock/Cashier queues show today only (D47) | **UI-only** filter |
 | I-15 | SessionEvents are never updated or deleted (D27) | **[built]** by convention (no code path), but `onDelete: Cascade` from the session |
 | I-16 | Last active ADMIN cannot be removed (D39) | **[built]**, covered by a real integration test |
-| I-17 | MANAGER alone gets no STAFF/STOCK/CASHIER workflow grants (permissions.md) | **[built]**: `checkRole` requires the role; ADMIN bypasses every role check (`sessions.service.ts:114`) |
+| I-17 | MANAGER alone gets no STAFF/STOCK/CASHIER workflow grants (permissions.md) | **[built]**: `checkRole` requires the role; ADMIN bypasses every role check (`checkRole` in `sessions.service.ts`) |
 
 ## 4. Milestone timestamps (12) ↔ events
 
 | Column | Set by | Event |
 | --- | --- | --- |
-| `customerWalkInAt` | create | `SESSION_CREATED` |
+| `customerWalkInAt` | create | `SESSION_CREATED` (metadata `{queue}`) |
 | `demoStartAt` / `demoEndAt` | `startDemo` / `endDemo` | `DEMO_STARTED` / `DEMO_ENDED` |
 | `decisionAt` | `buy` or `not-buy` | `DECISION_MADE` (not-buy adds metadata `{outcome, reason}`) |
 | `productSelectionStartAt` | `startSelection` | `PRODUCT_SELECTION_STARTED` |

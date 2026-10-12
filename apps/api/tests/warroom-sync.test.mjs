@@ -180,6 +180,14 @@ test('warroom sync: shadow then on, availability, guards, against real databases
     throw new Error(
       'Integration tests require isolated service_efficiency_test database',
     );
+  const pgUrl = new URL(PG_URL);
+  if (
+    !['127.0.0.1', 'localhost'].includes(pgUrl.hostname) ||
+    pgUrl.pathname !== '/warroom_stub'
+  )
+    throw new Error(
+      'the Postgres stub must be a local database named warroom_stub (the test drops and rewrites mart.stock_mv)',
+    );
   const stub = new pg.Client({
     connectionString: PG_URL,
     connectionTimeoutMillis: 3000,
@@ -716,13 +724,21 @@ test('warroom sync: shadow then on, availability, guards, against real databases
     });
 
     await t.test(
-      'a part that left the snapshot is zeroed; a newer snapshot clears the missing-report override',
+      'a part warroom no longer lists at a reported branch becomes 0; a newer snapshot clears the missing-report override',
       async () => {
         const newer = new Date(Date.now() - 1000);
         await stub.query(
           `DELETE FROM mart.stock_mv WHERE product_model = $1 AND branch_code = $2`,
           [P1, B2],
         );
+        // B2 stays in the snapshot (it still has P2), only P1 left it: warroom knows P1 and lists none at B2 -> 0
+        await insert(P2, B2, 'ready', 1, {
+          snap: newer,
+          cat: 'Accessories',
+          subcat: 'Case',
+          cap: null,
+          color: null,
+        });
         await stub.query(`UPDATE mart.stock_mv SET snapshot_at = $1`, [newer]);
         await db.branchInventory.update({
           where: { branchId_skuId: { branchId: b1.id, skuId: sku1.id } },
@@ -730,7 +746,6 @@ test('warroom sync: shadow then on, availability, guards, against real databases
         });
         const res = await run();
         assert.equal(res.data.ok, true, res.data.error);
-        assert.equal(res.data.summary.stock.zeroedRows, 1);
         const gone = await inv(b2.id, sku1.id);
         assert.deepEqual(
           [gone.erpReady, gone.erpTransfer, gone.erpAsOf.toISOString()],
@@ -742,7 +757,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
     );
 
     await t.test(
-      'a snapshot that lost half of the stocked SKUs, or that is older than the stored one, is refused unless forced',
+      'a snapshot that lost half of the stocked SKUs, or that is more than 24 h older than the stored one, is refused unless forced',
       async () => {
         for (let k = 0; k < 22; k += 1)
           await insert(part(`bulk${k}`), B1, 'ready', 1, {
@@ -780,7 +795,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
         );
         // a snapshot older than the one already stored is refused too
         await stub.query(`UPDATE mart.stock_mv SET snapshot_at = $1`, [
-          new Date(Date.now() - 6 * 3600_000),
+          new Date(Date.now() - 30 * 3600_000),
         ]);
         res = await run();
         assert.equal(res.data.ok, false);
@@ -812,7 +827,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
         const snap = new Date(Date.now() + 5000); // newer than anything stored
         await stub.query(`UPDATE mart.stock_mv SET snapshot_at = $1`, [snap]);
         await svc.tick();
-        const slot = `snap-${snap.toISOString()}`;
+        const slot = { startsWith: `snap-${snap.toISOString()}` };
         const runs = () =>
           db.erpSyncRun.findMany({ where: { kind: 'warroom-products', slot } });
         const first = await runs();
@@ -826,6 +841,264 @@ test('warroom sync: shadow then on, availability, guards, against real databases
           (await inv(b1.id, sku1.id)).erpAsOf.toISOString(),
           snap.toISOString(),
         );
+      },
+    );
+
+    const resetStub = async (snap) => {
+      await stub.query('DELETE FROM mart.stock_mv');
+      for (let i = 0; i < 3; i += 1) await insert(P1, B1, 'ready', 1, { snap });
+      await insert(P1, B1, 'transfer', 1, { snap });
+      await insert(P1, B2, 'ready', 2, { snap });
+      await insert(P2, B1, 'ready', 5, {
+        snap,
+        cat: 'Accessories',
+        subcat: 'Case',
+        cap: null,
+        color: null,
+      });
+      await insert(P3, B1, 'ready', 4, {
+        snap,
+        cat: 'Huawei Phone',
+        subcat: null,
+      });
+      await insert(P4, BHO, 'ready', 9, { snap });
+    };
+
+    await t.test(
+      'relabelled branch codes or a collapse of the ready units are refused; branches absent from a snapshot are not zeroed',
+      async () => {
+        await resetStub(new Date());
+        assert.equal((await run('?force=true')).data.ok, true);
+        await insert(P2, B2, 'ready', 30, {
+          snap: new Date(),
+          cat: 'Accessories',
+          subcat: 'Case',
+          cap: null,
+          color: null,
+        });
+        assert.equal((await run('?force=true')).data.ok, true);
+        const sku2 = await db.productSku.findUnique({ where: { sku: P2 } });
+        assert.equal((await inv(b2.id, sku2.id)).erpReady, 30);
+        // warroom renames its branch codes
+        await stub.query(
+          `UPDATE mart.stock_mv SET branch_code = 'ZZ-' || branch_code`,
+        );
+        let res = await run();
+        assert.equal(res.data.ok, false);
+        assert.match(res.data.error, /สาขาที่ SES รู้จัก/);
+        res = await run('?force=true');
+        assert.equal(res.data.ok, true, res.data.error);
+        assert.equal(
+          res.data.summary.stock.zeroedRows,
+          0,
+          'no SES branch was reported, so nothing is zeroed',
+        );
+        assert.equal(
+          (await inv(b2.id, sku2.id)).erpReady,
+          30,
+          'a branch warroom did not report keeps its last numbers',
+        );
+        await stub.query(
+          `UPDATE mart.stock_mv SET branch_code = substr(branch_code, 4)`,
+        );
+        // the same branches, but almost nothing ready
+        await stub.query(
+          `UPDATE mart.stock_mv SET qty = 0.2, snapshot_at = $1`,
+          [new Date()],
+        );
+        res = await run();
+        assert.equal(res.data.ok, false);
+        assert.match(res.data.error, /พร้อมขายรวมลด/);
+      },
+    );
+
+    await t.test(
+      'a snapshot stamped in the future is refused unless forced',
+      async () => {
+        await resetStub(new Date(Date.now() + 3600_000));
+        const res = await run();
+        assert.equal(res.data.ok, false);
+        assert.match(res.data.error, /อนาคต/);
+        await resetStub(new Date());
+        assert.equal((await run('?force=true')).data.ok, true);
+      },
+    );
+
+    await t.test(
+      'a hand-made SKU that warroom knows but does not list at a branch shows 0 there, not its manual stock',
+      async () => {
+        await resetStub(new Date());
+        assert.equal((await run('?force=true')).data.ok, true);
+        assert.equal(
+          (await staffSku(P1)).stock,
+          2,
+          'B1 ready 3 minus the session SES promised',
+        );
+        await stub.query(
+          `DELETE FROM mart.stock_mv WHERE product_model = $1 AND branch_code = $2`,
+          [P1, B1],
+        );
+        await stub.query(`UPDATE mart.stock_mv SET snapshot_at = $1`, [
+          new Date(),
+        ]);
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        const row = await inv(b1.id, sku1.id);
+        assert.deepEqual([row.erpReady, row.erpTransfer], [0, 0]);
+        assert.equal((await staffSku(P1)).stock, 0);
+        await db.branchInventory.update({
+          where: { branchId_skuId: { branchId: b1.id, skuId: sku1.id } },
+          data: { stock: 7 },
+        });
+      },
+    );
+
+    await t.test(
+      'the 24 h reservation window starts at the (old) snapshot, and a missing-report override expires',
+      async () => {
+        const key = { branchId_skuId: { branchId: b1.id, skuId: sku1.id } };
+        const old = new Date(Date.now() - 30 * 3600_000);
+        await db.branchInventory.update({
+          where: key,
+          data: {
+            erpReady: 2,
+            erpTransfer: 0,
+            erpAsOf: old,
+            outOfStockAt: null,
+          },
+        });
+        const stale = await db.customerSession.create({
+          data: {
+            reference: `${prefix}-stale`.slice(0, 32),
+            branchId: b1.id,
+            staffId,
+            state: 'FOUND',
+            productId: hand.id,
+            modelId: hand.models[0].id,
+            skuId: sku1.id,
+            stockFoundAt: new Date(Date.now() - 26 * 3600_000),
+          },
+        });
+        created.sessionIds.push(stale.id);
+        const ids = await db.customerSession.findMany({
+          where: {
+            reference: { startsWith: prefix },
+            state: 'FOUND',
+            skuId: sku1.id,
+          },
+          select: { id: true },
+        });
+        const open = ids.length; // the 'held' session of the earlier test plus this one
+        assert.equal(
+          (await staffSku(P1)).stock,
+          Math.max(0, 2 - open),
+          'both open sessions hold a unit of the 30 h old snapshot',
+        );
+        await db.customerSession.update({
+          where: { id: stale.id },
+          data: { outcome: 'CUSTOMER_CANCELLED' },
+        });
+        await db.customerSession.updateMany({
+          where: { reference: { startsWith: prefix } },
+          data: { outcome: 'CUSTOMER_CANCELLED' },
+        });
+        await db.branchInventory.update({
+          where: key,
+          data: {
+            erpReady: 3,
+            erpAsOf: new Date(Date.now() - 10 * 3600_000),
+            outOfStockAt: new Date(Date.now() - 7 * 3600_000),
+          },
+        });
+        assert.equal(
+          (await staffSku(P1)).stock,
+          3,
+          'a report older than 6 h no longer blocks the SKU',
+        );
+        await db.branchInventory.update({
+          where: key,
+          data: { outOfStockAt: new Date(Date.now() - 3600_000) },
+        });
+        assert.equal((await staffSku(P1)).stock, 0, 'a fresh report does');
+        await db.branchInventory.update({
+          where: key,
+          data: { outOfStockAt: null },
+        });
+      },
+    );
+
+    await t.test(
+      'SKU codes are matched case-insensitively like MySQL does: no duplicate, no lost numbers',
+      async () => {
+        const ci = `${prefix}-ci/a`;
+        const handCi = await db.product.create({
+          data: {
+            category: 'Accessories',
+            name: 'hand ci',
+            active: true,
+            models: {
+              create: {
+                name: 'hand ci',
+                active: true,
+                skus: { create: { sku: ci, name: 'hand ci', active: true } },
+              },
+            },
+          },
+          include: { models: { include: { skus: true } } },
+        });
+        await resetStub(new Date());
+        await insert(ci.toUpperCase(), B1, 'ready', 4, {
+          snap: new Date(),
+          cat: 'Accessories',
+          subcat: 'Case',
+          cap: null,
+          color: null,
+        });
+        const res = await run('?force=true');
+        assert.equal(res.data.ok, true, res.data.error);
+        assert.equal(res.data.summary.catalog.collisions, 0);
+        assert.equal(await db.productSku.count({ where: { sku: ci } }), 1);
+        assert.equal(
+          (await inv(b1.id, handCi.models[0].skus[0].id)).erpReady,
+          4,
+        );
+      },
+    );
+
+    await t.test(
+      'a run that is still going (here or in another container) blocks another one',
+      async () => {
+        const ghost = await db.erpSyncRun.create({
+          data: {
+            kind: 'warroom-products',
+            slot: `snap-${prefix}-ghost`,
+            trigger: 'schedule',
+          },
+        });
+        assert.equal(
+          (
+            await request(
+              '/admin/warroom-sync/run?dryRun=true',
+              'POST',
+              undefined,
+              adminCookie,
+            )
+          ).status,
+          409,
+        );
+        const before = await db.erpSyncRun.count({
+          where: { kind: 'warroom-products' },
+        });
+        await stub.query(`UPDATE mart.stock_mv SET snapshot_at = $1`, [
+          new Date(Date.now() + 1000),
+        ]);
+        await svc.tick();
+        assert.equal(
+          await db.erpSyncRun.count({ where: { kind: 'warroom-products' } }),
+          before,
+          'tick does nothing while another run is open',
+        );
+        await db.erpSyncRun.delete({ where: { id: ghost.id } });
       },
     );
 

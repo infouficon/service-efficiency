@@ -36,6 +36,13 @@ const TICK_MS = 60_000;
 const FIRST_TICK_MS = 15_000;
 const CHUNK = 500;
 const NOTE_LIMIT = 50;
+/** A snapshot stamped further in the future than this is a clock / time-zone problem, not news. */
+const FUTURE_SLACK_MS = 5 * 60_000;
+/** warroom drops unchanged rows, so max(snapshot_at) may step back after sales; more than this is a rollback. */
+const OLDER_SLACK_MS = 24 * 3600_000;
+const RUN_DEADLINE_MS = 10 * 60_000;
+const RUNNING_WINDOW_MS = 20 * 60_000;
+const MAX_ATTEMPTS = 12;
 /** A session that reached FOUND holds one unit for this long unless it ended (D52). */
 export const RESERVATION_HOURS = 24;
 
@@ -97,6 +104,8 @@ export interface WarroomSummary {
     wouldCreate: number;
     updated: number;
     skippedNoCategory: number;
+    /** parts whose SKU code collided with an existing one (case-insensitively) while being created */
+    collisions: number;
     categories: CategoryTally[];
     unmapped: { value: string; parts: number }[];
   };
@@ -148,6 +157,9 @@ export function shortName(name: string | null, partNo: string): string {
     .trim();
   return stripped || n || partNo;
 }
+
+/** SKU codes are compared case-insensitively by MySQL, so SES matches part numbers the same way. */
+const norm = (s: string) => s.trim().toLowerCase();
 
 const clean = (v: string | null | undefined, max: number): string | null => {
   const t = (v ?? '').trim();
@@ -255,7 +267,7 @@ const rowsSql = (withAttrs: boolean) => `
          ${withAttrs ? 'max(s.capacity) AS capacity, max(s.color) AS color,' : 'NULL::text AS capacity, NULL::text AS color,'}
          COALESCE(sum(s.qty) FILTER (WHERE s.stock_type = 'ready'), 0)::int AS ready,
          COALESCE(sum(s.qty) FILTER (WHERE s.stock_type = 'transfer'), 0)::int AS transfer,
-         max(s.snapshot_at) AS snapshot_at
+         max(s.snapshot_at)::timestamptz AS snapshot_at
     FROM mart.stock_mv s
    WHERE COALESCE(btrim(s.branch_code), '') <> '' AND COALESCE(btrim(s.product_model), '') <> ''
    GROUP BY s.branch_code, s.product_model, s.product_upc`;
@@ -285,14 +297,37 @@ function toRow(r: RawRow): WarroomRow | null {
   };
 }
 
-/** Newest snapshot time in the warroom stock table: one tiny query. */
-export async function peekSnapshot(url: string): Promise<Date | null> {
+export interface Peek {
+  asOf: Date | null;
+  rows: number;
+  qty: number;
+}
+
+/** Newest snapshot time plus a size fingerprint of the warroom stock table: one tiny query. */
+export async function peekSnapshot(url: string): Promise<Peek> {
   return withWarroom(url, async (c) => {
-    const res = await c.query<{ as_of: Date | null }>(
-      'SELECT max(snapshot_at) AS as_of FROM mart.stock_mv',
+    const res = await c.query<{
+      as_of: Date | null;
+      rows: number;
+      qty: number;
+    }>(
+      'SELECT max(snapshot_at)::timestamptz AS as_of, count(*)::int AS rows, COALESCE(sum(qty), 0)::float8 AS qty FROM mart.stock_mv',
     );
-    return res.rows[0]?.as_of ?? null;
+    const r = res.rows[0];
+    return {
+      asOf: r?.as_of ?? null,
+      rows: Number(r?.rows ?? 0),
+      qty: Number(r?.qty ?? 0),
+    };
   });
+}
+
+/**
+ * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still
+ * produces a new run slot, and a max that steps back after sales still reads as news.
+ */
+export function fingerprint(rows: number, qty: number): string {
+  return (((rows * 2654435761) ^ Math.round(qty * 1000)) >>> 0).toString(36);
 }
 
 export async function readRows(url: string): Promise<WarroomRow[]> {
@@ -342,8 +377,24 @@ export class WarroomSyncService
     return warroomMode(this.config);
   }
   private intervalMinutes(): number {
-    const n = Number(this.config.get<string>('WARROOM_SYNC_MINUTES') ?? 10);
+    const raw = (this.config.get<string>('WARROOM_SYNC_MINUTES') ?? '').trim();
+    if (raw === '') return 10; // empty is "not set", not "0 = off"
+    const n = Number(raw);
     return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 10;
+  }
+
+  /** Another run (this or another container) started in the last 20 minutes and has not finished. */
+  private async othersRunning(): Promise<boolean> {
+    return (
+      (await this.prisma.erpSyncRun.count({
+        where: {
+          kind: KIND,
+          ok: null,
+          finishedAt: null,
+          startedAt: { gt: new Date(Date.now() - RUNNING_WINDOW_MS) },
+        },
+      })) > 0
+    );
   }
 
   onApplicationBootstrap(): void {
@@ -385,14 +436,17 @@ export class WarroomSyncService
     this.lastPeekAt = Date.now();
     this.running = true;
     try {
-      const asOf = await peekSnapshot(url);
-      if (!asOf) return;
+      const peek = await peekSnapshot(url);
+      if (!peek.asOf || (await this.othersRunning())) return;
+      // One slot per (snapshot time, content fingerprint): a snapshot is processed once, a change that leaves
+      // max(snapshot_at) alone (sales) still gets its own run, and a failed slot is retried for about two hours.
       const claim = await this.erp.claim(
-        `snap-${asOf.toISOString()}`,
+        `snap-${peek.asOf.toISOString()}-${fingerprint(peek.rows, peek.qty)}`,
         'schedule',
         false,
         null,
         KIND,
+        MAX_ATTEMPTS,
       );
       if (claim) await this.execute(claim.id, { dryRun: false, force: false });
     } catch (error) {
@@ -418,6 +472,10 @@ export class WarroomSyncService
     this.running = true; // before the first await, so a second click gets 409
     let claim: { id: string } | null;
     try {
+      if (await this.othersRunning())
+        throw new ConflictException(
+          'มีรอบซิงก์ warroom ที่ยังไม่จบอยู่ (อาจรันอยู่ที่ container อื่น)',
+        );
       claim = await this.erp.claim(
         `manual-${new Date().toISOString()}-${Math.random().toString(16).slice(2, 6)}`,
         'manual',
@@ -454,8 +512,22 @@ export class WarroomSyncService
     try {
       const url = this.url();
       if (!url) throw new Error('ยังไม่ได้ตั้งค่า WARROOM_DATABASE_URL');
-      const rows = await readRows(url);
-      const summary = await this.apply(rows, options);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('เกินเวลา 10 นาที ยกเลิกรอบนี้')),
+          RUN_DEADLINE_MS,
+        );
+      });
+      let summary: WarroomSummary;
+      try {
+        summary = await Promise.race([
+          readRows(url).then((rows) => this.apply(rows, options)),
+          deadline,
+        ]);
+      } finally {
+        clearTimeout(timer);
+      }
       await this.prisma.erpSyncRun.update({
         where: { id: runId },
         data: {
@@ -524,38 +596,48 @@ export class WarroomSyncService
         storage: true,
       },
     });
-    const skuByCode = new Map(skuRows.map((s) => [s.sku, s]));
-    const existingParts = [...parts].filter((p) => skuByCode.has(p));
+    const skuByCode = new Map(skuRows.map((s) => [norm(s.sku), s]));
+    const existingParts = [...parts].filter((p) => skuByCode.has(norm(p)));
     // Only parts some SES branch has: a model that exists in HO / iMedic / Huawei only would just clutter the catalog.
     const knownParts = new Set(knownRows.map((r) => r.partNo));
     const missing = items.filter(
-      (i) => !skuByCode.has(i.partNo) && knownParts.has(i.partNo),
+      (i) => !skuByCode.has(norm(i.partNo)) && knownParts.has(i.partNo),
     );
 
-    // Safety: a snapshot that lost half of the SKUs we already cover is more likely a broken warroom than a fire sale.
+    // Safety. A broken warroom is more likely than a fire sale; `force` lifts these for a snapshot that is right.
     const covered = await this.prisma.branchInventory.findMany({
       where: { erpReady: { not: null } },
       select: { branchId: true, skuId: true, erpReady: true },
     });
-    // SKUs that had stock in the previous snapshot (a forced run that zeroed many must not block every later run)
-    const coveredSkus = new Set(
-      covered.filter((c) => (c.erpReady ?? 0) > 0).map((c) => c.skuId),
-    );
+    // What had stock in the previous snapshot (a forced run that zeroed many must not block every later run)
+    const stocked = covered.filter((c) => (c.erpReady ?? 0) > 0);
+    const coveredSkus = new Set(stocked.map((c) => c.skuId));
+    const prevBranches = new Set(stocked.map((c) => c.branchId));
+    const prevReady = covered.reduce((n, c) => n + (c.erpReady ?? 0), 0);
     const newest = (
       await this.prisma.branchInventory.aggregate({ _max: { erpAsOf: true } })
     )._max.erpAsOf;
-    if (!options.force && newest && asOf < newest)
-      throw new Error(
-        `ยกเลิกเพื่อความปลอดภัย: snapshot ${asOf.toISOString()} เก่ากว่าที่ SES เก็บไว้ (${newest.toISOString()}) ตรวจ warroom แล้วสั่งรันซ้ำแบบ force ถ้าถูกต้อง`,
+    const refuse = (why: string) =>
+      new Error(
+        `ยกเลิกเพื่อความปลอดภัย: ${why} ตรวจ warroom แล้วสั่งรันซ้ำแบบ force ถ้าถูกต้อง`,
       );
-    if (
-      !options.force &&
-      coveredSkus.size >= 20 &&
-      existingParts.length < coveredSkus.size * 0.5
-    )
-      throw new Error(
-        `ยกเลิกเพื่อความปลอดภัย: snapshot นี้มี part ที่ SES รู้จัก ${existingParts.length} รายการ จากเดิมที่ครอบคลุม ${coveredSkus.size} ตรวจ warroom แล้วสั่งรันซ้ำแบบ force ถ้าถูกต้อง`,
-      );
+    if (!options.force) {
+      if (asOf.getTime() > Date.now() + FUTURE_SLACK_MS)
+        throw refuse(
+          `เวลา snapshot ${asOf.toISOString()} อยู่ในอนาคต (นาฬิกา/time zone ผิด?)`,
+        );
+      if (newest && asOf.getTime() < newest.getTime() - OLDER_SLACK_MS)
+        throw refuse(
+          `snapshot ${asOf.toISOString()} เก่ากว่าที่ SES เก็บไว้ (${newest.toISOString()}) เกิน 24 ชั่วโมง`,
+        );
+      if (
+        coveredSkus.size >= 20 &&
+        existingParts.length < coveredSkus.size * 0.5
+      )
+        throw refuse(
+          `snapshot นี้มี part ที่ SES รู้จัก ${existingParts.length} รายการ จากเดิมที่ครอบคลุม ${coveredSkus.size}`,
+        );
+    }
 
     const summary: WarroomSummary = {
       mode,
@@ -575,6 +657,7 @@ export class WarroomSyncService
         wouldCreate: mode === 'on' && !options.dryRun ? 0 : missing.length,
         updated: 0,
         skippedNoCategory,
+        collisions: 0,
         categories: categories.slice(0, NOTE_LIMIT),
         unmapped: categories
           .filter((c) => c.mapped === null)
@@ -583,26 +666,6 @@ export class WarroomSyncService
       },
       stock: { updatedRows: 0, zeroedRows: 0, readyUnits: 0, transferUnits: 0 },
     };
-
-    // Catalog (mode `on` only): create what is missing, refresh the attributes of what the sync created before.
-    const wantUpdate = items.filter((i) => {
-      const s = skuByCode.get(i.partNo);
-      return (
-        s?.erpManaged === true &&
-        (s.name !== i.skuName ||
-          (s.color ?? null) !== i.color ||
-          (s.storage ?? null) !== i.storage)
-      );
-    });
-    if (mode === 'on') {
-      if (options.dryRun) {
-        summary.catalog.updated = wantUpdate.length;
-      } else {
-        const result = await this.upsertCatalog(missing, wantUpdate, skuByCode);
-        summary.catalog.created = result.created;
-        summary.catalog.updated = result.updated;
-      }
-    }
 
     // Stock numbers per (branch, SKU). In `shadow` only SKUs SES already has; in `on` the new ones too.
     const wanted = new Set(mode === 'on' ? [...parts] : existingParts);
@@ -623,13 +686,64 @@ export class WarroomSyncService
       a.transfer += r.transfer;
       agg.set(k, a);
     }
-    const idByCode = new Map(skuRows.map((s) => [s.sku, s.id]));
+    // Every matched branch gets an explicit row (0 if need be) for every part warroom knows: a branch that is not
+    // listed has none, otherwise a hand-made SKU would keep showing its manual stock there.
+    const matchedCodes = [...new Set(knownRows.map((r) => r.branchCode))];
+    for (const code of matchedCodes)
+      for (const part of wanted) {
+        const k = `${code}\u0000${part}`;
+        if (!agg.has(k))
+          agg.set(k, {
+            branchId: branchByCode.get(code) as string,
+            code: part,
+            ready: 0,
+            transfer: 0,
+          });
+      }
+    const matchedBranchIds = [
+      ...new Set(matchedCodes.map((c) => branchByCode.get(c) as string)),
+    ];
+    const newReady = [...agg.values()].reduce((n, a) => n + a.ready, 0);
+    if (!options.force) {
+      const kept = matchedBranchIds.filter((id) => prevBranches.has(id)).length;
+      if (prevBranches.size >= 2 && kept < prevBranches.size * 0.5)
+        throw refuse(
+          `snapshot นี้มีสาขาที่ SES รู้จัก ${kept} จาก ${prevBranches.size} สาขาที่เคยมีสต็อก (เปลี่ยนรหัสสาขาใน warroom?)`,
+        );
+      if (prevReady >= 20 && newReady < prevReady * 0.5)
+        throw refuse(
+          `จำนวนพร้อมขายรวมลดจาก ${prevReady} เหลือ ${newReady} (มากกว่าครึ่ง)`,
+        );
+    }
+
+    // Catalog (mode `on` only): create what is missing, refresh the attributes of what the sync created before.
+    const wantUpdate = items.filter((i) => {
+      const s = skuByCode.get(norm(i.partNo));
+      return (
+        s?.erpManaged === true &&
+        (s.name !== i.skuName ||
+          (s.color ?? null) !== i.color ||
+          (s.storage ?? null) !== i.storage)
+      );
+    });
+    if (mode === 'on') {
+      if (options.dryRun) {
+        summary.catalog.updated = wantUpdate.length;
+      } else {
+        const result = await this.upsertCatalog(missing, wantUpdate, skuByCode);
+        summary.catalog.created = result.created;
+        summary.catalog.updated = result.updated;
+        summary.catalog.collisions = result.collisions;
+      }
+    }
+
+    const idByCode = new Map(skuRows.map((s) => [norm(s.sku), s.id]));
     if (mode === 'on' && !options.dryRun) {
       const created = await this.prisma.productSku.findMany({
         where: { sku: { in: missing.map((m) => m.partNo) } },
         select: { id: true, sku: true },
       });
-      for (const c of created) idByCode.set(c.sku, c.id);
+      for (const c of created) idByCode.set(norm(c.sku), c.id);
     }
     const writes: {
       branchId: string;
@@ -638,7 +752,7 @@ export class WarroomSyncService
       transfer: number;
     }[] = [];
     for (const a of agg.values()) {
-      const skuId = idByCode.get(a.code);
+      const skuId = idByCode.get(norm(a.code));
       if (!skuId) continue; // dry run in `on`: SKU does not exist yet
       writes.push({
         branchId: a.branchId,
@@ -648,8 +762,11 @@ export class WarroomSyncService
       });
     }
     const seen = new Set(writes.map((w) => `${w.branchId}\u0000${w.skuId}`));
+    const matched = new Set(matchedBranchIds);
+    // Only branches present in this snapshot are zeroed; a branch warroom did not report at all keeps its last numbers.
     const toZero = covered.filter(
-      (c) => !seen.has(`${c.branchId}\u0000${c.skuId}`),
+      (c) =>
+        matched.has(c.branchId) && !seen.has(`${c.branchId}\u0000${c.skuId}`),
     );
     summary.stock.updatedRows =
       mode === 'on' && options.dryRun ? agg.size : writes.length;
@@ -663,24 +780,31 @@ export class WarroomSyncService
     );
     summary.stock.zeroedRows = toZero.length;
 
-    if (!options.dryRun) {
-      for (let i = 0; i < writes.length; i += CHUNK) {
-        const part = writes.slice(i, i + CHUNK);
-        await this.prisma.$executeRaw`
-          INSERT INTO BranchInventory (id, branchId, skuId, stock, active, erpReady, erpTransfer, erpAsOf)
-          VALUES ${Prisma.join(
-            part.map(
-              (w) =>
-                Prisma.sql`(UUID(), ${w.branchId}, ${w.skuId}, 0, true, ${w.ready}, ${w.transfer}, ${asOf})`,
-            ),
-          )}
-          ON DUPLICATE KEY UPDATE erpReady = VALUES(erpReady), erpTransfer = VALUES(erpTransfer), erpAsOf = VALUES(erpAsOf)`;
-      }
-      // Rows that had ERP data but are not in this snapshot any more (every row written above carries exactly this
-      // asOf): sold out / moved, so 0 as of this snapshot.
-      const zeroed = await this.prisma.$executeRaw`
-        UPDATE BranchInventory SET erpReady = 0, erpTransfer = 0, erpAsOf = ${asOf}
-         WHERE erpReady IS NOT NULL AND (erpAsOf IS NULL OR erpAsOf <> ${asOf})`;
+    if (!options.dryRun && matchedBranchIds.length > 0) {
+      // One transaction: the numbers and the zeroing of what disappeared stand or fall together.
+      const zeroed = await this.prisma.$transaction(
+        async (tx) => {
+          for (let i = 0; i < writes.length; i += CHUNK) {
+            const part = writes.slice(i, i + CHUNK);
+            await tx.$executeRaw`
+              INSERT INTO BranchInventory (id, branchId, skuId, stock, active, erpReady, erpTransfer, erpAsOf)
+              VALUES ${Prisma.join(
+                part.map(
+                  (w) =>
+                    Prisma.sql`(UUID(), ${w.branchId}, ${w.skuId}, 0, true, ${w.ready}, ${w.transfer}, ${asOf})`,
+                ),
+              )}
+              ON DUPLICATE KEY UPDATE erpReady = VALUES(erpReady), erpTransfer = VALUES(erpTransfer), erpAsOf = VALUES(erpAsOf)`;
+          }
+          // Rows of the reported branches that had ERP data but are not in this snapshot any more (every row written
+          // above carries exactly this asOf): sold out / moved, so 0 as of this snapshot.
+          return tx.$executeRaw`
+            UPDATE BranchInventory SET erpReady = 0, erpTransfer = 0, erpAsOf = ${asOf}
+             WHERE erpReady IS NOT NULL AND (erpAsOf IS NULL OR erpAsOf <> ${asOf})
+               AND branchId IN (${Prisma.join(matchedBranchIds)})`;
+        },
+        { timeout: 180_000, maxWait: 10_000 },
+      );
       summary.stock.zeroedRows = Number(zeroed);
     }
     return summary;
@@ -690,7 +814,7 @@ export class WarroomSyncService
     create: CatalogItem[],
     update: CatalogItem[],
     skuByCode: Map<string, { id: string }>,
-  ): Promise<{ created: number; updated: number }> {
+  ): Promise<{ created: number; updated: number; collisions: number }> {
     const products = await this.prisma.product.findMany({
       select: { id: true, category: true, name: true },
     });
@@ -704,6 +828,7 @@ export class WarroomSyncService
       models.map((m) => [`${m.productId}\u0000${m.name}`, m.id]),
     );
     let created = 0;
+    let collisions = 0;
     for (const item of create) {
       try {
         const pk = `${item.category}\u0000${item.productName}`;
@@ -749,17 +874,18 @@ export class WarroomSyncService
         });
         created += 1;
       } catch (error) {
-        // A concurrent run created it first: fine, the next snapshot repeats this idempotently.
+        // Created by a concurrent run, or the code collides with one that differs only in case: counted, not fatal.
         if (!(
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === 'P2002'
         ))
           throw error;
+        collisions += 1;
       }
     }
     let updated = 0;
     for (const item of update) {
-      const sku = skuByCode.get(item.partNo);
+      const sku = skuByCode.get(norm(item.partNo));
       if (!sku) continue;
       await this.prisma.productSku.update({
         where: { id: sku.id },
@@ -767,7 +893,7 @@ export class WarroomSyncService
       });
       updated += 1;
     }
-    return { created, updated };
+    return { created, updated, collisions };
   }
 
   async status(): Promise<{

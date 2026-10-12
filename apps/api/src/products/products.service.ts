@@ -4,6 +4,9 @@ import { ProductCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
 
+/** How long a "missing / out of stock" report (D41) keeps a SKU at 0 while warroom has not sent a newer snapshot. */
+export const OUT_OF_STOCK_HOURS = 6;
+
 /** A session that reached FOUND and still holds a unit: when (if ever) it was completed. */
 export interface Reservation {
   branchId: string;
@@ -26,9 +29,17 @@ export interface ErpInventory {
 export function availableUnits(
   inv: ErpInventory,
   reservations: Map<string, Reservation[]>,
+  now: Date = new Date(),
 ): number | null {
   if (inv.erpReady === null || !inv.erpAsOf) return null;
-  if (inv.outOfStockAt && inv.outOfStockAt > inv.erpAsOf) return 0;
+  // A report newer than the snapshot blocks the SKU, but only for OUT_OF_STOCK_HOURS: a mistaken tap must not black
+  // out a SKU until warroom's next change.
+  if (
+    inv.outOfStockAt &&
+    inv.outOfStockAt > inv.erpAsOf &&
+    now.getTime() - inv.outOfStockAt.getTime() < OUT_OF_STOCK_HOURS * 3600_000
+  )
+    return 0;
   const asOf = inv.erpAsOf;
   const held = (reservations.get(`${inv.branchId}\u0000${inv.skuId}`) ?? []).filter(
     (r) => !r.completedAt || r.completedAt > asOf,
@@ -54,11 +65,23 @@ export class ProductsService implements OnModuleInit {
     );
   }
 
+  /** The oldest ERP snapshot time among the given inventory rows (null when none has ERP data). */
+  private oldestAsOf(inv: { erpAsOf: Date | null }[]): Date | null {
+    let oldest: Date | null = null;
+    for (const i of inv)
+      if (i.erpAsOf && (!oldest || i.erpAsOf < oldest)) oldest = i.erpAsOf;
+    return oldest;
+  }
+
   /** Sessions in the last 24 h that reached FOUND and have not ended with an outcome (cancelled, out of stock...). */
   private async loadReservations(
     branchId?: string,
+    oldestAsOf?: Date | null,
   ): Promise<Map<string, Reservation[]>> {
-    const since = new Date(Date.now() - RESERVATION_HOURS * 3600_000);
+    // Anchored to the OLDEST snapshot in play, not only to now: with a 30 h old snapshot a session found 26 h ago and
+    // still open is still a unit the ERP does not know about.
+    const anchor = Math.min(Date.now(), oldestAsOf?.getTime() ?? Date.now());
+    const since = new Date(anchor - RESERVATION_HOURS * 3600_000);
     const sessions = await this.prisma.customerSession.findMany({
       where: {
         ...(branchId ? { branchId } : {}),
@@ -320,9 +343,6 @@ export class ProductsService implements OnModuleInit {
   async findByBranch(branchId: string) {
     await this.syncBranchInventory();
     const erpOn = this.erpOn();
-    const reservations = erpOn
-      ? await this.loadReservations(branchId)
-      : new Map<string, Reservation[]>();
 
     const products = await this.prisma.product.findMany({
       where: { active: true },
@@ -353,6 +373,17 @@ export class ProductsService implements OnModuleInit {
       },
       orderBy: { name: 'asc' },
     });
+
+    const reservations = erpOn
+      ? await this.loadReservations(
+          branchId,
+          this.oldestAsOf(
+            products.flatMap((p) =>
+              p.models.flatMap((m) => m.skus.flatMap((s) => s.inventory)),
+            ),
+          ),
+        )
+      : new Map<string, Reservation[]>();
 
     // Map each SKU with its branch stock and filter out empty models/products
     return products
@@ -407,7 +438,6 @@ export class ProductsService implements OnModuleInit {
 
   async findAllAdmin(branchId?: string) {
     await this.syncBranchInventory();
-    const reservations = await this.loadReservations(branchId);
 
     const products = await this.prisma.product.findMany({
       include: {
@@ -427,6 +457,14 @@ export class ProductsService implements OnModuleInit {
       },
       orderBy: { name: 'asc' },
     });
+    const reservations = await this.loadReservations(
+      branchId,
+      this.oldestAsOf(
+        products.flatMap((p) =>
+          p.models.flatMap((m) => m.skus.flatMap((s) => s.inventory)),
+        ),
+      ),
+    );
     // `available` = ERP ready net of what SES already promised (null without ERP data), also shown in `shadow`
     return products.map((p) => ({
       ...p,

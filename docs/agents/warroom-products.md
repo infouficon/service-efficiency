@@ -13,13 +13,19 @@ ERP (FileMaker) ──5×/day──▶ warroom Postgres: mart.stock_mv ──rea
 
 1. The SES API (not a person's machine) connects with `WARROOM_DATABASE_URL`, a **read-only** Postgres role, runs `BEGIN READ ONLY`,
    a 20 s statement timeout, and ONE aggregate `SELECT` on `mart.stock_mv` grouped by (branch_code, part number, upc).
-2. A tick (60 s) peeks at `max(snapshot_at)`; a run is claimed per snapshot (`ErpSyncRun`, kind `warroom-products`, slot
-   `snap-<ISO time>`), so containers and restarts process a snapshot once; a failed one is retried after 10 and 20 minutes.
-3. Per SES `Branch` (matched by `Branch.code` = ERP `branch_code`, D53) and SKU (`ProductSku.sku` = Apple part number, D52) it stores
-   `BranchInventory.erpReady`, `erpTransfer`, `erpAsOf`. Rows that had ERP data and are missing from the new snapshot become 0.
-4. What staff see = `availableUnits()` = `erpReady` − sessions that reached FOUND in the last 24 h without an outcome and were not
-   COMPLETED before `erpAsOf` (the ERP still counts their unit) → never below 0; and 0 when a D41 "missing / out of stock" report
-   (`outOfStockAt`) is newer than `erpAsOf`. A newer snapshot ends the override. Rows without ERP data keep the manual `stock` (D41).
+2. A tick (60 s) peeks at `max(snapshot_at)` plus a size fingerprint (row count and total qty, so sales that do not move the max
+   are noticed too); a run is claimed per (snapshot time, fingerprint) (`ErpSyncRun`, kind `warroom-products`, slot
+   `snap-<ISO>-<fp>`), so containers and restarts process it once; a failed one is retried every 10 minutes up to 12 times. A run
+   that is still open (here or in another container) blocks a second one; a run is cut off after 10 minutes.
+3. Per SES `Branch` (matched by `Branch.code` = ERP `branch_code`, D53) and SKU (`ProductSku.sku` = Apple part number, compared
+   case-insensitively, D52) it stores `BranchInventory.erpReady`, `erpTransfer`, `erpAsOf`, in ONE transaction. Every branch that is in
+   the snapshot gets a row (0 if need be) for every part warroom lists anywhere, so a hand-made SKU never keeps its manual stock where
+   warroom says none. Rows of those branches for parts that left the snapshot become 0. A branch warroom did not report at all keeps
+   its last numbers.
+4. What staff see = `availableUnits()` = `erpReady` − sessions that reached FOUND in the 24 h before the OLDEST snapshot in play (or
+   now) without an outcome and were not COMPLETED before `erpAsOf` (the ERP still counts their unit) → never below 0; and 0 when a D41
+   "missing / out of stock" report (`outOfStockAt`) is newer than `erpAsOf` **and younger than 6 hours** (a mistaken tap must not black
+   a SKU out until warroom changes; a newer snapshot ends it too). Rows without ERP data keep the manual `stock` (D41).
 
 `erpAsOf` is `max(snapshot_at)` of `stock_mv`: the last time a stock row changed in warroom (unchanged rows are dropped as duplicates),
 so it can be somewhat older than the real pull; that errs on the safe side (see H-32).
@@ -48,8 +54,10 @@ Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stoc
 
 ## Safety
 
-- Refuses to run (unless `force`) when: the snapshot is empty; it is **older** than the newest stored `erpAsOf`; or fewer than half
-  of the SKUs that had stock before are in it.
+- Refuses to run (unless `force`) when: the snapshot is empty (even with force); its time is more than 5 minutes **in the future**
+  (clock / time-zone); it is more than 24 h **older** than the newest stored `erpAsOf` (a restore); fewer than half of the SKUs that
+  had stock are in it; fewer than half of the branches that had stock are in it (renamed `branch_code`?); or the total ready units fell
+  by more than half. Warroom's `snapshot_at` is cast to `timestamptz` in the query.
 - Connection errors never carry the URL (`safeMessage`); the URL lives only in the Coolify env.
 - `npi_reader` can read the whole `mart` schema (sales, bills). Prefer a dedicated role limited to `mart.stock_mv`
   (`CREATE ROLE ses_reader LOGIN …; GRANT USAGE ON SCHEMA mart …; GRANT SELECT ON mart.stock_mv …`) and remember warroom re-creates

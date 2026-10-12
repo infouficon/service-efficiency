@@ -566,6 +566,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     dryRun: boolean,
     actorStaffId: string | null,
     kind: string = KIND,
+    maxAttempts: number = MAX_ATTEMPTS,
   ): Promise<{ id: string } | null> {
     try {
       const row = await this.prisma.erpSyncRun.create({
@@ -585,7 +586,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       where: {
         kind,
         slot,
-        attempts: { lt: MAX_ATTEMPTS },
+        attempts: { lt: maxAttempts },
         OR: [
           { ok: false, finishedAt: { lte: new Date(now - RETRY_AFTER_MS) } },
           {

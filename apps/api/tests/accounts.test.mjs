@@ -43,12 +43,16 @@ test('real MySQL account, authorization and session lifecycle', async (t) => {
   });
   const account = (name, roles, branchId = null, active = true) => ({
     staffId: id(name),
+    firstName: 'Test',
+    lastName: name,
     password: original,
     roles,
     branchId,
     active,
   });
   const update = (roles, branchId = null, active = true) => ({
+    firstName: 'Test',
+    lastName: 'Update',
     roles,
     branchId,
     active,

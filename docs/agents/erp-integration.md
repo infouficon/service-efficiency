@@ -10,15 +10,16 @@ log SES users in with the Staff table from FileMaker (FMP), refreshed daily at 1
 
 | Phase | State |
 | --- | --- |
-| 1. Backend: branch + staff import (D53/D54), run log, ADMIN endpoints | **Built and tested** against a fake ERP and a real (MariaDB 12) database: `apps/api/src/erp/`, migration `202610120001_erp_sync`, `apps/api/tests/erp-sync.test.mjs` (22 tests) |
-| 2. Web: "ซิงก์ ERP" panel, ERP badge/locked fields in the staff table | **Built**, `npm run build` passes, checked in headless Chrome against a mock API. Not checked against the real backend |
-| 3. Stock from warroom (D52) | **Not built.** Blocked: warroom has no machine-to-machine stock endpoint and its owner has not agreed (see §2). Contract proposal in §2.1 |
+| 1. Backend: branch + staff import (D53/D54), run log, ADMIN endpoints | **Built, tested, merged and deployed** (squash `a199c6b`, PR #2, live on ses.uficon.com since 2026-10-12 16:20): `apps/api/src/erp/`, migration `202610120001_erp_sync`, `apps/api/tests/erp-sync.test.mjs` (24 tests). The job is **off** until `ERP_ODATA_BASE_URL/USER/PASS` are set in Coolify |
+| 2. Web: "ซิงก์ ERP" panel, ERP badge/locked fields in the staff table | **Built, merged, deployed** (bundle `index-Bg1qHHmf.js`). Checked in headless Chrome against a mock API only |
+| 3. Products and stock from the warroom database (D52, D55) | **Built, tested (17 tests against a Postgres stub of `mart.stock_mv`), not deployed until merged and `WARROOM_DATABASE_URL` is set**: SES reads `mart.stock_mv` read-only itself; modes off / shadow (default) / on. See [warroom-products.md](warroom-products.md). The API route written first (warroom PR #1, `GET /api/ses/stock`) is not needed and was closed. **Never run against the real warroom database yet** (its host is internal to Coolify): the first dry run in the admin panel is the first real read |
 
-**NOT verified against the live ERP.** A real end-to-end dry run was started at about 15:35 and never completed: the ERP's OData service stopped answering
+**Still NOT verified against the live ERP.** A health probe at 16:18 (after the owner said the ERP was normal) got HTTP 503 from `branch/$count`; no further ERP request has been made since.
+
+(Earlier note:) A real end-to-end dry run was started at about 15:35 and never completed: the ERP's OData service stopped answering
 (even `branch/$count` and the unauthenticated OData root hung for 12 to 90 s while the web root answered in 0.1 s). The only live facts used are the read-only
 aggregates in §3.1 and the field syntax. **The first run on any environment must be "ทดลองรัน" (dry run), watched, and only when the ERP is healthy.**
-Suspected cause, unproven: my first version asked for `$filter=status eq 'active' or status eq 'Active'` on `staff`; the same table without `$filter` answered in 0.3 s
-earlier. The code now never sends `$filter` to the ERP, treats a timeout as final (no retry), and never sends more than one request at a time.
+**Cause unknown, and probably not my query.** Warroom's own freshness (`GET /api/freshness`, public, needs a browser User-Agent) at 17:14 showed the last successful stock load at **12:31 Bangkok** and sales at 12:21, i.e. the **15:15 slot never loaded anything**, before or while my first request hung (about 15:35). Warroom itself sends `status eq 'ready' or status eq 'transfer'` filters on a table 1000 times bigger at every slot, so my `$filter` on `staff` is an unlikely cause. The code still never sends `$filter` to the ERP (precaution), treats a timeout as final (no retry), and sends one request at a time.
 
 ## 1. The three systems
 
@@ -46,7 +47,7 @@ Columns SES would use: `product_upc`, `ProductStore::product_model` (Apple part 
 `ProductStore::product_name`, `product_sn`, `status`, `BranchStore_id`, `StockBranch::branch_code`,
 `StockBranch::branch_name`, category / sub-category, `ProductStore::Price_Sell`, `transfer_id`, `date_transfer`, `Branch_From_id`.
 
-**Freshness.** The ERP is pulled at `ODATA_TIMES = 12:15,15:15,18:15,21:15,23:45` (`src/lib/syncSchedule.ts`).
+**Freshness (verified 2026-10-12).** Stock is **not** updated every N minutes: warroom pulls the ERP **5 times a day** at `ODATA_TIMES = 12:15,15:15,18:15,21:15,23:45` Bangkok (`src/lib/syncSchedule.ts`; the Coolify env pasted by the owner has no `ODATA_TIMES`/`ODATA_ENABLED`, so the defaults apply; a DB switch `app.switch` can also pause it). Every slot pulls ALL stock (about 88k+ serial numbers) and then refreshes `stock_mv`: today's 12:15 slot loaded sales at 12:21 and stock at **12:31** (about 16 minutes). Gaps: 3 h, 3 h, 3 h, 2.5 h, then **12.5 h overnight**. A slot that fails is **not retried** (the next chance is the next slot). Before 2026-09-24 it ran every 30 minutes (48 a day); the owner cut it to protect the ERP. SES therefore needs to read `max(snapshot_at)` only occasionally and re-read when it changes.
 The owner (โปเต้) cut this from 48 runs a day on 2026-09-24 to protect the ERP that the shops sell on, and accepted
 that the dashboard is stale from 23:45 until 12:15 next day. **At shop opening SES would see last night's stock.**
 `GET /api/dashboard/_meta` returns a data version; the README mentions `/api/freshness`.
@@ -63,7 +64,7 @@ time; never `$orderby` without `$filter` on a large table. SES must not call the
 - The live host answered **HTTP 403 with an empty body** to a plain GET from this machine. The app itself would answer `/` with
   a 302 to `/login`, so the 403 most likely comes from the proxy in front (an allow-list?). Unverified; ask the owner.
 
-### Ways SES can get stock (decide in G-11)
+### Ways SES can get stock (decided 2026-10-12, D55: option B, direct read-only; kept here for the reasoning)
 
 | Option | How | For | Against |
 | --- | --- | --- | --- |

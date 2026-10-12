@@ -137,6 +137,8 @@ model Product {
   category  ProductCategory
   name      String            @db.VarChar(191)
   active    Boolean           @default(true)
+  // created and kept in sync from the warroom database (D52); names are then read-only in SES
+  erpManaged Boolean          @default(false)
   models    ProductModel[]
   sessions  CustomerSession[]
 }
@@ -147,6 +149,7 @@ model ProductModel {
   product   Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
   name      String            @db.VarChar(191)
   active    Boolean           @default(true)
+  erpManaged Boolean          @default(false)
   skus      ProductSku[]
   sessions  CustomerSession[]
 
@@ -162,6 +165,7 @@ model ProductSku {
   color     String?           @db.VarChar(64)
   storage   String?           @db.VarChar(64)
   active    Boolean           @default(true)
+  erpManaged Boolean          @default(false)
   sessions  CustomerSession[]
   inventory BranchInventory[]
 
@@ -176,6 +180,12 @@ model BranchInventory {
   sku       ProductSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
   stock     Int        @default(0)
   active    Boolean    @default(true)
+  // numbers from the warroom snapshot taken at erpAsOf (D52); null = no ERP data, the manual `stock` applies
+  erpReady     Int?
+  erpTransfer  Int?
+  erpAsOf      DateTime? @db.DateTime(3)
+  // D41 "reported missing / out of stock" at the branch: counts as 0 until a newer ERP snapshot
+  outOfStockAt DateTime? @db.DateTime(3)
   createdAt DateTime   @default(now()) @db.DateTime(3)
   updatedAt DateTime   @updatedAt @db.DateTime(3)
 

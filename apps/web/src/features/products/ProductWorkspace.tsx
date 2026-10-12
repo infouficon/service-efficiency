@@ -33,6 +33,13 @@ export interface BranchInventoryItem {
   stock: number;
   active: boolean;
   branch?: { id: string; code: string; name: string };
+  /** Warroom (ERP) numbers for this branch and SKU; null or absent = no ERP data, the manual `stock` applies. */
+  erpReady?: number | null;
+  erpTransfer?: number | null;
+  /** ISO time of the warroom snapshot behind erpReady and erpTransfer. */
+  erpAsOf?: string | null;
+  /** erpReady minus the units SES has already promised; null when erpReady is null. */
+  available?: number | null;
 }
 
 export interface SkuItem {
@@ -42,6 +49,8 @@ export interface SkuItem {
   color?: string | null;
   storage?: string | null;
   active: boolean;
+  /** Created and kept in sync from the ERP: only `active` can be changed here. */
+  erpManaged?: boolean;
   inventory?: BranchInventoryItem[];
 }
 
@@ -49,6 +58,7 @@ export interface ModelItem {
   id: string;
   name: string;
   active: boolean;
+  erpManaged?: boolean;
   skus: SkuItem[];
 }
 
@@ -57,7 +67,37 @@ export interface ProductItem {
   category: 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
   name: string;
   active: boolean;
+  erpManaged?: boolean;
   models: ModelItem[];
+}
+
+/** Does this branch row carry ERP numbers? */
+const hasErpStock = (inv: BranchInventoryItem) => typeof inv.erpReady === 'number';
+
+/** Badge on a product, model or SKU the ERP sync created and owns. */
+function ErpBadge() {
+  return (
+    <span className="erp-badge" title="รายการนี้ซิงก์จาก ERP (warroom)">
+      ERP
+    </span>
+  );
+}
+
+/** "พร้อมขาย 12 · โอน 3 · คงเหลือสุทธิ 10 · ณ 12 ต.ค. 12:31": the ERP numbers of a branch row; nothing for a row without ERP data. */
+function ErpStockLine({ inv }: { inv: BranchInventoryItem }) {
+  if (typeof inv.erpReady !== 'number') return null;
+  const asOf = inv.erpAsOf ? new Date(inv.erpAsOf) : null;
+  const parts = [
+    `พร้อมขาย ${inv.erpReady}`,
+    `โอน ${inv.erpTransfer ?? '—'}`,
+    `คงเหลือสุทธิ ${inv.available ?? inv.erpReady}`,
+  ];
+  if (asOf && !Number.isNaN(asOf.getTime())) {
+    parts.push(
+      `ณ ${asOf.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`,
+    );
+  }
+  return <div className="erp-stock-line">{parts.join(' · ')}</div>;
 }
 
 interface ProductWorkspaceProps {
@@ -187,6 +227,25 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     active: true,
   });
 
+  // Records the ERP sync owns (erpManaged): their names, codes, colour, storage and category are read-only here, only `active` stays editable.
+  const erpManagedIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of products) {
+      if (p.erpManaged) ids.add(p.id);
+      for (const m of p.models || []) {
+        if (m.erpManaged) ids.add(m.id);
+        for (const s of m.skus || []) {
+          if (s.erpManaged) ids.add(s.id);
+        }
+      }
+    }
+    return ids;
+  }, [products]);
+  const isErpManaged = (id?: string) => id !== undefined && erpManagedIds.has(id);
+  const productLocked = isErpManaged(productModal.editingId);
+  const modelLocked = isErpManaged(modelModal.editingId);
+  const skuLocked = isErpManaged(skuModal.editingId);
+
   const loadData = useCallback(async () => {
     try {
       const [prods, brs] = await Promise.all([
@@ -229,6 +288,27 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       active = false;
     };
   }, [isAdmin]);
+
+  // While the warroom sync mode is `on`, branch stock that has ERP numbers comes from the ERP and the manual input is locked.
+  // Only ADMIN can read the mode (a MANAGER would get 403 and has no stock input anyway); without it nothing is locked.
+  const [erpStockLocked, setErpStockLocked] = useState(false);
+  useEffect(() => {
+    if (!isAdmin) return;
+    let active = true;
+    api<{ mode: string }>('/admin/warroom-sync/status')
+      .then((sync) => {
+        if (active) setErpStockLocked(sync.mode === 'on');
+      })
+      .catch(() => {
+        // Status unavailable: keep the manual stock editable; the API still refuses a row it has locked.
+      });
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
+  // The number staff see for a branch row: the ERP's net availability while the mode is `on` (when the row has it), else the manual stock.
+  const effectiveStock = (inv: BranchInventoryItem) =>
+    erpStockLocked && typeof inv.available === 'number' ? inv.available : inv.stock;
 
   // Handle Branch Stock update in breakdown modal
   const handleSaveBranchStock = async (branchId: string, skuId: string) => {
@@ -325,8 +405,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     try {
       if (productModal.editingId) {
         await api(`/products/${productModal.editingId}`, 'PUT', {
-          category: productModal.category,
-          name: productModal.name,
+          // The ERP owns category and name of an ERP-managed product: send only what may change.
+          ...(productLocked ? {} : { category: productModal.category, name: productModal.name }),
           active: productModal.active,
         });
         toast.success('อัปเดตข้อมูลสินค้าเรียบร้อย (ระบบอัปเดตสถานะสาขาที่เกี่ยวข้องอัตโนมัติ)');
@@ -353,7 +433,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     try {
       if (modelModal.editingId) {
         await api(`/products/models/${modelModal.editingId}`, 'PUT', {
-          name: modelModal.name,
+          ...(modelLocked ? {} : { name: modelModal.name }),
           active: modelModal.active,
         });
         toast.success('อัปเดตรุ่นสินค้าเรียบร้อย');
@@ -379,10 +459,14 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     try {
       if (skuModal.editingId) {
         await api(`/products/skus/${skuModal.editingId}`, 'PUT', {
-          sku: skuModal.sku,
-          name: skuModal.name,
-          color: skuModal.color || undefined,
-          storage: skuModal.storage || undefined,
+          ...(skuLocked
+            ? {}
+            : {
+                sku: skuModal.sku,
+                name: skuModal.name,
+                color: skuModal.color || undefined,
+                storage: skuModal.storage || undefined,
+              }),
           active: skuModal.active,
         });
         toast.success('อัปเดต SKU เรียบร้อย');
@@ -621,7 +705,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                       for (const s of m.skus || []) {
                         totalSkus += 1;
                         for (const inv of s.inventory || []) {
-                          totalStock += inv.stock || 0;
+                          totalStock += effectiveStock(inv) || 0;
                         }
                       }
                     }
@@ -630,6 +714,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                       <tr key={prod.id}>
                         <td>
                           <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>{prod.name}</strong>
+                          {prod.erpManaged && <ErpBadge />}
                           <div className="fine muted" style={{ marginTop: '2px' }}>
                             {prod.models?.length || 0} รุ่นย่อย
                           </div>
@@ -734,9 +819,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 <tbody>
                   {allSkusForStockView.map(({ sku, product, model }) => {
                     const invList = sku.inventory || [];
-                    const branchesWithStock = invList.filter((inv) => inv.stock > 0).length;
+                    const branchesWithStock = invList.filter((inv) => effectiveStock(inv) > 0).length;
                     const totalBranchesCount = branches.length > 0 ? branches.length : (invList.length || 1);
-                    const totalStock = invList.reduce((sum, inv) => sum + (inv.stock || 0), 0);
+                    const totalStock = invList.reduce((sum, inv) => sum + (effectiveStock(inv) || 0), 0);
                     const isAvailable = totalStock > 0;
 
                     return (
@@ -759,6 +844,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                       >
                         <td>
                           <strong style={{ color: '#0f172a' }}>{sku.sku}</strong>
+                          {sku.erpManaged && <ErpBadge />}
                         </td>
                         <td>
                           <div style={{ fontWeight: 600 }}>
@@ -837,6 +923,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           title={`สต็อกรายสาขา — ${breakdownModal.sku.sku}`}
           isOpen={breakdownModal.open}
           onClose={handleRequestCloseBreakdown}
+          maxWidth={breakdownModal.sku.inventory?.some(hasErpStock) ? '720px' : undefined}
         >
           <div style={{ marginBottom: '1rem' }}>
             <div style={{ fontWeight: 600, fontSize: '1rem', color: '#0f172a' }}>
@@ -869,6 +956,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                       breakdownModal.stockInputs[inv.branchId] !== undefined
                         ? breakdownModal.stockInputs[inv.branchId]
                         : inv.stock;
+                    // Mode `on`: the ERP number is the stock of this row, so the manual input is locked and shows it instead.
+                    const stockLocked = erpStockLocked && hasErpStock(inv);
 
                     return (
                       <tr key={inv.id}>
@@ -889,12 +978,16 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                             {inv.active ? '● เปิด' : '○ ปิด'}
                           </button>
                         </td>
-                        <td>
+                        <td
+                          className={stockLocked ? 'erp-managed-form' : undefined}
+                          title={stockLocked ? 'สต็อกสาขานี้มาจาก ERP' : undefined}
+                        >
                           {isAdmin ? (
                             <input
                               type="number"
                               min="0"
-                              value={currentQty}
+                              value={stockLocked ? effectiveStock(inv) : currentQty}
+                              disabled={stockLocked}
                               onChange={(e) => {
                                 const val = Math.max(0, parseInt(e.target.value, 10) || 0);
                                 setBreakdownModal((prev) => ({
@@ -918,6 +1011,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                               {inv.stock} ชิ้น
                             </strong>
                           )}
+                          <ErpStockLine inv={inv} />
                         </td>
                       </tr>
                     );
@@ -1002,10 +1096,14 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           isOpen={productModal.open}
           onClose={() => setProductModal({ ...productModal, open: false })}
         >
-          <form onSubmit={handleSaveProduct}>
+          <form onSubmit={handleSaveProduct} className={productLocked ? 'erp-managed-form' : undefined}>
+            {productLocked && (
+              <Notice>สินค้านี้มาจาก ERP (warroom) ชื่อและหมวดหมู่ต้องแก้ที่ ERP ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน</Notice>
+            )}
             <label>
               หมวดหมู่สินค้า (LOB / Category)
               <select
+                disabled={productLocked}
                 value={productModal.category}
                 onChange={(e) =>
                   setProductModal({
@@ -1025,6 +1123,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               ชื่อสินค้าหลัก (Product Name)
               <input
                 required
+                disabled={productLocked}
                 placeholder="เช่น iPhone 16 Pro, iPad Pro 11-inch"
                 value={productModal.name}
                 onChange={(e) =>
@@ -1084,6 +1183,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                         <div>
                           <Tag size={14} color="#0abab5" style={{ display: 'inline', marginRight: '6px' }} />
                           <strong>{model.name}</strong>
+                          {model.erpManaged && <ErpBadge />}
                           <span className={`status-tag ${model.active ? 'status-found' : 'status-outcome'}`} style={{ marginLeft: '8px', fontSize: '0.75rem' }}>
                             {model.active ? 'ใช้งาน' : 'ปิด'}
                           </span>
@@ -1140,6 +1240,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                               }}
                             >
                               {s.sku} ({s.name})
+                              {s.erpManaged && <ErpBadge />}
                             </span>
                           ))}
                         </div>
@@ -1172,11 +1273,15 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           isOpen={modelModal.open}
           onClose={() => setModelModal({ ...modelModal, open: false })}
         >
-          <form onSubmit={handleSaveModel}>
+          <form onSubmit={handleSaveModel} className={modelLocked ? 'erp-managed-form' : undefined}>
+            {modelLocked && (
+              <Notice>รุ่นนี้มาจาก ERP (warroom) ชื่อรุ่นต้องแก้ที่ ERP ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน</Notice>
+            )}
             <label>
               ชื่อรุ่นสินค้า (Model Name)
               <input
                 required
+                disabled={modelLocked}
                 placeholder="เช่น iPhone 16 Pro, Wi-Fi + Cellular"
                 value={modelModal.name}
                 onChange={(e) =>
@@ -1220,11 +1325,15 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           isOpen={skuModal.open}
           onClose={() => setSkuModal({ ...skuModal, open: false })}
         >
-          <form onSubmit={handleSaveSku}>
+          <form onSubmit={handleSaveSku} className={skuLocked ? 'erp-managed-form' : undefined}>
+            {skuLocked && (
+              <Notice>SKU นี้มาจาก ERP (warroom) รหัส ชื่อ ความจุ และสีต้องแก้ที่ ERP ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน</Notice>
+            )}
             <label>
               รหัส SKU (SKU Code)
               <input
                 required
+                disabled={skuLocked}
                 placeholder="เช่น IP16P-256-NAT"
                 value={skuModal.sku}
                 onChange={(e) =>
@@ -1236,6 +1345,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               ชื่อรายการตัวเลือก (Display Name)
               <input
                 required
+                disabled={skuLocked}
                 placeholder="เช่น 256GB Natural Titanium"
                 value={skuModal.name}
                 onChange={(e) =>
@@ -1247,6 +1357,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <label>
                 ความจุ (Storage)
                 <input
+                  disabled={skuLocked}
                   placeholder="เช่น 128GB, 256GB"
                   value={skuModal.storage}
                   onChange={(e) =>
@@ -1257,6 +1368,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <label>
                 สี (Color)
                 <input
+                  disabled={skuLocked}
                   placeholder="เช่น Natural Titanium"
                   value={skuModal.color}
                   onChange={(e) =>

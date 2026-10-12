@@ -1,10 +1,118 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ProductCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
+
+/** How long a "missing / out of stock" report (D41) keeps a SKU at 0 while warroom has not sent a newer snapshot. */
+export const OUT_OF_STOCK_HOURS = 6;
+
+/** A session that reached FOUND and still holds a unit: when (if ever) it was completed. */
+export interface Reservation {
+  branchId: string;
+  skuId: string;
+  completedAt: Date | null;
+}
+export interface ErpInventory {
+  branchId: string;
+  skuId: string;
+  erpReady: number | null;
+  erpAsOf: Date | null;
+  outOfStockAt: Date | null;
+}
+
+/**
+ * Units SES can still promise for a branch + SKU, or null when there is no ERP number (D52):
+ * the warroom `ready` count of the snapshot, minus sessions that reached FOUND and were not completed before the
+ * snapshot (the ERP still counted their unit), and 0 when a "missing / out of stock" report is newer than the snapshot (D41).
+ */
+export function availableUnits(
+  inv: ErpInventory,
+  reservations: Map<string, Reservation[]>,
+  now: Date = new Date(),
+): number | null {
+  if (inv.erpReady === null || !inv.erpAsOf) return null;
+  // A report newer than the snapshot blocks the SKU, but only for OUT_OF_STOCK_HOURS: a mistaken tap must not black
+  // out a SKU until warroom's next change.
+  if (
+    inv.outOfStockAt &&
+    inv.outOfStockAt > inv.erpAsOf &&
+    now.getTime() - inv.outOfStockAt.getTime() < OUT_OF_STOCK_HOURS * 3600_000
+  )
+    return 0;
+  const asOf = inv.erpAsOf;
+  const held = (reservations.get(`${inv.branchId}\u0000${inv.skuId}`) ?? []).filter(
+    (r) => !r.completedAt || r.completedAt > asOf,
+  ).length;
+  return Math.max(0, inv.erpReady - held);
+}
 
 @Injectable()
 export class ProductsService implements OnModuleInit {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /** True when the warroom numbers drive what staff see (WARROOM_STOCK_MODE=on and a warroom database is set). */
+  private erpOn(): boolean {
+    return warroomMode(this.config) === 'on';
+  }
+
+  private erpLocked() {
+    return new ConflictException(
+      'รายการนี้ซิงก์จาก ERP (warroom): แก้ชื่อ รหัส สี ความจุได้ที่ ERP เท่านั้น (เปิด/ปิดการขายได้)',
+    );
+  }
+
+  /** The oldest ERP snapshot time among the given inventory rows (null when none has ERP data). */
+  private oldestAsOf(inv: { erpAsOf: Date | null }[]): Date | null {
+    let oldest: Date | null = null;
+    for (const i of inv)
+      if (i.erpAsOf && (!oldest || i.erpAsOf < oldest)) oldest = i.erpAsOf;
+    return oldest;
+  }
+
+  /** Sessions in the last 24 h that reached FOUND and have not ended with an outcome (cancelled, out of stock...). */
+  private async loadReservations(
+    branchId?: string,
+    oldestAsOf?: Date | null,
+  ): Promise<Map<string, Reservation[]>> {
+    // Anchored to the OLDEST snapshot in play, not only to now: with a 30 h old snapshot a session found 26 h ago and
+    // still open is still a unit the ERP does not know about.
+    const anchor = Math.min(Date.now(), oldestAsOf?.getTime() ?? Date.now());
+    const since = new Date(anchor - RESERVATION_HOURS * 3600_000);
+    const sessions = await this.prisma.customerSession.findMany({
+      where: {
+        ...(branchId ? { branchId } : {}),
+        skuId: { not: null },
+        stockFoundAt: { gte: since },
+        outcome: null,
+      },
+      select: {
+        branchId: true,
+        skuId: true,
+        events: {
+          where: { eventType: 'COMPLETED' },
+          select: { createdAt: true },
+          take: 1,
+        },
+      },
+    });
+    const map = new Map<string, Reservation[]>();
+    for (const s of sessions) {
+      if (!s.skuId) continue;
+      const key = `${s.branchId}\u0000${s.skuId}`;
+      const list = map.get(key) ?? [];
+      list.push({
+        branchId: s.branchId,
+        skuId: s.skuId,
+        completedAt: s.events[0]?.createdAt ?? null,
+      });
+      map.set(key, list);
+    }
+    return map;
+  }
 
   async onModuleInit() {
     await this.seedCatalogIfEmpty();
@@ -234,6 +342,7 @@ export class ProductsService implements OnModuleInit {
 
   async findByBranch(branchId: string) {
     await this.syncBranchInventory();
+    const erpOn = this.erpOn();
 
     const products = await this.prisma.product.findMany({
       where: { active: true },
@@ -265,6 +374,17 @@ export class ProductsService implements OnModuleInit {
       orderBy: { name: 'asc' },
     });
 
+    const reservations = erpOn
+      ? await this.loadReservations(
+          branchId,
+          this.oldestAsOf(
+            products.flatMap((p) =>
+              p.models.flatMap((m) => m.skus.flatMap((s) => s.inventory)),
+            ),
+          ),
+        )
+      : new Map<string, Reservation[]>();
+
     // Map each SKU with its branch stock and filter out empty models/products
     return products
       .map((p) => ({
@@ -272,17 +392,25 @@ export class ProductsService implements OnModuleInit {
         models: p.models
           .map((m) => ({
             ...m,
-            skus: m.skus.map((s) => ({
-              id: s.id,
-              modelId: s.modelId,
-              sku: s.sku,
-              name: s.name,
-              color: s.color,
-              storage: s.storage,
-              active: s.active,
-              stock: s.inventory[0]?.stock ?? 0,
-              branchActive: s.inventory[0]?.active ?? true,
-            })),
+            skus: m.skus.map((s) => {
+              const inv = s.inventory[0];
+              // ERP number (net of what SES already promised) when it drives the screen, else the manual stock (D41)
+              const available = erpOn && inv ? availableUnits(inv, reservations) : null;
+              return {
+                id: s.id,
+                modelId: s.modelId,
+                sku: s.sku,
+                name: s.name,
+                color: s.color,
+                storage: s.storage,
+                active: s.active,
+                erpManaged: s.erpManaged,
+                stock: available ?? inv?.stock ?? 0,
+                erpCovered: inv?.erpReady != null,
+                erpAsOf: inv?.erpAsOf ?? null,
+                branchActive: inv?.active ?? true,
+              };
+            }),
           }))
           .filter((m) => m.skus.length > 0),
       }))
@@ -311,7 +439,7 @@ export class ProductsService implements OnModuleInit {
   async findAllAdmin(branchId?: string) {
     await this.syncBranchInventory();
 
-    return this.prisma.product.findMany({
+    const products = await this.prisma.product.findMany({
       include: {
         models: {
           include: {
@@ -329,6 +457,28 @@ export class ProductsService implements OnModuleInit {
       },
       orderBy: { name: 'asc' },
     });
+    const reservations = await this.loadReservations(
+      branchId,
+      this.oldestAsOf(
+        products.flatMap((p) =>
+          p.models.flatMap((m) => m.skus.flatMap((s) => s.inventory)),
+        ),
+      ),
+    );
+    // `available` = ERP ready net of what SES already promised (null without ERP data), also shown in `shadow`
+    return products.map((p) => ({
+      ...p,
+      models: p.models.map((m) => ({
+        ...m,
+        skus: m.skus.map((s) => ({
+          ...s,
+          inventory: s.inventory.map((inv) => ({
+            ...inv,
+            available: availableUnits(inv, reservations),
+          })),
+        })),
+      })),
+    }));
   }
 
   async getBranchInventory(branchId?: string) {
@@ -356,6 +506,16 @@ export class ProductsService implements OnModuleInit {
   }
 
   async updateBranchStock(branchId: string, skuId: string, stock: number) {
+    if (this.erpOn()) {
+      const current = await this.prisma.branchInventory.findUnique({
+        where: { branchId_skuId: { branchId, skuId } },
+        select: { erpReady: true },
+      });
+      if (current?.erpReady != null)
+        throw new ConflictException(
+          'สต็อกของสาขานี้มาจาก ERP (warroom) แก้ที่ ERP เท่านั้น',
+        );
+    }
     return this.prisma.branchInventory.upsert({
       where: {
         branchId_skuId: { branchId, skuId },
@@ -413,6 +573,18 @@ export class ProductsService implements OnModuleInit {
   }
 
   async updateProduct(id: string, data: { category?: ProductCategory; name?: string; active?: boolean }) {
+    if (this.erpOn()) {
+      const cur = await this.prisma.product.findUnique({
+        where: { id },
+        select: { erpManaged: true, category: true, name: true },
+      });
+      if (
+        cur?.erpManaged &&
+        ((data.category !== undefined && data.category !== cur.category) ||
+          (data.name !== undefined && data.name !== cur.name))
+      )
+        throw this.erpLocked();
+    }
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.product.update({
         where: { id },
@@ -457,6 +629,14 @@ export class ProductsService implements OnModuleInit {
   }
 
   async updateModel(modelId: string, data: { name?: string; active?: boolean }) {
+    if (this.erpOn()) {
+      const cur = await this.prisma.productModel.findUnique({
+        where: { id: modelId },
+        select: { erpManaged: true, name: true },
+      });
+      if (cur?.erpManaged && data.name !== undefined && data.name !== cur.name)
+        throw this.erpLocked();
+    }
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.productModel.update({
         where: { id: modelId },
@@ -510,6 +690,22 @@ export class ProductsService implements OnModuleInit {
   }
 
   async updateSku(skuId: string, data: { sku?: string; name?: string; color?: string; storage?: string; active?: boolean }) {
+    if (this.erpOn()) {
+      const cur = await this.prisma.productSku.findUnique({
+        where: { id: skuId },
+        select: { erpManaged: true, sku: true, name: true, color: true, storage: true },
+      });
+      const differs = (next: string | undefined, now: string | null) =>
+        next !== undefined && (next || null) !== (now || null);
+      if (
+        cur?.erpManaged &&
+        (differs(data.sku, cur.sku) ||
+          differs(data.name, cur.name) ||
+          differs(data.color, cur.color) ||
+          differs(data.storage, cur.storage))
+      )
+        throw this.erpLocked();
+    }
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.productSku.update({
         where: { id: skuId },

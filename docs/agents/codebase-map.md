@@ -40,6 +40,8 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | `src/sessions/sessions.service.ts` | 1231 | **the workflow engine**: `STEPS` table (:22), role/branch checks (:113-125), every action (see workflow-as-built.md) |
 | `src/sessions/dto.ts` | 166 | `STEP_ACTIONS`, action DTOs (free-string option values, H-11) |
 | `src/erp/erp-sync.service.ts` | ~600 | **ERP import** (D53/D54): OData client (quoted `%20` names, no `$filter`, a timeout is final), pure parsers (`parseBranches`, `parsePeople`, `rolesForPosition` = the provisional role table), plan + apply inside the `AccountLock` transaction (dry run = throw inside the callback to roll back), 30 s tick with DB slot claim (`claim`), run log |
+| `src/warroom/warroom-sync.service.ts` | ~600 | **products/stock from the warroom DB** (D52/D55): read-only `pg` reader of `mart.stock_mv`, pure rules (`mapCategory`, `buildCatalog`, `shortName`, `parseMode`), catalog create/update (mode `on`), bulk `INSERT … ON DUPLICATE KEY` of `erpReady/erpTransfer/erpAsOf`, zeroing, guards (empty / older / lost half), 60 s tick per snapshot (`claim` kind `warroom-products`) |
+| `src/warroom/warroom.controller.ts`, `warroom.module.ts` | 60 | `GET /admin/warroom-sync/status`, `POST /admin/warroom-sync/run` (ADMIN, `OriginGuard`) |
 | `src/erp/erp.controller.ts`, `erp.module.ts` | 45 | `GET /admin/erp-sync/status`, `POST /admin/erp-sync/run` (ADMIN, `OriginGuard`) |
 | `src/products/products.controller.ts` | 182 | catalog + branch inventory routes; `assertAdmin` / `assertManagerOrAdmin` |
 | `src/products/products.service.ts` | 531 | boot seed + inventory sync (H-17), branch-filtered catalog, cascade deactivation (D42) |
@@ -49,6 +51,7 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | `scripts/bootstrap.mjs` | 52 | creates the first ADMIN only when Staff is empty; imports `../dist/accounts/password.js`, so **build the API first** |
 | `docker-entrypoint.sh` | — | `set -e`; `prisma migrate deploy`; optional bootstrap; `exec node apps/api/dist/main.js` (H-16) |
 | `tests/accounts.test.mjs` | 519 | **real** HTTP + MySQL integration test (needs the `service_efficiency_test` DB) |
+| `tests/warroom-sync.test.mjs` | ~520 | 6 pure tests + real MySQL against a **Postgres stub of `mart.stock_mv`**: shadow vs on, availability with sessions, locks, zeroing, mass-loss and stale guards, unreachable warroom, `tick()` once per snapshot |
 | `tests/erp-sync.test.mjs` | ~450 | 5 pure tests + a real-MySQL test against a **fake ERP** (node `http`): plan/apply, passwords, leavers, closed branch, adoption, ERP down/401, mass guard, async run, slot claim |
 | `tests/sessions.test.mjs` | 144 | constant-only assertions; does not exercise the API (H-15) |
 

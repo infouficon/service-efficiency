@@ -92,7 +92,7 @@ mariadb --no-defaults -uroot --socket=/tmp/ses-mariadb/sock -e "CREATE DATABASE 
 # apps/api/.env.test (git-ignored): DATABASE_URL=mysql://ses_test:<pw>@127.0.0.1:3399/service_efficiency_test and CORS_ORIGINS=http://localhost:5173,http://localhost:5174
 DATABASE_URL=<same url> npx prisma migrate deploy && npm run build:api && (cd apps/api && node --test tests/erp-sync.test.mjs)
 ```
-`erp-sync.test.mjs` needs no ERP: it starts a fake OData server. **Never point the tests (or a dry run) at a database that holds real data.**
+`erp-sync.test.mjs` needs no ERP: it starts a fake OData server. `warroom-sync.test.mjs` needs a throwaway **Postgres** playing warroom (skipped when absent): `initdb -D /tmp/wr-pg --auth=trust -U postgres && pg_ctl -D /tmp/wr-pg -o "-p 5498 -k /tmp/wr-pg-sock -c listen_addresses=127.0.0.1" start && psql -h 127.0.0.1 -p 5498 -U postgres -c 'create database warroom_stub'` (override with `WARROOM_TEST_PG_URL`). The API test files share one database, so `npm test` runs them one at a time (`--test-concurrency=1`). **Never point the tests (or a dry run) at a database that holds real data.**
 
 ## 6c. ERP import: first run on an environment
 1. Set `ERP_ODATA_BASE_URL`, `ERP_ODATA_USER`, `ERP_ODATA_PASS` (Coolify env of the `api` app) and restart.

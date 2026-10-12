@@ -73,6 +73,9 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | ERP import / sync run | Daily 10:00 (Bangkok) pull of Branches and Staff from the company ERP (FileMaker OData), D53/D54. One `ErpSyncRun` row per run (scheduled or ADMIN "run now", optional dry run). | `apps/api/src/erp/`, `GET/POST /api/admin/erp-sync/*` |
 | ERP-managed account | A `Staff` the import created (`erpStaffId` not null; `erpManaged` in the API). The ERP owns its password, name, branch, active flag and STAFF/STOCK/CASHIER roles; ADMIN/MANAGER roles stay manual; change/reset password is refused. Accounts without `erpStaffId` (hand-made, tests, `0001`) are never touched. | `Staff.erpStaffId` |
 | ERP-managed branch | A `Branch` linked to an ERP `branch_id` (`erpBranchId`), only ERP groups `iStudio` and `U-Store`; edited at the ERP only. | `Branch.erpBranchId` |
+| warroom / ERP stock | The warroom Postgres (`mart.stock_mv`), filled from the ERP 5 times a day. SES reads it read-only and stores per Branch × SKU `erpReady` (sellable), `erpTransfer` (in transit) and `erpAsOf` (snapshot time). Modes `off` / `shadow` / `on`. | `BranchInventory.erp*`, `apps/api/src/warroom/` |
+| Available (ERP) | What staff may promise = `erpReady` − sessions at FOUND since the snapshot (24 h, not completed before `erpAsOf`), 0 after a newer D41 missing/out-of-stock report. Replaces the manual `stock` only in mode `on` and only where ERP data exists. | `availableUnits()` |
+| ERP-managed product | `Product`/`ProductModel`/`ProductSku.erpManaged = true`: created by the warroom sync (mode `on`); SKU code = Apple part number. | `erpManaged` |
 
 ## 3. Domain model
 
@@ -83,6 +86,7 @@ Branch 1──* Staff                 (Staff.branchId nullable: ADMIN-only has n
 Staff  *──* Role   via StaffRole  (composite PK staffId+roleCode)
 Staff  1──* LoginSession          (tokenHash PK, lastSeenAt)
 Staff.erpStaffId / Branch.erpBranchId   (null = made by hand; set = kept in sync with the ERP, D53/D54)
+BranchInventory.erpReady/erpTransfer/erpAsOf/outOfStockAt   (warroom snapshot numbers, D52/D55; null = manual stock applies)
 ErpSyncRun                         (one row per import run; unique kind+slot)
 AccountLock                        (single row id=1; global mutex, see H-02)
 

@@ -205,4 +205,44 @@ export function resolveSessionStatusText(session: {
   return `กำลังบริการ (${session.state})`;
 }
 
+export function getSessionMissingDescription(session: {
+  selection?: {
+    product?: { model?: string; product?: string; sku?: string } | null;
+  } | null;
+  stockPendingReview?: {
+    missingItems?: string[];
+    stockNote?: string;
+  } | null;
+  outcome?: string | null;
+}): string {
+  const missing = session.stockPendingReview?.missingItems;
+  const mainProd =
+    session.selection?.product?.model ||
+    session.selection?.product?.product ||
+    session.selection?.product?.sku;
+
+  if (missing && missing.length > 0) {
+    const missingStr = missing.join(', ');
+    const containsMain = mainProd
+      ? missing.some(
+          (item) =>
+            item === mainProd ||
+            item.includes(mainProd) ||
+            (session.selection?.product?.model &&
+              item.includes(session.selection.product.model)),
+        )
+      : false;
+    if (mainProd && !containsMain) {
+      return `${missingStr} (ในคำสั่งซื้อ ${mainProd})`;
+    }
+    return missingStr;
+  }
+
+  if (mainProd) {
+    return mainProd;
+  }
+
+  return 'สินค้าไม่ระบุ';
+}
+
 

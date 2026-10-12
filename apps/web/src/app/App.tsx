@@ -26,7 +26,7 @@ import { ProductWorkspace } from '../features/products/ProductWorkspace';
 import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
 import { AdminHub } from '../features/admin/AdminHub';
 import { fetchSessionsApi, acknowledgeManagerAlertApi } from '../services/sessionApi';
-import { isToday } from '../features/session/workflow';
+import { isToday, getSessionMissingDescription } from '../features/session/workflow';
 
 function parseHashView(hash: string): AppView | null {
   const clean = hash.replace(/^#\/?/, '');
@@ -460,14 +460,68 @@ export function App({
               flexWrap: 'wrap',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#991b1b', fontSize: '13px' }}>
-              <AlertTriangle size={18} color="#dc2626" />
-              <span>
-                <strong>แจ้งเตือนผู้จัดการสาขา:</strong> มี <strong>{managerAlertSessions.length}</strong> รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่
-                {' '}({managerAlertSessions.map((s) => s.reference).join(', ')})
-              </span>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: '8px',
+                color: '#991b1b',
+                fontSize: '13px',
+                flex: '1 1 auto',
+                minWidth: '280px',
+              }}
+            >
+              <AlertTriangle
+                size={18}
+                color="#dc2626"
+                style={{ marginTop: '2px', flexShrink: 0 }}
+              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div>
+                  <strong>แจ้งเตือน :</strong> มี{' '}
+                  <strong>{managerAlertSessions.length}</strong>{' '}
+                  รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่:
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {managerAlertSessions.map((s) => {
+                    const missingText = getSessionMissingDescription(s);
+                    const note = s.stockPendingReview?.stockNote;
+                    return (
+                      <span
+                        key={s.reference}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: '#fee2e2',
+                          border: '1px solid #fca5a5',
+                          borderRadius: '6px',
+                          padding: '3px 8px',
+                          fontSize: '12px',
+                          color: '#7f1d1d',
+                          lineHeight: 1.4,
+                        }}
+                      >
+                        <strong>{s.reference}:</strong>
+                        <span>{missingText}</span>
+                        {note && (
+                          <span
+                            style={{
+                              color: '#991b1b',
+                              fontStyle: 'italic',
+                              fontSize: '11px',
+                            }}
+                          >
+                            ({note})
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
               <button
                 type="button"
                 className="text-button"

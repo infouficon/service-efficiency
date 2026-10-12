@@ -651,7 +651,7 @@ export class SessionsService {
         if (removeMainProduct && session.skuId && session.branchId) {
           await tx.branchInventory.updateMany({
             where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: 0 },
+            data: { stock: 0, outOfStockAt: now },
           });
         } else if (!removeMainProduct && session.skuId && session.branchId) {
           await tx.branchInventory.updateMany({
@@ -718,7 +718,7 @@ export class SessionsService {
       if (session.skuId && session.branchId) {
         await tx.branchInventory.updateMany({
           where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: 0 },
+          data: { stock: 0, outOfStockAt: now },
         });
       }
 
@@ -887,7 +887,7 @@ export class SessionsService {
       if (isMainProductMissing && session.skuId && session.branchId) {
         await tx.branchInventory.updateMany({
           where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: 0 },
+          data: { stock: 0, outOfStockAt: now },
         });
       }
 

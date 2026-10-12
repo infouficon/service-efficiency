@@ -565,10 +565,11 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     trigger: 'schedule' | 'manual',
     dryRun: boolean,
     actorStaffId: string | null,
+    kind: string = KIND,
   ): Promise<{ id: string } | null> {
     try {
       const row = await this.prisma.erpSyncRun.create({
-        data: { kind: KIND, slot, trigger, dryRun, actorStaffId },
+        data: { kind, slot, trigger, dryRun, actorStaffId },
       });
       return { id: row.id };
     } catch (error) {
@@ -582,7 +583,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     const now = Date.now();
     const reclaimed = await this.prisma.erpSyncRun.updateMany({
       where: {
-        kind: KIND,
+        kind,
         slot,
         attempts: { lt: MAX_ATTEMPTS },
         OR: [
@@ -604,7 +605,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     });
     if (reclaimed.count !== 1) return null;
     const row = await this.prisma.erpSyncRun.findUnique({
-      where: { kind_slot: { kind: KIND, slot } },
+      where: { kind_slot: { kind, slot } },
     });
     return row ? { id: row.id } : null;
   }
@@ -1063,6 +1064,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
   }> {
     const times = this.times();
     const rows = await this.prisma.erpSyncRun.findMany({
+      where: { kind: KIND },
       orderBy: { startedAt: 'desc' },
       take: 10,
     });
@@ -1083,7 +1085,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
   }
 }
 
-function toDto(row: Prisma.ErpSyncRunGetPayload<object>): ErpSyncRunDto {
+export function toDto(row: Prisma.ErpSyncRunGetPayload<object>): ErpSyncRunDto {
   // MySQL returns a parsed object; MariaDB (local tests) returns the JSON text.
   const summary =
     typeof row.summary === 'string'

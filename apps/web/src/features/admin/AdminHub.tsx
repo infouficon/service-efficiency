@@ -19,6 +19,7 @@ import {
 import type { Role } from '../../types/session';
 import { SystemAuditLogs } from './SystemAuditLogs';
 import { ErpSyncPanel } from './ErpSyncPanel';
+import { WarroomSyncPanel } from './WarroomSyncPanel';
 /** Admin sub-views. Only ADMIN sees `branches`, `audit` and `erp`. */
 export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
@@ -151,7 +152,10 @@ export function AdminHub({
       {admin && subTab === 'audit' ? (
         <SystemAuditLogs />
       ) : admin && subTab === 'erp' ? (
-        <ErpSyncPanel />
+        <>
+          <ErpSyncPanel />
+          <WarroomSyncPanel />
+        </>
       ) : (
         <>
           {error && (

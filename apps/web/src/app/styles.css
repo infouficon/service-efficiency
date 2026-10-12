@@ -2522,6 +2522,55 @@ input[aria-invalid='true'] {
   white-space: normal;
   word-break: break-word;
 }
+.admin-table td.erp-sync-nowrap {
+  white-space: nowrap;
+}
+/* Products and stock from the warroom: section heading, unmapped categories, force checkbox, ERP numbers per branch */
+.warroom-sync-heading {
+  margin: 32px 0 6px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border-color);
+}
+.warroom-unmapped {
+  margin: 12px 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-warning);
+  border-left: 3px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  background: var(--bg-warning);
+  font-size: 13px;
+}
+.warroom-unmapped p {
+  margin: 2px 0 0;
+}
+.warroom-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.warroom-chip {
+  padding: 2px 8px;
+  border: 1px solid var(--border-warning);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  font-size: var(--font-sm);
+}
+.warroom-force {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 4px;
+  cursor: pointer;
+}
+.erp-stock-line {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
 
 /* MODAL STYLES */
 .modal-backdrop {

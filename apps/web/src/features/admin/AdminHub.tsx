@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ShieldCheck, Plus, Edit2, KeyRound, Users, Activity, Building2 } from 'lucide-react';
+import {
+  ShieldCheck,
+  Plus,
+  Edit2,
+  KeyRound,
+  Users,
+  Activity,
+  Building2,
+} from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
@@ -10,6 +18,11 @@ import {
 } from '../../types/accounts';
 import type { Role } from '../../types/session';
 import { SystemAuditLogs } from './SystemAuditLogs';
+import { ErpSyncPanel } from './ErpSyncPanel';
+/** Admin sub-views. Only ADMIN sees `branches`, `audit` and `erp`. */
+export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp';
+/** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
+const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
   staffId: string;
   firstName: string;
@@ -18,6 +31,7 @@ interface StaffDraft {
   branchId: string;
   active: boolean;
   password: string;
+  erpManaged: boolean;
 }
 const blankStaff = (): StaffDraft => ({
   staffId: '',
@@ -27,6 +41,7 @@ const blankStaff = (): StaffDraft => ({
   branchId: '',
   active: true,
   password: '',
+  erpManaged: false,
 });
 export function AdminHub({
   user,
@@ -36,8 +51,8 @@ export function AdminHub({
 }: {
   user: Account;
   onAccountChange: (user: Account) => void;
-  subView?: 'users' | 'branches' | 'audit';
-  onSubViewChange?: (view: 'users' | 'branches' | 'audit') => void;
+  subView?: AdminSubView;
+  onSubViewChange?: (view: AdminSubView) => void;
 }) {
   const toast = useToast();
   const admin = user.roles.includes('ADMIN');
@@ -45,7 +60,7 @@ export function AdminHub({
   const [branches, setBranches] = useState<ManagedBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [internalSubTab, setInternalSubTab] = useState<'users' | 'branches' | 'audit'>('users');
+  const [internalSubTab, setInternalSubTab] = useState<AdminSubView>('users');
   const subTab = subView !== undefined ? subView : internalSubTab;
   const [error, setError] = useState('');
   const [draft, setDraft] = useState<StaffDraft | null>(null);
@@ -110,14 +125,23 @@ export function AdminHub({
     : accountRoles.filter((r) => ['STAFF', 'STOCK', 'CASHIER'].includes(r));
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          marginBottom: '4px',
+        }}
+      >
         <ShieldCheck size={28} color="#0abab5" />
         <h1 style={{ margin: 0 }}>
           {subTab === 'branches'
             ? 'จัดการสาขา (Branches)'
             : subTab === 'audit'
-            ? 'ประวัติการทำงานของระบบ (System Audit Logs)'
-            : 'จัดการผู้ใช้ (Staff Members)'}
+              ? 'ประวัติการทำงานของระบบ (System Audit Logs)'
+              : subTab === 'erp'
+                ? 'ซิงก์ข้อมูลจาก ERP (ERP Sync)'
+                : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -126,6 +150,8 @@ export function AdminHub({
 
       {admin && subTab === 'audit' ? (
         <SystemAuditLogs />
+      ) : admin && subTab === 'erp' ? (
+        <ErpSyncPanel />
       ) : (
         <>
           {error && (
@@ -148,170 +174,238 @@ export function AdminHub({
             <>
               {subTab === 'users' && (
                 <Panel title="Staff Members">
-            <div className="panel-actions-top">
-              <Button
-                onClick={() => {
-                  setEditing(false);
-                  setDraft({
-                    ...blankStaff(),
-                    branchId: admin ? '' : (user.branchId ?? ''),
-                  });
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <Plus size={16} />
-                  เพิ่ม Staff
-                </span>
-              </Button>
-            </div>
-            <div className="table-responsive">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Staff ID</th>
-                    <th>Name</th>
-                    <th>Branch</th>
-                    <th>Roles</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {staff.map((s) => (
-                    <tr key={s.staffId}>
-                      <td><strong>{s.staffId}</strong></td>
-                      <td>{s.name || [s.firstName, s.lastName].filter(Boolean).join(' ') || '—'}</td>
-                      <td>{s.branch}</td>
-                      <td>{s.roles.join(', ')}</td>
-                      <td>
-                        <span className={`status-tag ${s.active ? 'status-found' : 'status-outcome'}`}>
-                          {s.active ? 'ใช้งาน' : 'ปิดใช้งาน'}
-                        </span>
-                        {s.mustChangePassword ? ' · ต้องเปลี่ยนรหัส' : ''}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.4rem' }}>
-                          {(admin ||
-                            !s.roles.some(
-                              (r) => r === 'ADMIN' || r === 'MANAGER',
-                            )) && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setEditing(true);
-                                setDraft({
-                                  staffId: s.staffId,
-                                  firstName: s.firstName ?? '',
-                                  lastName: s.lastName ?? '',
-                                  roles: [...s.roles],
-                                  branchId: s.branchId ?? '',
-                                  active: s.active,
-                                  password: '',
-                                });
-                              }}
-                            >
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <Edit2 size={13} />
-                                แก้ไข
+                  <div className="panel-actions-top">
+                    <Button
+                      onClick={() => {
+                        setEditing(false);
+                        setDraft({
+                          ...blankStaff(),
+                          branchId: admin ? '' : (user.branchId ?? ''),
+                        });
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Plus size={16} />
+                        เพิ่ม Staff
+                      </span>
+                    </Button>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Staff ID</th>
+                          <th>Name</th>
+                          <th>Branch</th>
+                          <th>Roles</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {staff.map((s) => (
+                          <tr key={s.staffId}>
+                            <td>
+                              <strong>{s.staffId}</strong>
+                              {s.erpManaged && (
+                                <span
+                                  className="erp-badge"
+                                  title="บัญชีนี้ซิงก์จาก ERP"
+                                >
+                                  ERP
+                                </span>
+                              )}
+                            </td>
+                            <td>
+                              {s.name ||
+                                [s.firstName, s.lastName]
+                                  .filter(Boolean)
+                                  .join(' ') ||
+                                '—'}
+                            </td>
+                            <td>{s.branch}</td>
+                            <td>{s.roles.join(', ')}</td>
+                            <td>
+                              <span
+                                className={`status-tag ${s.active ? 'status-found' : 'status-outcome'}`}
+                              >
+                                {s.active ? 'ใช้งาน' : 'ปิดใช้งาน'}
                               </span>
-                            </Button>
-                          )}
-                          {admin && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => {
-                                setResetId(s.staffId);
-                                setTemporary('');
-                              }}
-                            >
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                <KeyRound size={13} />
-                                Reset
+                              {s.mustChangePassword ? ' · ต้องเปลี่ยนรหัส' : ''}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.4rem' }}>
+                                {/* A non-admin has nothing to edit on an ERP account: only ADMIN/MANAGER roles are hand-managed. */}
+                                {(admin ||
+                                  (!s.erpManaged &&
+                                    !s.roles.some(
+                                      (r) => r === 'ADMIN' || r === 'MANAGER',
+                                    ))) && (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                      setEditing(true);
+                                      setDraft({
+                                        staffId: s.staffId,
+                                        firstName: s.firstName ?? '',
+                                        lastName: s.lastName ?? '',
+                                        roles: [...s.roles],
+                                        branchId: s.branchId ?? '',
+                                        active: s.active,
+                                        password: '',
+                                        erpManaged: Boolean(s.erpManaged),
+                                      });
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <Edit2 size={13} />
+                                      แก้ไข
+                                    </span>
+                                  </Button>
+                                )}
+                                {/* The ERP owns the password of an ERP account; the server refuses a reset. */}
+                                {admin && !s.erpManaged && (
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                      setResetId(s.staffId);
+                                      setTemporary('');
+                                    }}
+                                  >
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <KeyRound size={13} />
+                                      Reset
+                                    </span>
+                                  </Button>
+                                )}
+                                {s.erpManaged && (
+                                  <span
+                                    className="fine"
+                                    style={{ alignSelf: 'center' }}
+                                  >
+                                    {admin
+                                      ? 'รหัสผ่านใช้ร่วมกับ ERP'
+                                      : 'จัดการที่ ERP'}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!staff.length && <p>ยังไม่มี Staff</p>}
+                </Panel>
+              )}
+              {subTab === 'branches' && admin && (
+                <Panel title="Branches">
+                  <div className="panel-actions-top">
+                    <Button
+                      onClick={() => {
+                        setBranchEditing(false);
+                        setBranch({
+                          id: '',
+                          code: '',
+                          name: '',
+                          phone: '',
+                          active: true,
+                        });
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Plus size={16} />
+                        เพิ่ม Branch
+                      </span>
+                    </Button>
+                  </div>
+                  <div className="table-responsive">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Code</th>
+                          <th>Name</th>
+                          <th>Phone</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {branches.map((b) => (
+                          <tr key={b.id}>
+                            <td>
+                              <strong>{b.code}</strong>
+                            </td>
+                            <td>{b.name}</td>
+                            <td>{b.phone || '—'}</td>
+                            <td>
+                              <span
+                                className={`status-tag ${b.active ? 'status-found' : 'status-outcome'}`}
+                              >
+                                {b.active ? 'ใช้งาน' : 'ปิดใช้งาน'}
                               </span>
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!staff.length && <p>ยังไม่มี Staff</p>}
-          </Panel>
-        )}
-        {subTab === 'branches' && admin && (
-          <Panel title="Branches">
-            <div className="panel-actions-top">
-              <Button
-                onClick={() => {
-                  setBranchEditing(false);
-                  setBranch({
-                    id: '',
-                    code: '',
-                    name: '',
-                    phone: '',
-                    active: true,
-                  });
-                }}
-              >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                  <Plus size={16} />
-                  เพิ่ม Branch
-                </span>
-              </Button>
-            </div>
-            <div className="table-responsive">
-              <table className="admin-table">
-                <thead>
-                  <tr>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {branches.map((b) => (
-                    <tr key={b.id}>
-                      <td><strong>{b.code}</strong></td>
-                      <td>{b.name}</td>
-                      <td>{b.phone || '—'}</td>
-                      <td>
-                        <span className={`status-tag ${b.active ? 'status-found' : 'status-outcome'}`}>
-                          {b.active ? 'ใช้งาน' : 'ปิดใช้งาน'}
-                        </span>
-                      </td>
-                      <td>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => {
-                            setBranchEditing(true);
-                            setBranch({ ...b });
-                          }}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <Edit2 size={13} />
-                            แก้ไข
-                          </span>
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!branches.length && (
-              <p>ยังไม่มี Branch — เพิ่ม Branch ก่อนสร้างบัญชีปฏิบัติงาน</p>
-            )}
-          </Panel>
-        )}
-        </>
-      )}
+                            </td>
+                            <td>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  setBranchEditing(true);
+                                  setBranch({ ...b });
+                                }}
+                              >
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
+                                  <Edit2 size={13} />
+                                  แก้ไข
+                                </span>
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!branches.length && (
+                    <p>
+                      ยังไม่มี Branch — เพิ่ม Branch ก่อนสร้างบัญชีปฏิบัติงาน
+                    </p>
+                  )}
+                </Panel>
+              )}
+            </>
+          )}
         </>
       )}
       {draft && (
@@ -321,6 +415,7 @@ export function AdminHub({
           onClose={() => setDraft(null)}
         >
           <form
+            className={draft.erpManaged ? 'erp-managed-form' : undefined}
             onSubmit={(e) => {
               e.preventDefault();
               const body = {
@@ -348,6 +443,11 @@ export function AdminHub({
               );
             }}
           >
+            {draft.erpManaged && (
+              <Notice>
+                ข้อมูลชุดนี้มาจาก ERP และจะถูกซิงก์ทุกวัน 10:00 แก้ที่ ERP
+              </Notice>
+            )}
             <label>
               Staff ID (รหัสพนักงาน)
               <input
@@ -364,6 +464,7 @@ export function AdminHub({
                 ชื่อจริง (First Name)
                 <input
                   placeholder="เช่น สมชาย"
+                  disabled={draft.erpManaged}
                   value={draft.firstName}
                   onChange={(e) =>
                     setDraft({ ...draft, firstName: e.target.value })
@@ -374,6 +475,7 @@ export function AdminHub({
                 นามสกุล (Last Name)
                 <input
                   placeholder="เช่น ใจดี"
+                  disabled={draft.erpManaged}
                   value={draft.lastName}
                   onChange={(e) =>
                     setDraft({ ...draft, lastName: e.target.value })
@@ -399,30 +501,38 @@ export function AdminHub({
             )}
             <fieldset>
               <legend>Roles</legend>
-              {allowedRoles.map((role) => (
-                <label className="choice" key={role}>
-                  <input
-                    type="checkbox"
-                    checked={draft.roles.includes(role)}
-                    onChange={() =>
-                      setDraft({
-                        ...draft,
-                        roles: draft.roles.includes(role)
-                          ? draft.roles.filter((r) => r !== role)
-                          : [...draft.roles, role],
-                      })
-                    }
-                  />
-                  {role}
-                </label>
-              ))}
+              {allowedRoles.map((role) => {
+                // The ERP import owns STAFF/STOCK/CASHIER on its accounts; ADMIN/MANAGER stay hand-managed.
+                const locked = draft.erpManaged && erpOwnedRoles.includes(role);
+                return (
+                  <label
+                    className={`choice ${locked ? 'locked' : ''}`.trim()}
+                    key={role}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={locked}
+                      checked={draft.roles.includes(role)}
+                      onChange={() =>
+                        setDraft({
+                          ...draft,
+                          roles: draft.roles.includes(role)
+                            ? draft.roles.filter((r) => r !== role)
+                            : [...draft.roles, role],
+                        })
+                      }
+                    />
+                    {role}
+                  </label>
+                );
+              })}
             </fieldset>
             {draft.roles.some((r) => r !== 'ADMIN') && (
               <label>
                 Branch
                 <select
                   required
-                  disabled={!admin}
+                  disabled={!admin || draft.erpManaged}
                   value={draft.branchId}
                   onChange={(e) =>
                     setDraft({ ...draft, branchId: e.target.value })
@@ -441,6 +551,7 @@ export function AdminHub({
             <label>
               <input
                 type="checkbox"
+                disabled={draft.erpManaged}
                 checked={draft.active}
                 onChange={(e) =>
                   setDraft({ ...draft, active: e.target.checked })
@@ -448,7 +559,9 @@ export function AdminHub({
               />{' '}
               ใช้งานบัญชี
             </label>
-            <p className="fine">ปิดบัญชีจะออกจากระบบทุกอุปกรณ์</p>
+            {!draft.erpManaged && (
+              <p className="fine">ปิดบัญชีจะออกจากระบบทุกอุปกรณ์</p>
+            )}
             <div className="actions">
               <Button type="submit" disabled={busy || !draft.roles.length}>
                 บันทึก
@@ -466,7 +579,9 @@ export function AdminHub({
       )}
       {branch && (
         <Modal
-          title={branchEditing ? `แก้ไข Branch: ${branch.code}` : 'เพิ่ม Branch'}
+          title={
+            branchEditing ? `แก้ไข Branch: ${branch.code}` : 'เพิ่ม Branch'
+          }
           isOpen={Boolean(branch)}
           onClose={() => setBranch(null)}
         >

@@ -10,6 +10,8 @@ export interface Account {
   branch: string;
   active: boolean;
   mustChangePassword: boolean;
+  /** True for accounts created by the daily ERP import (D54): the ERP owns their password, name, branch, active flag and STAFF/STOCK/CASHIER roles. */
+  erpManaged: boolean;
 }
 export interface ManagedBranch {
   id: string;

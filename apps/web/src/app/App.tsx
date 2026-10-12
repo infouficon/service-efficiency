@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Users,
   Activity,
+  RefreshCw,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -24,9 +25,15 @@ import { StockWorkspace } from '../features/stock/StockWorkspace';
 import { CashierWorkspace } from '../features/cashier/CashierWorkspace';
 import { ProductWorkspace } from '../features/products/ProductWorkspace';
 import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
-import { AdminHub } from '../features/admin/AdminHub';
-import { fetchSessionsApi, acknowledgeManagerAlertApi } from '../services/sessionApi';
-import { isToday, getSessionMissingDescription } from '../features/session/workflow';
+import { AdminHub, type AdminSubView } from '../features/admin/AdminHub';
+import {
+  fetchSessionsApi,
+  acknowledgeManagerAlertApi,
+} from '../services/sessionApi';
+import {
+  isToday,
+  getSessionMissingDescription,
+} from '../features/session/workflow';
 
 function parseHashView(hash: string): AppView | null {
   const clean = hash.replace(/^#\/?/, '');
@@ -86,8 +93,10 @@ export function App({
     ...account,
     branchCode: account.branchCode ?? account.branchId ?? undefined,
   };
-  const [productSubView, setProductSubView] = useState<'MAIN' | 'STOCK'>('MAIN');
-  const [adminSubView, setAdminSubView] = useState<'users' | 'branches' | 'audit'>('users');
+  const [productSubView, setProductSubView] = useState<'MAIN' | 'STOCK'>(
+    'MAIN',
+  );
+  const [adminSubView, setAdminSubView] = useState<AdminSubView>('users');
   const [sessions, setSessions] = useState<MockSession[]>([]);
   const [view, setView] = useState<AppView>(() => getInitialView(user));
   const [notice, setNotice] = useState('');
@@ -118,7 +127,9 @@ export function App({
     let mounted = true;
     const loadSessions = async () => {
       try {
-        const branchFilter = user.roles.includes('ADMIN') ? undefined : user.branchCode;
+        const branchFilter = user.roles.includes('ADMIN')
+          ? undefined
+          : user.branchCode;
         const data = await fetchSessionsApi(branchFilter);
         if (mounted) {
           setSessions((prev) => {
@@ -132,7 +143,8 @@ export function App({
                 merged.phone = local.phone || serverS.phone;
                 merged.selection =
                   local.selection &&
-                  (local.selection.product || Object.keys(local.selection.accessories).length > 0)
+                  (local.selection.product ||
+                    Object.keys(local.selection.accessories).length > 0)
                     ? {
                         ...serverS.selection,
                         ...local.selection,
@@ -195,7 +207,8 @@ export function App({
       ].includes(s.state),
   ).length;
 
-  const isManagerOrAdmin = user.roles.includes('MANAGER') || user.roles.includes('ADMIN');
+  const isManagerOrAdmin =
+    user.roles.includes('MANAGER') || user.roles.includes('ADMIN');
   const managerAlertSessions = useMemo(() => {
     if (!isManagerOrAdmin) return [];
     return branchSessions.filter(
@@ -203,14 +216,17 @@ export function App({
         !dismissedAlertRefs.includes(s.reference) &&
         !s.stockPendingReview?.acknowledgedAt &&
         (Boolean(s.stockPendingReview) ||
-          (s.outcome === 'OUT_OF_STOCK' && isToday(s.timestamps.customer_walk_in_at))),
+          (s.outcome === 'OUT_OF_STOCK' &&
+            isToday(s.timestamps.customer_walk_in_at))),
     );
   }, [isManagerOrAdmin, branchSessions, dismissedAlertRefs]);
 
   const handleDismissAlerts = () => {
     const targets = [...managerAlertSessions];
     const currentRefs = targets.map((s) => s.reference);
-    setDismissedAlertRefs((prev) => Array.from(new Set([...prev, ...currentRefs])));
+    setDismissedAlertRefs((prev) =>
+      Array.from(new Set([...prev, ...currentRefs])),
+    );
 
     for (const s of targets) {
       if (s.id) {
@@ -358,7 +374,7 @@ export function App({
               )}
             </div>
           )}
-          
+
           {canAccessAdmin && (
             <div>
               <button
@@ -404,6 +420,17 @@ export function App({
                       >
                         <Activity size={14} /> <span>ประวัติ</span>
                       </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'erp' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('erp');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <RefreshCw size={14} /> <span>ซิงก์ ERP</span>
+                      </button>
                     </>
                   )}
                 </div>
@@ -438,7 +465,11 @@ export function App({
             <button
               className="text-button logout-btn"
               onClick={onLogout}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
             >
               <LogOut size={14} />
               <span className="logout-text">ออกจากระบบ</span>
@@ -476,11 +507,14 @@ export function App({
                 color="#dc2626"
                 style={{ marginTop: '2px', flexShrink: 0 }}
               />
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div
+                style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
+              >
                 <div>
                   <strong>แจ้งเตือน :</strong> มี{' '}
                   <strong>{managerAlertSessions.length}</strong>{' '}
-                  รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่:
+                  รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก
+                  เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่:
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {managerAlertSessions.map((s) => {
@@ -521,7 +555,14 @@ export function App({
                 </div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
+            <div
+              style={{
+                display: 'flex',
+                gap: '8px',
+                alignItems: 'center',
+                flexShrink: 0,
+              }}
+            >
               <button
                 type="button"
                 className="text-button"
@@ -658,7 +699,6 @@ export function App({
               </Notice>
             )}
           </details> */}
-
         </main>
       </div>
     </div>

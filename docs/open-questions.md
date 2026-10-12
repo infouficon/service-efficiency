@@ -66,4 +66,4 @@ Names of the three extra payment methods. **Handled by D66 (2026-10-13):** the p
 
 ## OQ-15 — Registration URL printed as a QR on the receipt (F10)
 
-One QR per branch at the bottom of the receipt for the customer to register. Which URL does each branch encode (U POS `/register` has no branch parameter today; it would need `?branch=<code>`)? Until answered the plan is a per-branch URL field that ADMIN fills in.
+One QR per branch at the bottom of the receipt for the customer to register. Which URL does each branch encode (U POS `/register` has no branch parameter today; it would need `?branch=<code>`)? **Handled by D67 (2026-10-13):** a per-branch URL field that ADMIN fills in (Admin → จัดการสาขา → QR ลงทะเบียน), so no code change is needed once the address is known.

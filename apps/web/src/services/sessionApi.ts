@@ -15,7 +15,13 @@ export interface ApiSession {
   id: string;
   reference: string;
   branchId: string;
-  branch?: { id: string; code: string; name: string; phone: string };
+  branch?: {
+    id: string;
+    code: string;
+    name: string;
+    phone: string;
+    registrationUrl?: string | null;
+  };
   staffId: string;
   customerId?: string | null;
   phone?: string | null;
@@ -120,6 +126,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     customerTypeName: s.customerType?.name || undefined,
     branchCode: s.branch?.code || s.branchId,
     branchName: s.branch?.name || '',
+    branchPhone: s.branch?.phone || undefined,
+    branchRegistrationUrl: s.branch?.registrationUrl || undefined,
     phone: s.phone || '',
     staffId: s.staffId,
     state: s.state,

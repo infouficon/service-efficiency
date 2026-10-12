@@ -8,7 +8,7 @@ It is where `/grill-with-docs` writes its ADRs.
 
 | | `docs/decisions.md` | `docs/adr/` |
 | --- | --- | --- |
-| Content | **Business** decisions confirmed by the owner (D1–D66): rules, permissions, UI behaviour | **Technical** decisions with alternatives and consequences |
+| Content | **Business** decisions confirmed by the owner (D1–D67): rules, permissions, UI behaviour | **Technical** decisions with alternatives and consequences |
 | Id | `D##` | `NNNN-kebab-title.md` |
 | Written by | agent, after the owner confirms | agent, after a grilling or design session |
 

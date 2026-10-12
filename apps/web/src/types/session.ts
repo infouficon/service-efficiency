@@ -144,6 +144,9 @@ export interface CustomerType {
 
 export interface MockSession {
   id?: string;
+  /** The branch's phone and the address its receipt QR opens (F9, F10). */
+  branchPhone?: string;
+  branchRegistrationUrl?: string;
   /** Internal key (SES-YYYYMMDD-NNNNNN): React keys, lookups, links. Staff see `queue` instead (D57). */
   reference: string;
   /** What staff call the customer by, e.g. "A012" (letter + number); sessions from before D57 have no letter ("007"). */

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
+import { ReceiptPrint } from '../session/Receipt';
 import {
   formatDuration,
   itemName,
@@ -1196,6 +1197,7 @@ export function SessionLogsWorkspace({
             {/* Order & Payment Summary */}
             <div className="session-summary-section">
               <Summary session={selectedSession} />
+              {selectedSession.confirmed && <ReceiptPrint session={selectedSession} />}
             </div>
           </Panel>
         ) : (

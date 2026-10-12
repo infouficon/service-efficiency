@@ -5,6 +5,7 @@ import {
   IsBoolean,
   IsIn,
   IsString,
+  IsUrl,
   Matches,
   MaxLength,
   MinLength,
@@ -46,6 +47,16 @@ export class StaffUpdateDto {
 export class StaffCreateDto extends StaffUpdateDto {
   @IsString() @MinLength(1) @MaxLength(64) staffId!: string;
   @IsString() @MinLength(8) @MaxLength(128) password!: string;
+}
+/** F10: the address the receipt's QR opens. `null` clears it. */
+export class BranchRegistrationDto {
+  @ValidateIf((_object, value) => value !== null)
+  @IsUrl(
+    { protocols: ['http', 'https'], require_protocol: true, require_tld: false },
+    { message: 'url ต้องเป็นที่อยู่ http:// หรือ https://' },
+  )
+  @MaxLength(512)
+  url!: string | null;
 }
 export class BranchDto {
   @IsString() @MinLength(1) @MaxLength(64) code!: string;

@@ -74,6 +74,8 @@ model Branch {
   active   Boolean           @default(true)
   // ERP branch_id when the row is kept in sync with the ERP (D53); null for hand-made branches
   erpBranchId Int?           @unique
+  // F10: the address the receipt's QR code opens (customer registration), one per branch; set by ADMIN, also on ERP branches
+  registrationUrl String?    @db.VarChar(512)
   staff    Staff[]
   sessions CustomerSession[]
   inventory BranchInventory[]

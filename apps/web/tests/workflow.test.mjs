@@ -21,6 +21,7 @@ import {
   itemsText,
   getSessionMissingDescription,
 } from '../src/features/session/workflow.ts';
+import { qrCode } from '../src/utils/qr.ts';
 const fixture = () => ({
   reference: 'fixture',
   phone: '1234567890',
@@ -375,4 +376,18 @@ test('the manager alert names what is missing and what the order holds (F3)', ()
   );
   assert.equal(getSessionMissingDescription({ selection: { items } }), 'iPhone 16 128GB ×2, iPad Air');
   assert.equal(getSessionMissingDescription({ selection: { items: [] } }), 'สินค้าไม่ระบุ');
+});
+
+test('the receipt QR is a real QR matrix: finder patterns in three corners, the same text gives the same code (F10)', () => {
+  const a = qrCode('https://pos.example.test/register?branch=ISTUDIO-01');
+  assert.ok(a.size >= 21 && (a.size - 21) % 4 === 0, `a valid QR side, got ${a.size}`);
+  assert.ok(a.path.startsWith('M0 0h1v1h-1z'), 'the top-left finder pattern starts with a dark module');
+  const modules = (a.path.match(/M/g) ?? []).length;
+  assert.ok(modules > a.size * 3 && modules < a.size * a.size, 'dark modules are a share of the matrix');
+  assert.equal(qrCode('https://pos.example.test/register?branch=ISTUDIO-01').path, a.path);
+  assert.notEqual(qrCode('https://pos.example.test/register?branch=ISTUDIO-02').path, a.path);
+  // Thai text is encoded as UTF-8 (three bytes a letter), so it needs a bigger matrix than the same number of ASCII letters
+  assert.ok(qrCode('สวัสดีสวัสดีสวัสดี').size > qrCode('abcdefghijklmnopqr').size);
+  // a longer address needs a bigger matrix
+  assert.ok(qrCode(`https://pos.example.test/register?branch=${'x'.repeat(200)}`).size > a.size);
 });

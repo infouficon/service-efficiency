@@ -69,7 +69,7 @@ npm run test               # builds api, then API integration tests, then web un
 
 ## 5. Adding or changing a decision (the docs workflow)
 
-- Business decisions go in `docs/decisions.md` as the next `D##` (last is **D66**). Use the format of D40–D51: title, date, numbered bullets.
+- Business decisions go in `docs/decisions.md` as the next `D##` (last is **D67**). Use the format of D40–D51: title, date, numbered bullets.
 - Architecture-level or hard-to-reverse choices (a locking strategy, how to model stock movement) also get an ADR: see [docs/adr/README.md](../adr/README.md).
 - New vocabulary or a changed entity: edit [CONTEXT.md](../../CONTEXT.md) in the same change.
 - A newly found risk: add an `H-##` entry to [hazards.md](hazards.md). When fixed, mark it `fixed in <sha>/PR#`, never delete it.

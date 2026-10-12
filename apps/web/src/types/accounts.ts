@@ -19,6 +19,9 @@ export interface ManagedBranch {
   name: string;
   phone: string;
   active: boolean;
+  /** The address the receipt's QR opens (F10). Set by ADMIN, also on ERP-managed branches. */
+  registrationUrl?: string | null;
+  erpBranchId?: number | null;
 }
 export const accountRoles: Role[] = [
   'ADMIN',

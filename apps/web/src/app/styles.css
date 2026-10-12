@@ -3475,3 +3475,83 @@ input[aria-invalid='true'] {
   flex: 1;
   min-width: 0;
 }
+
+/* F9/F10: the receipt. On screen only the button; on paper only the sheet (80 mm, no prices) */
+.receipt-print-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+.receipt-print-root {
+  display: none;
+}
+.receipt {
+  width: 74mm;
+  font-family: 'IBM Plex Sans Thai', 'IBM Plex Sans', sans-serif;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #000;
+}
+.receipt h1 {
+  margin: 0 0 2px;
+  text-align: center;
+  font-size: 15px;
+}
+.receipt hr {
+  border: 0;
+  border-top: 1px dashed #000;
+  margin: 6px 0;
+}
+.receipt p {
+  margin: 2px 0;
+}
+.receipt-center {
+  text-align: center;
+}
+.receipt-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.receipt-note,
+.receipt-small {
+  font-size: 10px;
+}
+.receipt-queue {
+  text-align: center;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+.receipt-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.receipt-row span:last-child {
+  text-align: right;
+  white-space: nowrap;
+}
+.receipt-qr {
+  display: block;
+  width: 36mm;
+  height: 36mm;
+  margin: 4px auto;
+}
+@media print {
+  @page {
+    size: 80mm auto;
+    margin: 3mm;
+  }
+  body > *:not(.receipt-print-root) {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .receipt-print-root {
+    display: block;
+  }
+}

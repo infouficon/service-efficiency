@@ -401,6 +401,18 @@ export class AccountsService {
     });
   }
 
+  /** F10: the QR on the receipt. ADMIN only; the ERP does not own this field, so ERP-managed branches take it too. */
+  setBranchRegistrationUrl(token: string | undefined, id: string, url: string | null) {
+    return this.transaction(async (tx) => {
+      const actor = await this.actor(tx, token);
+      if (!actor.roles.some((r) => r.roleCode === 'ADMIN'))
+        throw new ForbiddenException();
+      const branch = await tx.branch.findUnique({ where: { id } });
+      if (!branch) throw new NotFoundException('ไม่พบสาขา');
+      return tx.branch.update({ where: { id }, data: { registrationUrl: url } });
+    });
+  }
+
   async getAuditLogs(limit = 200) {
     const [events, loginSessions, staffMembers, sessionsWithAck] = await Promise.all([
       this.prisma.sessionEvent.findMany({

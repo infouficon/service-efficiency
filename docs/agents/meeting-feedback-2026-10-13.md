@@ -23,7 +23,7 @@ Decisions are recorded as `D56+` in [../decisions.md](../decisions.md); this fil
 | F12 any role cancels, stock told until it acknowledges | **built** (same PR) | D63, `stockAckAt/By`, banner + beep |
 | F13 cashier sends an order back to stock | **built** (same PR) | D64, `POST /cashier/reject` |
 | F6 three more payment methods | **built as a list ADMIN keeps** (PR `feat/payment-methods`): the owner adds the three names in the back office | D66, `PaymentMethod` |
-| F10 | not built | see §2 and §4 |
+| F9 print the receipt (no prices) + F10 one registration QR per branch | **built** (PR `feat/receipt-qr`) | D58, D67, `Receipt.tsx`, `Branch.registrationUrl`; dependency `qrcode-generator` (MIT) |
 
 ## 1. The feedback, verbatim
 

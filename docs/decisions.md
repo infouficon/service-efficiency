@@ -855,7 +855,9 @@ Owner: "เปลี่ยนการรันคิวแบบดูง่า
 
 ## D58 — Receipt shows no prices (2026-10-13)
 
-Owner, asked whether the printed receipt shows prices: "ไม่แสดงราคา (แนะนำ)". The "พิมพ์ใบเสร็จ" button prints an **order summary**: branch name and phone, date and time, queue number, staff, items with quantities, payment method names and the branch registration QR. No prices or totals; the legal receipt stays in U POS. SES keeps storing no money amounts (requirements §20, D26). Defaults, not yet confirmed: 80 mm paper, printable once the order is confirmed. **Not built yet.**
+Owner, asked whether the printed receipt shows prices: "ไม่แสดงราคา (แนะนำ)". The "พิมพ์ใบเสร็จ" button prints an **order summary**: branch name and phone, date and time, queue number, staff, items with quantities, payment method names and the branch registration QR. No prices or totals; the legal receipt stays in U POS. SES keeps storing no money amounts (requirements §20, D26). Defaults, not yet confirmed: 80 mm paper, printable once the order is confirmed.
+
+**Built 2026-10-13.** A "พิมพ์ใบเสร็จ" button under the order summary on the cashier screen and in the history detail (confirmed sessions), a print stylesheet for an 80 mm sheet (the browser's print dialog; nothing else is printed), titled "ใบเสร็จรับสินค้า (สรุปรายการ ไม่แสดงราคา)": branch name and phone, the time of printing, the queue number, the staff, the main products and accessories with quantities, the payment methods, Ontop / points, the registration QR (D67) and a thank-you line. No customer phone number is printed.
 
 ## D59 — "Stock unlimited" is one global ADMIN switch (2026-10-13)
 
@@ -913,3 +915,11 @@ Owner, relaying the meeting: "เพิ่มช่องทางชำระ�
 1. **List.** `PaymentMethod` (name unique, active, position). The migration seeds the eleven methods the app offered, in their order.
 2. **What ADMIN can do.** Add a method (it goes to the end), switch one off or on, move it up or down. A name is what a session stores, so it is **never renamed or deleted**; at least one method stays active.
 3. **Staff** see the active methods in that order when they pick payments (the built-in list is the fallback when it cannot be loaded). A method switched off after it was picked on a session stays visible on that session. The server still does not check the picked names against the list (H-11 stays open for payments).
+
+## D67 — One registration QR per branch, at the foot of the receipt (2026-10-13)
+
+Owner: "QR แนบท้ายใบเสร็จ เพื่อกรอกข้อมูลลงทะเบียน ไว้ (QR แยกแต่ละสาขา)". The address to encode was not given (OQ-15), so it is data: `Branch.registrationUrl`.
+
+1. **Where it is set.** Admin → จัดการสาขา → "QR ลงทะเบียน" (ADMIN): an http(s) address up to 512 characters, with a live preview of the QR; empty clears it. `PUT /branches/:id/registration-url`. It also works on ERP-managed branches (the ERP does not own this field, D53).
+2. **On the receipt.** The QR is drawn in the browser from the branch's address (error correction M, quiet zone, black on white; the text is encoded as UTF-8). A branch without an address prints no QR, and the screen says so next to the print button.
+3. **The address pattern is the owner's / the U POS team's.** U POS's `/register` has no branch parameter today; a `?branch=<code>` would let it attribute the registration (to ask in the integration request, see D60). Until then any address can be set.

@@ -22,6 +22,7 @@ import { Button, Notice, Panel } from '../../components/ui';
 import { ReasonForm } from '../session/ReasonForm';
 import { cancelReasons, rejectReasons } from '../../constants/options';
 import { Summary } from '../session/Summary';
+import { ReceiptPrint } from '../session/Receipt';
 import type { MockSession, MockUser } from '../../types/session';
 import {
   advanceStepApi,
@@ -564,6 +565,7 @@ export function CashierWorkspace({
 
                 {/* 4. Unified Summary Section (Single Frame) */}
                 <Summary session={selectedSession} />
+                <ReceiptPrint session={selectedSession} />
               </div>
             ) : (
               <Panel

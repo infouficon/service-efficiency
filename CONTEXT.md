@@ -2,7 +2,7 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D66);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D67);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
@@ -43,6 +43,7 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | Queue number / คิว | What staff call the customer by: the customer type's letter + a running number per branch, per letter, per Bangkok day (`A012`, `B003`; four digits after 999). Shown as "คิว A012" on every screen. Sessions from before D57 have no letter ("คิว 007"). Not unique: a re-buy will keep the old number (F11). | `CustomerSession.queueLetter` / `queueNo` (letter frozen at creation), allocated by `QueueService.allocate`; label built by `formatQueue` (API and web) |
 | Customer type / ประเภทลูกค้า | Back-office list (ADMIN) chosen by staff at the phone step: letter A-Z (unique, never changes, the sort order), name, description, active. Seeded A `ลูกค้าทั่วไป`, B `ลูกค้าใช้เวลานาน` ("B takes long" is only the name the owner gives). Switched off, never deleted; one stays active. Not to be confused with U POS's repair-queue ticket types A/B/D (unrelated). | `CustomerType`, `apps/api/src/queue/`, `GET/POST/PUT /api/customer-types`, Admin → "ประเภทลูกค้า / คิว" (D57) |
 | Stock unlimited (D59) | One global ADMIN switch (`Setting` row `stockUnlimited`, **on** unless someone turned it off): no SKU is blocked by stock, the screens say "Stock ไม่จำกัด", FOUND takes nothing from the shelf and a cancel gives nothing back. Overrides the ERP numbers while on. | `SettingsService.stockUnlimited`, `GET/PUT /api/settings`, `stockSource` on the branch product list, Admin → ซิงก์ ERP |
+| Receipt / พิมพ์ใบเสร็จ (D58, D67) | A browser-printed 80 mm order summary, **no prices**, with the branch's registration QR at the foot. Not a legal receipt (that stays in U POS). | `Receipt.tsx` (`ReceiptPrint`), print stylesheet, `Branch.registrationUrl`, `utils/qr.ts` |
 | Daily counter | One row per counter and Bangkok day (`reference`, `queue:<branchId>:<letter>`), incremented atomically inside the walk-in transaction (READ COMMITTED). | `DailyCounter`, `QueueService.nextNumber` (ADR 0001) |
 | Walk-in | Creating the session when the customer is at the counter: phone number + customer type in, queue number out (D56, D57). Sets `customerWalkInAt` (the moment the form is submitted). | `POST /api/sessions` `{phone, customerTypeId?, branchId?}` |
 | DEMO | A Staff member demonstrating products. A Staff member may run only one active DEMO at a time (D5), **[documented]** (not enforced, H-04). | states `DEMO`; `demoStartAt` / `demoEndAt` |

@@ -70,7 +70,18 @@ export interface Product {
   model: string;
   sku: string;
   stock?: number;
+  /** Where `stock` comes from: `unlimited` = the ADMIN switch is on (D59, nothing is blocked), `erp` = warroom (D52), `manual` = kept by ADMIN (D41). */
+  stockSource?: 'unlimited' | 'erp' | 'manual';
+  /** ISO time of the warroom snapshot behind an `erp` stock number. */
+  erpAsOf?: string | null;
   branchActive?: boolean;
+}
+
+/** Global ADMIN switches (D59). `updatedAt` / `updatedBy` are sent to ADMIN only. */
+export interface AppSettings {
+  stockUnlimited: boolean;
+  updatedAt?: string | null;
+  updatedBy?: string | null;
 }
 
 export interface Selection {

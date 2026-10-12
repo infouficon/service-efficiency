@@ -3,6 +3,7 @@ import { ErpModule } from './erp/erp.module';
 import { WarroomModule } from './warroom/warroom.module';
 import { ProductsModule } from './products/products.module';
 import { QueueModule } from './queue/queue.module';
+import { SettingsModule } from './settings/settings.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
@@ -16,6 +17,7 @@ import { HealthController } from './health.controller';
     WarroomModule,
     ProductsModule,
     QueueModule,
+    SettingsModule,
     SessionsModule,
     ConfigModule.forRoot({
       isGlobal: true,

@@ -7,6 +7,7 @@ import {
 import type { PublicAccount } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
+import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
   CancelSessionDto,
@@ -128,7 +129,38 @@ export class SessionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly queue: QueueService,
+    private readonly settings: SettingsService,
   ) {}
+
+  /**
+   * Takes one unit of the session's SKU off the branch shelf when STOCK finds it (D41), unless "stock unlimited" is on
+   * (D59). Returns how many units were really taken: it is written on the STOCK_FOUND event so that a later cancel gives
+   * back exactly that, whatever the switch says by then.
+   */
+  private async takeFromShelf(
+    tx: Prisma.TransactionClient,
+    branchId: string,
+    skuId: string | null,
+  ): Promise<number> {
+    if (!skuId || (await this.settings.stockUnlimited(tx))) return 0;
+    const { count } = await tx.branchInventory.updateMany({
+      where: { branchId, skuId },
+      data: { stock: { decrement: 1 } },
+    });
+    return count > 0 ? 1 : 0;
+  }
+
+  /** Units a session took off the shelf, from its latest STOCK_FOUND event. Events from before D59 carry no figure: one unit, as then. */
+  private unitsTakenAtFound(session: {
+    events: { eventType: string; metadata: unknown }[];
+  }): number {
+    const found = [...session.events]
+      .reverse()
+      .find((e) => e.eventType === 'STOCK_FOUND');
+    const deducted = (found?.metadata as { deducted?: unknown } | null)
+      ?.deducted;
+    return typeof deducted === 'number' ? deducted : 1;
+  }
 
   private checkRole(user: PublicAccount, role: 'STAFF' | 'STOCK' | 'CASHIER' | 'MANAGER' | 'ADMIN') {
     if (user.roles.includes('ADMIN')) return;
@@ -294,12 +326,10 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      if (dto.action === 'found' && session.skuId && session.branchId) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: { decrement: 1 } },
-        });
-      }
+      const deducted =
+        dto.action === 'found'
+          ? await this.takeFromShelf(tx, session.branchId, session.skuId)
+          : undefined;
 
       const updated = await tx.customerSession.update({
         where: { id: session.id },
@@ -311,6 +341,7 @@ export class SessionsService {
               eventType: step.eventType,
               actorStaffId: user.staffId,
               createdAt: now,
+              ...(deducted === undefined ? {} : { metadata: { deducted } }),
             },
           },
         },
@@ -561,16 +592,14 @@ export class SessionsService {
           (session.sku?.sku && outOfStockItems.includes(session.sku.sku)) ||
           (session.product?.name && outOfStockItems.includes(session.product.name));
 
+        let deducted = 0;
         if (removeMainProduct && session.skuId && session.branchId) {
           await tx.branchInventory.updateMany({
             where: { branchId: session.branchId, skuId: session.skuId },
             data: { stock: 0, outOfStockAt: now },
           });
-        } else if (!removeMainProduct && session.skuId && session.branchId) {
-          await tx.branchInventory.updateMany({
-            where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: { decrement: 1 } },
-          });
+        } else if (!removeMainProduct) {
+          deducted = await this.takeFromShelf(tx, session.branchId, session.skuId);
         }
 
         if (outOfStockItems.length > 0) {
@@ -597,6 +626,7 @@ export class SessionsService {
                   partialFulfillment: true,
                   outOfStockItems,
                   note: dto.note || dto.otherReason || null,
+                  deducted,
                 },
               },
             },
@@ -663,8 +693,10 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      // Restore stock if session was already at FOUND or beyond
+      // Give back what FOUND took off the shelf (D41): exactly the units recorded then (none while "stock unlimited" was on, D59)
+      const units = this.unitsTakenAtFound(session);
       if (
+        units > 0 &&
         session.skuId &&
         session.branchId &&
         (session.stockFoundAt ||
@@ -674,7 +706,7 @@ export class SessionsService {
       ) {
         await tx.branchInventory.updateMany({
           where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: { increment: 1 } },
+          data: { stock: { increment: units } },
         });
       }
 
@@ -818,12 +850,9 @@ export class SessionsService {
           });
         })();
 
-        if (!isMainProductMissing && session.skuId && session.branchId) {
-          await tx.branchInventory.updateMany({
-            where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: { decrement: 1 } },
-          });
-        }
+        const deducted = isMainProductMissing
+          ? 0
+          : await this.takeFromShelf(tx, session.branchId, session.skuId);
 
         return tx.customerSession.update({
           where: { id: session.id },
@@ -846,7 +875,7 @@ export class SessionsService {
                   eventType: 'STOCK_FOUND',
                   actorStaffId: user.staffId,
                   createdAt: now,
-                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL' },
+                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL', deducted },
                 },
               ],
             },

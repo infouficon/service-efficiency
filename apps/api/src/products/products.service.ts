@@ -2,6 +2,7 @@ import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
 
 /** How long a "missing / out of stock" report (D41) keeps a SKU at 0 while warroom has not sent a newer snapshot. */
@@ -52,6 +53,7 @@ export class ProductsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   /** True when the warroom numbers drive what staff see (WARROOM_STOCK_MODE=on and a warroom database is set). */
@@ -343,6 +345,8 @@ export class ProductsService implements OnModuleInit {
   async findByBranch(branchId: string) {
     await this.syncBranchInventory();
     const erpOn = this.erpOn();
+    // D59: while "stock unlimited" is on nothing is blocked by stock; the real number is still returned for display
+    const unlimited = await this.settings.stockUnlimited();
 
     const products = await this.prisma.product.findMany({
       where: { active: true },
@@ -406,6 +410,12 @@ export class ProductsService implements OnModuleInit {
                 active: s.active,
                 erpManaged: s.erpManaged,
                 stock: available ?? inv?.stock ?? 0,
+                /** where `stock` comes from: `unlimited` = the switch is on (D59, nothing blocked), `erp` = warroom minus promised units (D52), `manual` = the number ADMIN keeps (D41) */
+                stockSource: unlimited
+                  ? ('unlimited' as const)
+                  : available != null
+                    ? ('erp' as const)
+                    : ('manual' as const),
                 erpCovered: inv?.erpReady != null,
                 erpAsOf: inv?.erpAsOf ?? null,
                 branchActive: inv?.active ?? true,

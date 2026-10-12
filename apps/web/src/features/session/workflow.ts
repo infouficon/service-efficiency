@@ -156,6 +156,87 @@ export function toggleAccessory(
   return { ...accessories, [name]: '1' };
 }
 
+/**
+ * The `+` / `−` buttons next to an accessory (F4): changes the quantity by one. Below 1 the accessory is removed, like
+ * unticking it. A quantity that is not a valid number yet (an empty box) counts as 0, so `+` gives 1.
+ */
+export function stepAccessory(
+  accessories: Record<string, string>,
+  name: string,
+  delta: 1 | -1,
+): Record<string, string> {
+  if (!Object.hasOwn(accessories, name)) return accessories;
+  const current = Number.parseInt(accessories[name], 10);
+  const next = (quantityIsValid(accessories[name]) ? current : 0) + delta;
+  if (next < 1) {
+    return Object.fromEntries(
+      Object.entries(accessories).filter(([key]) => key !== name),
+    );
+  }
+  return { ...accessories, [name]: String(next) };
+}
+
+/** One step of the customer's visit and how long it took (F14). `ms` is null when the step did not happen. */
+export interface StepDuration {
+  key: string;
+  label: string;
+  ms: number | null;
+}
+
+/** First time of an event type in the session's history (some milestones have no column: sent to cashier, completed). */
+function eventTime(session: MockSession, eventType: string): string | undefined {
+  return session.events?.find((e) => e.eventType === eventType)?.createdAt;
+}
+
+/** When the visit ended: completed, cancelled, out of stock, or the NOT_BUY decision. Undefined while it is still running. */
+function endedAt(session: MockSession): string | undefined {
+  if (session.state === 'COMPLETED') return eventTime(session, 'COMPLETED');
+  if (session.outcome === 'CUSTOMER_CANCELLED')
+    return session.timestamps.cancelled_at;
+  if (session.outcome === 'OUT_OF_STOCK')
+    return eventTime(session, 'STOCK_OUT_OF_STOCK');
+  if (session.outcome === 'NOT_BUY') return session.timestamps.decision_at;
+  return undefined;
+}
+
+/**
+ * The time spent in each step of a visit, from the server's milestone timestamps and events (F14). Consecutive
+ * milestones only: a step whose start or end was never recorded (a cancelled visit, a skipped step) has no duration.
+ * `total` covers walk-in to the end of the visit.
+ */
+export function stepDurations(session: MockSession): StepDuration[] {
+  const t = session.timestamps;
+  const sent = eventTime(session, 'STOCK_SENT_TO_CASHIER');
+  const completed = eventTime(session, 'COMPLETED');
+  const steps: [string, string, string | undefined, string | undefined][] = [
+    ['wait_demo', 'รอก่อนเริ่ม DEMO', t.customer_walk_in_at, t.demo_start_at],
+    ['demo', 'DEMO', t.demo_start_at, t.demo_end_at],
+    ['decision', 'ตัดสินใจหลัง DEMO', t.demo_end_at, t.decision_at],
+    ['to_selection', 'เริ่มเลือกสินค้าหลังตัดสินใจ', t.decision_at, t.product_selection_start_at],
+    ['selection', 'เลือกสินค้าจนยืนยัน', t.product_selection_start_at, t.product_selection_confirmed_at],
+    ['wait_stock', 'รอ Stock รับงาน', t.product_selection_confirmed_at, t.stock_started_at],
+    ['stock_search', 'Stock ค้นหาสินค้า', t.stock_started_at, t.stock_found_at],
+    ['stock_send', 'Stock เตรียมส่ง Cashier', t.stock_found_at, sent],
+    ['wait_cashier', 'รอ Cashier รับสินค้า', sent, t.cashier_received_at],
+    ['cashier_scan', 'Cashier รับสินค้า → Scan', t.cashier_received_at, t.cashier_scan_at],
+    ['cashier_bill', 'Scan → เปิดบิล', t.cashier_scan_at, t.bill_opened_at],
+    ['cashier_complete', 'เปิดบิล → เสร็จสิ้น', t.bill_opened_at, completed],
+    ['total', 'รวมทั้งหมด', t.customer_walk_in_at, endedAt(session)],
+  ];
+  return steps.map(([key, label, from, to]) => {
+    const ms = from && to ? new Date(to).getTime() - new Date(from).getTime() : NaN;
+    return { key, label, ms: Number.isFinite(ms) && ms >= 0 ? ms : null };
+  });
+}
+
+/** `H:MM:SS` (hours are not capped); empty when there is no duration. */
+export function formatDuration(ms: number | null): string {
+  if (ms === null) return '';
+  const total = Math.round(ms / 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${Math.floor(total / 3600)}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+}
+
 export function partialFulfillStock(
   session: MockSession,
   outOfStockItems: string[],

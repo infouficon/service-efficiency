@@ -130,6 +130,23 @@ export async function cleanup(ctx, world) {
         OR: branchIds.map((id) => ({ scope: { startsWith: `queue:${id}:` } })),
       },
     });
+    // catalog rows a test made (named after the prefix); sessions are gone, so nothing references them any more
+    await db.branchInventory.deleteMany({
+      where: { sku: { sku: { startsWith: world.prefix } } },
+    });
+    await db.branchInventory.deleteMany({
+      where: { branchId: { in: branchIds } },
+    });
+    await db.productSku.deleteMany({
+      where: { sku: { startsWith: world.prefix } },
+    });
+    await db.productModel.deleteMany({
+      where: { name: { startsWith: world.prefix } },
+    });
+    await db.product.deleteMany({
+      where: { name: { startsWith: world.prefix } },
+    });
+    await db.setting.deleteMany({ where: { name: 'stockUnlimited' } });
     await db.loginSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staffRole.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staff.deleteMany({ where: { staffId: { in: staffIds } } });

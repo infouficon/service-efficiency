@@ -11,10 +11,13 @@ Decisions are recorded as `D56+` in [../decisions.md](../decisions.md); this fil
 | F1 phone first | **built** (PR `feat/queue-types-phone-first`) | D56, `WalkInForm`, `CreateSessionDto` |
 | F7 queue numbers, F8 "คิว" wording | **built** (same PR) | D57, ADR 0001, `queue/` module |
 | F15 customer types (back office, A-Z) | **built** (same PR) | D57, Admin → "ประเภทลูกค้า / คิว" |
-| F5 unlimited stock (global ADMIN switch) | decided (D59), not built | |
+| F5 unlimited stock (global ADMIN switch) | **built** (PR `feat/quick-wins-stock-unlimited`) | D59, `settings/`, Admin → ซิงก์ ERP |
+| F4 + / − quantities (accessories) | **built** (same PR; the main-product quantity comes with F3) | `stepAccessory`, `SelectionEditor` |
+| F14 export with the time of each step | **built** (same PR) | `stepDurations`, export category 6 |
+| F16 "stock data as of …" | **built** (same PR) | line above the product grid |
 | F9 print receipt without prices | decided (D58), not built | |
 | F17 U POS two-way | decided (D60), not built, no issue opened in UFPOS yet | |
-| F2, F3, F4, F6, F10, F11, F12, F13, F14, F16 | not built | see §2 and §4 |
+| F2, F3, F6, F10, F11, F12, F13 | not built | see §2 and §4 |
 
 ## 1. The feedback, verbatim
 

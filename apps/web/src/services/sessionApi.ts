@@ -1,5 +1,6 @@
 import { api } from './api';
 import type {
+  AppSettings,
   CustomerType,
   MockSession,
   Outcome,
@@ -185,6 +186,15 @@ export async function createWalkInApi(
     customerTypeId,
   });
   return mapApiSessionToMockSession(data);
+}
+
+/** Global ADMIN switches (D59): everybody reads them, only ADMIN changes them. */
+export function fetchSettingsApi(): Promise<AppSettings> {
+  return api<AppSettings>('/settings');
+}
+
+export function saveStockUnlimitedApi(stockUnlimited: boolean): Promise<AppSettings> {
+  return api<AppSettings>('/settings', 'PUT', { stockUnlimited });
 }
 
 /** Active customer types in letter order; `all` (ADMIN) includes the switched-off ones. */

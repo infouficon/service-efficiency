@@ -22,7 +22,7 @@ Source: the `STEPS` map in `apps/api/src/sessions/sessions.service.ts`, executed
 | `buy` | DECISION → DECISION | STAFF | `decisionAt` | DECISION_MADE | records BUY; the state does not move |
 | `startSelection` | DECISION → PRODUCT_SELECTION | STAFF | `productSelectionStartAt` | PRODUCT_SELECTION_STARTED | requires `decisionAt` |
 | `search` | STOCK_REQUESTED → SEARCHING | STOCK | `stockStartedAt` | STOCK_SEARCHING | |
-| `found` | SEARCHING → FOUND | STOCK | `stockFoundAt` | STOCK_FOUND | **BranchInventory.stock −1** for the session SKU, no floor (H-07) |
+| `found` | SEARCHING → FOUND | STOCK | `stockFoundAt` | STOCK_FOUND `{deducted}` | **BranchInventory.stock −1** for the session SKU, no floor (H-07), **unless "stock unlimited" is on (D59)**; `metadata.deducted` (0 or 1) records what was really taken |
 | `send` | FOUND → SENT_TO_CASHIER | STOCK | — | STOCK_SENT_TO_CASHIER | |
 | `receive` | SENT_TO_CASHIER → CASHIER_RECEIVED | CASHIER | `cashierReceivedAt` | CASHIER_RECEIVED | |
 | `scan` | CASHIER_RECEIVED → CASHIER_SCAN | CASHIER | `cashierScanAt` | CASHIER_SCANNED | |
@@ -47,7 +47,7 @@ Every endpoint returns the session in **one shape** (`sessionInclude`: branch, s
 | `PUT /sessions/:id/selection` | `updateSelection` | STAFF | `!confirmed && !outcome && (PRODUCT_SELECTION \|\| (DECISION && decisionAt))` | Upserts Customer by phone. Replaces each provided child list wholesale (drops `None`; payments are not filtered). Resolves `skuId` (UUID or SKU code) → model → product. **No event, no timestamp.** No inventory or `active` check on the SKU (H-10). |
 | `POST /sessions/:id/confirm` | `confirmPurchase` | STAFF | PRODUCT_SELECTION, not confirmed, phone is 10 digits, sku or product set | `confirmed=true`, → **STOCK_REQUESTED**, `productSelectionConfirmedAt`, event PRODUCT_SELECTION_CONFIRMED (this is also the stock request, D51) |
 | `POST /sessions/:id/out-of-stock` `{action:'cancel'\|'partial', outOfStockItems?, reason?, otherReason?, note?}` | `recordOutOfStock` | STOCK | SEARCHING | **partial**: drops the listed accessories (by name); if the main product is listed (`'MAIN_PRODUCT'`, SKU code or product name) it clears product/model/sku and sets stock to 0, otherwise stock −1; → FOUND, `stockFoundAt`, STOCK_FOUND `{partialFulfillment:true}`. **cancel/default**: SKU stock set to 0, `outcome=OUT_OF_STOCK`, `reason` defaults to `'OUT_OF_STOCK'`, event STOCK_OUT_OF_STOCK |
-| `POST /sessions/:id/cancel` `{reason, otherReason?}` | `cancelSession` | role by stage, see below | not finished | `outcome=CUSTOMER_CANCELLED`, `cancelledAt`, `cancelledBy`, event CUSTOMER_CANCELLED. **+1 stock** if `stockFoundAt` is set or the state is FOUND or later |
+| `POST /sessions/:id/cancel` `{reason, otherReason?}` | `cancelSession` | role by stage, see below | not finished | `outcome=CUSTOMER_CANCELLED`, `cancelledAt`, `cancelledBy`, event CUSTOMER_CANCELLED. **+1 stock** (exactly the `deducted` units of the latest STOCK_FOUND event; one unit when the event has no figure) if `stockFoundAt` is set or the state is FOUND or later |
 | `POST /sessions/:id/stock/report-missing` `{missingItems[], foundItems?, stockNote?}` | `reportStockMissing` | STOCK | STOCK_REQUESTED or SEARCHING | Writes the `stockReview` JSON `{missingItems, foundItems, stockNote, reportedAt, reportedBy}`, event STOCK_REPORTED_MISSING. **State unchanged.** Sets SKU stock to 0 if the main product is missing (matched by `'สินค้าหลัก'`, model name, SKU name or SKU code) |
 | `POST /sessions/:id/staff/resolve-stock-review` `{action, reason?, otherReason?}` | `resolveStockReview` | creator Staff (`session.staffId === actor`), branch MANAGER, or ADMIN; **no role needed** | `stockReview` set, not finished | `ACCEPT_PARTIAL`: drop missing accessories (strips the ` (xN)` suffix), clear the main product if missing (else stock −1), → FOUND, events STAFF_RESOLVED_STOCK_REVIEW + STOCK_FOUND. `CHANGE_ITEMS`: → PRODUCT_SELECTION, `confirmed=false` (reopens the purchase). `CANCEL`: outcome CUSTOMER_CANCELLED + 2 events. All three clear `stockReview` with `null as unknown as undefined` (H-08) |
 | `POST /sessions/:id/manager/acknowledge-alert` | `acknowledgeAlert` | branch MANAGER or ADMIN | any | Merges `acknowledgedAt/By` into `stockReview`. **No transaction, no event.** |
@@ -60,6 +60,15 @@ Every endpoint returns the session in **one shape** (`sessionInclude`: branch, s
 | STOCK_REQUESTED, SEARCHING, FOUND | **STOCK** |
 | SENT_TO_CASHIER, CASHIER_RECEIVED, CASHIER_SCAN, BILL_OPENED | **CASHIER** |
 | WALK_IN, DECISION | **none**: any authenticated user of that branch (H-13) |
+
+### Settings (D59)
+
+Controller: `apps/api/src/settings/settings.controller.ts` (behind `OriginGuard`). Service: `settings.service.ts` (`stockUnlimited(db?)` reads inside a transaction).
+
+| Endpoint | Who | Effect |
+| --- | --- | --- |
+| `GET /settings` | any signed-in role | `{ stockUnlimited }`; ADMIN also gets `updatedAt` / `updatedBy` (no row yet = on, `updatedBy` null) |
+| `PUT /settings` `{ stockUnlimited: boolean }` | ADMIN | upserts the row; a non-boolean, a missing field or an unknown field is a 400 |
 
 ### Customer types (D57)
 
@@ -77,7 +86,7 @@ Controller: `apps/api/src/products/products.controller.ts`. Service: `products.s
 
 | Endpoint (line) | Who | Effect |
 | --- | --- | --- |
-| `GET /products?admin=true&branchId=` (:50) | any | `admin=true` + ADMIN/MANAGER → `findAllAdmin` (MANAGER forced to own branch). ADMIN + `branchId` → `findByBranch`. ADMIN → `findAll`. Branch user → `findByBranch(own)`, which runs `syncBranchInventory()` on **every call** (H-17) and returns only active products/models/SKUs with an active inventory row, plus `stock` and `branchActive` |
+| `GET /products?admin=true&branchId=` (:50) | any | `admin=true` + ADMIN/MANAGER → `findAllAdmin` (MANAGER forced to own branch). ADMIN + `branchId` → `findByBranch`. ADMIN → `findAll`. Branch user → `findByBranch(own)`, which runs `syncBranchInventory()` on **every call** (H-17) and returns only active products/models/SKUs with an active inventory row, plus `stock`, `stockSource` (`unlimited` while the D59 switch is on, `erp` in mode `on` with ERP data, else `manual`), `erpAsOf` and `branchActive` |
 | `GET /products/inventory?branchId=` (:79) | ADMIN, MANAGER (own branch) | raw BranchInventory list |
 | `PUT /products/branches/:branchId/skus/:skuId/stock` `{stock}` (:96) | ADMIN | **absolute** upsert of the quantity. No event or audit row (H-07) |
 | `PUT /products/branches/:branchId/skus/:skuId/active` `{active}` (:108) | ADMIN, MANAGER (own branch) | upsert `active` |

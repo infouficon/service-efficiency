@@ -21,6 +21,7 @@ import { MultiSelect, Button } from '../../components/ui';
 import {
   quantitiesAreValid,
   quantityIsValid,
+  stepAccessory,
   toggleAccessory,
 } from './workflow';
 import { fetchProductsApi } from '../../services/sessionApi';
@@ -40,6 +41,27 @@ function getCategoryIcon(cat: string) {
     default:
       return <Box size={16} />;
   }
+}
+
+/**
+ * The line above the product grid about how fresh the stock figures are (F16): "unlimited" while the ADMIN switch is
+ * on (D59), else the time of the oldest warroom snapshot behind the shown numbers (warroom refreshes about every 3 hours).
+ */
+function stockInfoLine(list: Product[]): string {
+  if (list.some((p) => p.stockSource === 'unlimited'))
+    return 'Stock: ไม่จำกัด (โหมดชั่วคราว) เลือกสินค้าได้ทุกรายการ';
+  const times = list
+    .filter((p) => p.stockSource === 'erp' && p.erpAsOf)
+    .map((p) => new Date(p.erpAsOf as string).getTime())
+    .filter((t) => Number.isFinite(t));
+  if (times.length === 0) return '';
+  const oldest = new Date(Math.min(...times)).toLocaleString('th-TH', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return `ข้อมูล Stock ณ ${oldest} (อัปเดตจาก ERP ทุกประมาณ 3 ชั่วโมง)`;
 }
 
 export function SelectionEditor({
@@ -77,6 +99,8 @@ export function SelectionEditor({
                 name: string;
                 active: boolean;
                 stock?: number;
+                stockSource?: 'unlimited' | 'erp' | 'manual';
+                erpAsOf?: string | null;
                 branchActive?: boolean;
               }>;
             }>;
@@ -96,6 +120,8 @@ export function SelectionEditor({
                       model: s.name || m.name,
                       sku: s.sku,
                       stock: s.stock,
+                      stockSource: s.stockSource,
+                      erpAsOf: s.erpAsOf,
                       branchActive: s.branchActive,
                     });
                   }
@@ -118,6 +144,8 @@ export function SelectionEditor({
   }, []);
 
   const currentProducts = productCatalog.length > 0 ? productCatalog : products;
+  const inCategory = currentProducts.filter((p) => p.category === category);
+  const stockInfo = stockInfoLine(inCategory);
   return (
     <>
       <p className="muted">
@@ -140,11 +168,14 @@ export function SelectionEditor({
           </button>
         ))}
       </div>
+      {stockInfo && <p className="fine stock-info-line">{stockInfo}</p>}
       <div className="product-grid">
-        {currentProducts
-          .filter((p) => p.category === category)
+        {inCategory
           .map((p) => {
-            const isOutOfStock = typeof p.stock === 'number' && p.stock <= 0;
+            // D59: while the ADMIN switch "stock unlimited" is on, no stock figure blocks a product
+            const unlimited = p.stockSource === 'unlimited';
+            const isOutOfStock =
+              !unlimited && typeof p.stock === 'number' && p.stock <= 0;
             return (
               <label
                 key={p.id}
@@ -165,7 +196,7 @@ export function SelectionEditor({
                 <strong>{p.product}</strong>
                 <span>{p.model}</span>
                 <small>{p.sku}</small>
-                {typeof p.stock === 'number' && (
+                {(unlimited || typeof p.stock === 'number') && (
                   <span
                     style={{
                       marginTop: '6px',
@@ -174,11 +205,15 @@ export function SelectionEditor({
                       fontWeight: 600,
                       padding: '2px 6px',
                       borderRadius: '4px',
-                      backgroundColor: isOutOfStock ? '#fee2e2' : '#ecfdf5',
-                      color: isOutOfStock ? '#b91c1c' : '#047857',
+                      backgroundColor: unlimited ? '#eff6ff' : isOutOfStock ? '#fee2e2' : '#ecfdf5',
+                      color: unlimited ? '#1d4ed8' : isOutOfStock ? '#b91c1c' : '#047857',
                     }}
                   >
-                    {isOutOfStock ? 'สินค้าหมด (0 ชิ้น)' : `คงเหลือ ${p.stock} ชิ้น`}
+                    {unlimited
+                      ? 'Stock ไม่จำกัด'
+                      : isOutOfStock
+                        ? 'สินค้าหมด (0 ชิ้น)'
+                        : `คงเหลือ ${p.stock} ชิ้น`}
                   </span>
                 )}
               </label>
@@ -209,27 +244,53 @@ export function SelectionEditor({
                     {name}
                   </label>
                   {selected && (
-                    <input
-                      aria-label={`Quantity ${name}`}
-                      aria-invalid={invalid}
-                      aria-describedby={
-                        invalid
-                          ? `quantity-${name.replaceAll(/[^a-zA-Z]/g, '')}`
-                          : undefined
-                      }
-                      type="text"
-                      inputMode="numeric"
-                      value={quantity}
-                      onChange={(e) =>
-                        onChange({
-                          ...value,
-                          accessories: {
-                            ...value.accessories,
-                            [name]: e.target.value,
-                          },
-                        })
-                      }
-                    />
+                    <div className="qty-stepper">
+                      <button
+                        type="button"
+                        aria-label={`ลดจำนวน ${name}`}
+                        onClick={() =>
+                          onChange({
+                            ...value,
+                            accessories: stepAccessory(value.accessories, name, -1),
+                          })
+                        }
+                      >
+                        −
+                      </button>
+                      <input
+                        aria-label={`Quantity ${name}`}
+                        aria-invalid={invalid}
+                        aria-describedby={
+                          invalid
+                            ? `quantity-${name.replaceAll(/[^a-zA-Z]/g, '')}`
+                            : undefined
+                        }
+                        type="text"
+                        inputMode="numeric"
+                        value={quantity}
+                        onChange={(e) =>
+                          onChange({
+                            ...value,
+                            accessories: {
+                              ...value.accessories,
+                              [name]: e.target.value,
+                            },
+                          })
+                        }
+                      />
+                      <button
+                        type="button"
+                        aria-label={`เพิ่มจำนวน ${name}`}
+                        onClick={() =>
+                          onChange({
+                            ...value,
+                            accessories: stepAccessory(value.accessories, name, 1),
+                          })
+                        }
+                      >
+                        +
+                      </button>
+                    </div>
                   )}
                 </div>
                 {invalid && (

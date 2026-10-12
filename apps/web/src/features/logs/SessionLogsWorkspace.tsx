@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
+import { formatDuration, stepDurations } from '../session/workflow';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
 
 interface SessionLogsWorkspaceProps {
@@ -426,6 +427,29 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
     ],
   },
 ];
+
+// F14: the time spent in each step, one column per step in H:MM:SS, plus the whole visit in minutes. Derived from the
+// server milestones and events (`stepDurations`), so a step that did not happen stays empty.
+const BLANK_SESSION = { timestamps: {} } as MockSession;
+EXPORT_CATEGORIES.push({
+  category: '6. เวลาที่ใช้ในแต่ละขั้นตอน (H:MM:SS)',
+  columns: [
+    ...stepDurations(BLANK_SESSION).map(({ key, label }) => ({
+      key: `dur_${key}`,
+      label: `${label} (H:MM:SS)`,
+      getValue: (s: MockSession) =>
+        formatDuration(stepDurations(s).find((d) => d.key === key)?.ms ?? null),
+    })),
+    {
+      key: 'dur_total_minutes',
+      label: 'รวมทั้งหมด (นาที)',
+      getValue: (s: MockSession) => {
+        const ms = stepDurations(s).find((d) => d.key === 'total')?.ms ?? null;
+        return ms === null ? '' : (ms / 60000).toFixed(2);
+      },
+    },
+  ],
+});
 
 const ALL_COLUMN_KEYS = EXPORT_CATEGORIES.flatMap((cat) =>
   cat.columns.map((col) => col.key),

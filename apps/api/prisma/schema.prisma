@@ -144,6 +144,14 @@ model CustomerType {
   sessions    CustomerSession[]
 }
 
+// D59: global switches set by ADMIN (today only `stockUnlimited`). The value is text so it reads the same on MySQL and MariaDB.
+model Setting {
+  name      String   @id @db.VarChar(64)
+  value     String   @db.VarChar(255)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  updatedBy String?  @db.VarChar(64)
+}
+
 // Atomic running numbers that restart every Asia/Bangkok day: scope `reference` (SES-YYYYMMDD-NNNNNN) and
 // `queue:<branchId>:<letter>` (D57). Incremented with INSERT ... ON DUPLICATE KEY UPDATE inside the caller's transaction.
 model DailyCounter {

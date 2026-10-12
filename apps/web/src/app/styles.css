@@ -3225,3 +3225,33 @@ input[aria-invalid='true'] {
   font-size: 34px;
   letter-spacing: 1px;
 }
+
+/* QUANTITY STEPPER (+ / -) next to a selected accessory (F4) */
+.qty-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.qty-stepper button {
+  width: 36px;
+  height: 36px;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  border: 1px solid var(--primary-border);
+  border-radius: var(--radius-md);
+  background: var(--primary-subtle);
+  color: var(--primary-dark);
+  cursor: pointer;
+}
+.qty-stepper button:hover {
+  background: var(--primary-border);
+}
+.qty-stepper input {
+  width: 56px;
+  text-align: center;
+  font-weight: 700;
+}
+.stock-info-line {
+  margin: 0 0 10px;
+}

@@ -21,6 +21,7 @@ import { SystemAuditLogs } from './SystemAuditLogs';
 import { ErpSyncPanel } from './ErpSyncPanel';
 import { WarroomSyncPanel } from './WarroomSyncPanel';
 import { CustomerTypesPanel } from './CustomerTypesPanel';
+import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 /** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp` and `queue`. */
 export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp' | 'queue';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
@@ -156,6 +157,7 @@ export function AdminHub({
         <SystemAuditLogs />
       ) : admin && subTab === 'erp' ? (
         <>
+          <StockUnlimitedPanel />
           <ErpSyncPanel />
           <WarroomSyncPanel />
         </>

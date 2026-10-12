@@ -859,7 +859,9 @@ Owner, asked whether the printed receipt shows prices: "ไม่แสดงร
 
 ## D59 — "Stock unlimited" is one global ADMIN switch (2026-10-13)
 
-Owner, asked for the scope of the temporary "unlimited stock" request: "สวิตช์รวมของ ADMIN (แนะนำ)". One setting, stored in the database (not an env var), switched by ADMIN; **on** by default until the warroom sync is switched to `on` (D55). While on: no SKU is blocked by stock (D41's "สินค้าหมด" does not apply), the screens show "ไม่จำกัด", FOUND does not decrement and a cancel does not give a unit back; it overrides the ERP numbers. **Not built yet.**
+Owner, asked for the scope of the temporary "unlimited stock" request: "สวิตช์รวมของ ADMIN (แนะนำ)". One setting, stored in the database (not an env var), switched by ADMIN; **on** by default until the warroom sync is switched to `on` (D55). While on: no SKU is blocked by stock (D41's "สินค้าหมด" does not apply), the screens show "ไม่จำกัด", FOUND does not decrement and a cancel does not give a unit back; it overrides the ERP numbers.
+
+**Built 2026-10-13.** The switch is a `Setting` row (`stockUnlimited`; no row = on), changed at Admin → ซิงก์ ERP (shows who and when) via `GET/PUT /api/settings`. `GET /api/products` marks every SKU with `stockSource` (`unlimited` | `erp` | `manual`) and still returns the real number. FOUND records how many units it really took in the STOCK_FOUND event (`metadata.deducted`) and a cancel gives back exactly that, so toggling the switch between FOUND and cancel can never invent or lose a unit; events from before this change carry no figure and count as one unit, as before. D41's other rules (zero on a missing report, the manager alert) are unchanged.
 
 ## D60 — Bill opening on U POS works both ways (2026-10-13)
 

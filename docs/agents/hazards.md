@@ -53,6 +53,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 ### H-07: Branch stock can go negative, and stock changes leave no audit trail · S2 · confirmed
 - **Where:** `stock: { decrement: 1 }` in `advanceStep` (`found`), `recordOutOfStock` (partial) and `resolveStockReview` (ACCEPT_PARTIAL) has no floor. ADMIN `PUT …/stock` sets an absolute value (`products.service.ts:358-377`) with no event. Cancelling after FOUND adds `+1` (`cancelSession`) even when out-of-stock or missing-item handling already set the stock to 0.
 - **Impact:** the inventory can drift from reality, and nobody can tell who changed a quantity or when.
+- **Update 2026-10-13 (D59):** a cancel now gives back exactly the units the STOCK_FOUND event recorded (`metadata.deducted`), so it can no longer add a unit that was never taken (the switch "stock unlimited"). The floor and the audit trail are still missing.
 - **Fix direction:** guard with `stock > 0` (or decide that negative stock is allowed and shown). Add an inventory movement log if the business wants an audit trail (this needs a decision).
 
 ### H-08: Clearing `stockReview` with a plain `null` · S1 if real · verify

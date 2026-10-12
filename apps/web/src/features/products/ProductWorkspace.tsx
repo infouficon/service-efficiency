@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
+import { StockUnlimitedBanner } from '../admin/StockUnlimitedPanel';
 import { api } from '../../services/api';
 import type { MockUser } from '../../types/session';
 import type { ManagedBranch } from '../../types/accounts';
@@ -599,6 +600,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           <Notice error>{error}</Notice>
         </div>
       )}
+
+      <StockUnlimitedBanner />
 
       {/* Filter & Search Bar */}
       <div

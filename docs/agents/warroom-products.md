@@ -71,6 +71,7 @@ Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stoc
    **unmapped** list (extend `mapCategory` if real categories are missing), `wouldCreate`.
 3. Let it run in `shadow` for a day: compare `ready`/`available` in Admin → Products with the ERP.
 4. `WARROOM_STOCK_MODE=on`, restart, dry run again, then "ซิงก์ตอนนี้".
+5. **Turn the "Stock ไม่จำกัด" switch off** (Admin → ซิงก์ ERP, top panel; D59). It is **on by default** and while it is on SES ignores every stock number when staff pick a product (and FOUND takes nothing from the shelf), so the ERP numbers only start to matter after this step.
 
 ## Troubleshooting a failed run (the error is in the run history)
 

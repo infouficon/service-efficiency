@@ -28,7 +28,7 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | --- | --- | --- |
 | `src/main.ts` | 19 | listen on `HOST:PORT` (default 0.0.0.0:3001) |
 | `src/bootstrap.ts` | 26 | global prefix `/api` (except `/health`), helmet, CORS from `CORS_ORIGINS` with credentials, global `ValidationPipe({whitelist, forbidNonWhitelisted, transform})` |
-| `src/app.module.ts` | 28 | Accounts, Erp, Warroom, Products, Queue, Sessions modules; ConfigModule loads `.env.development` then `.env` (prod: `.env` only) |
+| `src/app.module.ts` | 30 | Accounts, Erp, Warroom, Products, Queue, Settings, Sessions modules; ConfigModule loads `.env.development` then `.env` (prod: `.env` only) |
 | `src/config/environment.ts` | 41 | validates PORT, the DATABASE_URL (`mysql:` scheme) and each CORS origin |
 | `src/health.controller.ts` | 9 | `GET /health` liveness only (no DB check) |
 | `src/prisma/*` | 24 | `PrismaService` (connect on init) |
@@ -39,6 +39,7 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | `src/sessions/sessions.controller.ts` | 135 | 12 Customer Session routes, thin: authenticate → service |
 | `src/sessions/sessions.service.ts` | 975 | **the workflow engine**: the `STEPS` table, `sessionInclude` (the one response shape), role/branch checks, every action (see workflow-as-built.md). `createWalkIn` takes the phone, the customer type, the queue number and the reference in one READ COMMITTED transaction |
 | `src/queue/queue.service.ts`, `queue.controller.ts`, `dto.ts`, `queue.module.ts` | 270 | **customer types and queue numbers** (D57): `bangkokDay`, `formatQueue`, `QueueService.nextNumber` (atomic `DailyCounter`, ADR 0001) / `allocate` / type CRUD; `GET/POST/PUT /customer-types` (ADMIN writes, `OriginGuard`) |
+| `src/settings/settings.service.ts`, `settings.controller.ts`, `dto.ts`, `settings.module.ts` | 110 | **global ADMIN switches** (D59): `stockUnlimited` (no row = on); `GET /settings` (everyone), `PUT /settings` (ADMIN, `OriginGuard`); `SettingsService.stockUnlimited(tx?)` is read by `ProductsService.findByBranch` and by the stock side effects in `SessionsService` (`takeFromShelf`, `unitsTakenAtFound`) |
 | `src/sessions/dto.ts` | 180 | `STEP_ACTIONS`, action DTOs (free-string option values, H-11); `CreateSessionDto` requires `phone` (D56) |
 | `src/erp/erp-sync.service.ts` | ~600 | **ERP import** (D53/D54): OData client (quoted `%20` names, no `$filter`, a timeout is final), pure parsers (`parseBranches`, `parsePeople`, `rolesForPosition` = the provisional role table), plan + apply inside the `AccountLock` transaction (dry run = throw inside the callback to roll back), 30 s tick with DB slot claim (`claim`), run log |
 | `src/warroom/warroom-sync.service.ts` | ~600 | **products/stock from the warroom DB** (D52/D55): read-only `pg` reader of `mart.stock_mv`, pure rules (`mapCategory`, `buildCatalog`, `shortName`, `parseMode`), catalog create/update (mode `on`), bulk `INSERT … ON DUPLICATE KEY` of `erpReady/erpTransfer/erpAsOf`, zeroing, guards (empty / older / lost half), 60 s tick per snapshot (`claim` kind `warroom-products`) |
@@ -48,13 +49,14 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | `src/products/products.service.ts` | 531 | boot seed + inventory sync (H-17), branch-filtered catalog, cascade deactivation (D42) |
 | `src/products/dto.ts` | 118 | catalog DTOs |
 | `prisma/schema.prisma` | 354 | 21 models / 5 enums (see CONTEXT §3) |
-| `prisma/migrations/` | — | `2026092800{01..05}` accounts → stock review, `2026100900{01,02}` branch inventory, Accessories category, `2026101200{01,02}` ERP import / warroom products, `202610130001` customer types + queue numbers + daily counters (seeds types A/B, back-fills `queueNo`, seeds the `reference` counters) |
+| `prisma/migrations/` | — | `2026092800{01..05}` accounts → stock review, `2026100900{01,02}` branch inventory, Accessories category, `2026101200{01,02}` ERP import / warroom products, `202610130001` customer types + queue numbers + daily counters (seeds types A/B, back-fills `queueNo`, seeds the `reference` counters), `202610130002` `Setting` table |
 | `scripts/bootstrap.mjs` | 52 | creates the first ADMIN only when Staff is empty; imports `../dist/accounts/password.js`, so **build the API first** |
 | `docker-entrypoint.sh` | — | `set -e`; `prisma migrate deploy`; optional bootstrap; `exec node apps/api/dist/main.js` (H-16) |
 | `tests/accounts.test.mjs` | 519 | **real** HTTP + MySQL integration test (needs the `service_efficiency_test` DB) |
 | `tests/warroom-sync.test.mjs` | ~520 | 6 pure tests + real MySQL against a **Postgres stub of `mart.stock_mv`**: shadow vs on, availability with sessions, locks, zeroing, mass-loss and stale guards, unreachable warroom, `tick()` once per snapshot |
 | `tests/erp-sync.test.mjs` | ~450 | 5 pure tests + a real-MySQL test against a **fake ERP** (node `http`): plan/apply, passwords, leavers, closed branch, adoption, ERP down/401, mass guard, async run, slot claim |
 | `tests/queue.test.mjs` + `tests/support.mjs` | 500 + 146 | **real** HTTP + MySQL: walk-in at the phone number, queue numbers (per branch/type/day, 8 parallel walk-ins, the Bangkok midnight boundary, a taken reference), customer types. `support.mjs` is the shared harness for new workflow tests (boot, seed a world with one account per role, `cleanup` also stops the app, `TEST_LOG=1`) |
+| `tests/stock-unlimited.test.mjs` | 190 | **real** end-to-end through the step engine (walk-in → … → FOUND → cancel) for the D59 switch: who may change it, `stockSource`, FOUND/cancel with the switch on and off, a toggle between FOUND and cancel, events from before D59. The first test that drives `advanceStep` |
 | `tests/sessions.test.mjs` | 144 | constant-only assertions; does not exercise the API (H-15) |
 
 **Patterns to follow (and their limits):**
@@ -78,7 +80,7 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | `cashier` | `features/cashier/CashierWorkspace.tsx` (525) | CASHIER |
 | `logs` | `features/logs/SessionLogsWorkspace.tsx` (1656); deep link `#/logs?ref=SES-…` (the internal reference) | everyone |
 | `products` | `features/products/ProductWorkspace.tsx` (1298), sub-views MAIN/STOCK | ADMIN, MANAGER |
-| `admin` | `features/admin/AdminHub.tsx` (729) + `SystemAuditLogs.tsx`, `ErpSyncPanel.tsx`, `WarroomSyncPanel.tsx`, `CustomerTypesPanel.tsx` | ADMIN, MANAGER (branches, audit, ERP sync and customer types: ADMIN) |
+| `admin` | `features/admin/AdminHub.tsx` (729) + `SystemAuditLogs.tsx`, `ErpSyncPanel.tsx`, `WarroomSyncPanel.tsx`, `CustomerTypesPanel.tsx`, `StockUnlimitedPanel.tsx` (the D59 switch, also a one-line banner on the product pages) | ADMIN, MANAGER (branches, audit, ERP sync, the switch and customer types: ADMIN) |
 
 The UI does **not** give ADMIN the workspace views unless ADMIN also holds that role, while the API
 lets ADMIN pass every role check. Keep this in mind when testing with an ADMIN-only account.
@@ -111,6 +113,7 @@ lets ADMIN pass every role check. Keep this in mind when testing with an ADMIN-o
 | Stock and inventory rules | `products.service.ts`, inventory side effects in `sessions.service.ts` | `ProductWorkspace`, `SelectionEditor`, `StockWorkspace` | D41/D42 follow-up decision |
 | Account rules | `accounts.service.ts` (inside `transaction()`) | `AdminHub`, `AuthGate` | `accounts.test.mjs` (real test, keep it green) |
 | Reports/export | — (no endpoint; export is client-side CSV) | `SessionLogsWorkspace` `ExportModal` (`EXPORT_CATEGORIES`) | OQ-11 must be answered first |
+| A global ADMIN switch | `settings/` module (add a field to `SettingsUpdateDto`, `SettingsService`, a row name) | `StockUnlimitedPanel` (admin → ซิงก์ ERP), read via `fetchSettingsApi` | a D-entry, CONTEXT glossary, `stock-unlimited.test.mjs` as the model test |
 | Queue numbers / customer types | `queue/` module, `createWalkIn`, `CustomerType` / `DailyCounter` | `WalkInForm`, `CustomerTypesPanel`, `formatQueue` in `workflow.ts` (keep it equal to the API's), every screen that shows `s.queue` | D57, ADR 0001, `queue.test.mjs` |
 
 ## 5. Size hotspots (read in slices, don't rewrite wholesale)

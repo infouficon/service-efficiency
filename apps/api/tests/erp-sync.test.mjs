@@ -593,6 +593,103 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       },
     );
 
+    await t.test(
+      'an unusable ERP row (no password, unmapped position) keeps the account instead of locking the person out',
+      async () => {
+        const row = erpState.staff[1];
+        const saved = {
+          password: row['user password'],
+          position: row.position,
+        };
+        row['user password'] = '';
+        let res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        assert.ok(
+          res.data.summary.staff.skipped.some((x) => x.staffId === sid(2)),
+        );
+        assert.equal(res.data.summary.staff.deactivated, 0);
+        assert.equal((await staffRow(2)).active, true);
+        assert.equal(
+          (await login(sid(2), 'erp-pw-2-x')).status,
+          201,
+          'old password still works',
+        );
+        row['user password'] = saved.password;
+        row.position = 'Technician';
+        res = await run();
+        assert.equal(res.data.summary.staff.deactivated, 0);
+        assert.equal((await staffRow(2)).active, true);
+        row.position = saved.position;
+        erpState.staff.push({ ...row });
+        res = await run();
+        assert.equal(
+          res.data.summary.staff.deactivated,
+          0,
+          'duplicate staff_id rows never deactivate',
+        );
+        assert.equal((await staffRow(2)).active, true);
+        erpState.staff.pop();
+      },
+    );
+
+    await t.test(
+      'flags must be exactly true or false; ADMIN cannot be granted to a synced account',
+      async () => {
+        assert.equal(
+          (
+            await request(
+              '/admin/erp-sync/run?dryRun=1',
+              'POST',
+              undefined,
+              adminCookie,
+            )
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await request(
+              '/admin/erp-sync/run?dryRun=TRUE',
+              'POST',
+              undefined,
+              adminCookie,
+            )
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await request(
+              '/admin/erp-sync/run?dryRun=true&dryRun=true',
+              'POST',
+              undefined,
+              adminCookie,
+            )
+          ).status,
+          400,
+        );
+        const a = await db.branch.findFirst({ where: { erpBranchId: bidA } });
+        const same = {
+          firstName: 'ชื่อ2',
+          lastName: 'สกุล2',
+          roles: ['CASHIER'],
+          branchId: a.id,
+          active: true,
+        };
+        assert.equal(
+          (
+            await request(
+              `/staff/${sid(2)}`,
+              'PUT',
+              { ...same, roles: ['STAFF', 'ADMIN'], branchId: a.id },
+              adminCookie,
+            )
+          ).status,
+          409,
+        );
+      },
+    );
+
     await t.test('a position change swaps the ERP-managed roles', async () => {
       erpState.staff[1].position = 'Sale Representative';
       const res = await run();
@@ -732,7 +829,15 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       assert.equal((await run()).data.ok, true);
       const savedStaff = erpState.staff;
       erpState.staff = [];
-      let res = await run();
+      let res = await run('?force=true');
+      assert.equal(
+        res.data.ok,
+        false,
+        'an empty staff list is refused even with force',
+      );
+      assert.match(res.data.error, /ว่าง/);
+      erpState.staff = savedStaff.slice(0, 1);
+      res = await run();
       assert.equal(res.data.ok, false);
       assert.match(res.data.error, /ยกเลิกการซิงก์/);
       assert.equal((await staffRow(20)).active, true);

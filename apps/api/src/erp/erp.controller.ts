@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   ForbiddenException,
   Get,
@@ -13,6 +14,13 @@ import { AccountsService } from '../accounts/accounts.service';
 import { ErpSyncService } from './erp-sync.service';
 
 /** ADMIN-only control of the daily ERP import (D53/D54). Same Origin/CSRF guard as the account routes. */
+/** A flag must be exactly true/false: anything else (1, TRUE, repeated) must not silently turn a dry run into a real run. */
+function flag(name: string, value: unknown): boolean {
+  if (value === undefined || value === 'false') return false;
+  if (value === 'true') return true;
+  throw new BadRequestException(`${name} ต้องเป็น true หรือ false`);
+}
+
 @Controller('admin/erp-sync')
 @UseGuards(OriginGuard)
 export class ErpController {
@@ -48,9 +56,9 @@ export class ErpController {
     const user = await this.admin(req);
     return this.sync.runManual(
       user.staffId,
-      dryRun === 'true',
-      force === 'true',
-      wait === 'true',
+      flag('dryRun', dryRun),
+      flag('force', force),
+      flag('wait', wait),
     );
   }
 }

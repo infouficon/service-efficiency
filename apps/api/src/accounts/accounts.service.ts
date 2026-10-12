@@ -294,6 +294,14 @@ export class AccountsService {
       this.assertManagement(actor, data, target);
       await this.validateAssignment(tx, data);
       if (target.erpStaffId !== null) {
+        // ADMIN must not depend on data HR can edit in the ERP (it controls the account's password and active flag).
+        if (
+          data.roles.includes('ADMIN') &&
+          !target.roles.some((r) => r.roleCode === 'ADMIN')
+        )
+          throw new ConflictException(
+            'ห้ามตั้ง ADMIN ให้บัญชีที่ซิงก์จาก ERP (ตั้ง MANAGER ได้)',
+          );
         // The daily ERP import owns these fields (D54); only ADMIN/MANAGER roles can still be set by hand.
         const managed = (roles: RoleCode[]) =>
           roles.filter((r) => ERP_MANAGED_ROLES.includes(r)).sort().join();

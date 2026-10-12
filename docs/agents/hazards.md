@@ -153,3 +153,14 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 
 ### H-30: Prettier baseline is red · S3 · confirmed
 - Before the ERP work, `npx prettier --check` already failed for 18 web files and for `apps/api/src/accounts/accounts.service.ts`. The ERP branch formatted only the files it touched in the web app (AdminHub.tsx, App.tsx, styles.css: whitespace-only churn, review with `git diff -w`) and left `accounts.service.ts` alone. Decide on one repo-wide `prettier --write` commit.
+
+### H-31: Known gaps in the ERP import after the independent review (2026-10-12) · S2/S3 · open
+Fixed in the same PR: unusable ERP rows (no password, unmapped position, duplicate or broken ids/branch rows) keep the account instead of deactivating it; an empty staff list is refused even with `force`; `dryRun`/`force`/`wait` must be exactly `true`/`false`; no secret fragments in errors (fixed messages, URL with credentials rejected); one colliding id is skipped instead of aborting the run; ADMIN cannot be granted to an ERP-managed account; per-account `changes` list in the run summary.
+Still open:
+- **Per-replica `running` flag**: a manual run on replica B can overlap the scheduled run on replica A (two ERP requests at once). The DB serialises writes, so no corruption. Fix: refuse a run when an `ErpSyncRun` with `ok IS NULL` started in the last 20 minutes exists.
+- **Hand-granted MANAGER on an ERP-managed account**: HR re-activating the person in the ERP re-enables the account (with the ERP password and branch) and its MANAGER role. Decide whether MANAGER should be allowed on synced accounts at all.
+- `staffId` is not trimmed by the DTO (`"4411 "` vs `4411` collide in the database collation); the import now skips the collision, the DTO should trim.
+- `RAW_CONTROL` leaves raw CR/LF/TAB inside strings unrepaired and a `SyntaxError` is retried once; one odd `position` could fail every daily run.
+- The panel does not render `warnings` or `changes`, cannot send `force`, and the audit feed (`getAuditLogs`) does not read `ErpSyncRun`. An ADMIN cannot unlock an ERP-managed account (reset is refused).
+- `apply` is about 300 sequential statements inside the shared 15 s `AccountLock` transaction (H-02); `createMany` would cut it. A rollback by timeout is recorded as a failed run and retried.
+- Tests do not cover: concurrent `claim`, abandoned-run reclaim, `tick`/`dueSlot` wiring, branch rename/reopen/move, OData 5xx-then-success, timeout and `MAX_ROWS`, the MySQL object form of the JSON column (tests run MariaDB), and rollback of updates/leavers in a dry run.

@@ -11,7 +11,7 @@ by reading the code. These files describe **what the code really does**; the old
 | 1 | [../../AGENTS.md](../../AGENTS.md) | always: the 14 rules |
 | 2 | [../../CONTEXT.md](../../CONTEXT.md) | before any design or grilling work: glossary, entities, invariants (built vs documented) |
 | 3 | [workflow-as-built.md](workflow-as-built.md) | before touching sessions, stock or cancellation: every endpoint, role and side effect |
-| 4 | [hazards.md](hazards.md) | before changing code: 30 known gaps, each with a `file:line`, impact and fix direction |
+| 4 | [hazards.md](hazards.md) | before changing code: 31 known gaps, each with a `file:line`, impact and fix direction |
 | 5 | [codebase-map.md](codebase-map.md) | to find where something lives and what else to update |
 | 6 | [recipes.md](recipes.md) | to run, test, migrate or ship |
 | 7 | [grilling-backlog.md](grilling-backlog.md) | to start a `/grill-with-docs` session: the open decisions in priority order |

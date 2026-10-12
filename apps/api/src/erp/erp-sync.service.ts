@@ -91,6 +91,10 @@ export interface StaffNote {
   staffId: string;
   reason: string;
 }
+export interface StaffChange {
+  staffId: string;
+  action: 'create' | 'update' | 'password' | 'reactivate' | 'deactivate';
+}
 export interface ErpSyncSummary {
   branches: {
     scope: number;
@@ -112,6 +116,8 @@ export interface ErpSyncSummary {
     unchanged: number;
     skipped: StaffNote[];
     warnings: StaffNote[];
+    /** who was touched and how (capped, no secrets): lets a watched dry run show the effect */
+    changes: StaffChange[];
   };
 }
 export interface ErpSyncRunDto {
@@ -135,6 +141,8 @@ interface Plan {
   skipped: StaffNote[];
   warnings: StaffNote[];
   outOfScope: number;
+  /** active ERP rows that are unusable right now (no password, unmapped position, duplicate id, broken branch row): their account is kept, never deactivated for that */
+  retain: Set<number>;
   /** erpStaffId -> new hash; null = the stored hash already matches the ERP password */
   hashes: Map<number, string | null>;
 }
@@ -172,8 +180,11 @@ const integer = (value: unknown): number | null => {
 export function parseBranches(rows: unknown[]): {
   scope: ErpBranch[];
   notes: BranchNote[];
+  /** ids of in-group branch rows that were unusable: their staff keep their accounts */
+  dropped: Set<number>;
 } {
   const notes: BranchNote[] = [];
+  const dropped = new Set<number>();
   const candidates: ErpBranch[] = [];
   for (const raw of rows) {
     const row = asRow(raw);
@@ -182,6 +193,7 @@ export function parseBranches(rows: unknown[]): {
     const id = integer(row.branch_id);
     const code = text(row.branch_code).trim();
     if (id === null || !code || code.length > 64) {
+      if (id !== null) dropped.add(id);
       notes.push({
         code: code || String(row.branch_id ?? '?'),
         reason:
@@ -207,30 +219,35 @@ export function parseBranches(rows: unknown[]): {
   const scope = candidates.filter((b) => {
     const duplicated =
       (ids.get(b.erpBranchId) ?? 0) > 1 || (codes.get(b.code) ?? 0) > 1;
-    if (duplicated)
+    if (duplicated) {
+      dropped.add(b.erpBranchId);
       notes.push({
         code: b.code,
         reason: 'branch_id หรือ branch_code ซ้ำใน ERP จึงข้ามสาขานี้',
       });
+    }
     return !duplicated;
   });
-  return { scope, notes };
+  return { scope, notes, dropped };
 }
 
 /** Active ERP staff of the imported branches that can get an SES account, plus the reasons for the others. */
 export function parsePeople(
   rows: unknown[],
   branches: ErpBranch[],
+  dropped: Set<number> = new Set(),
 ): {
   people: ErpPerson[];
   skipped: StaffNote[];
   warnings: StaffNote[];
   outOfScope: number;
+  retain: Set<number>;
 } {
   const byId = new Map(branches.map((b) => [b.erpBranchId, b]));
   const skipped: StaffNote[] = [];
   const warnings: StaffNote[] = [];
   const candidates: ErpPerson[] = [];
+  const retain = new Set<number>();
   let outOfScope = 0;
   for (const raw of rows) {
     const row = asRow(raw);
@@ -238,7 +255,15 @@ export function parsePeople(
     const erpBranchId = integer(row.branch_id);
     const branch = erpBranchId === null ? undefined : byId.get(erpBranchId);
     if (!branch || erpBranchId === null) {
-      outOfScope += 1;
+      const sid = integer(row.staff_id);
+      if (erpBranchId !== null && dropped.has(erpBranchId) && sid !== null) {
+        // The ERP branch row is broken, not closed: keep the account, do not lock the person out for it.
+        retain.add(sid);
+        skipped.push({
+          staffId: String(sid),
+          reason: 'ข้อมูลสาขาของคนนี้ใน ERP ไม่สมบูรณ์ จึงยังไม่เปลี่ยนบัญชี',
+        });
+      } else outOfScope += 1;
       continue;
     }
     const erpStaffId = integer(row.staff_id);
@@ -258,6 +283,8 @@ export function parsePeople(
       continue;
     }
     const password = text(row['user password']);
+    // From here on the person is employed and in scope: an unusable row never deactivates the account.
+    retain.add(erpStaffId);
     if (!password.trim()) {
       skipped.push({ staffId, reason: 'ไม่มีรหัสผ่าน (user password) ใน ERP' });
       continue;
@@ -302,7 +329,7 @@ export function parsePeople(
       });
     return !duplicated;
   });
-  return { people, skipped, warnings, outOfScope };
+  return { people, skipped, warnings, outOfScope, retain };
 }
 
 /** "10:00,15:30" -> minutes of the day. Empty string = no schedule. */
@@ -415,9 +442,7 @@ export async function odataRows(
           `ERP ปฏิเสธการเข้าถึง (HTTP ${res.status}) ตรวจ ERP_ODATA_USER / ERP_ODATA_PASS`,
         );
       if (res.status >= 400 && res.status < 500)
-        throw new NoRetryError(
-          `ERP ตอบ HTTP ${res.status} ที่ ${entity}: ${body.slice(0, 200)}`,
-        );
+        throw new NoRetryError(`ERP ตอบ HTTP ${res.status} ที่ ${entity}`);
       if (!res.ok) {
         lastError = `ERP ตอบ HTTP ${res.status} ที่ ${entity}`;
       } else {
@@ -431,7 +456,8 @@ export async function odataRows(
         throw new NoRetryError(
           `ERP ไม่ตอบภายใน ${Math.round(timeoutMs / 1000)} วินาทีที่ ${entity} (ERP อาจกำลังช้า จึงไม่ลองซ้ำ)`,
         );
-      lastError = `ติดต่อ ERP ที่ ${entity} ไม่สำเร็จ: ${error instanceof Error ? error.message : String(error)}`;
+      // Never echo error.message here: a JSON.parse error quotes part of the body (a password) and a URL error quotes the URL (credentials).
+      lastError = `ติดต่อ ERP ที่ ${entity} ไม่สำเร็จ (${error instanceof Error ? error.name : 'error'})`;
     } finally {
       clearTimeout(timer);
     }
@@ -475,7 +501,14 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     ).trim();
     const user = this.config.get<string>('ERP_ODATA_USER') ?? '';
     const pass = this.config.get<string>('ERP_ODATA_PASS') ?? '';
-    return baseUrl && user && pass ? { baseUrl, user, pass } : null;
+    if (!baseUrl || !user || !pass) return null;
+    try {
+      const url = new URL(baseUrl);
+      if (url.username || url.password) return null; // credentials belong in ERP_ODATA_USER/PASS, and would leak in errors
+    } catch {
+      return null;
+    }
+    return { baseUrl, user, pass };
   }
   private times(): number[] {
     return parseTimes(this.config.get<string>('ERP_SYNC_TIMES') ?? '10:00');
@@ -670,12 +703,14 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       throw new Error(
         `ERP ส่งข้อมูลถึงเพดาน ${MAX_ROWS} แถว อาจถูกตัด จึงยกเลิกการซิงก์`,
       );
-    const { scope, notes } = parseBranches(branchRows);
+    if (!staffRows.length)
+      throw new Error('ERP ส่งรายชื่อพนักงานว่าง จึงยกเลิกการซิงก์');
+    const { scope, notes, dropped } = parseBranches(branchRows);
     if (!scope.length)
       throw new Error(
         'ไม่พบสาขากลุ่ม iStudio/U-Store ใน ERP จึงยกเลิกการซิงก์',
       );
-    const parsed = parsePeople(staffRows, scope);
+    const parsed = parsePeople(staffRows, scope, dropped);
     const plan: Plan = {
       branches: scope,
       branchNotes: notes,
@@ -746,6 +781,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
         unchanged: 0,
         skipped: [...plan.skipped],
         warnings: [...plan.warnings],
+        changes: [],
       },
     };
 
@@ -840,11 +876,13 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     const byStaffId = new Map(existing.map((s) => [s.staffId, s]));
     const people = [...plan.people].sort((a, b) => a.erpStaffId - b.erpStaffId);
 
+    const peopleIds = new Set(plan.people.map((p) => p.erpStaffId));
     const leavers = existing.filter(
       (s) =>
         s.erpStaffId !== null &&
         s.active &&
-        !plan.people.some((p) => p.erpStaffId === s.erpStaffId),
+        !peopleIds.has(s.erpStaffId) &&
+        !plan.retain.has(s.erpStaffId),
     );
     const activeManaged = existing.filter(
       (s) => s.erpStaffId !== null && s.active,
@@ -873,21 +911,40 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
           });
           continue;
         }
-        await tx.staff.create({
-          data: {
-            staffId: person.staffId,
-            firstName: person.firstName,
-            lastName: person.lastName,
-            passwordHash: plan.hashes.get(person.erpStaffId) ?? '',
-            branchId: sb.id,
-            active: true,
-            mustChangePassword: false,
-            erpStaffId: person.erpStaffId,
-            erpSyncedAt: now,
-            roles: { create: person.roles.map((roleCode) => ({ roleCode })) },
-          },
-        });
+        try {
+          await tx.staff.create({
+            data: {
+              staffId: person.staffId,
+              firstName: person.firstName,
+              lastName: person.lastName,
+              passwordHash: plan.hashes.get(person.erpStaffId) ?? '',
+              branchId: sb.id,
+              active: true,
+              mustChangePassword: false,
+              erpStaffId: person.erpStaffId,
+              erpSyncedAt: now,
+              roles: { create: person.roles.map((roleCode) => ({ roleCode })) },
+            },
+          });
+        } catch (error) {
+          // The database compares ids case/space-insensitively, the lookup above is exact: one odd id must not abort the whole run.
+          if (
+            error instanceof Prisma.PrismaClientKnownRequestError &&
+            error.code === 'P2002'
+          ) {
+            summary.staff.skipped.push({
+              staffId: person.staffId,
+              reason: 'รหัสนี้ชนกับบัญชีที่มีอยู่แล้วใน SES จึงข้าม',
+            });
+            continue;
+          }
+          throw error;
+        }
         summary.staff.created += 1;
+        summary.staff.changes.push({
+          staffId: person.staffId,
+          action: 'create',
+        });
         continue;
       }
       const data: Prisma.StaffUpdateInput = {};
@@ -899,11 +956,19 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       if (!match.active) {
         data.active = true;
         summary.staff.reactivated += 1;
+        summary.staff.changes.push({
+          staffId: person.staffId,
+          action: 'reactivate',
+        });
       }
       if (match.mustChangePassword) data.mustChangePassword = false;
       if (newHash) {
         data.passwordHash = newHash;
         summary.staff.passwordChanged += 1;
+        summary.staff.changes.push({
+          staffId: person.staffId,
+          action: 'password',
+        });
       }
       const have = new Set(match.roles.map((r) => r.roleCode));
       const wanted = new Set(person.roles);
@@ -932,6 +997,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       if (newHash)
         await tx.loginSession.deleteMany({ where: { staffId: match.staffId } });
       summary.staff.updated += 1;
+      summary.staff.changes.push({ staffId: person.staffId, action: 'update' });
     }
 
     // 3. Leavers: accounts this import created that are no longer eligible.
@@ -958,6 +1024,10 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       });
       await tx.loginSession.deleteMany({ where: { staffId: leaver.staffId } });
       summary.staff.deactivated += 1;
+      summary.staff.changes.push({
+        staffId: leaver.staffId,
+        action: 'deactivate',
+      });
     }
 
     // 4. Branches closed in the ERP: only when no active staff are left there (D39).
@@ -978,6 +1048,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
 
     summary.staff.skipped = summary.staff.skipped.slice(0, SKIP_LIMIT);
     summary.staff.warnings = summary.staff.warnings.slice(0, SKIP_LIMIT);
+    summary.staff.changes = summary.staff.changes.slice(0, SKIP_LIMIT);
     summary.branches.notes = summary.branches.notes.slice(0, SKIP_LIMIT);
     return summary;
   }

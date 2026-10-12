@@ -19,7 +19,10 @@ Decisions are recorded as `D56+` in [../decisions.md](../decisions.md); this fil
 | F17 U POS two-way | decided (D60), not built, no issue opened in UFPOS yet | |
 | F2 step-by-step picker like trade-in | **built** (PR `feat/session-items-wizard`; the trade-in app itself could not be viewed) | D62, `SelectionEditor` |
 | F3 several main products + `+ / −` on their quantity | **built** (same PR) | D61, `SessionItem`, migration `202610130003` |
-| F6, F10, F11, F12, F13 | not built | see §2 and §4 |
+| F11 change reasons + "buy again" | **built** (PR `feat/cancel-reject-rebuy`) | D65, `rebuyOfId`, `POST /rebuy` |
+| F12 any role cancels, stock told until it acknowledges | **built** (same PR) | D63, `stockAckAt/By`, banner + beep |
+| F13 cashier sends an order back to stock | **built** (same PR) | D64, `POST /cashier/reject` |
+| F6, F10 | not built | see §2 and §4 |
 
 ## 1. The feedback, verbatim
 

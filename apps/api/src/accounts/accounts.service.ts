@@ -503,6 +503,8 @@ export class AccountsService {
         case 'CASHIER_SCANNED': label = 'แคชเชียร์ยิงบาร์โค้ด'; break;
         case 'BILL_OPENED': label = 'เปิดบิลชำระเงิน'; break;
         case 'COMPLETED': label = 'ทำรายการเสร็จสมบูรณ์'; break;
+        case 'CASHIER_REJECTED': label = 'แคชเชียร์ส่งสินค้ากลับ Stock'; break;
+        case 'STOCK_ACKNOWLEDGED_CANCEL': label = 'Stock รับทราบการยกเลิก / คืนสินค้าเข้าชั้นแล้ว'; break;
       }
 
       auditItems.push({

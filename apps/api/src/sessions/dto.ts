@@ -75,6 +75,18 @@ export class CancelSessionDto {
   otherReason?: string;
 }
 
+/** F13: the cashier sends an order back to stock; the reason is required (`อื่น ๆ` needs text, like every other reason). */
+export class CashierRejectDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  otherReason?: string;
+}
+
 export class OutOfStockDto {
   @IsOptional()
   @IsString()

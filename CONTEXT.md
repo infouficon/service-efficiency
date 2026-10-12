@@ -2,7 +2,7 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D62);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D65);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
@@ -61,11 +61,13 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | OUT_OF_STOCK | STOCK cannot fulfil; terminal outcome. Sets that SKU's branch stock to 0 (D41). | `POST /out-of-stock` (`action:'cancel'`) |
 | Stock Review | D40: STOCK reports **missing items** (`report-missing`) without ending the session; main products are named by `missingItemIds` (D61), accessories by name. A JSON blob (`stockReview`) is stored, STAFF sees an alert and resolves with `ACCEPT_PARTIAL` / `CHANGE_ITEMS` / `CANCEL`. A MANAGER/ADMIN can **acknowledge** the alert (adds `acknowledgedAt/By`, no event). | `CustomerSession.stockReview` (Json) |
 | Sent to Cashier | STOCK hands the goods to the cashier. No timestamp column; the event time is the record. | `send` step |
-| Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). | `receive`, `scan`, `bill`, `complete` steps |
-| Cancellation | The customer leaves mid-flow. Reasons: `ลูกค้าเปลี่ยนใจ`, `รอนาน`, `อื่น ๆ` (+ required text). Terminal, no undo (D18–20). Restores 1 to stock if the item was already FOUND (D41). | `POST /cancel`; `cancelledAt`, `cancelledBy` |
+| Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). Before the bill is open the cashier can send the order back to stock (`ส่งกลับ Stock`, D64). | `receive`, `scan`, `bill`, `complete` steps; `POST /cashier/reject` |
+| Cancellation | The customer leaves mid-flow, or changes their mind about the product. **Any role of the branch** can cancel at any stage (D63). Reasons: the fixed list incl. the four change reasons (D65) and `อื่น ๆ` (+ required text). Terminal, no undo (D18–20). Gives back exactly what FOUND took (D41, D59, D61). | `POST /cancel`; `cancelledAt`, `cancelledBy` |
+| Stock acknowledgement (D63) | After the stock request, a cancel is a notice for stock (banner on every page for STOCK users, list on the stock page) until a STOCK / branch MANAGER / ADMIN acknowledges ("คืนของเข้าชั้นแล้ว" when the goods had been picked, else "รับทราบ"). Stored on the session. | `stockAckAt` / `stockAckBy`, `POST /stock/acknowledge-cancel`, event `STOCK_ACKNOWLEDGED_CANCEL` |
+| Buy again / ซื้อใหม่ (D65) | After a cancel for a change reason: a NEW session with the old data and the **old queue number**, at product selection. Once per cancelled session. | `rebuyOfId` (`rebuyOf` / `rebuiltAs`), `POST /rebuy` |
 | Outcome | The terminal result other than COMPLETED: `NOT_BUY`, `OUT_OF_STOCK`, `CUSTOMER_CANCELLED`. | enum `Outcome`, nullable `CustomerSession.outcome` |
 | Milestone timestamp | One server-time column per real action (12 columns, listed in §4). Written once, never back-filled for skipped steps, never user-editable. | `*At` columns on `CustomerSession` |
-| SessionEvent | Append-only history row per accepted action: `eventType`, trusted `actorStaffId`, server `createdAt`, small JSON `metadata`. | `SessionEvent` (schema:279); 17 event types |
+| SessionEvent | Append-only history row per accepted action: `eventType`, trusted `actorStaffId`, server `createdAt`, small JSON `metadata`. | `SessionEvent`; 19 event types |
 | Actor | The authenticated Staff member doing an action, always taken from the Login Session and never from the request body. | `PublicAccount.staffId` |
 | Branch / Branch Code | A store. Code is not unique-constrained (OQ-09). APIs accept either the UUID or the code as `branchId` (`list` and `createWalkIn` in `sessions.service.ts`). | `Branch` |
 | Staff ID | The login username and the primary key of `Staff`. Bootstrap admin is `0001`. | `Staff.staffId` |
@@ -129,14 +131,16 @@ WALK_IN → DEMO → DECISION ─(buy: decisionAt)→ DECISION ─(startSelectio
 Terminal outcomes (state stays where it was, outcome is set):
   NOT_BUY            from DECISION
   OUT_OF_STOCK       from SEARCHING
-  CUSTOMER_CANCELLED from any non-terminal state (role depends on stage)
+  CUSTOMER_CANCELLED from any non-terminal state, by any role of the branch (D63)
+Cashier reject (D64):  SENT_TO_CASHIER|CASHIER_RECEIVED|CASHIER_SCAN ─reject→ SEARCHING
+Buy again (D65):       a CUSTOMER_CANCELLED session with a change reason ─rebuy→ a NEW session at PRODUCT_SELECTION (same queue number)
 Stock review loop:  STOCK_REQUESTED|SEARCHING ─report-missing→ (stockReview set)
   ─resolve ACCEPT_PARTIAL→ FOUND | CHANGE_ITEMS→ PRODUCT_SELECTION (confirmed=false) | CANCEL→ CUSTOMER_CANCELLED
 ```
 
-`CHANGE_ITEMS` is the **only** backward transition, and it reopens a confirmed purchase. That
-departs from the "purchase data immutable after confirmation" rule (requirements §22) and was
-introduced by D40.
+`CHANGE_ITEMS` (D40) and the cashier's reject (D64) are the only backward transitions. `CHANGE_ITEMS`
+reopens a confirmed purchase, which departs from the "purchase data immutable after confirmation" rule
+(requirements §22); a reject only sends the same order back to the stock stage.
 
 ### 3.4 Invariants: documented vs enforced
 
@@ -175,7 +179,7 @@ introduced by D40.
 | `cancelledAt` (+ `cancelledBy`) | `cancel`, resolve `CANCEL` | `CUSTOMER_CANCELLED` |
 | *(no column)* | `send`, `complete`, out-of-stock, report-missing, resolve | `STOCK_SENT_TO_CASHIER`, `COMPLETED`, `STOCK_OUT_OF_STOCK`, `STOCK_REPORTED_MISSING`, `STAFF_RESOLVED_STOCK_REVIEW` |
 
-The `EventType` enum in code has 17 values. It drops D27's `STOCK_REQUESTED` (merged into
+The `EventType` enum in code has 19 values (`CASHIER_REJECTED` and `STOCK_ACKNOWLEDGED_CANCEL` were added by D64 and D63). It drops D27's `STOCK_REQUESTED` (merged into
 `PRODUCT_SELECTION_CONFIRMED`, D51) and adds `STOCK_REPORTED_MISSING` and
 `STAFF_RESOLVED_STOCK_REVIEW` (D40). docs/erd.md still lists the D27 set.
 

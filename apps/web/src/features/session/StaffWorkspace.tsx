@@ -12,7 +12,12 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
-import { cancelReasons, notBuyReasons, stages } from '../../constants/options';
+import {
+  cancelReasons,
+  changeReasons,
+  notBuyReasons,
+  stages,
+} from '../../constants/options';
 import type { MockSession, MockUser, Selection } from '../../types/session';
 import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
@@ -31,12 +36,19 @@ import {
   cancelSessionApi,
   confirmPurchaseApi,
   createWalkInApi,
+  rebuyApi,
   recordNotBuyApi,
   resolveStockReviewApi,
   updateSelectionApi,
 } from '../../services/sessionApi';
 
 const previewTime = () => new Date().toISOString();
+
+/** F11: cancelled for a change (model, colour, capacity, wrong product) and not bought again yet. The server checks it too. */
+const canRebuy = (s: MockSession) =>
+  s.outcome === 'CUSTOMER_CANCELLED' &&
+  (changeReasons as readonly string[]).includes(s.reason ?? '') &&
+  !s.rebuiltAs;
 
 interface StaffWorkspaceProps {
   user: MockUser;
@@ -188,6 +200,27 @@ export function StaffWorkspace({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** F11: a new session with the old data and the old queue number; the cancelled one stays cancelled. */
+  const handleRebuy = async () => {
+    if (!activeSession?.id) return;
+    setBusy(true);
+    setError('');
+    try {
+      const created = await rebuyApi(activeSession.id);
+      onUpdateSession({
+        ...activeSession,
+        rebuiltAs: { id: created.id ?? '', reference: created.reference },
+      });
+      onAddSession(created);
+      setActiveSessionRef(created.reference);
+      setForm('normal');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ซื้อใหม่ไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -446,6 +479,11 @@ export function StaffWorkspace({
                     QUEUE · {activeSession.branchName}
                   </span>
                   <h2 className="queue-title">คิว {activeSession.queue}</h2>
+                  {activeSession.rebuyOf && (
+                    <span className="status-tag status-found" style={{ marginRight: '8px' }}>
+                      ซื้อใหม่ (ใช้คิวเดิม)
+                    </span>
+                  )}
                   <span className="muted">
                     {activeSession.customerTypeName
                       ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
@@ -515,6 +553,17 @@ export function StaffWorkspace({
                           <p>ผู้ยกเลิก: {activeSession.cancelledBy}</p>
                         )}
                         <Summary session={activeSession} />
+                        {canRebuy(activeSession) && (
+                          <div className="rebuy-box">
+                            <p>
+                              <strong>ลูกค้าต้องการเปลี่ยนสินค้า</strong> — ซื้อใหม่ได้ทันที
+                              โดยดึงข้อมูลเดิมมาแก้ไข และใช้คิว {activeSession.queue} เดิม
+                            </p>
+                            <Button onClick={handleRebuy} disabled={busy}>
+                              ซื้อใหม่ (คิว {activeSession.queue})
+                            </Button>
+                          </div>
+                        )}
                         <div style={{ marginTop: '1rem' }}>
                           <Button
                             onClick={() => {

@@ -79,7 +79,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 ### H-12: One `reason`/`otherReason` pair serves three meanings · S3 · confirmed
 - NOT_BUY result, cancellation reason, and out-of-stock reason (which defaults to `'OUT_OF_STOCK'`) share the same two columns. docs/erd.md says NOT_BUY text and cancellation text "must not be merged into an ambiguous shared reason field". Today `outcome` tells them apart, so reports must always read `reason` together with `outcome`. Decide whether to keep this (and update the ERD) or to split the columns.
 
-### H-13: Cancellation permissions differ from the confirmed matrix · S1 · confirmed
+### H-13: Cancellation permissions differ from the confirmed matrix · S1 · fixed by D63 (feat/cancel-reject-rebuy)
+- **Fixed:** the owner decided (D63) that any role of the branch can cancel at any stage; `cancelSession` no longer checks a role by stage. The rest of this entry describes the old behaviour.
 - **Where:** `cancelSession` (the role check by state, `sessions.service.ts`).
 - **Differences:** (a) STAFF cannot cancel in the Stock and Cashier stages without the STOCK or CASHIER role, although requirements §25 and permissions.md confirm STAFF *can* cancel in DEMO, PRODUCT_SELECTION, STOCK and CASHIER. (b) In WALK_IN and DECISION there is **no role check at all**: any authenticated user of the branch (for example a CASHIER-only account) can cancel. Cancelling in those states is not in the confirmed flow either. (c) OQ-02 (which exact substates allow cancellation) is still open.
 - **Fix direction:** settle OQ-02 and record it as a decision, then encode one explicit `stage → allowedRoles` table.
@@ -128,7 +129,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Where:** `App.tsx:131-145`. For an unconfirmed, non-terminal session the local `phone` and `selection` win. Another device's edit is therefore hidden until the first device saves again.
 - **Impact:** two devices on one session overwrite each other (last write wins, and `updateSelection` replaces whole lists). No conflict handling exists.
 
-### H-23: Dismissal state lives in `localStorage` or component state · S3 · confirmed
+### H-23: Dismissal state lives in `localStorage` or component state · S3 · partly fixed (feat/cancel-reject-rebuy)
+- **Update:** the stock cancel alert is now acknowledged on the server (`stockAckAt`, D63) and shows on every device. The manager banner's local dismissal remains.
 - Stock cancel alerts are dismissed only in `localStorage` (`service_efficiency_stock_dismissed_cancels`, `Stock:29-54`). The manager banner's "dismiss" calls `acknowledge-alert` per session but swallows errors (`App.tsx:210-226`). Different browsers/devices see different alerts.
 
 ### H-24: Event names in the CSV export don't match the real enum · S2 · verify

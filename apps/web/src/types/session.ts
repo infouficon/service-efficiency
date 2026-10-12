@@ -154,6 +154,12 @@ export interface MockSession {
   reason?: string;
   otherReason?: string;
   cancelledBy?: string;
+  /** F12: when and by whom stock acknowledged this cancel; absent while stock still has to act. */
+  stockAckAt?: string;
+  stockAckBy?: string;
+  /** F11: the cancelled session this one was bought again from, and the one that replaced this (cancelled) one. */
+  rebuyOf?: { id: string; reference: string };
+  rebuiltAs?: { id: string; reference: string };
   stockPendingReview?: {
     missingItems: string[];
     /** `SessionItem.id`s of the missing main products (F3). */

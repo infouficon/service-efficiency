@@ -161,3 +161,53 @@ export async function cleanup(ctx, world) {
     await ctx.stop();
   }
 }
+
+/** One product with `count` SKUs (named after the world's prefix) and `stock` units of each at branch a. */
+export async function seedCatalog(ctx, world, count = 2, stock = 5) {
+  const { db } = ctx;
+  const { prefix, branches } = world;
+  const product = await db.product.create({
+    data: {
+      category: 'iPhone',
+      name: `${prefix} Phone`,
+      models: {
+        create: {
+          name: `${prefix} Model`,
+          skus: {
+            create: Array.from({ length: count }, (_, i) => ({
+              sku: `${prefix}-S${i + 1}`,
+              name: `${prefix} S${i + 1} 128GB`,
+              color: 'Black',
+              storage: '128GB',
+            })),
+          },
+        },
+      },
+    },
+    include: { models: { include: { skus: true } } },
+  });
+  const skus = product.models[0].skus.sort((x, y) =>
+    x.sku.localeCompare(y.sku),
+  );
+  for (const sku of skus)
+    await db.branchInventory.create({
+      data: { branchId: branches.a.id, skuId: sku.id, stock, active: true },
+    });
+  return skus;
+}
+
+/** The steps of the happy path in order, with the role that performs each one. */
+export const PATH = [
+  ['startDemo', 'staff'],
+  ['endDemo', 'staff'],
+  ['buy', 'staff'],
+  ['startSelection', 'staff'],
+  ['confirm', 'staff'],
+  ['search', 'stock'],
+  ['found', 'stock'],
+  ['send', 'stock'],
+  ['receive', 'cashier'],
+  ['scan', 'cashier'],
+  ['bill', 'cashier'],
+  ['complete', 'cashier'],
+];

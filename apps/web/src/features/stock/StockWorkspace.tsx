@@ -17,6 +17,7 @@ import { ReasonForm } from '../session/ReasonForm';
 import { cancelReasons } from '../../constants/options';
 import type { MockSession, MockUser } from '../../types/session';
 import {
+  acknowledgeStockCancelApi,
   advanceStepApi,
   cancelSessionApi,
   recordOutOfStockApi,
@@ -24,41 +25,17 @@ import {
 } from '../../services/sessionApi';
 import {
   advance,
+  cashierRejectNotice,
+  goodsToReturn,
   isToday,
   itemLabel,
   itemName,
   itemsText,
+  needsStockAck,
   partialFulfillStock,
 } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
-
-const DISMISSED_CANCELS_STORAGE_KEY = 'service_efficiency_stock_dismissed_cancels';
-
-function getStoredDismissedCancels(): string[] {
-  try {
-    const raw = localStorage.getItem(DISMISSED_CANCELS_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
-function storeDismissedCancel(reference: string) {
-  try {
-    const current = getStoredDismissedCancels();
-    if (!current.includes(reference)) {
-      const updated = [...current, reference];
-      localStorage.setItem(DISMISSED_CANCELS_STORAGE_KEY, JSON.stringify(updated));
-    }
-  } catch {
-    // ignore
-  }
-}
 
 interface StockWorkspaceProps {
   user: MockUser;
@@ -78,16 +55,19 @@ export function StockWorkspace({
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [stockNote, setStockNote] = useState('');
   const [foundSelection, setFoundSelection] = useState<string[]>([]);
-  const [dismissedCancels, setDismissedCancels] = useState<string[]>(() =>
-    getStoredDismissedCancels(),
-  );
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
   const [error, setError] = useState('');
 
-  const handleDismissCancel = (reference: string) => {
-    storeDismissedCancel(reference);
-    setDismissedCancels((prev) => [...prev, reference]);
+  /** F12: stock confirms it has seen a cancel and brought the goods back; stored on the session, so every device sees it. */
+  const handleAcknowledgeCancel = async (session: MockSession) => {
+    if (!session.id) return;
+    setError('');
+    try {
+      onUpdateSession(await acknowledgeStockCancelApi(session.id));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ยืนยันไม่สำเร็จ');
+    }
   };
 
   // Filter sessions by branch and today only (D47)
@@ -115,14 +95,11 @@ export function StockWorkspace({
     (mobileShowDetail ? null : filteredQueue[0]) ||
     null;
 
-  const cancelledAlertSessions = branchSessions.filter(
+  // F12: every cancel after the stock request that stock has not acknowledged, whatever day it was (not only today)
+  const cancelledAlertSessions = sessions.filter(
     (s) =>
-      s.outcome === 'CUSTOMER_CANCELLED' &&
-      !dismissedCancels.includes(s.reference) &&
-      (Boolean(s.timestamps.product_selection_confirmed_at) ||
-        Boolean(s.timestamps.stock_started_at) ||
-        Boolean(s.stockPendingReview) ||
-        Boolean(s.cancelledBy)),
+      needsStockAck(s) &&
+      (user.roles.includes('ADMIN') || s.branchCode === (user.branchCode ?? '')),
   );
 
   const handleSelectCard = (reference: string) => {
@@ -298,33 +275,25 @@ export function StockWorkspace({
       )}
 
       {cancelledAlertSessions.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+        <div className="stock-cancel-notices" role="alert">
           {cancelledAlertSessions.map((cs) => (
-            <Notice key={cs.reference} error>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  width: '100%',
-                  flexWrap: 'wrap',
-                  gap: '8px',
-                }}
-              >
+            <div key={cs.reference} className="stock-cancel-notice">
+              <div className="stock-cancel-notice-body">
+                <strong className="stock-cancel-notice-title">
+                  <AlertTriangle size={20} />
+                  คิว {cs.queue} ถูกยกเลิก
+                  {goodsToReturn(cs) ? ' — ต้องคืนสินค้าเข้าชั้น' : ' — หยุดค้นหา'}
+                </strong>
                 <span>
-                  <strong>⚠️ แจ้งเตือนฝ่ายคลัง:</strong> คิว <strong>{cs.queue}</strong> (
-                  {itemsText(cs.selection.items) || 'สินค้า'}) ถูกยกเลิกโดย Staff <strong>{cs.cancelledBy || cs.staffId || 'Staff'}</strong> — สาเหตุ:{' '}
-                  <em>{cs.reason || cs.otherReason || 'ลูกค้าเปลี่ยนใจ'}</em>
+                  {itemsText(cs.selection.items) || 'สินค้า'} · ยกเลิกโดย{' '}
+                  <strong>{cs.cancelledBy || cs.staffId}</strong> · เหตุผล:{' '}
+                  <em>{cs.reason || cs.otherReason || '—'}</em>
                 </span>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleDismissCancel(cs.reference)}
-                >
-                  รับทราบ
-                </Button>
               </div>
-            </Notice>
+              <Button onClick={() => handleAcknowledgeCancel(cs)}>
+                {goodsToReturn(cs) ? 'คืนของเข้าชั้นแล้ว' : 'รับทราบ'}
+              </Button>
+            </div>
           ))}
         </div>
       )}
@@ -399,7 +368,14 @@ export function StockWorkspace({
                   >
                     <div className="card-top">
                       <span className="card-ref">คิว {s.queue}</span>
-                      {s.stockPendingReview ? (
+                      {cashierRejectNotice(s) ? (
+                        <span
+                          className="status-tag status-outcome"
+                          style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}
+                        >
+                          Cashier ส่งกลับ
+                        </span>
+                      ) : s.stockPendingReview ? (
                         <span
                           className="status-tag status-searching"
                           style={{
@@ -476,6 +452,14 @@ export function StockWorkspace({
                           กำลังรอลูกค้าตัดสินใจและแจ้งผ่าน Staff ({selectedSession.staffId}) ว่าจะซื้อเฉพาะที่เหลือ, เปลี่ยน/เพิ่มสินค้าอื่น หรือขอยกเลิกคำขอนี้
                         </p>
                       </div>
+                    </Notice>
+                  )}
+                  {cashierRejectNotice(selectedSession) && (
+                    <Notice error>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                        <AlertTriangle size={16} />
+                        Cashier ส่งกลับ: {cashierRejectNotice(selectedSession)?.reason} — ค้นหา/หยิบสินค้าใหม่ให้ถูกต้อง
+                      </span>
                     </Notice>
                   )}
                   {!selectedSession.stockPendingReview && selectedSession.state === 'STOCK_REQUESTED' && (

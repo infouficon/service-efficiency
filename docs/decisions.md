@@ -880,3 +880,28 @@ Owner, relaying the 2026-10-13 meeting: "Main product เพิ่มได้�
 ## D62 — The product picker goes step by step, like the trade-in app (2026-10-13)
 
 Owner: "กดเลือกหมวดหมู่ ทำแบบเทรนอิน เพื่อให้ดูง่าย". The picker shows big tiles: **category** (iPhone, iPad, Mac, Watch) → **product** → **model** → **capacity / colour**; a step with a single choice is skipped, a back button climbs one step, and every pick lands in the list of chosen main products (D61). Built from the hierarchy the catalog already has (Product → Model → SKU). OPEN: the trade-in app (u-bid.uficon.com, behind a login) could not be looked at, so the tiles follow the description only; a screenshot of its category screen would let the look match.
+
+## D63 — Any role can cancel; stock is told until it acknowledges (2026-10-13)
+
+Owner, relaying the meeting: "ยกเลิกได้ทุก role เมื่อยกเลิกแล้ว แจ้ง stock แบบเห็นชัดๆ". **Supersedes** the stage-based cancel matrix (`permissions.md`, H-13; OQ-01 / OQ-02 about who may cancel where no longer matter). D20 stays: a cancelled session is final, nothing reopens it.
+
+1. **Who and when.** Any signed-in role of the branch (STAFF, STOCK, CASHIER, MANAGER; ADMIN everywhere) can cancel any session that has not ended, at any stage. The reason is required (`อื่น ๆ` needs text).
+2. **Stock is told.** When the session had already been confirmed (the stock request exists), the cancel is a notice for stock: a red banner on **every page** for STOCK users (with a short beep when a new one arrives) and a list at the top of the stock page. It says "ต้องคืนสินค้าเข้าชั้น" when the goods had been picked (FOUND or later) and "หยุดค้นหา" otherwise, with the items, the reason and who cancelled.
+3. **It stays until acknowledged.** A STOCK user, a MANAGER of the branch or an ADMIN presses "คืนของเข้าชั้นแล้ว" / "รับทราบ". That is stored on the session (`stockAckAt`, `stockAckBy`, event `STOCK_ACKNOWLEDGED_CANCEL`) and shows on every device, replacing the browser-only dismissal (H-23 for this alert). A STOCK user who cancels before anything was picked needs no acknowledgement; a cancel before the stock request tells stock nothing.
+4. **Units** go back exactly as D41/D59/D61 say.
+
+## D64 — The cashier can send an order back to stock (2026-10-13)
+
+Owner: "Cashier สามารถ reject order กลับมา stock ได้ กรณีหยิบสินค้ามาผิด".
+
+1. **When.** From SENT_TO_CASHIER, CASHIER_RECEIVED or CASHIER_SCAN (not once the bill is open), by a CASHIER, with a reason: `หยิบสินค้าผิด`, `สินค้าชำรุด/มีตำหนิ` or `อื่น ๆ` (+ text). The reasons are a default, the owner gave none.
+2. **Effect.** The whole order (not per item, default) goes back to the stock stage (`SEARCHING`); the units FOUND took return to the shelf; the stock-found, cashier-received and cashier-scan milestones start over for the new pass (the first pass stays in the events); event `CASHIER_REJECTED {reason, fromState}`. Stock sees "Cashier ส่งกลับ: <reason>" on the card and in the detail until it finds the goods again.
+3. This is the first backward transition besides D40's CHANGE_ITEMS. The per-step durations in the export (F14) now add up the steps of every pass.
+
+## D65 — Change reasons and "buy again" (2026-10-13)
+
+Owner: "เหตุผลในการเปลี่ยน เปลี่ยนรุ่น สี ความจุ พนง เลือกสินค้าผิดพลาด (มีปุ่ม ให้กดซื้อใหม่โดยดึง data อันเก่า ใช้คิวเก่าในการทำงาน)".
+
+1. **Reasons.** Four new cancel reasons: `เปลี่ยนรุ่น`, `เปลี่ยนสี`, `เปลี่ยนความจุ`, `พนักงานเลือกสินค้าผิดพลาด`.
+2. **Buy again.** A session cancelled with one of them shows "ซื้อใหม่ (คิว A012)" to STAFF. It creates a **new** session (D20: nothing is reopened) pre-filled with the customer, customer type, the queue letter **and number** (the counter does not move), items, accessories, Ontop, Points, Burn Points and payments. It starts at product selection (the customer already decided to buy; no DEMO), belongs to the staff who pressed the button, and points back with `rebuyOfId`. Each cancelled session can be bought again once; a bought-again session can itself be changed again.
+3. **Time.** The new session has its own milestones (walk-in = the moment of the rebuy). The visit as a whole (first walk-in to the end of the last session) is a column of the export, next to columns that link the two references; the stock side of the old session is an ordinary cancel (D63).

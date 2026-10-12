@@ -62,6 +62,8 @@ enum EventType {
   CASHIER_SCANNED
   BILL_OPENED
   COMPLETED
+  CASHIER_REJECTED
+  STOCK_ACKNOWLEDGED_CANCEL
 }
 
 model Branch {
@@ -249,6 +251,13 @@ model CustomerSession {
   customerType   CustomerType? @relation(fields: [customerTypeId], references: [id], onDelete: Restrict)
   queueLetter    String?       @db.VarChar(1)
   queueNo        Int?
+  // F12: the stock side of a cancel. Null while stock still has to act (bring the goods back, stop searching).
+  stockAckAt     DateTime?     @db.DateTime(3)
+  stockAckBy     String?       @db.VarChar(64)
+  // F11: the cancelled session this one was opened from with "buy again" (it keeps the queue number); once per session
+  rebuyOfId      String?       @unique @db.VarChar(36)
+  rebuyOf        CustomerSession? @relation("Rebuy", fields: [rebuyOfId], references: [id], onDelete: SetNull)
+  rebuiltAs      CustomerSession? @relation("Rebuy")
 
   // F3: the main products of a session are `items` (SKU + quantity). These three columns are the old single main
   // product: kept for sessions from before F3 (the migration copied each into an item) and never written any more.

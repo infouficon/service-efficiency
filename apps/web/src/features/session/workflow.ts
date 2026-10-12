@@ -2,6 +2,7 @@ import type {
   MockSession,
   Product,
   SelectionItem,
+  SessionEventItem,
   Timestamp,
   WorkflowState,
 } from '../../types/session';
@@ -235,50 +236,168 @@ export interface StepDuration {
   ms: number | null;
 }
 
-/** First time of an event type in the session's history (some milestones have no column: sent to cashier, completed). */
-function eventTime(session: MockSession, eventType: string): string | undefined {
-  return session.events?.find((e) => e.eventType === eventType)?.createdAt;
+/** The steps of a visit, in order, with the label shown in the export. `total` is the whole session. */
+const STEP_LABELS: [string, string][] = [
+  ['wait_demo', 'รอก่อนเริ่ม DEMO'],
+  ['demo', 'DEMO'],
+  ['decision', 'ตัดสินใจหลัง DEMO'],
+  ['to_selection', 'เริ่มเลือกสินค้าหลังตัดสินใจ'],
+  ['selection', 'เลือกสินค้าจนยืนยัน'],
+  ['wait_stock', 'รอ Stock รับงาน'],
+  ['stock_search', 'Stock ค้นหาสินค้า'],
+  ['stock_send', 'Stock เตรียมส่ง Cashier'],
+  ['wait_cashier', 'รอ Cashier รับสินค้า'],
+  ['cashier_scan', 'Cashier รับสินค้า → Scan'],
+  ['cashier_bill', 'Scan → เปิดบิล'],
+  ['cashier_complete', 'เปิดบิล → เสร็จสิ้น'],
+  ['total', 'รวมทั้งหมด'],
+];
+
+/** The event that starts a step (the step lasts until the next event that starts another one or ends the session). */
+function phaseStartedBy(event: SessionEventItem): string | 'END' | undefined {
+  const meta = (event.metadata ?? {}) as Record<string, unknown>;
+  switch (event.eventType) {
+    // a session opened by "buy again" has no waiting-for-demo step: it starts at product selection
+    case 'SESSION_CREATED':
+      return meta.rebuyOf ? undefined : 'wait_demo';
+    case 'DEMO_STARTED':
+      return 'demo';
+    case 'DEMO_ENDED':
+      return 'decision';
+    case 'DECISION_MADE':
+      return meta.outcome === 'NOT_BUY' ? 'END' : 'to_selection';
+    case 'PRODUCT_SELECTION_STARTED':
+      return 'selection';
+    case 'PRODUCT_SELECTION_CONFIRMED':
+      return 'wait_stock';
+    case 'STOCK_SEARCHING':
+      return 'stock_search';
+    case 'STOCK_FOUND':
+      return 'stock_send';
+    case 'STOCK_SENT_TO_CASHIER':
+      return 'wait_cashier';
+    case 'CASHIER_RECEIVED':
+      return 'cashier_scan';
+    case 'CASHIER_SCANNED':
+      return 'cashier_bill';
+    case 'BILL_OPENED':
+      return 'cashier_complete';
+    // the cashier sent the order back: stock searches again
+    case 'CASHIER_REJECTED':
+      return 'stock_search';
+    // the customer wants other items: back to choosing
+    case 'STAFF_RESOLVED_STOCK_REVIEW':
+      return meta.action === 'CHANGE_ITEMS' ? 'selection' : undefined;
+    case 'COMPLETED':
+    case 'CUSTOMER_CANCELLED':
+    case 'STOCK_OUT_OF_STOCK':
+      return 'END';
+    default:
+      return undefined;
+  }
 }
 
-/** When the visit ended: completed, cancelled, out of stock, or the NOT_BUY decision. Undefined while it is still running. */
-function endedAt(session: MockSession): string | undefined {
-  if (session.state === 'COMPLETED') return eventTime(session, 'COMPLETED');
-  if (session.outcome === 'CUSTOMER_CANCELLED')
-    return session.timestamps.cancelled_at;
-  if (session.outcome === 'OUT_OF_STOCK')
-    return eventTime(session, 'STOCK_OUT_OF_STOCK');
-  if (session.outcome === 'NOT_BUY') return session.timestamps.decision_at;
-  return undefined;
+/** When a session started (its first event) and ended (completed, cancelled, out of stock, NOT_BUY); end is undefined while it runs. */
+export function sessionSpan(session: MockSession): { start?: string; end?: string } {
+  const events = session.events ?? [];
+  const start = events[0]?.createdAt ?? session.timestamps.customer_walk_in_at;
+  const end = events.find((e) => phaseStartedBy(e) === 'END')?.createdAt;
+  return { start, end };
 }
 
 /**
- * The time spent in each step of a visit, from the server's milestone timestamps and events (F14). Consecutive
- * milestones only: a step whose start or end was never recorded (a cancelled visit, a skipped step) has no duration.
- * `total` covers walk-in to the end of the visit.
+ * The time spent in each step of a visit, from the server's events (F14). Each interval between two events goes to the step
+ * the first of them started, so a step that happens twice (the cashier sends the order back, the customer changes the
+ * items) adds up. A step that never happened, or has not ended yet, has no duration; `total` is the whole session.
  */
 export function stepDurations(session: MockSession): StepDuration[] {
-  const t = session.timestamps;
-  const sent = eventTime(session, 'STOCK_SENT_TO_CASHIER');
-  const completed = eventTime(session, 'COMPLETED');
-  const steps: [string, string, string | undefined, string | undefined][] = [
-    ['wait_demo', 'รอก่อนเริ่ม DEMO', t.customer_walk_in_at, t.demo_start_at],
-    ['demo', 'DEMO', t.demo_start_at, t.demo_end_at],
-    ['decision', 'ตัดสินใจหลัง DEMO', t.demo_end_at, t.decision_at],
-    ['to_selection', 'เริ่มเลือกสินค้าหลังตัดสินใจ', t.decision_at, t.product_selection_start_at],
-    ['selection', 'เลือกสินค้าจนยืนยัน', t.product_selection_start_at, t.product_selection_confirmed_at],
-    ['wait_stock', 'รอ Stock รับงาน', t.product_selection_confirmed_at, t.stock_started_at],
-    ['stock_search', 'Stock ค้นหาสินค้า', t.stock_started_at, t.stock_found_at],
-    ['stock_send', 'Stock เตรียมส่ง Cashier', t.stock_found_at, sent],
-    ['wait_cashier', 'รอ Cashier รับสินค้า', sent, t.cashier_received_at],
-    ['cashier_scan', 'Cashier รับสินค้า → Scan', t.cashier_received_at, t.cashier_scan_at],
-    ['cashier_bill', 'Scan → เปิดบิล', t.cashier_scan_at, t.bill_opened_at],
-    ['cashier_complete', 'เปิดบิล → เสร็จสิ้น', t.bill_opened_at, completed],
-    ['total', 'รวมทั้งหมด', t.customer_walk_in_at, endedAt(session)],
-  ];
-  return steps.map(([key, label, from, to]) => {
-    const ms = from && to ? new Date(to).getTime() - new Date(from).getTime() : NaN;
+  const sums = new Map<string, number>();
+  let phase: string | undefined;
+  let since = 0;
+  for (const event of session.events ?? []) {
+    const at = new Date(event.createdAt).getTime();
+    if (!Number.isFinite(at)) continue;
+    if (phase && at >= since) {
+      sums.set(phase, (sums.get(phase) ?? 0) + (at - since));
+    }
+    since = at;
+    const next = phaseStartedBy(event);
+    if (next === 'END') phase = undefined;
+    else if (next) phase = next;
+  }
+  const { start, end } = sessionSpan(session);
+  const total = start && end ? new Date(end).getTime() - new Date(start).getTime() : NaN;
+  return STEP_LABELS.map(([key, label]) => {
+    const ms = key === 'total' ? total : (sums.get(key) ?? NaN);
     return { key, label, ms: Number.isFinite(ms) && ms >= 0 ? ms : null };
   });
+}
+
+/**
+ * The whole visit when a session was bought again: from the first walk-in of the chain to the end of its last session
+ * (F11). Null while the visit runs. A session that was never bought again is its own visit.
+ */
+export function visitDuration(session: MockSession, all: MockSession[]): number | null {
+  const byReference = new Map(all.map((s) => [s.reference, s]));
+  let first = session;
+  for (let i = 0; i < 20 && first.rebuyOf; i++) {
+    const parent = byReference.get(first.rebuyOf.reference);
+    if (!parent) break;
+    first = parent;
+  }
+  let last = first;
+  for (let i = 0; i < 20 && last.rebuiltAs; i++) {
+    const next = byReference.get(last.rebuiltAs.reference);
+    if (!next) break;
+    last = next;
+  }
+  const start = sessionSpan(first).start;
+  const end = sessionSpan(last).end;
+  if (!start || !end) return null;
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  return Number.isFinite(ms) && ms >= 0 ? ms : null;
+}
+
+/**
+ * F12: a cancel stock has not acknowledged yet. After the stock request stock must be told (stop searching, or bring the
+ * picked goods back to the shelf); the notice stays until stock acknowledges, on every device.
+ */
+export function needsStockAck(session: MockSession): boolean {
+  return (
+    session.outcome === 'CUSTOMER_CANCELLED' &&
+    Boolean(session.timestamps.product_selection_confirmed_at) &&
+    !session.stockAckAt
+  );
+}
+
+/** The goods had already been picked when the session was cancelled (it was at FOUND or later): they must go back to the shelf. */
+export function goodsToReturn(session: MockSession): boolean {
+  return (
+    session.outcome === 'CUSTOMER_CANCELLED' &&
+    ['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(
+      session.state,
+    )
+  );
+}
+
+/**
+ * F13: when stock has the order again because the cashier sent it back, and why: the last CASHIER_REJECTED event, as long
+ * as it is newer than the last STOCK_FOUND and the session is at the stock stage. Undefined otherwise.
+ */
+export function cashierRejectNotice(
+  session: MockSession,
+): { reason: string; at: string } | undefined {
+  if (session.state !== 'SEARCHING' || session.outcome) return undefined;
+  const events = session.events ?? [];
+  const reject = [...events].reverse().find((e) => e.eventType === 'CASHIER_REJECTED');
+  if (!reject) return undefined;
+  const found = [...events].reverse().find((e) => e.eventType === 'STOCK_FOUND');
+  if (found && new Date(found.createdAt) > new Date(reject.createdAt)) return undefined;
+  const meta = (reject.metadata ?? {}) as { reason?: string; otherReason?: string | null };
+  return {
+    reason: [meta.reason, meta.otherReason].filter(Boolean).join(': '),
+    at: reject.createdAt,
+  };
 }
 
 /** `H:MM:SS` (hours are not capped); empty when there is no duration. */

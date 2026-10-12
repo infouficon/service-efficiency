@@ -47,19 +47,17 @@ Every endpoint returns the session in **one shape** (`sessionInclude`: branch, s
 | `PUT /sessions/:id/selection` | `updateSelection` | STAFF | `!confirmed && !outcome && (PRODUCT_SELECTION \|\| (DECISION && decisionAt))` | Upserts Customer by phone. **`items`** (D61) = the main products as a whole list `[{skuId (id or SKU code), quantity ≥ 1}]` replaced in one go (a save without `items` leaves them alone, `[]` clears them; an unknown SKU, a quantity below 1 or a SKU twice is a 400; the old `skuId/modelId/productId` fields are refused). Replaces each other provided child list wholesale (drops `None`; payments are not filtered). **No event, no timestamp.** No `active` or inventory check on the SKU (H-10). |
 | `POST /sessions/:id/confirm` | `confirmPurchase` | STAFF | PRODUCT_SELECTION, not confirmed, phone is 10 digits, at least one item | `confirmed=true`, → **STOCK_REQUESTED**, `productSelectionConfirmedAt`, event PRODUCT_SELECTION_CONFIRMED (this is also the stock request, D51) |
 | `POST /sessions/:id/out-of-stock` `{action:'cancel'\|'partial', outOfStockItems?, reason?, otherReason?, note?}` | `recordOutOfStock` | STOCK | SEARCHING | **partial**: drops the listed accessories (by name); the items named by `'MAIN_PRODUCT'` (all), their SKU code or product name are deleted and their SKU stock set to 0; the rest is taken off the shelf (D59 permitting); → FOUND, `stockFoundAt`, STOCK_FOUND `{partialFulfillment:true, deducted}`. **cancel/default**: every item's SKU stock set to 0, `outcome=OUT_OF_STOCK`, `reason` defaults to `'OUT_OF_STOCK'`, event STOCK_OUT_OF_STOCK (the web never calls this endpoint, it uses report-missing) |
-| `POST /sessions/:id/cancel` `{reason, otherReason?}` | `cancelSession` | role by stage, see below | not finished | `outcome=CUSTOMER_CANCELLED`, `cancelledAt`, `cancelledBy`, event CUSTOMER_CANCELLED. **+`deducted` units back per item** (exactly what FOUND took; nothing before FOUND or while "stock unlimited" was on) |
+| `POST /sessions/:id/cancel` `{reason, otherReason?}` | `cancelSession` | **any role of the branch** (D63) | not finished | `outcome=CUSTOMER_CANCELLED`, `cancelledAt`, `cancelledBy`, event CUSTOMER_CANCELLED. **+`deducted` units back per item** (exactly what FOUND took). After the stock request the cancel is a notice for stock: `stockAckAt` stays null until acknowledged, except when a STOCK user cancels before anything was picked (acknowledged at once) |
+| `POST /sessions/:id/stock/acknowledge-cancel` | `acknowledgeStockCancel` | STOCK, branch MANAGER, ADMIN | cancelled after the stock request, not yet acknowledged (else 400) | sets `stockAckAt/By`, event STOCK_ACKNOWLEDGED_CANCEL (D63) |
+| `POST /sessions/:id/cashier/reject` `{reason, otherReason?}` | `cashierReject` | CASHIER | SENT_TO_CASHIER, CASHIER_RECEIVED or CASHIER_SCAN | the units FOUND took go back to the shelf, `state=SEARCHING`, `stockFoundAt` / `cashierReceivedAt` / `cashierScanAt` cleared, event CASHIER_REJECTED `{reason, otherReason, fromState}` (D64) |
+| `POST /sessions/:id/rebuy` | `rebuy` | STAFF | cancelled with one of the four change reasons and not bought again (else 400 / 409) | a NEW session in PRODUCT_SELECTION with the old customer, type, queue letter and number, items, accessories, Ontop, Points, Burn Points, payments; `decisionAt` and `productSelectionStartAt` = now; `rebuyOfId` = the old one; events SESSION_CREATED `{queue, rebuyOf}` + PRODUCT_SELECTION_STARTED (D65) |
 | `POST /sessions/:id/stock/report-missing` `{missingItems[], missingItemIds?[], foundItems?, stockNote?}` | `reportStockMissing` | STOCK | STOCK_REQUESTED or SEARCHING | Writes the `stockReview` JSON `{missingItems, foundItems, stockNote, reportedAt, reportedBy, missingItemIds}`, event STOCK_REPORTED_MISSING. `missingItemIds` = the `SessionItem.id`s of the missing main products (D61; an id that is not an item of this session is a 400; left out, they are matched by name like before: `'สินค้าหลัก'`, model, SKU name or code). **State unchanged.** Sets the branch stock of every missing item's SKU to 0 (D41). |
 | `POST /sessions/:id/staff/resolve-stock-review` `{action, reason?, otherReason?}` | `resolveStockReview` | creator Staff (`session.staffId === actor`), branch MANAGER, or ADMIN; **no role needed** | `stockReview` set, not finished | `ACCEPT_PARTIAL`: drop missing accessories (strips the ` (xN)` suffix) and the missing items (`missingItemIds`; a review without ids is matched by name), take the remaining items off the shelf, → FOUND, events STAFF_RESOLVED_STOCK_REVIEW + STOCK_FOUND `{deducted}`. `CHANGE_ITEMS`: drop the same, → PRODUCT_SELECTION, `confirmed=false` (reopens the purchase). `CANCEL`: outcome CUSTOMER_CANCELLED + 2 events. All three clear `stockReview` with `null as unknown as undefined` (H-08) |
 | `POST /sessions/:id/manager/acknowledge-alert` | `acknowledgeAlert` | branch MANAGER or ADMIN | any | Merges `acknowledgedAt/By` into `stockReview`. **No transaction, no event.** |
 
-### Cancellation role by stage (`cancelSession` in `sessions.service.ts`)
+### Cancellation (D63)
 
-| Current state | Role checked |
-| --- | --- |
-| DEMO, PRODUCT_SELECTION | STAFF |
-| STOCK_REQUESTED, SEARCHING, FOUND | **STOCK** |
-| SENT_TO_CASHIER, CASHIER_RECEIVED, CASHIER_SCAN, BILL_OPENED | **CASHIER** |
-| WALK_IN, DECISION | **none**: any authenticated user of that branch (H-13) |
+Any role of the branch can cancel any session that has not ended, at any stage (the stage-based role table of the first release, H-13, is gone). Only `getById`'s branch check applies: another branch gets 403.
 
 ### Settings (D59)
 
@@ -124,10 +122,10 @@ MANAGER manages only STAFF/STOCK/CASHIER in their own branch (D39).
 | --- | --- | --- |
 | Terminal representation (OQ-04) | open: CLOSED + outcome or per-outcome states | state stays put + nullable `outcome`; no CLOSED state |
 | CONFIRMATION state (OQ-05) | conceptual review state | UI step only; `confirmed` boolean; confirm = stock request (D51) |
-| Event vocabulary | D27 list incl. `STOCK_REQUESTED` (erd.md) | 17 values: no `STOCK_REQUESTED`; adds `STOCK_REPORTED_MISSING`, `STAFF_RESOLVED_STOCK_REVIEW` |
-| STAFF cancel in Stock/Cashier stages | confirmed YES (state-machine.md, permissions.md) | needs the STOCK or CASHIER role (H-13) |
-| Cancel at WALK_IN / DECISION | not in the confirmed flow | allowed with no role check (H-13) |
-| Backward transition after confirmation | forbidden (§22) | D40 `CHANGE_ITEMS` reopens the purchase |
+| Event vocabulary | D27 list incl. `STOCK_REQUESTED` (erd.md) | 19 values: no `STOCK_REQUESTED`; adds `STOCK_REPORTED_MISSING`, `STAFF_RESOLVED_STOCK_REVIEW`, `CASHIER_REJECTED`, `STOCK_ACKNOWLEDGED_CANCEL` |
+| Who can cancel (state-machine.md, permissions.md) | stage-based: STAFF in DEMO..CASHIER, others by stage | any role of the branch at any stage (D63) |
+| Cancel at WALK_IN / DECISION | not in the confirmed flow | allowed, by any role of the branch (D63) |
+| Backward transition after confirmation | forbidden (§22) | D40 `CHANGE_ITEMS` reopens the purchase; D64 the cashier can send the order back to the stock stage |
 | STAFF history visibility (D3) | not allowed | the API returns all branch sessions; only the UI filters (H-06) |
 | Duplicate/concurrent clicks | must not double-apply | can double-apply (H-01) |
 | Who records the decision (OQ-05) | open | STAFF (`buy`, `not-buy`) |

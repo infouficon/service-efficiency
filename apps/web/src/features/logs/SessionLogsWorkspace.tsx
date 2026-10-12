@@ -27,6 +27,7 @@ import {
   itemName,
   itemsText,
   stepDurations,
+  visitDuration,
 } from '../session/workflow';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
 
@@ -203,7 +204,8 @@ function renderStatusTag(s: MockSession) {
 interface ExportColumn {
   key: string;
   label: string;
-  getValue: (s: MockSession) => string;
+  /** `all` = every loaded session, for columns that follow a "buy again" chain. */
+  getValue: (s: MockSession, all: MockSession[]) => string;
 }
 
 interface ExportCategory {
@@ -320,6 +322,26 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         key: 'cancelledBy',
         label: 'ผู้บันทึกยกเลิก',
         getValue: (s) => s.cancelledBy || '',
+      },
+      {
+        key: 'stockAckAt',
+        label: 'Stock รับทราบการยกเลิก (เวลา)',
+        getValue: (s) => formatTimestampForExport(s.stockAckAt),
+      },
+      {
+        key: 'stockAckBy',
+        label: 'Stock ผู้รับทราบการยกเลิก',
+        getValue: (s) => s.stockAckBy || '',
+      },
+      {
+        key: 'rebuyOf',
+        label: 'ซื้อใหม่จาก (รหัสอ้างอิงเดิม)',
+        getValue: (s) => s.rebuyOf?.reference || '',
+      },
+      {
+        key: 'rebuiltAs',
+        label: 'ถูกซื้อใหม่เป็น (รหัสอ้างอิงใหม่)',
+        getValue: (s) => s.rebuiltAs?.reference || '',
       },
     ],
   },
@@ -452,6 +474,12 @@ EXPORT_CATEGORIES.push({
         formatDuration(stepDurations(s).find((d) => d.key === key)?.ms ?? null),
     })),
     {
+      key: 'dur_visit',
+      label: 'เวลารวมทั้งการเข้าร้าน รวมการซื้อใหม่ (H:MM:SS)',
+      getValue: (s: MockSession, all: MockSession[]) =>
+        formatDuration(visitDuration(s, all)),
+    },
+    {
       key: 'dur_total_minutes',
       label: 'รวมทั้งหมด (นาที)',
       getValue: (s: MockSession) => {
@@ -574,7 +602,7 @@ function ExportModal({
 
     const headerLine = activeCols.map((c) => escapeCsv(c.label)).join(',');
     const dataLines = filtered.map((s) =>
-      activeCols.map((c) => escapeCsv(c.getValue(s))).join(','),
+      activeCols.map((c) => escapeCsv(c.getValue(s, sessions))).join(','),
     );
 
     const csvContent = [headerLine, ...dataLines].join('\r\n');

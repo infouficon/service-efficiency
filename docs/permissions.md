@@ -1,3 +1,5 @@
+> **Superseded by D63 (2026-10-13):** any signed-in role of the branch can cancel any session that has not ended, at any stage. The cancellation cells below are the original, stage-based matrix.
+
 # Phase 1 — Permissions
 
 Sources: requirements §§7–9, 25, 27, 32; decisions D1–4, D12, D21, D28; current Phase 1 request.

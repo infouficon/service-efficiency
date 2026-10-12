@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -11,6 +12,7 @@ import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
   CancelSessionDto,
+  CashierRejectDto,
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
@@ -125,9 +127,31 @@ const sessionInclude = {
   burnPoints: true,
   payments: true,
   events: { orderBy: { createdAt: 'asc' } },
+  // F11: the cancelled session this one was bought again from, and the one that replaced this one
+  rebuyOf: { select: { id: true, reference: true } },
+  rebuiltAs: { select: { id: true, reference: true } },
 } satisfies Prisma.CustomerSessionInclude;
 
+/**
+ * F11: cancel reasons that allow "buy again" (the customer changes the model, colour or capacity, or the staff picked
+ * the wrong product). Keep equal to `changeReasons` in apps/web/src/constants/options.ts.
+ */
+const CHANGE_REASONS = [
+  'เปลี่ยนรุ่น',
+  'เปลี่ยนสี',
+  'เปลี่ยนความจุ',
+  'พนักงานเลือกสินค้าผิดพลาด',
+];
+
 type Tx = Prisma.TransactionClient;
+/** States in which STOCK has already picked the goods (a cancel then needs them brought back). */
+const FOUND_OR_LATER: string[] = [
+  'FOUND',
+  'SENT_TO_CASHIER',
+  'CASHIER_RECEIVED',
+  'CASHIER_SCAN',
+  'BILL_OPENED',
+];
 type SessionItemRow = Prisma.CustomerSessionGetPayload<{
   include: typeof sessionInclude;
 }>['items'][number];
@@ -223,6 +247,24 @@ export class SessionsService {
           name === item.sku.sku,
       );
     });
+  }
+
+  /**
+   * SES-YYYYMMDD-NNNNNN is the internal key (lookups, links); staff see the queue number instead (D57). A number that is
+   * already taken (a session from before the counters existed, a restored backup) is skipped, never failed.
+   */
+  private async newReference(tx: Tx, day: string): Promise<string> {
+    let reference: string;
+    do {
+      const referenceNo = await this.queue.nextNumber(tx, 'reference', day);
+      reference = `SES-${day.replaceAll('-', '')}-${String(referenceNo).padStart(6, '0')}`;
+    } while (
+      await tx.customerSession.findUnique({
+        where: { reference },
+        select: { id: true },
+      })
+    );
+    return reference;
   }
 
   /** The items of a selection: every SKU must exist (an id or a SKU code) and appear only once. */
@@ -342,18 +384,7 @@ export class SessionsService {
         dto.customerTypeId,
         now,
       );
-      // SES-YYYYMMDD-NNNNNN is the internal key (lookups, links); staff see the queue number instead (D57). A number
-      // that is already taken (a session from before the counters existed, a restored backup) is skipped, never failed.
-      let reference: string;
-      do {
-        const referenceNo = await this.queue.nextNumber(tx, 'reference', day);
-        reference = `SES-${day.replaceAll('-', '')}-${String(referenceNo).padStart(6, '0')}`;
-      } while (
-        await tx.customerSession.findUnique({
-          where: { reference },
-          select: { id: true },
-        })
-      );
+      const reference = await this.newReference(tx, day);
 
       return tx.customerSession.create({
         data: {
@@ -727,20 +758,17 @@ export class SessionsService {
       throw new BadRequestException('Session is already ended');
     }
 
-    // Role check by state
-    if (['DEMO', 'PRODUCT_SELECTION'].includes(session.state)) {
-      this.checkRole(user, 'STAFF');
-    } else if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state)) {
-      this.checkRole(user, 'STOCK');
-    } else if (['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(session.state)) {
-      this.checkRole(user, 'CASHIER');
-    }
-
+    // F12: any role of the branch can cancel at any stage (`getById` already limited the session to the user's branch)
     if (!dto.reason || (dto.reason === 'อื่น ๆ' && !dto.otherReason?.trim())) {
       throw new BadRequestException('Cancellation reason is required');
     }
 
     const now = new Date();
+    // F12: after the stock request, stock has to be told (the notice stays until it acknowledges). Nothing to tell when
+    // a STOCK user cancels before anything was picked: they know already.
+    const goodsPicked = session.stockFoundAt !== null || FOUND_OR_LATER.includes(session.state);
+    const stockKnows =
+      session.productSelectionConfirmedAt !== null && !goodsPicked && user.roles.includes('STOCK');
 
     return this.prisma.$transaction(async (tx) => {
       // Give back what FOUND took off the shelf (D41): exactly the units recorded per item (none while "stock unlimited" was on, D59)
@@ -754,6 +782,7 @@ export class SessionsService {
           otherReason: dto.otherReason?.trim() || null,
           cancelledBy: user.staffId,
           cancelledAt: now,
+          ...(stockKnows ? { stockAckAt: now, stockAckBy: user.staffId } : {}),
           events: {
             create: {
               eventType: 'CUSTOMER_CANCELLED',
@@ -766,6 +795,180 @@ export class SessionsService {
         include: sessionInclude,
       });
     });
+  }
+
+  /**
+   * F13: the cashier sends the order back to stock (the wrong item was picked). Allowed from SENT_TO_CASHIER,
+   * CASHIER_RECEIVED and CASHIER_SCAN, not once the bill is open. The units FOUND took go back to the shelf, the session is
+   * at the stock stage again (SEARCHING) and its milestones for the stock-found and cashier steps start over; the first
+   * round stays in the events (CASHIER_REJECTED, then a second STOCK_FOUND...).
+   */
+  async cashierReject(user: PublicAccount, id: string, dto: CashierRejectDto) {
+    this.checkRole(user, 'CASHIER');
+    const session = await this.getById(user, id);
+
+    if (
+      session.outcome ||
+      !['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state)
+    ) {
+      throw new BadRequestException(
+        'Only an order that is with the cashier and not yet billed can be sent back to stock',
+      );
+    }
+    if (dto.reason === 'อื่น ๆ' && !dto.otherReason?.trim()) {
+      throw new BadRequestException('Reason is required to send an order back to stock');
+    }
+
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await this.returnItemsToShelf(tx, session.branchId, session.items);
+      return tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          state: 'SEARCHING',
+          stockFoundAt: null,
+          cashierReceivedAt: null,
+          cashierScanAt: null,
+          events: {
+            create: {
+              eventType: 'CASHIER_REJECTED',
+              actorStaffId: user.staffId,
+              createdAt: now,
+              metadata: {
+                reason: dto.reason,
+                otherReason: dto.otherReason?.trim() || null,
+                fromState: session.state,
+              },
+            },
+          },
+        },
+        include: sessionInclude,
+      });
+    });
+  }
+
+  /**
+   * F12: stock (or a manager of the branch, or an admin) confirms it has seen a cancel and, when the goods had been
+   * picked, brought them back. Stored on the session so every device sees it; only once.
+   */
+  async acknowledgeStockCancel(user: PublicAccount, id: string) {
+    const session = await this.getById(user, id);
+    const isManagerOfBranch = user.roles.includes('MANAGER') && user.branchId === session.branchId;
+    if (!user.roles.includes('ADMIN') && !user.roles.includes('STOCK') && !isManagerOfBranch) {
+      throw new ForbiddenException('Only stock, a branch manager or an admin can acknowledge a cancelled order');
+    }
+    if (
+      session.outcome !== 'CUSTOMER_CANCELLED' ||
+      session.productSelectionConfirmedAt === null ||
+      session.stockAckAt !== null
+    ) {
+      throw new BadRequestException('Nothing to acknowledge on this session');
+    }
+
+    const now = new Date();
+    return this.prisma.customerSession.update({
+      where: { id: session.id },
+      data: {
+        stockAckAt: now,
+        stockAckBy: user.staffId,
+        events: {
+          create: {
+            eventType: 'STOCK_ACKNOWLEDGED_CANCEL',
+            actorStaffId: user.staffId,
+            createdAt: now,
+          },
+        },
+      },
+      include: sessionInclude,
+    });
+  }
+
+  /**
+   * F11: "buy again" after a cancel for a change reason (model, colour, capacity, wrong product picked). A NEW session,
+   * pre-filled from the cancelled one (customer, items, accessories, Ontop, points, payments) that keeps its queue number
+   * and type, starts at product selection (the customer already decided to buy) and links back with `rebuyOfId`. The
+   * cancelled session stays cancelled (D20: no reopen); each can be bought again once.
+   */
+  async rebuy(user: PublicAccount, id: string) {
+    this.checkRole(user, 'STAFF');
+    const old = await this.getById(user, id);
+
+    if (old.outcome !== 'CUSTOMER_CANCELLED' || !CHANGE_REASONS.includes(old.reason ?? '')) {
+      throw new BadRequestException(
+        'Only a session cancelled for a change (model, colour, capacity, wrong product) can be bought again',
+      );
+    }
+    if (old.rebuiltAs) {
+      throw new ConflictException('This session has already been bought again');
+    }
+
+    const now = new Date();
+    // one millisecond later, so the two events and the milestone keep their order
+    const started = new Date(now.getTime() + 1);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const reference = await this.newReference(tx, bangkokDay(now));
+        return tx.customerSession.create({
+          data: {
+            reference,
+            branchId: old.branchId,
+            staffId: user.staffId,
+            customerId: old.customerId,
+            phone: old.phone,
+            customerTypeId: old.customerTypeId,
+            queueLetter: old.queueLetter,
+            queueNo: old.queueNo,
+            state: 'PRODUCT_SELECTION',
+            customerWalkInAt: now,
+            decisionAt: now,
+            productSelectionStartAt: started,
+            rebuyOfId: old.id,
+            items: {
+              create: old.items.map((item, index) => ({
+                skuId: item.skuId,
+                quantity: item.quantity,
+                createdAt: new Date(now.getTime() + index),
+              })),
+            },
+            accessories: {
+              create: old.accessories.map((a) => ({
+                accessoryName: a.accessoryName,
+                quantity: a.quantity,
+              })),
+            },
+            ontop: { create: old.ontop.map((o) => ({ name: o.name })) },
+            points: { create: old.points.map((p) => ({ name: p.name })) },
+            burnPoints: { create: old.burnPoints.map((b) => ({ name: b.name })) },
+            payments: { create: old.payments.map((p) => ({ method: p.method })) },
+            events: {
+              create: [
+                {
+                  eventType: 'SESSION_CREATED',
+                  actorStaffId: user.staffId,
+                  createdAt: now,
+                  metadata: {
+                    queue: formatQueue(old.queueLetter, old.queueNo ?? 0),
+                    rebuyOf: old.reference,
+                  },
+                },
+                {
+                  eventType: 'PRODUCT_SELECTION_STARTED',
+                  actorStaffId: user.staffId,
+                  createdAt: started,
+                },
+              ],
+            },
+          },
+          include: sessionInclude,
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    } catch (err) {
+      // two staff pressing "buy again" on the same cancelled session at the same moment
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('This session has already been bought again');
+      }
+      throw err;
+    }
   }
 
   async reportStockMissing(user: PublicAccount, id: string, dto: ReportStockMissingDto) {

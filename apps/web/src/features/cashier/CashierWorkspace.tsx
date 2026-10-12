@@ -20,12 +20,13 @@ import {
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { ReasonForm } from '../session/ReasonForm';
-import { cancelReasons } from '../../constants/options';
+import { cancelReasons, rejectReasons } from '../../constants/options';
 import { Summary } from '../session/Summary';
 import type { MockSession, MockUser } from '../../types/session';
 import {
   advanceStepApi,
   cancelSessionApi,
+  cashierRejectApi,
 } from '../../services/sessionApi';
 import { advance, isToday, itemsText } from '../session/workflow';
 
@@ -49,6 +50,9 @@ export function CashierWorkspace({
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
+  // F13: sending an order back to stock (the wrong item was picked)
+  const [rejectingSession, setRejectingSession] = useState<MockSession | null>(null);
+  const [error, setError] = useState('');
 
   // Filter sessions by branch and today only (D47)
   const branchSessions = sessions.filter((s) => {
@@ -97,6 +101,21 @@ export function CashierWorkspace({
     }
     const updated = advance(session, action, previewTime());
     onUpdateSession(updated);
+  };
+
+  /** F13: the order goes back to the stock stage; the units FOUND took return to the shelf and stock sees why. */
+  const handleReject = async (reason: string, text: string) => {
+    if (!rejectingSession?.id) return;
+    setError('');
+    try {
+      const updated = await cashierRejectApi(rejectingSession.id, reason, text || undefined);
+      onUpdateSession(updated);
+      setRejectingSession(null);
+      setSelectedRef(null);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ส่งกลับ Stock ไม่สำเร็จ');
+      setRejectingSession(null);
+    }
   };
 
   const handleCancel = async (reason: string, text: string) => {
@@ -196,7 +215,34 @@ export function CashierWorkspace({
         </div>
       </div>
 
-      {cancellingSession ? (
+      {error && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Notice error>
+            <span style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', width: '100%' }}>
+              {error}
+              <Button size="sm" variant="secondary" onClick={() => setError('')}>
+                ปิด
+              </Button>
+            </span>
+          </Notice>
+        </div>
+      )}
+
+      {rejectingSession ? (
+        <Panel title="ส่งสินค้ากลับ Stock" eyebrow="CASHIER → STOCK">
+          <p>
+            ส่งคิว <strong>{rejectingSession.queue}</strong> (
+            {itemsText(rejectingSession.selection.items)}) กลับให้ Stock
+            ค้นหาและหยิบใหม่ — Stock จะเห็นเหตุผลที่ส่งกลับ
+          </p>
+          <ReasonForm
+            options={rejectReasons}
+            label="ยืนยันส่งกลับ Stock"
+            onBack={() => setRejectingSession(null)}
+            onSubmit={handleReject}
+          />
+        </Panel>
+      ) : cancellingSession ? (
         <Panel
           title="ยกเลิกรายการ ณ แคชเชียร์"
           eyebrow="CASHIER CANCELLATION"
@@ -436,6 +482,12 @@ export function CashierWorkspace({
                           </span>
                         </Button>
                         <Button
+                          variant="secondary"
+                          onClick={() => setRejectingSession(selectedSession)}
+                        >
+                          ส่งกลับ Stock (หยิบผิด)
+                        </Button>
+                        <Button
                           variant="danger"
                           onClick={() => setCancellingSession(selectedSession)}
                         >
@@ -456,6 +508,12 @@ export function CashierWorkspace({
                           </span>
                         </Button>
                         <Button
+                          variant="secondary"
+                          onClick={() => setRejectingSession(selectedSession)}
+                        >
+                          ส่งกลับ Stock (หยิบผิด)
+                        </Button>
+                        <Button
                           variant="danger"
                           onClick={() => setCancellingSession(selectedSession)}
                         >
@@ -474,6 +532,12 @@ export function CashierWorkspace({
                             <FileText size={18} />
                             ยืนยันเปิดบิล FileMaker เรียบร้อย
                           </span>
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setRejectingSession(selectedSession)}
+                        >
+                          ส่งกลับ Stock (หยิบผิด)
                         </Button>
                         <Button
                           variant="danger"

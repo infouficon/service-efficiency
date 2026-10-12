@@ -12,6 +12,8 @@ import {
   stepAccessory,
   stepDurations,
   formatDuration,
+  visitDuration,
+  cashierRejectNotice,
   addItem,
   stepItem,
   itemName,
@@ -174,64 +176,156 @@ test('the + / − buttons change an accessory by one and remove it below 1 (F4)'
   assert.equal(stepAccessory(none, 'Case', 1), none);
 });
 
-test('step durations come from consecutive milestones and are empty when a step did not happen (F14)', () => {
-  const at = (m, s = 0) => new Date(Date.UTC(2026, 9, 13, 3, m, s)).toISOString();
+test('step durations come from the events, add up when a step happens twice, and are empty when it did not happen (F14, F13)', () => {
+  const at = (m, sec = 0) => new Date(Date.UTC(2026, 9, 13, 3, m, sec)).toISOString();
+  const ev = (eventType, time, metadata = null) => ({ eventType, createdAt: time, metadata });
   const complete = {
     ...fixture(),
     state: 'COMPLETED',
-    timestamps: {
-      customer_walk_in_at: at(0),
-      demo_start_at: at(2),
-      demo_end_at: at(12),
-      decision_at: at(13),
-      product_selection_start_at: at(14),
-      product_selection_confirmed_at: at(20),
-      stock_started_at: at(21),
-      stock_found_at: at(25, 30),
-      cashier_received_at: at(28),
-      cashier_scan_at: at(29),
-      bill_opened_at: at(31),
-    },
     events: [
-      { eventType: 'STOCK_SENT_TO_CASHIER', createdAt: at(26) },
-      { eventType: 'COMPLETED', createdAt: at(36, 5) },
+      ev('SESSION_CREATED', at(0)),
+      ev('DEMO_STARTED', at(2)),
+      ev('DEMO_ENDED', at(12)),
+      ev('DECISION_MADE', at(13)),
+      ev('PRODUCT_SELECTION_STARTED', at(14)),
+      ev('PRODUCT_SELECTION_CONFIRMED', at(20)),
+      ev('STOCK_SEARCHING', at(21)),
+      ev('STOCK_FOUND', at(25, 30)),
+      ev('STOCK_SENT_TO_CASHIER', at(26)),
+      ev('CASHIER_RECEIVED', at(28)),
+      ev('CASHIER_SCANNED', at(29)),
+      ev('BILL_OPENED', at(31)),
+      ev('COMPLETED', at(36, 5)),
     ],
   };
-  const by = Object.fromEntries(stepDurations(complete).map((d) => [d.key, d.ms]));
-  assert.equal(by.wait_demo, 2 * 60_000);
-  assert.equal(by.demo, 10 * 60_000);
-  assert.equal(by.stock_search, (4 * 60 + 30) * 1000);
-  assert.equal(by.stock_send, 30_000, 'found to sent comes from the STOCK_SENT_TO_CASHIER event');
-  assert.equal(by.wait_cashier, 2 * 60_000);
-  assert.equal(by.cashier_complete, (5 * 60 + 5) * 1000, 'bill to completed comes from the COMPLETED event');
-  assert.equal(by.total, (36 * 60 + 5) * 1000);
-  assert.equal(formatDuration(by.total), '0:36:05');
+  const by = (session) => Object.fromEntries(stepDurations(session).map((d) => [d.key, d.ms]));
+  const d = by(complete);
+  assert.equal(d.wait_demo, 2 * 60_000);
+  assert.equal(d.demo, 10 * 60_000);
+  assert.equal(d.decision, 60_000);
+  assert.equal(d.selection, 6 * 60_000);
+  assert.equal(d.stock_search, (4 * 60 + 30) * 1000);
+  assert.equal(d.stock_send, 30_000);
+  assert.equal(d.wait_cashier, 2 * 60_000);
+  assert.equal(d.cashier_scan, 60_000);
+  assert.equal(d.cashier_bill, 2 * 60_000);
+  assert.equal(d.cashier_complete, (5 * 60 + 5) * 1000);
+  assert.equal(d.total, (36 * 60 + 5) * 1000);
+  assert.equal(formatDuration(d.total), '0:36:05');
   assert.equal(formatDuration(3_725_000), '1:02:05');
   assert.equal(formatDuration(null), '');
 
-  // a visit cancelled during DEMO: only the steps that happened have a duration; the total ends at the cancel time
+  // F13: the cashier sends the order back after receiving it; stock searches again, the steps add up
+  const rejected = {
+    ...complete,
+    events: [
+      ev('SESSION_CREATED', at(0)),
+      ev('PRODUCT_SELECTION_CONFIRMED', at(1)),
+      ev('STOCK_SEARCHING', at(2)),
+      ev('STOCK_FOUND', at(4)),
+      ev('STOCK_SENT_TO_CASHIER', at(5)),
+      ev('CASHIER_RECEIVED', at(6)),
+      ev('CASHIER_REJECTED', at(8), { reason: 'หยิบสินค้าผิด', fromState: 'CASHIER_RECEIVED' }),
+      ev('STOCK_FOUND', at(11)),
+      ev('STOCK_SENT_TO_CASHIER', at(12)),
+      ev('CASHIER_RECEIVED', at(13)),
+      ev('CASHIER_SCANNED', at(14)),
+      ev('BILL_OPENED', at(15)),
+      ev('COMPLETED', at(16)),
+    ],
+  };
+  const r = by(rejected);
+  assert.equal(r.stock_search, (2 + 3) * 60_000, 'first search + the search after the reject');
+  assert.equal(r.stock_send, 2 * 60_000, 'found to sent, twice');
+  assert.equal(r.wait_cashier, 2 * 60_000, 'sent to received, twice');
+  assert.equal(r.cashier_scan, (2 + 1) * 60_000, 'received to rejected + received to scanned');
+  assert.equal(r.total, 16 * 60_000);
+
+  // the customer changes the items after a stock review: selection counts twice
+  const changed = {
+    ...fixture(),
+    events: [
+      ev('SESSION_CREATED', at(0)),
+      ev('PRODUCT_SELECTION_STARTED', at(1)),
+      ev('PRODUCT_SELECTION_CONFIRMED', at(3)),
+      ev('STOCK_SEARCHING', at(4)),
+      ev('STOCK_REPORTED_MISSING', at(5)),
+      ev('STAFF_RESOLVED_STOCK_REVIEW', at(7), { action: 'CHANGE_ITEMS' }),
+      ev('PRODUCT_SELECTION_CONFIRMED', at(9)),
+    ],
+  };
+  const c = by(changed);
+  assert.equal(c.selection, (2 + 2) * 60_000);
+  assert.equal(c.stock_search, 3 * 60_000, 'the wait for the customer after the report counts as searching');
+  assert.equal(c.total, null, 'still running');
+
+  // cancelled during DEMO: only the steps that happened; the total ends at the cancel
   const cancelled = {
     ...fixture(),
     outcome: 'CUSTOMER_CANCELLED',
-    timestamps: {
-      customer_walk_in_at: at(0),
-      demo_start_at: at(1),
-      cancelled_at: at(4),
-    },
+    events: [ev('SESSION_CREATED', at(0)), ev('DEMO_STARTED', at(1)), ev('CUSTOMER_CANCELLED', at(4))],
   };
-  const c = Object.fromEntries(stepDurations(cancelled).map((d) => [d.key, d.ms]));
-  assert.equal(c.wait_demo, 60_000);
-  assert.equal(c.demo, null);
-  assert.equal(c.total, 4 * 60_000);
+  const x = by(cancelled);
+  assert.equal(x.wait_demo, 60_000);
+  assert.equal(x.demo, 3 * 60_000);
+  assert.equal(x.decision, null);
+  assert.equal(x.total, 4 * 60_000);
 
-  // still running: no total
-  const running = { ...fixture(), timestamps: { customer_walk_in_at: at(0), demo_start_at: at(1) } };
-  assert.equal(Object.fromEntries(stepDurations(running).map((d) => [d.key, d.ms])).total, null);
   // NOT_BUY ends at the decision
-  const notBuy = { ...fixture(), outcome: 'NOT_BUY', timestamps: { customer_walk_in_at: at(0), decision_at: at(7) } };
-  assert.equal(Object.fromEntries(stepDurations(notBuy).map((d) => [d.key, d.ms])).total, 7 * 60_000);
+  const notBuy = {
+    ...fixture(),
+    outcome: 'NOT_BUY',
+    events: [ev('SESSION_CREATED', at(0)), ev('DEMO_STARTED', at(1)), ev('DEMO_ENDED', at(5)), ev('DECISION_MADE', at(7), { outcome: 'NOT_BUY' })],
+  };
+  assert.equal(by(notBuy).total, 7 * 60_000);
+  assert.equal(by(notBuy).to_selection, null);
+
+  // a session opened by "buy again" has no waiting-for-demo step
+  const rebuy = {
+    ...fixture(),
+    events: [
+      ev('SESSION_CREATED', at(0), { rebuyOf: 'SES-1' }),
+      ev('PRODUCT_SELECTION_STARTED', at(0, 1)),
+      ev('PRODUCT_SELECTION_CONFIRMED', at(3)),
+    ],
+  };
+  assert.equal(by(rebuy).wait_demo, null);
+  assert.equal(by(rebuy).selection, (2 * 60 + 59) * 1000);
 });
 
+test('a visit that was bought again is timed from its first walk-in to the end of its last session (F11)', () => {
+  const at = (m) => new Date(Date.UTC(2026, 9, 13, 3, m)).toISOString();
+  const ev = (eventType, time) => ({ eventType, createdAt: time, metadata: null });
+  const first = { ...fixture(), reference: 'R1', outcome: 'CUSTOMER_CANCELLED', rebuiltAs: { id: 'b', reference: 'R2' }, events: [ev('SESSION_CREATED', at(0)), ev('CUSTOMER_CANCELLED', at(10))] };
+  const second = { ...fixture(), reference: 'R2', state: 'COMPLETED', rebuyOf: { id: 'a', reference: 'R1' }, events: [ev('SESSION_CREATED', at(10)), ev('COMPLETED', at(25))] };
+  const alone = { ...fixture(), reference: 'R3', state: 'COMPLETED', events: [ev('SESSION_CREATED', at(0)), ev('COMPLETED', at(5))] };
+  const all = [first, second, alone];
+  assert.equal(visitDuration(first, all), 25 * 60_000);
+  assert.equal(visitDuration(second, all), 25 * 60_000, 'from either end of the chain');
+  assert.equal(visitDuration(alone, all), 5 * 60_000);
+  const running = { ...fixture(), reference: 'R4', events: [ev('SESSION_CREATED', at(0))] };
+  assert.equal(visitDuration(running, [running]), null);
+});
+
+test('stock sees why the cashier sent an order back until it finds the goods again (F13)', () => {
+  const at = (m) => new Date(Date.UTC(2026, 9, 13, 3, m)).toISOString();
+  const session = {
+    ...fixture(),
+    state: 'SEARCHING',
+    events: [
+      { eventType: 'STOCK_FOUND', createdAt: at(1), metadata: null },
+      { eventType: 'CASHIER_REJECTED', createdAt: at(3), metadata: { reason: 'หยิบสินค้าผิด', otherReason: null } },
+    ],
+  };
+  assert.deepEqual(cashierRejectNotice(session), { reason: 'หยิบสินค้าผิด', at: at(3) });
+  assert.equal(cashierRejectNotice({ ...session, state: 'FOUND' }), undefined);
+  assert.equal(
+    cashierRejectNotice({ ...session, events: [...session.events, { eventType: 'STOCK_FOUND', createdAt: at(5), metadata: null }] }),
+    undefined,
+    'found again: the notice is over',
+  );
+  assert.equal(cashierRejectNotice({ ...fixture(), state: 'SEARCHING', events: [] }), undefined);
+});
 test('main products (F3): picking adds or raises, + / − step, below 1 removes', () => {
   const a = { id: 'sku-a', category: 'iPhone', product: 'iPhone 16', model: 'iPhone 16 128GB Black', sku: 'A' };
   const b = { id: 'sku-b', category: 'iPad', product: 'iPad Air', model: '', sku: 'B' };

@@ -28,6 +28,10 @@ export interface ApiSession {
   reason?: string | null;
   otherReason?: string | null;
   cancelledBy?: string | null;
+  stockAckAt?: string | null;
+  stockAckBy?: string | null;
+  rebuyOf?: { id: string; reference: string } | null;
+  rebuiltAs?: { id: string; reference: string } | null;
   /** F3: the main products, each with its SKU, model and product. */
   items?: {
     id: string;
@@ -123,6 +127,10 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     reason: s.reason || undefined,
     otherReason: s.otherReason || undefined,
     cancelledBy: s.cancelledBy || undefined,
+    stockAckAt: s.stockAckAt || undefined,
+    stockAckBy: s.stockAckBy || undefined,
+    rebuyOf: s.rebuyOf || undefined,
+    rebuiltAs: s.rebuiltAs || undefined,
     timestamps,
     selection: {
       items: (s.items ?? []).map((item) => ({
@@ -277,6 +285,31 @@ export async function cancelSessionApi(id: string, reason: string, otherReason?:
     reason,
     otherReason,
   });
+  return mapApiSessionToMockSession(data);
+}
+
+/** F13: the cashier sends the order back to stock (wrong item picked). */
+export async function cashierRejectApi(
+  id: string,
+  reason: string,
+  otherReason?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/reject`, 'POST', {
+    reason,
+    otherReason,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
+/** F12: stock confirms it has seen a cancel (and brought the goods back). */
+export async function acknowledgeStockCancelApi(id: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/acknowledge-cancel`, 'POST');
+  return mapApiSessionToMockSession(data);
+}
+
+/** F11: buy again after a "change" cancel: a new session with the old data and the old queue number. */
+export async function rebuyApi(id: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/rebuy`, 'POST');
   return mapApiSessionToMockSession(data);
 }
 

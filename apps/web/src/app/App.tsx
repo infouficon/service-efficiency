@@ -144,7 +144,7 @@ export function App({
                 merged.phone = local.phone || serverS.phone;
                 merged.selection =
                   local.selection &&
-                  (local.selection.product ||
+                  (local.selection.items.length > 0 ||
                     Object.keys(local.selection.accessories).length > 0)
                     ? {
                         ...serverS.selection,

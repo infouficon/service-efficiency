@@ -86,6 +86,8 @@ Customer
         └── Events / timestamps
 ```
 
+> **Superseded by D61 (2026-10-13):** a session holds any number of main products, each with a quantity (`SessionItem`).
+
 A single session initially has exactly one main Product.
 
 Accessory selections may contain multiple items.
@@ -1003,7 +1005,7 @@ Staff can have multiple roles.
 
 A Session belongs to a Customer.
 
-A Session has one main Product.
+A Session has one main Product. (Superseded by D61: several main products, each with a quantity.)
 
 Accessory selections may have multiple lines and quantities.
 

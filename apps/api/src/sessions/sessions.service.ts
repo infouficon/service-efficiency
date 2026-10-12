@@ -16,6 +16,7 @@ import type {
   OutOfStockDto,
   ReportStockMissingDto,
   ResolveStockReviewDto,
+  SessionItemDto,
   StepAction,
   UpdateSelectionDto,
 } from './dto';
@@ -113,9 +114,11 @@ const sessionInclude = {
   branch: true,
   staff: { select: { staffId: true, branchId: true } },
   customerType: { select: { id: true, letter: true, name: true } },
-  product: true,
-  model: true,
-  sku: { include: { model: { include: { product: true } } } },
+  // F3: the main products, in the order the staff added them, each with its SKU, model and product
+  items: {
+    include: { sku: { include: { model: { include: { product: true } } } } },
+    orderBy: { createdAt: 'asc' },
+  },
   accessories: true,
   ontop: true,
   points: true,
@@ -123,6 +126,11 @@ const sessionInclude = {
   payments: true,
   events: { orderBy: { createdAt: 'asc' } },
 } satisfies Prisma.CustomerSessionInclude;
+
+type Tx = Prisma.TransactionClient;
+type SessionItemRow = Prisma.CustomerSessionGetPayload<{
+  include: typeof sessionInclude;
+}>['items'][number];
 
 @Injectable()
 export class SessionsService {
@@ -133,33 +141,107 @@ export class SessionsService {
   ) {}
 
   /**
-   * Takes one unit of the session's SKU off the branch shelf when STOCK finds it (D41), unless "stock unlimited" is on
-   * (D59). Returns how many units were really taken: it is written on the STOCK_FOUND event so that a later cancel gives
-   * back exactly that, whatever the switch says by then.
+   * Takes the quantity of each item off the branch shelf when STOCK finds them (D41), unless "stock unlimited" is on
+   * (D59). Each item records how many units were really taken (`deducted`): a cancel gives back exactly that, whatever the
+   * switch says by then. Returns the total (written on the STOCK_FOUND event).
    */
-  private async takeFromShelf(
-    tx: Prisma.TransactionClient,
+  private async takeItemsFromShelf(
+    tx: Tx,
     branchId: string,
-    skuId: string | null,
+    items: { id: string; skuId: string; quantity: number }[],
   ): Promise<number> {
-    if (!skuId || (await this.settings.stockUnlimited(tx))) return 0;
-    const { count } = await tx.branchInventory.updateMany({
-      where: { branchId, skuId },
-      data: { stock: { decrement: 1 } },
-    });
-    return count > 0 ? 1 : 0;
+    if (items.length === 0 || (await this.settings.stockUnlimited(tx))) return 0;
+    let total = 0;
+    for (const item of items) {
+      const { count } = await tx.branchInventory.updateMany({
+        where: { branchId, skuId: item.skuId },
+        data: { stock: { decrement: item.quantity } },
+      });
+      if (count > 0) {
+        await tx.sessionItem.update({
+          where: { id: item.id },
+          data: { deducted: item.quantity },
+        });
+        total += item.quantity;
+      }
+    }
+    return total;
   }
 
-  /** Units a session took off the shelf, from its latest STOCK_FOUND event. Events from before D59 carry no figure: one unit, as then. */
-  private unitsTakenAtFound(session: {
-    events: { eventType: string; metadata: unknown }[];
-  }): number {
-    const found = [...session.events]
-      .reverse()
-      .find((e) => e.eventType === 'STOCK_FOUND');
-    const deducted = (found?.metadata as { deducted?: unknown } | null)
-      ?.deducted;
-    return typeof deducted === 'number' ? deducted : 1;
+  /** Gives back what FOUND took off the shelf: each item's `deducted` units, then nothing is held any more. */
+  private async returnItemsToShelf(
+    tx: Tx,
+    branchId: string,
+    items: { id: string; skuId: string; deducted: number }[],
+  ) {
+    for (const item of items) {
+      if (item.deducted <= 0) continue;
+      await tx.branchInventory.updateMany({
+        where: { branchId, skuId: item.skuId },
+        data: { stock: { increment: item.deducted } },
+      });
+      await tx.sessionItem.update({
+        where: { id: item.id },
+        data: { deducted: 0 },
+      });
+    }
+  }
+
+  /** D41: a main product reported missing / out of stock sets that SKU's branch stock to 0 until a newer ERP snapshot. */
+  private async zeroShelf(
+    tx: Tx,
+    branchId: string,
+    items: { skuId: string }[],
+    now: Date,
+  ) {
+    for (const item of items) {
+      await tx.branchInventory.updateMany({
+        where: { branchId, skuId: item.skuId },
+        data: { stock: 0, outOfStockAt: now },
+      });
+    }
+  }
+
+  /**
+   * The main products a stock report names the way reports did before F3: by name ("สินค้าหลัก", the model, the SKU name or
+   * code), unless the product is also listed as found. Reports made now carry item ids and never reach this.
+   */
+  private legacyMissingItems(
+    items: SessionItemRow[],
+    missingNames: string[],
+    foundNames: string[],
+  ): SessionItemRow[] {
+    return items.filter((item) => {
+      const modelName = item.sku.model.name;
+      const label = modelName || item.sku.name || item.sku.model.product.name;
+      if (foundNames.some((f) => f === label || f.includes(modelName))) return false;
+      return missingNames.some(
+        (name) =>
+          name === 'สินค้าหลัก' ||
+          name === modelName ||
+          name === item.sku.name ||
+          name === item.sku.sku,
+      );
+    });
+  }
+
+  /** The items of a selection: every SKU must exist (an id or a SKU code) and appear only once. */
+  private async resolveItems(tx: Tx, items: SessionItemDto[]) {
+    const resolved: { skuId: string; quantity: number }[] = [];
+    for (const item of items) {
+      const sku = await tx.productSku.findFirst({
+        where: { OR: [{ id: item.skuId }, { sku: item.skuId }] },
+        select: { id: true },
+      });
+      if (!sku) {
+        throw new BadRequestException(`ไม่พบสินค้า (SKU) ${item.skuId}`);
+      }
+      if (resolved.some((r) => r.skuId === sku.id)) {
+        throw new BadRequestException(`สินค้า (SKU) ${item.skuId} ซ้ำในรายการ`);
+      }
+      resolved.push({ skuId: sku.id, quantity: item.quantity });
+    }
+    return resolved;
   }
 
   private checkRole(user: PublicAccount, role: 'STAFF' | 'STOCK' | 'CASHIER' | 'MANAGER' | 'ADMIN') {
@@ -328,7 +410,7 @@ export class SessionsService {
     return this.prisma.$transaction(async (tx) => {
       const deducted =
         dto.action === 'found'
-          ? await this.takeFromShelf(tx, session.branchId, session.skuId)
+          ? await this.takeItemsFromShelf(tx, session.branchId, session.items)
           : undefined;
 
       const updated = await tx.customerSession.update({
@@ -417,6 +499,24 @@ export class SessionsService {
         customerId = customer.id;
       }
 
+      // F3: the main products, replaced as a whole (a save without `items` leaves them alone)
+      if (dto.items) {
+        const items = await this.resolveItems(tx, dto.items);
+        await tx.sessionItem.deleteMany({ where: { sessionId: session.id } });
+        const base = Date.now();
+        for (const [index, item] of items.entries()) {
+          await tx.sessionItem.create({
+            data: {
+              sessionId: session.id,
+              skuId: item.skuId,
+              quantity: item.quantity,
+              // one millisecond apart, so they come back in the order the staff added them
+              createdAt: new Date(base + index),
+            },
+          });
+        }
+      }
+
       // Update accessories
       if (dto.accessories) {
         await tx.sessionAccessory.deleteMany({ where: { sessionId: session.id } });
@@ -479,56 +579,11 @@ export class SessionsService {
         }
       }
 
-      // Safely resolve foreign keys for product/model/sku
-      let resolvedProductId = session.productId;
-      let resolvedModelId = session.modelId;
-      let resolvedSkuId = session.skuId;
-
-      if (dto.skuId) {
-        const foundSku = await tx.productSku.findFirst({
-          where: { OR: [{ id: dto.skuId }, { sku: dto.skuId }] },
-          include: { model: true },
-        });
-        if (foundSku) {
-          resolvedSkuId = foundSku.id;
-          resolvedModelId = foundSku.modelId;
-          resolvedProductId = foundSku.model.productId;
-        }
-      } else if (dto.skuId === null) {
-        resolvedSkuId = null;
-      }
-
-      if (dto.modelId && !resolvedModelId) {
-        const foundModel = await tx.productModel.findUnique({
-          where: { id: dto.modelId },
-        });
-        if (foundModel) {
-          resolvedModelId = foundModel.id;
-          resolvedProductId = foundModel.productId;
-        }
-      } else if (dto.modelId === null && dto.skuId === null) {
-        resolvedModelId = null;
-      }
-
-      if (dto.productId && !resolvedProductId) {
-        const foundProduct = await tx.product.findUnique({
-          where: { id: dto.productId },
-        });
-        if (foundProduct) {
-          resolvedProductId = foundProduct.id;
-        }
-      } else if (dto.productId === null && dto.skuId === null && dto.modelId === null) {
-        resolvedProductId = null;
-      }
-
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
           phone: dto.phone ?? session.phone,
           customerId,
-          productId: resolvedProductId,
-          modelId: resolvedModelId,
-          skuId: resolvedSkuId,
         },
         include: sessionInclude,
       });
@@ -547,7 +602,7 @@ export class SessionsService {
       throw new BadRequestException('Valid customer phone number (10 digits) is required to confirm purchase');
     }
 
-    if (!session.skuId && !session.productId) {
+    if (session.items.length === 0) {
       throw new BadRequestException('A main product selection is required before confirmation');
     }
 
@@ -587,20 +642,21 @@ export class SessionsService {
     return this.prisma.$transaction(async (tx) => {
       if (dto.action === 'partial') {
         // Customer proceeds with remaining items: remove out of stock items and advance to FOUND
-        const removeMainProduct =
-          outOfStockItems.includes('MAIN_PRODUCT') ||
-          (session.sku?.sku && outOfStockItems.includes(session.sku.sku)) ||
-          (session.product?.name && outOfStockItems.includes(session.product.name));
-
-        let deducted = 0;
-        if (removeMainProduct && session.skuId && session.branchId) {
-          await tx.branchInventory.updateMany({
-            where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: 0, outOfStockAt: now },
-          });
-        } else if (!removeMainProduct) {
-          deducted = await this.takeFromShelf(tx, session.branchId, session.skuId);
-        }
+        const missing = session.items.filter(
+          (item) =>
+            outOfStockItems.includes('MAIN_PRODUCT') ||
+            outOfStockItems.includes(item.sku.sku) ||
+            outOfStockItems.includes(item.sku.model.product.name),
+        );
+        await this.zeroShelf(tx, session.branchId, missing, now);
+        await tx.sessionItem.deleteMany({
+          where: { id: { in: missing.map((item) => item.id) } },
+        });
+        const deducted = await this.takeItemsFromShelf(
+          tx,
+          session.branchId,
+          session.items.filter((item) => !missing.includes(item)),
+        );
 
         if (outOfStockItems.length > 0) {
           await tx.sessionAccessory.deleteMany({
@@ -616,7 +672,6 @@ export class SessionsService {
           data: {
             state: 'FOUND',
             stockFoundAt: now,
-            ...(removeMainProduct ? { productId: null, modelId: null, skuId: null } : {}),
             events: {
               create: {
                 eventType: 'STOCK_FOUND',
@@ -636,12 +691,7 @@ export class SessionsService {
       }
 
       // Customer cancels entire session due to out of stock
-      if (session.skuId && session.branchId) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: 0, outOfStockAt: now },
-        });
-      }
+      await this.zeroShelf(tx, session.branchId, session.items, now);
 
       const detailedReason =
         dto.otherReason ||
@@ -693,22 +743,8 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      // Give back what FOUND took off the shelf (D41): exactly the units recorded then (none while "stock unlimited" was on, D59)
-      const units = this.unitsTakenAtFound(session);
-      if (
-        units > 0 &&
-        session.skuId &&
-        session.branchId &&
-        (session.stockFoundAt ||
-          ['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(
-            session.state,
-          ))
-      ) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: { increment: units } },
-        });
-      }
+      // Give back what FOUND took off the shelf (D41): exactly the units recorded per item (none while "stock unlimited" was on, D59)
+      await this.returnItemsToShelf(tx, session.branchId, session.items);
 
       return tx.customerSession.update({
         where: { id: session.id },
@@ -744,6 +780,18 @@ export class SessionsService {
       throw new BadRequestException('At least one missing item is required');
     }
 
+    // F3: the missing main products are named by id; a report without ids (an older client) names them like before
+    let missingRows: SessionItemRow[];
+    if (dto.missingItemIds === undefined) {
+      missingRows = this.legacyMissingItems(session.items, dto.missingItems, dto.foundItems ?? []);
+    } else {
+      const own = new Set(session.items.map((item) => item.id));
+      if (dto.missingItemIds.some((itemId) => !own.has(itemId))) {
+        throw new BadRequestException('missingItemIds must be items of this session');
+      }
+      missingRows = session.items.filter((item) => dto.missingItemIds?.includes(item.id));
+    }
+
     const now = new Date();
     const stockReviewData = {
       missingItems: dto.missingItems,
@@ -751,32 +799,12 @@ export class SessionsService {
       stockNote: dto.stockNote?.trim() || null,
       reportedAt: now.toISOString(),
       reportedBy: user.staffId,
+      missingItemIds: missingRows.map((item) => item.id),
     };
 
-    const isMainProductMissing = (() => {
-      if (!session.skuId && !session.productId) return false;
-      const prodName =
-        session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
-      if (dto.foundItems?.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
-        return false;
-      }
-      return dto.missingItems.some((item) => {
-        if (item === 'สินค้าหลัก') return true;
-        if (session.model?.name && item === session.model.name) return true;
-        if (session.sku?.name && item === session.sku.name) return true;
-        if (session.sku?.sku && item === session.sku.sku) return true;
-        return false;
-      });
-    })();
-
     return this.prisma.$transaction(async (tx) => {
-      // Set branch stock to 0 ONLY if the main product SKU was reported missing
-      if (isMainProductMissing && session.skuId && session.branchId) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: 0, outOfStockAt: now },
-        });
-      }
+      // D41: a missing main product sets that SKU's branch stock to 0 (and only that one)
+      await this.zeroShelf(tx, session.branchId, missingRows, now);
 
       return tx.customerSession.update({
         where: { id: session.id },
@@ -817,42 +845,34 @@ export class SessionsService {
     }
 
     const now = new Date();
-    const stockReviewObj = session.stockReview as { missingItems?: string[]; foundItems?: string[] };
-    const missingItems = Array.isArray(stockReviewObj?.missingItems) ? stockReviewObj.missingItems : [];
+    const review = session.stockReview as {
+      missingItems?: string[];
+      foundItems?: string[];
+      missingItemIds?: string[];
+    };
+    const missingItems = Array.isArray(review?.missingItems) ? review.missingItems : [];
+    // F3: the review points at the missing items by id; a review made before F3 names the main product instead
+    const missingRows = Array.isArray(review?.missingItemIds)
+      ? session.items.filter((item) => review.missingItemIds?.includes(item.id))
+      : this.legacyMissingItems(session.items, missingItems, review?.foundItems ?? []);
+    const missingAccessory = (name: string) => name.replace(/\s*\(x\d+\)$/, '').trim();
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.action === 'ACCEPT_PARTIAL') {
-        // Remove missing accessories
+        // Remove missing accessories and main products, then take what is left off the shelf
         for (const missing of missingItems) {
           await tx.sessionAccessory.deleteMany({
-            where: {
-              sessionId: session.id,
-              accessoryName: missing.replace(/\s*\(x\d+\)$/, '').trim(),
-            },
+            where: { sessionId: session.id, accessoryName: missingAccessory(missing) },
           });
         }
-
-        // Check if main product was among missing items
-        const isMainProductMissing = (() => {
-          if (!session.skuId && !session.productId) return false;
-          const prodName =
-            session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
-          const found = stockReviewObj.foundItems || [];
-          if (found.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
-            return false;
-          }
-          return missingItems.some((item) => {
-            if (item === 'สินค้าหลัก') return true;
-            if (session.model?.name && item === session.model.name) return true;
-            if (session.sku?.name && item === session.sku.name) return true;
-            if (session.sku?.sku && item === session.sku.sku) return true;
-            return false;
-          });
-        })();
-
-        const deducted = isMainProductMissing
-          ? 0
-          : await this.takeFromShelf(tx, session.branchId, session.skuId);
+        await tx.sessionItem.deleteMany({
+          where: { id: { in: missingRows.map((item) => item.id) } },
+        });
+        const deducted = await this.takeItemsFromShelf(
+          tx,
+          session.branchId,
+          session.items.filter((item) => !missingRows.includes(item)),
+        );
 
         return tx.customerSession.update({
           where: { id: session.id },
@@ -860,9 +880,6 @@ export class SessionsService {
             state: 'FOUND',
             stockFoundAt: now,
             stockReview: null as unknown as undefined,
-            productId: isMainProductMissing ? null : session.productId,
-            modelId: isMainProductMissing ? null : session.modelId,
-            skuId: isMainProductMissing ? null : session.skuId,
             events: {
               create: [
                 {
@@ -885,33 +902,15 @@ export class SessionsService {
       }
 
       if (dto.action === 'CHANGE_ITEMS') {
-        // Remove missing accessories
+        // Remove missing accessories and main products and reopen the selection
         for (const missing of missingItems) {
           await tx.sessionAccessory.deleteMany({
-            where: {
-              sessionId: session.id,
-              accessoryName: missing.replace(/\s*\(x\d+\)$/, '').trim(),
-            },
+            where: { sessionId: session.id, accessoryName: missingAccessory(missing) },
           });
         }
-
-        // Check if main product was among missing items
-        const isMainProductMissing = (() => {
-          if (!session.skuId && !session.productId) return false;
-          const prodName =
-            session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
-          const found = stockReviewObj.foundItems || [];
-          if (found.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
-            return false;
-          }
-          return missingItems.some((item) => {
-            if (item === 'สินค้าหลัก') return true;
-            if (session.model?.name && item === session.model.name) return true;
-            if (session.sku?.name && item === session.sku.name) return true;
-            if (session.sku?.sku && item === session.sku.sku) return true;
-            return false;
-          });
-        })();
+        await tx.sessionItem.deleteMany({
+          where: { id: { in: missingRows.map((item) => item.id) } },
+        });
 
         return tx.customerSession.update({
           where: { id: session.id },
@@ -919,9 +918,6 @@ export class SessionsService {
             state: 'PRODUCT_SELECTION',
             confirmed: false,
             stockReview: null as unknown as undefined,
-            productId: isMainProductMissing ? null : session.productId,
-            modelId: isMainProductMissing ? null : session.modelId,
-            skuId: isMainProductMissing ? null : session.skuId,
             events: {
               create: {
                 eventType: 'STAFF_RESOLVED_STOCK_REVIEW',

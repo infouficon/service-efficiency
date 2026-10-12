@@ -12,6 +12,12 @@ import {
   stepAccessory,
   stepDurations,
   formatDuration,
+  addItem,
+  stepItem,
+  itemName,
+  itemLabel,
+  itemsText,
+  getSessionMissingDescription,
 } from '../src/features/session/workflow.ts';
 const fixture = () => ({
   reference: 'fixture',
@@ -21,7 +27,7 @@ const fixture = () => ({
   confirmed: false,
   timestamps: {},
   selection: {
-    product: { id: 'mock' },
+    items: [{ product: { id: 'mock' }, quantity: 1 }],
     accessories: {},
     ontop: [],
     points: [],
@@ -125,7 +131,7 @@ test('partialFulfillStock removes missing accessories or main product and advanc
     ...fixture(),
     state: 'SEARCHING',
     selection: {
-      product: { id: 'p-1', product: 'iPhone', model: '16 Pro', sku: 'SKU1' },
+      items: [{ product: { id: 'p-1', product: 'iPhone', model: '16 Pro', sku: 'SKU1' }, quantity: 1 }],
       accessories: { Case: '1', Pencil: '2' },
       ontop: [],
       points: [],
@@ -137,11 +143,11 @@ test('partialFulfillStock removes missing accessories or main product and advanc
   assert.equal(updated.state, 'FOUND');
   assert.equal(updated.timestamps.stock_found_at, 'time-1');
   assert.deepEqual(updated.selection.accessories, { Pencil: '2' });
-  assert.notEqual(updated.selection.product, null);
+  assert.equal(updated.selection.items.length, 1);
 
   const noMain = partialFulfillStock(s, ['MAIN_PRODUCT'], 'time-2');
   assert.equal(noMain.state, 'FOUND');
-  assert.equal(noMain.selection.product, null);
+  assert.deepEqual(noMain.selection.items, []);
   assert.deepEqual(noMain.selection.accessories, { Case: '1', Pencil: '2' });
 });
 
@@ -224,4 +230,55 @@ test('step durations come from consecutive milestones and are empty when a step 
   // NOT_BUY ends at the decision
   const notBuy = { ...fixture(), outcome: 'NOT_BUY', timestamps: { customer_walk_in_at: at(0), decision_at: at(7) } };
   assert.equal(Object.fromEntries(stepDurations(notBuy).map((d) => [d.key, d.ms])).total, 7 * 60_000);
+});
+
+test('main products (F3): picking adds or raises, + / − step, below 1 removes', () => {
+  const a = { id: 'sku-a', category: 'iPhone', product: 'iPhone 16', model: 'iPhone 16 128GB Black', sku: 'A' };
+  const b = { id: 'sku-b', category: 'iPad', product: 'iPad Air', model: '', sku: 'B' };
+  let items = addItem([], a);
+  assert.deepEqual(items, [{ product: a, quantity: 1 }]);
+  items = addItem(items, b);
+  assert.equal(items.length, 2);
+  items = addItem(items, a);
+  assert.equal(items[0].quantity, 2, 'the same product again raises its quantity');
+  assert.equal(items.length, 2);
+  items = stepItem(items, 'sku-a', 1);
+  assert.equal(items[0].quantity, 3);
+  items = stepItem(items, 'sku-a', -1);
+  assert.equal(items[0].quantity, 2);
+  assert.deepEqual(stepItem(items, 'sku-b', -1).map((i) => i.product.id), ['sku-a'], 'below 1 removes the product');
+  assert.equal(stepItem(items, 'nope', 1).length, 2, 'an unknown product changes nothing');
+  assert.equal(itemName(items[0]), 'iPhone 16 128GB Black');
+  assert.equal(itemName(items[1]), 'iPad Air', 'no SKU name: the product name');
+  assert.equal(
+    itemName({ product: { id: 'x', product: 'iPhone 16', model: '128GB Black', sku: 'X' }, quantity: 1 }),
+    'iPhone 16 128GB Black',
+    'a SKU name without the product name gets it in front',
+  );
+  assert.equal(itemLabel(items[0]), 'iPhone 16 128GB Black (x2)');
+  assert.equal(itemsText(items), 'iPhone 16 128GB Black ×2, iPad Air');
+  assert.equal(itemsText([]), '');
+});
+
+test('confirmation needs at least one main product', () => {
+  const s = { ...fixture(), state: 'PRODUCT_SELECTION' };
+  s.selection = { ...s.selection, items: [] };
+  assert.equal(confirmSelection(s, 'bad'), s);
+});
+
+test('the manager alert names what is missing and what the order holds (F3)', () => {
+  const items = [
+    { product: { id: 'a', model: 'iPhone 16 128GB', product: 'iPhone 16', sku: 'A' }, quantity: 2 },
+    { product: { id: 'b', model: 'iPad Air', product: 'iPad', sku: 'B' }, quantity: 1 },
+  ];
+  assert.equal(
+    getSessionMissingDescription({ selection: { items }, stockPendingReview: { missingItems: ['iPad Air (x1)'] } }),
+    'iPad Air (x1)',
+  );
+  assert.equal(
+    getSessionMissingDescription({ selection: { items }, stockPendingReview: { missingItems: ['Case (x1)'] } }),
+    'Case (x1) (ในคำสั่งซื้อ iPhone 16 128GB ×2, iPad Air)',
+  );
+  assert.equal(getSessionMissingDescription({ selection: { items } }), 'iPhone 16 128GB ×2, iPad Air');
+  assert.equal(getSessionMissingDescription({ selection: { items: [] } }), 'สินค้าไม่ระบุ');
 });

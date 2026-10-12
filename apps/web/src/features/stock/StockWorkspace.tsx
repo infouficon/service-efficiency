@@ -22,7 +22,14 @@ import {
   recordOutOfStockApi,
   reportStockMissingApi,
 } from '../../services/sessionApi';
-import { advance, isToday, partialFulfillStock } from '../session/workflow';
+import {
+  advance,
+  isToday,
+  itemLabel,
+  itemName,
+  itemsText,
+  partialFulfillStock,
+} from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
 
@@ -159,21 +166,20 @@ export function StockWorkspace({
     setStockNote('');
   };
 
+  /** F3: STOCK ticks what it found, item by item; the unticked main products are reported by id, accessories by name. */
   const handleSendToStaff = async (session: MockSession) => {
     setError('');
-    const hasProduct = Boolean(session.selection.product);
+    if (!session.id) return;
     const missingItems: string[] = [];
+    const missingItemIds: string[] = [];
     const foundNames: string[] = [];
 
-    if (hasProduct) {
-      const prodName =
-        session.selection.product?.model ||
-        session.selection.product?.product ||
-        'สินค้าหลัก';
-      if (foundSelection.includes('MAIN_PRODUCT')) {
-        foundNames.push(prodName);
+    for (const item of session.selection.items) {
+      if (item.id && foundSelection.includes(item.id)) {
+        foundNames.push(itemLabel(item));
       } else {
-        missingItems.push(prodName);
+        missingItems.push(itemLabel(item));
+        if (item.id) missingItemIds.push(item.id);
       }
     }
 
@@ -190,34 +196,19 @@ export function StockWorkspace({
       return;
     }
 
-    if (session.id) {
-      try {
-        const updated = await reportStockMissingApi(
-          session.id,
-          missingItems,
-          foundNames,
-          stockNote || undefined,
-        );
-        onUpdateSession(updated);
-        return;
-      } catch (err: unknown) {
-        console.error('Failed to report missing stock:', err);
-        const msg = err instanceof Error ? err.message : 'ไม่สามารถแจ้งสินค้าไม่ครบได้';
-        setError(msg);
-        return;
-      }
-    }
-
-    const updated: MockSession = {
-      ...session,
-      stockPendingReview: {
+    try {
+      const updated = await reportStockMissingApi(
+        session.id,
         missingItems,
-        foundItems: foundNames,
-        stockNote: stockNote || undefined,
-        reportedAt: previewTime(),
-      },
-    };
-    onUpdateSession(updated);
+        foundNames,
+        stockNote || undefined,
+        missingItemIds,
+      );
+      onUpdateSession(updated);
+    } catch (err: unknown) {
+      console.error('Failed to report missing stock:', err);
+      setError(err instanceof Error ? err.message : 'ไม่สามารถแจ้งสินค้าไม่ครบได้');
+    }
   };
 
   const handleCancel = async (reason: string, text: string) => {
@@ -322,7 +313,7 @@ export function StockWorkspace({
               >
                 <span>
                   <strong>⚠️ แจ้งเตือนฝ่ายคลัง:</strong> คิว <strong>{cs.queue}</strong> (
-                  {cs.selection.product?.model || 'สินค้า'}) ถูกยกเลิกโดย Staff <strong>{cs.cancelledBy || cs.staffId || 'Staff'}</strong> — สาเหตุ:{' '}
+                  {itemsText(cs.selection.items) || 'สินค้า'}) ถูกยกเลิกโดย Staff <strong>{cs.cancelledBy || cs.staffId || 'Staff'}</strong> — สาเหตุ:{' '}
                   <em>{cs.reason || cs.otherReason || 'ลูกค้าเปลี่ยนใจ'}</em>
                 </span>
                 <Button
@@ -346,7 +337,7 @@ export function StockWorkspace({
           <p>
             ยกเลิกคำขอสำหรับคิว{' '}
             <strong>{cancellingSession.queue}</strong> (
-            {cancellingSession.selection.product?.model})
+            {itemsText(cancellingSession.selection.items)})
           </p>
           <ReasonForm
             options={cancelReasons}
@@ -430,13 +421,7 @@ export function StockWorkspace({
                       )}
                     </div>
                     <div className="card-product">
-                      <strong>
-                        {s.selection.product?.model ||
-                          s.selection.product?.product}
-                      </strong>
-                      <span className="card-sku">
-                        {s.selection.product?.sku}
-                      </span>
+                      <strong>{itemsText(s.selection.items)}</strong>
                     </div>
                     {Object.keys(s.selection.accessories).length > 0 && (
                       <div className="card-accessories">
@@ -524,18 +509,20 @@ export function StockWorkspace({
                     <Package size={18} color="#0abab5" />
                     <h3 style={{ margin: 0 }}>สินค้าที่ต้องเบิก</h3>
                   </div>
-                  <div className="product-highlight-box">
-                    <div className="product-title">
-                      {selectedSession.selection.product?.model}
+                  {selectedSession.selection.items.map((item) => (
+                    <div className="product-highlight-box" key={item.id ?? item.product.id}>
+                      <div className="product-title">
+                        {itemName(item)}{' '}
+                        <span className="qty-badge">× {item.quantity}</span>
+                      </div>
+                      <div className="product-sku">
+                        SKU: <strong>{item.product.sku}</strong>
+                      </div>
+                      <div className="product-cat">
+                        หมวดหมู่: {item.product.category}
+                      </div>
                     </div>
-                    <div className="product-sku">
-                      SKU:{' '}
-                      <strong>{selectedSession.selection.product?.sku}</strong>
-                    </div>
-                    <div className="product-cat">
-                      หมวดหมู่: {selectedSession.selection.product?.category}
-                    </div>
-                  </div>
+                  ))}
 
                   {Object.keys(selectedSession.selection.accessories).length >
                     0 && (
@@ -580,12 +567,13 @@ export function StockWorkspace({
                   )}
 
                   {selectedSession.state === 'SEARCHING' && (() => {
-                    const hasProduct = Boolean(selectedSession.selection.product);
+                    const items = selectedSession.selection.items;
                     const totalCount =
-                      (hasProduct ? 1 : 0) +
+                      items.length +
                       Object.keys(selectedSession.selection.accessories).length;
                     const foundCount =
-                      (hasProduct && foundSelection.includes('MAIN_PRODUCT') ? 1 : 0) +
+                      items.filter((item) => item.id && foundSelection.includes(item.id))
+                        .length +
                       Object.keys(selectedSession.selection.accessories).filter((a) =>
                         foundSelection.includes(a),
                       ).length;
@@ -601,57 +589,59 @@ export function StockWorkspace({
                             * ติ๊กเครื่องหมายถูกเฉพาะชิ้นที่หยิบพบจริงในคลัง ชิ้นที่ไม่ได้ติ๊กจะถูกส่งเรื่องให้ Staff ดำเนินการ
                           </p>
                           <div className="accessory-list">
-                            {selectedSession.selection.product && (
-                              <div
-                                className={`accessory-item ${
-                                  foundSelection.includes('MAIN_PRODUCT')
-                                    ? ''
-                                    : 'out-of-stock-item'
-                                }`}
-                              >
-                                <label
-                                  style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '8px',
-                                    cursor: 'pointer',
-                                    margin: 0,
-                                  }}
+                            {items.map((item) => {
+                              const itemId = item.id ?? item.product.id;
+                              const isFound = foundSelection.includes(itemId);
+                              return (
+                                <div
+                                  key={itemId}
+                                  className={`accessory-item ${
+                                    isFound ? '' : 'out-of-stock-item'
+                                  }`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={foundSelection.includes('MAIN_PRODUCT')}
-                                    onChange={() => {
-                                      setFoundSelection((prev) =>
-                                        prev.includes('MAIN_PRODUCT')
-                                          ? prev.filter((i) => i !== 'MAIN_PRODUCT')
-                                          : [...prev, 'MAIN_PRODUCT'],
-                                      );
+                                  <label
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: '8px',
+                                      cursor: 'pointer',
+                                      margin: 0,
                                     }}
-                                  />
-                                  <span>
-                                    <strong>สินค้าหลัก:</strong>{' '}
-                                    {selectedSession.selection.product.model}{' '}
-                                    ({selectedSession.selection.product.sku})
-                                  </span>
-                                  {foundSelection.includes('MAIN_PRODUCT') ? (
-                                    <span
-                                      className="status-tag status-found"
-                                      style={{ marginLeft: 'auto' }}
-                                    >
-                                      พบแล้ว
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isFound}
+                                      onChange={() => {
+                                        setFoundSelection((prev) =>
+                                          prev.includes(itemId)
+                                            ? prev.filter((i) => i !== itemId)
+                                            : [...prev, itemId],
+                                        );
+                                      }}
+                                    />
+                                    <span>
+                                      <strong>สินค้าหลัก:</strong> {itemName(item)} (
+                                      {item.product.sku}) จำนวน {item.quantity} ชิ้น
                                     </span>
-                                  ) : (
-                                    <span
-                                      className="status-tag status-searching"
-                                      style={{ marginLeft: 'auto' }}
-                                    >
-                                      ยังไม่พบ
-                                    </span>
-                                  )}
-                                </label>
-                              </div>
-                            )}
+                                    {isFound ? (
+                                      <span
+                                        className="status-tag status-found"
+                                        style={{ marginLeft: 'auto' }}
+                                      >
+                                        พบแล้ว
+                                      </span>
+                                    ) : (
+                                      <span
+                                        className="status-tag status-searching"
+                                        style={{ marginLeft: 'auto' }}
+                                      >
+                                        ยังไม่พบ
+                                      </span>
+                                    )}
+                                  </label>
+                                </div>
+                              );
+                            })}
 
                             {Object.entries(selectedSession.selection.accessories).map(
                               ([name, qty]) => {

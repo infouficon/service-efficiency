@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsIn,
   IsInt,
@@ -107,22 +108,30 @@ export class AccessorySelectionDto {
   quantity!: number;
 }
 
+/** One main product of a session (F3): a SKU (its id or its SKU code) and how many. */
+export class SessionItemDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  skuId!: string;
+
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+}
+
 export class UpdateSelectionDto {
   @IsOptional()
   @IsString()
   phone?: string;
 
+  /** The main products as a whole list; left out, the current ones stay. An empty list clears them. */
   @IsOptional()
-  @IsString()
-  productId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  modelId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  skuId?: string | null;
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => SessionItemDto)
+  items?: SessionItemDto[];
 
   @IsOptional()
   @IsArray()
@@ -152,9 +161,16 @@ export class UpdateSelectionDto {
 }
 
 export class ReportStockMissingDto {
+  /** What is missing, as text for the review and the history (accessories are matched by this name). */
   @IsArray()
   @IsString({ each: true })
   missingItems!: string[];
+
+  /** F3: the ids of the missing main products (`SessionItem.id`). Left out, they are matched by name, as before F3. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  missingItemIds?: string[];
 
   @IsOptional()
   @IsArray()

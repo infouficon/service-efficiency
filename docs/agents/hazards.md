@@ -60,12 +60,14 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Where:** `stockReview: null as unknown as undefined` in the three branches of `resolveStockReview` (`sessions.service.ts`). Prisma requires `Prisma.DbNull`/`Prisma.JsonNull` to null a `Json?` column. The cast hides the type error, but the runtime may still reject the value, and then all three resolve actions would return 500.
 - **Verify:** call resolve-stock-review against the dev DB. If it works, mark this item "not a bug" and replace the cast with `Prisma.DbNull` for clarity.
 
-### H-09: Two divergent "partial fulfilment" paths that match items by display name · S2 · confirmed
+### H-09: Two divergent "partial fulfilment" paths that match items by display name · S2 · partly fixed by D61 (2026-10-13)
+- **Update:** the D40 path (report-missing → resolve) now names the missing **main products by item id** (`missingItemIds`); only accessories and reports made before F3 still go by display name (`legacyMissingItems`). The unused STOCK-only `out-of-stock` partial path still matches by name and the two paths are still two.
 - **Where:** the STOCK path `POST /out-of-stock {action:'partial'}` (`:644-715`) matches `'MAIN_PRODUCT'`, the SKU code or the product name. The D40 path, report-missing and then resolve (`:848-1179`), matches `'สินค้าหลัก'`, the model, SKU name or code, and strips accessory names with the regex `\s*\(x\d+\)$`. The `isMainProductMissing` closure is copied three times.
 - **Impact:** renaming a product or model changes the matching behaviour, and the two paths can treat the same report differently.
 - **Fix direction:** decide whether D40 replaces the STOCK-only partial path. Send stable identifiers (`{ kind:'MAIN' } | { kind:'ACCESSORY', name }`) instead of display strings.
 
-### H-10: The selection API accepts any SKU · S2 · confirmed
+### H-10: The selection API accepts any SKU · S2 · partly fixed by D61 (2026-10-13)
+- **Update:** `items` are validated: an unknown SKU, a quantity below 1 or a SKU twice is a 400 (the old silent ignore is gone). Still not checked: the branch inventory, `stock > 0`, and the `active` flags.
 - **Where:** `updateSelection` `:507-542` resolves `skuId` by UUID or SKU code across **all** branches. It does not check `BranchInventory.active`, `stock > 0`, or whether the SKU, model or product is active. An unknown SKU is silently ignored and the old value kept. Changing the model without a SKU is a no-op once a model is already set.
 - **Impact:** D41's selectability rule is enforced only by the UI.
 - **Fix direction:** validate against the branch's inventory inside the transaction, and return 400 for an unknown or unavailable SKU.
@@ -116,7 +118,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 
 ## Frontend hazards (`apps/web`)
 
-### H-21: The UI fakes success on API errors · S1 · confirmed
+### H-21: The UI fakes success on API errors · S1 · partly fixed (2026-10-13)
+- **Update:** the in-memory fallbacks of the stock-review resolution (Staff) and of report-missing (Stock) are gone (the three D40 handlers show the error and stop). The empty `catch` in `CashierWorkspace`, the NOT_BUY fallback and the Stock cancel/step fallbacks remain.
 - **Where:** `CashierWorkspace.tsx:85-130`: when `advanceStepApi` or `cancelSessionApi` throws, the `catch` is empty and the code falls through to a **local** `advance()` / local cancel. `StaffWorkspace.tsx:808-842`: when `recordNotBuyApi` fails, the error is shown, but there is no `return`, so the code goes on to apply a local NOT_BUY. Similar local fallbacks exist for stock-review resolution (`Staff:142-149, 213-221`) and Stock cancel (`Stock:244-254`).
 - **Impact:** a rejected action (403, 400 "wrong state", network error) looks accepted on that screen, then the next 4-second poll replaces it with the server state. The user sees the state "jump back". The local copy also invents timestamps and `cancelledBy` in the browser, which breaks AGENTS rules 7 and 8.
 - **Fix direction:** show the error and stop (`return`). Delete the offline fallbacks; the `!session.id` branches never run for API-loaded sessions.
@@ -146,7 +149,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - `Mock*` type names and `previewTime()` are used for live data. Rename only as part of a feature change, never as a drive-by.
 - `ui.tsx` `Modal` always uses `id="modal-title"`, so two open modals give duplicate IDs. `ExportModal` validates with `alert()`. `.spin` has no CSS rule (only `@keyframes spin`).
 
-### H-28: The fallback catalog sends IDs that don't exist · S3 · confirmed
+### H-28: The fallback catalog sends IDs that don't exist · S3 · fixed in the D61/D62 PR (feat/session-items-wizard)
+- **Fixed:** the picker no longer falls back to `mocks/data.ts`; a failed `/products` shows an error. (The mocks file itself is now unused: H-27.)
 - If `/products` fails or is empty, `SelectionEditor` uses `mocks/data.ts` products (`sku-1`, …). `updateSelectionApi` sends them, and the server tries to match them as a SKU id or code. An unknown value is **silently ignored** (H-10), so the UI shows a product that the server never saved. Remove the fallback or show an error.
 
 ### H-29: The ERP's OData service can hang, and a filtered query is the prime suspect · S1 (shared with the shops) · partly verified

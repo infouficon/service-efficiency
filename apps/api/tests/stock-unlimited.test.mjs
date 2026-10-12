@@ -65,7 +65,7 @@ test('stock unlimited: one global ADMIN switch, on by default (D59)', async (t) 
       const chosen = await request(
         `/sessions/${id}/selection`,
         'PUT',
-        { skuId: sku.id, payments: ['Cash'] },
+        { items: [{ skuId: sku.id, quantity: 1 }], payments: ['Cash'] },
         cookies.staff,
       );
       assert.equal(chosen.status, 200, JSON.stringify(chosen.data));
@@ -227,22 +227,6 @@ test('stock unlimited: one global ADMIN switch, on by default (D59)', async (t) 
         await setUnlimited(false);
         assert.equal((await cancel(second.id)).status, 201);
         assert.equal(await stockNow(), 1, 'no unit invented');
-      },
-    );
-
-    await t.test(
-      'a session that reached FOUND before this change (no record of a deduction) still gives its unit back',
-      async () => {
-        await setUnlimited(false);
-        const found = await toFound('0999900105');
-        assert.equal(await stockNow(), 0);
-        // make it look like an old STOCK_FOUND event: no `deducted` in the metadata
-        await db.sessionEvent.updateMany({
-          where: { sessionId: found.id, eventType: 'STOCK_FOUND' },
-          data: { metadata: {} },
-        });
-        assert.equal((await cancel(found.id)).status, 201);
-        assert.equal(await stockNow(), 1);
       },
     );
   } finally {

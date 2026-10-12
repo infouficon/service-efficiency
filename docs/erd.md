@@ -70,6 +70,8 @@ This is the unfinalized hierarchy from D13, not approved foreign keys. SubCatego
 
 The association names above are design vocabulary, not added business fields. Exact technical IDs, lengths, index definitions and referential actions are deferred to physical design. No blanket `created_at`/`updated_at`, deletion timestamps, money fields, or arbitrary Customer/Branch fields are added.
 
+> **Superseded by D61 (2026-10-13):** main products are `SessionItem` rows (SKU + quantity); the sentence below is the original rule.
+
 Main Product is absent at walk-in and selected during Product Selection (D8). This clarifies the older “exactly one” invariant as one main Product when selected, not a fabricated mandatory Product at creation. A completed purchase cannot contain multiple main Products. No product is forced onto NOT_BUY Sessions.
 
 Technical design: model selected options as child records rather than delimited strings. No selection means zero associated records; UI `None` never becomes a selected line. Option definitions are fixed for version one, with no Admin edit UI (D15). Quantity belongs only to SessionAccessory. Whether an option may appear more than once must be confirmed before adding pair uniqueness constraints.

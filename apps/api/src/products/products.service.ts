@@ -8,11 +8,12 @@ import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service'
 /** How long a "missing / out of stock" report (D41) keeps a SKU at 0 while warroom has not sent a newer snapshot. */
 export const OUT_OF_STOCK_HOURS = 6;
 
-/** A session that reached FOUND and still holds a unit: when (if ever) it was completed. */
+/** A session item that reached FOUND and still holds `quantity` units (one when absent): when (if ever) its session was completed. */
 export interface Reservation {
   branchId: string;
   skuId: string;
   completedAt: Date | null;
+  quantity?: number;
 }
 export interface ErpInventory {
   branchId: string;
@@ -42,9 +43,9 @@ export function availableUnits(
   )
     return 0;
   const asOf = inv.erpAsOf;
-  const held = (reservations.get(`${inv.branchId}\u0000${inv.skuId}`) ?? []).filter(
-    (r) => !r.completedAt || r.completedAt > asOf,
-  ).length;
+  const held = (reservations.get(`${inv.branchId}\u0000${inv.skuId}`) ?? [])
+    .filter((r) => !r.completedAt || r.completedAt > asOf)
+    .reduce((sum, r) => sum + (r.quantity ?? 1), 0);
   return Math.max(0, inv.erpReady - held);
 }
 
@@ -87,13 +88,13 @@ export class ProductsService implements OnModuleInit {
     const sessions = await this.prisma.customerSession.findMany({
       where: {
         ...(branchId ? { branchId } : {}),
-        skuId: { not: null },
+        items: { some: {} },
         stockFoundAt: { gte: since },
         outcome: null,
       },
       select: {
         branchId: true,
-        skuId: true,
+        items: { select: { skuId: true, quantity: true } },
         events: {
           where: { eventType: 'COMPLETED' },
           select: { createdAt: true },
@@ -101,17 +102,20 @@ export class ProductsService implements OnModuleInit {
         },
       },
     });
+    // F3: every item of the session holds its quantity
     const map = new Map<string, Reservation[]>();
     for (const s of sessions) {
-      if (!s.skuId) continue;
-      const key = `${s.branchId}\u0000${s.skuId}`;
-      const list = map.get(key) ?? [];
-      list.push({
-        branchId: s.branchId,
-        skuId: s.skuId,
-        completedAt: s.events[0]?.createdAt ?? null,
-      });
-      map.set(key, list);
+      for (const item of s.items) {
+        const key = `${s.branchId}\u0000${item.skuId}`;
+        const list = map.get(key) ?? [];
+        list.push({
+          branchId: s.branchId,
+          skuId: item.skuId,
+          completedAt: s.events[0]?.createdAt ?? null,
+          quantity: item.quantity,
+        });
+        map.set(key, list);
+      }
     }
     return map;
   }

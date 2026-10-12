@@ -866,3 +866,17 @@ Owner, asked for the scope of the temporary "unlimited stock" request: "สว�
 ## D60 — Bill opening on U POS works both ways (2026-10-13)
 
 Owner, asked how SES and U POS (`infouficon/UFPOS`) should meet so the cashier no longer does the work twice and the KPI can be measured: "สองทาง (แนะนำ)". SES sends the order lines to U POS so the bill is pre-filled; U POS reports back when the bill is really opened, and SES records that moment (instead of the click on "เปิดบิล"). It needs a contract with the U POS team (a GitHub issue labelled `integration:pos` in `infouficon/UFPOS`); nothing has been opened there yet. **Not built yet.**
+
+## D61 — A session holds several main products, each with a quantity (2026-10-13)
+
+Owner, relaying the 2026-10-13 meeting: "Main product เพิ่มได้หลายอัน" and "ตัวเลข จำนวนที่เพิ่ม ให้มี + − เพื่อให้ง่ายต่อการใช้". **Supersedes** requirements §5 / D8 ("exactly one main Product", `erd.md` "One main Product once selected").
+
+1. **Items.** A Customer Session has any number of main products: `SessionItem` = a SKU and a quantity of 1 or more; a SKU appears once per session (picking it again raises its quantity). The old `productId/modelId/skuId` columns of `CustomerSession` are kept for history and never written again; the migration copied every existing main product into one item (quantity 1).
+2. **Confirmation** needs at least one main product (as before: at least one). Accessories stay the fixed list of D48.
+3. **Stock follows the items.** FOUND takes each item's quantity off the branch shelf (unless the D59 switch is on) and records it per item (`deducted`); a cancel gives back exactly that. D41's "missing report sets the SKU to 0" applies to each missing item. The ERP availability (D52/D55) subtracts the quantity of every promised item.
+4. **Stock review (D40).** STOCK ticks what it found item by item and reports the missing main products **by item id** (accessories still by name). ACCEPT_PARTIAL keeps the rest (and takes it off the shelf); CHANGE_ITEMS drops the missing ones and reopens the selection. A review made before this change names the main product instead and is still understood.
+5. **Default, not confirmed.** In the screen, `+` on a main product stops at the stock figure unless "stock unlimited" is on (a customer cannot be promised more than is on the shelf).
+
+## D62 — The product picker goes step by step, like the trade-in app (2026-10-13)
+
+Owner: "กดเลือกหมวดหมู่ ทำแบบเทรนอิน เพื่อให้ดูง่าย". The picker shows big tiles: **category** (iPhone, iPad, Mac, Watch) → **product** → **model** → **capacity / colour**; a step with a single choice is skipped, a back button climbs one step, and every pick lands in the list of chosen main products (D61). Built from the hierarchy the catalog already has (Product → Model → SKU). OPEN: the trade-in app (u-bid.uficon.com, behind a login) could not be looked at, so the tiles follow the description only; a screenshot of its category screen would let the look match.

@@ -1,5 +1,7 @@
 import type {
   MockSession,
+  Product,
+  SelectionItem,
   Timestamp,
   WorkflowState,
 } from '../../types/session';
@@ -91,7 +93,7 @@ export function confirmSelection(
     session.state !== 'PRODUCT_SELECTION' ||
     session.outcome ||
     session.confirmed ||
-    !session.selection.product ||
+    session.selection.items.length === 0 ||
     !phoneIsValid(session.phone) ||
     !quantitiesAreValid(session.selection.accessories)
   )
@@ -123,6 +125,56 @@ export function progressIndex(session: MockSession): number {
   if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state))
     return 5;
   return 6;
+}
+
+/**
+ * What staff call a main product ("iPhone 16 Pro 256GB Desert Titanium"): the SKU name, with the product name in front
+ * when the SKU name does not already carry it ("128GB Black" under "iPhone 16"); the product name alone without a SKU name.
+ */
+export function itemName(item: SelectionItem): string {
+  const sku = item.product.model;
+  const family = item.product.product;
+  if (!sku) return family || item.product.sku;
+  if (!family || sku.toLowerCase().includes(family.toLowerCase())) return sku;
+  return `${family} ${sku}`;
+}
+
+/** One main product as text with its quantity, the way stock reviews list it: "iPhone 16 128GB (x2)". */
+export function itemLabel(item: SelectionItem): string {
+  return `${itemName(item)} (x${item.quantity})`;
+}
+
+/** All main products on one line: "A ×2, B". Empty when none is chosen. */
+export function itemsText(items: SelectionItem[]): string {
+  return items
+    .map((item) =>
+      item.quantity > 1 ? `${itemName(item)} ×${item.quantity}` : itemName(item),
+    )
+    .join(', ');
+}
+
+/** Picking a product (F3): one already in the list gains a unit, a new one starts at 1. */
+export function addItem(items: SelectionItem[], product: Product): SelectionItem[] {
+  return items.some((item) => item.product.id === product.id)
+    ? items.map((item) =>
+        item.product.id === product.id
+          ? { ...item, quantity: item.quantity + 1 }
+          : item,
+      )
+    : [...items, { product, quantity: 1 }];
+}
+
+/** `+` / `−` on a main product (F3, F4): one unit more or less; below 1 the product is removed. */
+export function stepItem(
+  items: SelectionItem[],
+  productId: string,
+  delta: 1 | -1,
+): SelectionItem[] {
+  return items.flatMap((item) => {
+    if (item.product.id !== productId) return [item];
+    const quantity = item.quantity + delta;
+    return quantity < 1 ? [] : [{ ...item, quantity }];
+  });
 }
 
 /** "A012": the type letter plus at least three digits ("A1000" after 999). Mirrors `formatQueue` in the API. */
@@ -253,7 +305,7 @@ export function partialFulfillStock(
     state: 'FOUND',
     selection: {
       ...session.selection,
-      product: removeMain ? null : session.selection.product,
+      items: removeMain ? [] : session.selection.items,
       accessories: newAccessories,
     },
     timestamps: {
@@ -295,9 +347,7 @@ export function resolveSessionStatusText(session: {
 }
 
 export function getSessionMissingDescription(session: {
-  selection?: {
-    product?: { model?: string; product?: string; sku?: string } | null;
-  } | null;
+  selection?: { items?: SelectionItem[] } | null;
   stockPendingReview?: {
     missingItems?: string[];
     stockNote?: string;
@@ -305,22 +355,14 @@ export function getSessionMissingDescription(session: {
   outcome?: string | null;
 }): string {
   const missing = session.stockPendingReview?.missingItems;
-  const mainProd =
-    session.selection?.product?.model ||
-    session.selection?.product?.product ||
-    session.selection?.product?.sku;
+  const items = session.selection?.items ?? [];
+  const mainProd = itemsText(items);
 
   if (missing && missing.length > 0) {
     const missingStr = missing.join(', ');
-    const containsMain = mainProd
-      ? missing.some(
-          (item) =>
-            item === mainProd ||
-            item.includes(mainProd) ||
-            (session.selection?.product?.model &&
-              item.includes(session.selection.product.model)),
-        )
-      : false;
+    const containsMain = items.some((item) =>
+      missing.some((text) => text.includes(itemName(item))),
+    );
     if (mainProd && !containsMain) {
       return `${missingStr} (ในคำสั่งซื้อ ${mainProd})`;
     }

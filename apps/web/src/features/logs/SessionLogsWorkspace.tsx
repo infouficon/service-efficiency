@@ -22,7 +22,12 @@ import {
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
-import { formatDuration, stepDurations } from '../session/workflow';
+import {
+  formatDuration,
+  itemName,
+  itemsText,
+  stepDurations,
+} from '../session/workflow';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
 
 interface SessionLogsWorkspaceProps {
@@ -84,14 +89,11 @@ function getSessionTimestamp(
 }
 
 function getLatestItemText(s: MockSession): string {
-  if (s.selection?.product?.model) {
+  const items = s.selection?.items ?? [];
+  if (items.length > 0) {
     const accCount = Object.keys(s.selection.accessories || {}).length;
-    return accCount > 0
-      ? `${s.selection.product.model} (+${accCount} อุปกรณ์เสริม)`
-      : s.selection.product.model;
-  }
-  if (s.selection?.product?.product) {
-    return s.selection.product.product;
+    const main = itemsText(items);
+    return accCount > 0 ? `${main} (+${accCount} อุปกรณ์เสริม)` : main;
   }
   if (s.state === 'WALK_IN' || s.state === 'DEMO') {
     return 'กำลัง DEMO / ให้คำปรึกษา';
@@ -242,22 +244,31 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       {
         key: 'category',
         label: 'หมวดหมู่สินค้า',
-        getValue: (s) => s.selection?.product?.category || '',
+        getValue: (s) =>
+          [...new Set((s.selection?.items ?? []).map((i) => i.product.category))].join('; '),
       },
       {
         key: 'product',
         label: 'ชื่อสินค้า',
-        getValue: (s) => s.selection?.product?.product || '',
+        getValue: (s) =>
+          (s.selection?.items ?? []).map((i) => i.product.product).join('; '),
       },
       {
         key: 'model',
         label: 'รุ่นสินค้า (Model)',
-        getValue: (s) => s.selection?.product?.model || '',
+        getValue: (s) => (s.selection?.items ?? []).map(itemName).join('; '),
+      },
+      {
+        key: 'quantity',
+        label: 'จำนวนสินค้าหลัก (ตามลำดับรุ่น)',
+        getValue: (s) =>
+          (s.selection?.items ?? []).map((i) => String(i.quantity)).join('; '),
       },
       {
         key: 'sku',
         label: 'รหัส SKU',
-        getValue: (s) => s.selection?.product?.sku || '',
+        getValue: (s) =>
+          (s.selection?.items ?? []).map((i) => i.product.sku).join('; '),
       },
       {
         key: 'accessories',
@@ -882,11 +893,12 @@ export function SessionLogsWorkspace({
           s.reference.toLowerCase().includes(q);
         const matchPhone = s.phone?.toLowerCase().includes(q) || false;
         const matchStaff = s.staffId?.toLowerCase().includes(q) || false;
-        const matchProduct =
-          s.selection?.product?.model?.toLowerCase().includes(q) ||
-          s.selection?.product?.product?.toLowerCase().includes(q) ||
-          s.selection?.product?.sku?.toLowerCase().includes(q) ||
-          false;
+        const matchProduct = (s.selection?.items ?? []).some(
+          (i) =>
+            itemName(i).toLowerCase().includes(q) ||
+            i.product.product?.toLowerCase().includes(q) ||
+            i.product.sku?.toLowerCase().includes(q),
+        );
         const matchBranch =
           s.branchCode?.toLowerCase().includes(q) ||
           s.branchName?.toLowerCase().includes(q) ||
@@ -1430,9 +1442,9 @@ export function SessionLogsWorkspace({
                   </td>
                   <td>
                     <strong>{getLatestItemText(s)}</strong>
-                    {s.selection?.product?.sku && (
+                    {s.selection?.items?.length > 0 && (
                       <span className="card-sku" style={{ display: 'block', marginTop: '2px' }}>
-                        SKU: {s.selection.product.sku}
+                        SKU: {s.selection.items.map((i) => i.product.sku).join(', ')}
                       </span>
                     )}
                   </td>
@@ -1527,8 +1539,10 @@ export function SessionLogsWorkspace({
               </div>
               <div className="mobile-log-product">
                 <strong style={{ fontSize: '14px', color: '#103836' }}>{getLatestItemText(s)}</strong>
-                {s.selection?.product?.sku && (
-                  <span className="card-sku" style={{ marginTop: '2px' }}>SKU: {s.selection.product.sku}</span>
+                {s.selection?.items?.length > 0 && (
+                  <span className="card-sku" style={{ marginTop: '2px' }}>
+                    SKU: {s.selection.items.map((i) => i.product.sku).join(', ')}
+                  </span>
                 )}
               </div>
               <div className="mobile-log-meta">

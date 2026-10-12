@@ -84,8 +84,18 @@ export interface AppSettings {
   updatedBy?: string | null;
 }
 
+/** One main product of a session (F3): the catalog entry picked and how many. */
+export interface SelectionItem {
+  /** `SessionItem.id` on the server; absent while the item only exists in the browser. */
+  id?: string;
+  /** `product.id` is the SKU id. */
+  product: Product;
+  quantity: number;
+}
+
 export interface Selection {
-  product: Product | null;
+  /** The main products, in the order the staff added them; empty = none chosen yet. */
+  items: SelectionItem[];
   accessories: Record<string, string>;
   ontop: string[];
   points: string[];
@@ -146,6 +156,8 @@ export interface MockSession {
   cancelledBy?: string;
   stockPendingReview?: {
     missingItems: string[];
+    /** `SessionItem.id`s of the missing main products (F3). */
+    missingItemIds?: string[];
     foundItems: string[];
     stockNote?: string;
     reportedAt: string;

@@ -28,23 +28,25 @@ export interface ApiSession {
   reason?: string | null;
   otherReason?: string | null;
   cancelledBy?: string | null;
-  productId?: string | null;
-  modelId?: string | null;
-  skuId?: string | null;
-  product?: { id: string; category: string; name: string } | null;
-  model?: { id: string; name: string } | null;
-  sku?: {
+  /** F3: the main products, each with its SKU, model and product. */
+  items?: {
     id: string;
-    sku: string;
-    name: string;
-    color?: string;
-    storage?: string;
-    model?: {
+    skuId: string;
+    quantity: number;
+    deducted: number;
+    sku: {
       id: string;
+      sku: string;
       name: string;
-      product?: { id: string; category: string; name: string };
+      color?: string | null;
+      storage?: string | null;
+      model: {
+        id: string;
+        name: string;
+        product: { id: string; category: string; name: string };
+      };
     };
-  } | null;
+  }[];
   customerWalkInAt?: string | null;
   demoStartAt?: string | null;
   demoEndAt?: string | null;
@@ -64,6 +66,7 @@ export interface ApiSession {
   payments?: { method: string }[];
   stockReview?: {
     missingItems?: string[];
+    missingItemIds?: string[];
     foundItems?: string[];
     stockNote?: string | null;
     reportedAt?: string;
@@ -102,23 +105,6 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
   if (s.billOpenedAt) timestamps.bill_opened_at = s.billOpenedAt;
   if (s.cancelledAt) timestamps.cancelled_at = s.cancelledAt;
 
-  const resolvedCategory =
-    s.product?.category ||
-    s.sku?.model?.product?.category ||
-    'iPhone';
-  const resolvedProductName =
-    s.product?.name ||
-    s.sku?.model?.product?.name ||
-    s.sku?.name ||
-    '';
-  const resolvedModelName =
-    s.model?.name ||
-    s.sku?.model?.name ||
-    s.sku?.name ||
-    '';
-
-  const hasProduct = Boolean(s.product || s.sku || s.model || s.productId || s.skuId);
-
   return {
     id: s.id,
     reference: s.reference,
@@ -139,15 +125,17 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     cancelledBy: s.cancelledBy || undefined,
     timestamps,
     selection: {
-      product: hasProduct
-        ? {
-            id: s.sku?.id || s.productId || s.skuId || s.product?.id || '',
-            category: resolvedCategory,
-            product: resolvedProductName,
-            model: resolvedModelName,
-            sku: s.sku?.sku || '',
-          }
-        : null,
+      items: (s.items ?? []).map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+        product: {
+          id: item.sku.id,
+          category: item.sku.model.product.category,
+          product: item.sku.model.product.name,
+          model: item.sku.name || item.sku.model.name,
+          sku: item.sku.sku,
+        },
+      })),
       accessories: accessoriesMap,
       ontop: s.ontop ? s.ontop.map((o) => o.name) : [],
       points: s.points ? s.points.map((p) => p.name) : [],
@@ -157,6 +145,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     stockPendingReview: s.stockReview
       ? {
           missingItems: s.stockReview.missingItems || [],
+          missingItemIds: s.stockReview.missingItemIds || [],
           foundItems: s.stockReview.foundItems || [],
           stockNote: s.stockReview.stockNote || undefined,
           reportedAt: s.stockReview.reportedAt || '',
@@ -236,7 +225,6 @@ export async function updateSelectionApi(
   id: string,
   selection: Selection,
   phone: string,
-  rawProductIds?: { productId?: string; modelId?: string; skuId?: string },
 ): Promise<MockSession> {
   const accessoriesList = Object.entries(selection.accessories).map(([accessoryName, qty]) => ({
     accessoryName,
@@ -250,18 +238,12 @@ export async function updateSelectionApi(
     points: selection.points,
     burnPoints: selection.burnPoints,
     payments: selection.payments,
+    // F3: the main products as a whole list (SKU id + quantity)
+    items: selection.items.map((item) => ({
+      skuId: item.product.id,
+      quantity: item.quantity,
+    })),
   };
-
-  if (rawProductIds !== undefined) {
-    payload.productId = rawProductIds.productId || null;
-    payload.modelId = rawProductIds.modelId || null;
-    payload.skuId = rawProductIds.skuId || null;
-  } else if (selection.product) {
-    if (selection.product.id) {
-      payload.skuId = selection.product.id;
-      payload.productId = selection.product.id;
-    }
-  }
 
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/selection`, 'PUT', payload);
   return mapApiSessionToMockSession(data);
@@ -303,11 +285,13 @@ export async function reportStockMissingApi(
   missingItems: string[],
   foundItems?: string[],
   stockNote?: string,
+  missingItemIds?: string[],
 ): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/report-missing`, 'POST', {
     missingItems,
     foundItems,
     stockNote,
+    missingItemIds,
   });
   return mapApiSessionToMockSession(data);
 }

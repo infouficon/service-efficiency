@@ -27,7 +27,7 @@ import {
   advanceStepApi,
   cancelSessionApi,
 } from '../../services/sessionApi';
-import { advance, isToday } from '../session/workflow';
+import { advance, isToday, itemsText } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
 
@@ -203,7 +203,7 @@ export function CashierWorkspace({
         >
           <p>
             ยกเลิกคิว <strong>{cancellingSession.queue}</strong> (
-            {cancellingSession.selection.product?.model})
+            {itemsText(cancellingSession.selection.items)})
           </p>
           <ReasonForm
             options={cancelReasons}
@@ -294,13 +294,8 @@ export function CashierWorkspace({
                     </div>
                     <div className="card-product">
                       <strong>
-                        {s.selection.product?.model ||
-                          s.selection.product?.product ||
-                          'อุปกรณ์เสริม'}
+                        {itemsText(s.selection.items) || 'อุปกรณ์เสริม'}
                       </strong>
-                      <span className="card-sku">
-                        {s.selection.product?.sku}
-                      </span>
                     </div>
                     {Object.keys(s.selection.accessories).length > 0 && (
                       <div className="card-accessories">

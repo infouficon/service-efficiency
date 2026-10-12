@@ -571,9 +571,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
               branchId: b1.id,
               staffId,
               state: 'FOUND',
-              productId: hand.id,
-              modelId: hand.models[0].id,
-              skuId: sku1.id,
+              items: { create: { skuId: sku1.id, quantity: 1 } },
               stockFoundAt: new Date(),
               events: { create: events },
             },
@@ -985,9 +983,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
             branchId: b1.id,
             staffId,
             state: 'FOUND',
-            productId: hand.id,
-            modelId: hand.models[0].id,
-            skuId: sku1.id,
+            items: { create: { skuId: sku1.id, quantity: 1 } },
             stockFoundAt: new Date(Date.now() - 26 * 3600_000),
           },
         });
@@ -996,7 +992,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
           where: {
             reference: { startsWith: prefix },
             state: 'FOUND',
-            skuId: sku1.id,
+            items: { some: { skuId: sku1.id } },
           },
           select: { id: true },
         });

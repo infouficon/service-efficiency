@@ -21,6 +21,7 @@ import { WalkInForm } from './WalkInForm';
 import {
   advance,
   confirmSelection,
+  itemsText,
   phoneIsValid,
   progressIndex,
   type StepAction,
@@ -123,149 +124,32 @@ export function StaffWorkspace({
     }
   }, [activeSessionRef, activeSession?.state, activeSession?.confirmed, form]);
 
+  /** The customer keeps what is left (D40 ACCEPT_PARTIAL): the server drops the missing items and the session moves on to FOUND. */
   const handleCustomerAcceptPartial = async (session: MockSession) => {
-    if (!session.stockPendingReview) return;
-    const { missingItems } = session.stockPendingReview;
-
+    if (!session.stockPendingReview || !session.id) return;
     setBusy(true);
     setError('');
     try {
-      if (session.id) {
-        try {
-          const updated = await resolveStockReviewApi(session.id, 'ACCEPT_PARTIAL');
-          onUpdateSession({
-            ...updated,
-            stockPendingReview: undefined,
-          });
-          return;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg.includes('No pending stock review found')) {
-            onUpdateSession({
-              ...session,
-              state: 'FOUND',
-              stockPendingReview: undefined,
-            });
-            return;
-          }
-          setError(msg || 'ดำเนินการไม่สำเร็จ');
-          return;
-        }
-      }
-
-      // Fallback in-memory
-      const newAccessories: Record<string, string> = {};
-      Object.entries(session.selection.accessories).forEach(([k, v]) => {
-        if (!missingItems.includes(k)) {
-          newAccessories[k] = v;
-        }
-      });
-
-      const isMainProductMissing = (() => {
-        if (!session.selection.product) return false;
-        const prod = session.selection.product;
-        const found = session.stockPendingReview?.foundItems || [];
-        const prodName = prod.model || prod.product || 'สินค้าหลัก';
-        if (found.some((f) => f === prodName || (prod.model && f.includes(prod.model)))) {
-          return false;
-        }
-        return missingItems.some((item) => {
-          if (item === 'สินค้าหลัก') return true;
-          if (prod.model && item === prod.model) return true;
-          if (prod.sku && item === prod.sku) return true;
-          return false;
-        });
-      })();
-
-      const newSelection: Selection = {
-        ...session.selection,
-        product: isMainProductMissing ? null : session.selection.product,
-        accessories: newAccessories,
-      };
-
-      const updated: MockSession = {
-        ...session,
-        selection: newSelection,
-        state: 'FOUND',
-        stockPendingReview: undefined,
-      };
-      onUpdateSession(updated);
+      const updated = await resolveStockReviewApi(session.id, 'ACCEPT_PARTIAL');
+      onUpdateSession({ ...updated, stockPendingReview: undefined });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
   };
 
+  /** The customer wants other items instead (D40 CHANGE_ITEMS): the missing items drop out and the selection reopens. */
   const handleCustomerChangeItems = async (session: MockSession) => {
-    if (!session.stockPendingReview) return;
+    if (!session.stockPendingReview || !session.id) return;
     setBusy(true);
     setError('');
     try {
-      if (session.id) {
-        try {
-          const updated = await resolveStockReviewApi(session.id, 'CHANGE_ITEMS');
-          onUpdateSession({
-            ...updated,
-            stockPendingReview: undefined,
-          });
-          setForm('normal');
-          return;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg.includes('No pending stock review found')) {
-            onUpdateSession({
-              ...session,
-              state: 'PRODUCT_SELECTION',
-              confirmed: false,
-              stockPendingReview: undefined,
-            });
-            setForm('normal');
-            return;
-          }
-          setError(msg || 'ดำเนินการไม่สำเร็จ');
-          return;
-        }
-      }
-
-      // Fallback in-memory
-      const { missingItems = [] } = session.stockPendingReview || {};
-      const newAccessories: Record<string, string> = {};
-      Object.entries(session.selection.accessories).forEach(([k, v]) => {
-        if (!missingItems.includes(k)) {
-          newAccessories[k] = v;
-        }
-      });
-
-      const isMainProductMissing = (() => {
-        if (!session.selection.product) return false;
-        const prod = session.selection.product;
-        const found = session.stockPendingReview?.foundItems || [];
-        const prodName = prod.model || prod.product || 'สินค้าหลัก';
-        if (found.some((f) => f === prodName || (prod.model && f.includes(prod.model)))) {
-          return false;
-        }
-        return missingItems.some((item) => {
-          if (item === 'สินค้าหลัก') return true;
-          if (prod.model && item === prod.model) return true;
-          if (prod.sku && item === prod.sku) return true;
-          return false;
-        });
-      })();
-
-      const newSelection: Selection = {
-        ...session.selection,
-        product: isMainProductMissing ? null : session.selection.product,
-        accessories: newAccessories,
-      };
-
-      const updated: MockSession = {
-        ...session,
-        selection: newSelection,
-        state: 'PRODUCT_SELECTION',
-        confirmed: false,
-        stockPendingReview: undefined,
-      };
-      onUpdateSession(updated);
+      const updated = await resolveStockReviewApi(session.id, 'CHANGE_ITEMS');
+      onUpdateSession({ ...updated, stockPendingReview: undefined });
       setForm('normal');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -467,7 +351,7 @@ export function StaffWorkspace({
                     <AlertTriangle size={16} color="#dc2626" />
                     ฝ่ายคลัง (Stock) แจ้งเตือน:
                   </strong>{' '}
-                  คิว <strong>{ps.queue}</strong> ({ps.selection.product?.model || 'สินค้า'}) —{' '}
+                  คิว <strong>{ps.queue}</strong> ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
                   มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
                 </span>
                 <Button
@@ -523,7 +407,7 @@ export function StaffWorkspace({
                   )}
                 </div>
                 <div className="card-product">
-                  {s.selection.product?.model || 'ยังไม่ระบุสินค้า'}
+                  {itemsText(s.selection.items) || 'ยังไม่ระบุสินค้า'}
                 </div>
                 <div className="card-meta">
                   <span>

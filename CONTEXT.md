@@ -2,7 +2,7 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D60);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D62);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
@@ -50,16 +50,16 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | NOT_BUY result | Exactly: `ราคา`, `ยังไม่ตัดสินใจ`, `เปลี่ยนใจ`, `สินค้าไม่ตรงความต้องการ`, `ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ`, `อื่น ๆ` (+ required text). | `reason` / `otherReason`; lists in `apps/web/src/constants/options.ts` |
 | Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected **at walk-in** (D56; supersedes requirements §6 "only after BUY", so NOT_BUY visits keep a phone too). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
 | Product Selection / Purchase data | The purchase being assembled: **main product** (Product → Model → SKU), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
-| Main Product | At most one per session, set during selection (D8). Stored as `productId` / `modelId` / `skuId`. | Can be cleared by partial fulfilment |
+| Main Product / Session item | Any number per session (D61, supersedes D8): a SKU and a quantity ≥ 1, each SKU once. `deducted` = the units FOUND really took off the shelf (0 while "stock unlimited" is on); a cancel gives back exactly that. The old `productId/modelId/skuId` columns on the session are history only. | `SessionItem` (`items` on every session response); dropped by partial fulfilment or `CHANGE_ITEMS` |
 | LOB / Category | `ProductCategory`: `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`. | enum `ProductCategory` |
 | Ontop | Telco/partner add-on (`AIS`, `True`, `CATH`, `KTS`). Multi-select, no amount. | `SessionOntop.name` |
 | Points / Burn Point | Loyalty programs earned / redeemed (`MCard`, `The 1`, `UJOY`). Two separate lists. | `SessionPoint`, `SessionBurnPoint` |
 | Payment | Payment methods, multi-select, **no amounts** (`Cash`, `Transfer`, `SPayLater`, …). | `SessionPayment.method` |
 | None | A UI-only "no selection" option. Never persisted: no selection = zero child rows. | filtered in `updateSelection` (`sessions.service.ts`) |
 | Stock Request / Stock queue | A confirmed session waiting for STOCK (`STOCK_REQUESTED`). Queues show **today's** sessions only (D47, UI-side). | |
-| SEARCHING / FOUND | STOCK pressed "searching" (sets `stockStartedAt`), then found the item (sets `stockFoundAt` and **deducts 1** from branch stock, D41). | `search`, `found` steps |
+| SEARCHING / FOUND | STOCK pressed "searching" (sets `stockStartedAt`), then found the items (sets `stockFoundAt` and **deducts each item's quantity** from branch stock, D41, unless the D59 switch is on). | `search`, `found` steps |
 | OUT_OF_STOCK | STOCK cannot fulfil; terminal outcome. Sets that SKU's branch stock to 0 (D41). | `POST /out-of-stock` (`action:'cancel'`) |
-| Stock Review | D40: STOCK reports **missing items** (`report-missing`) without ending the session. A JSON blob (`stockReview`) is stored, STAFF sees an alert and resolves with `ACCEPT_PARTIAL` / `CHANGE_ITEMS` / `CANCEL`. A MANAGER/ADMIN can **acknowledge** the alert (adds `acknowledgedAt/By`, no event). | `CustomerSession.stockReview` (Json) |
+| Stock Review | D40: STOCK reports **missing items** (`report-missing`) without ending the session; main products are named by `missingItemIds` (D61), accessories by name. A JSON blob (`stockReview`) is stored, STAFF sees an alert and resolves with `ACCEPT_PARTIAL` / `CHANGE_ITEMS` / `CANCEL`. A MANAGER/ADMIN can **acknowledge** the alert (adds `acknowledgedAt/By`, no event). | `CustomerSession.stockReview` (Json) |
 | Sent to Cashier | STOCK hands the goods to the cashier. No timestamp column; the event time is the record. | `send` step |
 | Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). | `receive`, `scan`, `bill`, `complete` steps |
 | Cancellation | The customer leaves mid-flow. Reasons: `ลูกค้าเปลี่ยนใจ`, `รอนาน`, `อื่น ๆ` (+ required text). Terminal, no undo (D18–20). Restores 1 to stock if the item was already FOUND (D41). | `POST /cancel`; `cancelledAt`, `cancelledBy` |
@@ -100,7 +100,7 @@ Branch  1──* BranchInventory *──1 ProductSku   (unique branchId+skuId)
 Branch   1──* CustomerSession
 Staff    1──* CustomerSession     (staffId = creator / "assigned staff")
 Customer 1──* CustomerSession     (customerId set at walk-in since D56; nullable for sessions from before)
-CustomerSession *──0..1 Product / ProductModel / ProductSku   (main product, all nullable)
+CustomerSession 1──* SessionItem *──1 ProductSku   (D61; the old productId/modelId/skuId columns are history only)
 CustomerType 1──* CustomerSession  (customerTypeId; the queue letter is copied onto the session)
 DailyCounter                       (scope + Bangkok day → lastNo; no foreign keys, see ADR 0001)
 CustomerSession 1──* SessionAccessory | SessionOntop | SessionPoint | SessionBurnPoint | SessionPayment

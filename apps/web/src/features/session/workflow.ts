@@ -189,3 +189,20 @@ export function isToday(dateStr?: string | null): boolean {
   return isSameDay(dateStr, new Date());
 }
 
+export function resolveSessionStatusText(session: {
+  state: string;
+  outcome?: string | null;
+  stockPendingReview?: unknown;
+}): string {
+  if (session.outcome === 'CUSTOMER_CANCELLED') return 'ยกเลิก';
+  if (session.outcome === 'NOT_BUY') return 'ไม่ซื้อ';
+  if (session.outcome === 'OUT_OF_STOCK') return 'สินค้าหมด';
+  if (session.state === 'COMPLETED') return 'สำเร็จ';
+  if (session.stockPendingReview) return 'RETURN_TO_STAFF';
+  if (session.state === 'WALK_IN') return 'ลูกค้าเดินเข้าร้าน';
+  if (session.state === 'DEMO') return 'DEMO';
+  if (session.state === 'PRODUCT_SELECTION') return 'กำลังเลือกสินค้า';
+  return `กำลังบริการ (${session.state})`;
+}
+
+

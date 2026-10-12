@@ -203,17 +203,27 @@ export class ProductsService implements OnModuleInit {
             },
           });
 
-          for (const s of m.skus) {
-            await this.prisma.productSku.create({
-              data: {
-                modelId: model.id,
-                sku: s.sku,
-                name: s.name,
-                color: s.color,
-                storage: s.storage,
-                active: true,
-              },
-            });
+            for (const s of m.skus) {
+              const createdSku = await this.prisma.productSku.create({
+                data: {
+                  modelId: model.id,
+                  sku: s.sku,
+                  name: s.name,
+                  color: s.color,
+                  storage: s.storage,
+                  active: true,
+                },
+              });
+
+              // Give initial stock (5 units) so staff can immediately select and test without out-of-stock lock
+              const branches = await this.prisma.branch.findMany({ select: { id: true } });
+              for (const b of branches) {
+                await this.prisma.branchInventory.upsert({
+                  where: { branchId_skuId: { branchId: b.id, skuId: createdSku.id } },
+                  create: { branchId: b.id, skuId: createdSku.id, stock: 5, active: true },
+                  update: {},
+                });
+            }
           }
         }
       }

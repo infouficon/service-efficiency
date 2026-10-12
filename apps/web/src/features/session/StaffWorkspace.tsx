@@ -132,10 +132,22 @@ export function StaffWorkspace({
       if (session.id) {
         try {
           const updated = await resolveStockReviewApi(session.id, 'ACCEPT_PARTIAL');
-          onUpdateSession(updated);
+          onUpdateSession({
+            ...updated,
+            stockPendingReview: undefined,
+          });
           return;
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : '';
+          if (msg.includes('No pending stock review found')) {
+            onUpdateSession({
+              ...session,
+              state: 'FOUND',
+              stockPendingReview: undefined,
+            });
+            return;
+          }
+          setError(msg || 'ดำเนินการไม่สำเร็จ');
           return;
         }
       }
@@ -175,17 +187,32 @@ export function StaffWorkspace({
   };
 
   const handleCustomerChangeItems = async (session: MockSession) => {
+    if (!session.stockPendingReview) return;
     setBusy(true);
     setError('');
     try {
       if (session.id) {
         try {
           const updated = await resolveStockReviewApi(session.id, 'CHANGE_ITEMS');
-          onUpdateSession(updated);
+          onUpdateSession({
+            ...updated,
+            stockPendingReview: undefined,
+          });
           setForm('normal');
           return;
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : '';
+          if (msg.includes('No pending stock review found')) {
+            onUpdateSession({
+              ...session,
+              state: 'PRODUCT_SELECTION',
+              confirmed: false,
+              stockPendingReview: undefined,
+            });
+            setForm('normal');
+            return;
+          }
+          setError(msg || 'ดำเนินการไม่สำเร็จ');
           return;
         }
       }
@@ -638,18 +665,20 @@ export function StaffWorkspace({
                                 <p style={{ margin: '4px 0 8px', fontSize: '13px' }}>
                                   กรุณาสอบถามลูกค้าและเลือกดำเนินการตามความประสงค์:
                                 </p>
-                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
-                                  {activeSession.stockPendingReview.foundItems.length > 0 && (
+                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
                                     <Button
                                       size="sm"
                                       onClick={() => handleCustomerAcceptPartial(activeSession)}
-                                      disabled={busy}
+                                      disabled={busy || activeSession.stockPendingReview.foundItems.length === 0}
+                                      title={activeSession.stockPendingReview.foundItems.length === 0 ? 'ไม่มีสินค้าที่พบพร้อมจัดส่ง' : undefined}
                                     >
                                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                                         <Check size={14} /> 1. ยืนยันซื้อเฉพาะที่เหลือ
+                                        {activeSession.stockPendingReview.foundItems.length === 0 && (
+                                          <span style={{ fontSize: '11px', opacity: 0.8 }}>(ไม่มีสินค้าพร้อมส่ง)</span>
+                                        )}
                                       </span>
                                     </Button>
-                                  )}
                                   <Button
                                     size="sm"
                                     variant="secondary"

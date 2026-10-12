@@ -102,6 +102,60 @@ function getLatestItemText(s: MockSession): string {
 }
 
 function renderStatusTag(s: MockSession) {
+  if (s.outcome === 'CUSTOMER_CANCELLED') {
+    return (
+      <span
+        className="status-tag"
+        style={{ background: '#fee2e2', color: '#991b1b' }}
+      >
+        ยกเลิก
+      </span>
+    );
+  }
+  if (s.outcome === 'NOT_BUY') {
+    return (
+      <span
+        className="status-tag"
+        style={{ background: '#fef3c7', color: '#92400e' }}
+      >
+        ไม่ซื้อ
+      </span>
+    );
+  }
+  if (s.outcome === 'OUT_OF_STOCK') {
+    return (
+      <span
+        className="status-tag"
+        style={{ background: '#fee2e2', color: '#991b1b' }}
+      >
+        สินค้าหมด
+      </span>
+    );
+  }
+  if (s.state === 'COMPLETED') {
+    return (
+      <span
+        className="status-tag"
+        style={{ background: '#e6f4ea', color: '#137333' }}
+      >
+        สำเร็จ
+      </span>
+    );
+  }
+  if (s.stockPendingReview) {
+    return (
+      <span
+        className="status-tag"
+        style={{
+          background: '#fef3c7',
+          color: '#b45309',
+          border: '1px solid #fde68a',
+        }}
+      >
+        ⚠️ ส่งกลับ Staff (RETURN_TO_STAFF)
+      </span>
+    );
+  }
   if (s.state === 'WALK_IN') {
     return (
       <span
@@ -129,46 +183,6 @@ function renderStatusTag(s: MockSession) {
         style={{ background: '#fdf3e7', color: '#a8621d' }}
       >
         กำลังเลือกสินค้า
-      </span>
-    );
-  }
-  if (s.outcome === 'NOT_BUY') {
-    return (
-      <span
-        className="status-tag"
-        style={{ background: '#fef3c7', color: '#92400e' }}
-      >
-        ไม่ซื้อ
-      </span>
-    );
-  }
-  if (s.outcome === 'OUT_OF_STOCK') {
-    return (
-      <span
-        className="status-tag"
-        style={{ background: '#fee2e2', color: '#991b1b' }}
-      >
-        สินค้าหมด
-      </span>
-    );
-  }
-  if (s.outcome === 'CUSTOMER_CANCELLED') {
-    return (
-      <span
-        className="status-tag"
-        style={{ background: '#fee2e2', color: '#991b1b' }}
-      >
-        ยกเลิก
-      </span>
-    );
-  }
-  if (s.state === 'COMPLETED') {
-    return (
-      <span
-        className="status-tag"
-        style={{ background: '#e6f4ea', color: '#137333' }}
-      >
-        สำเร็จ
       </span>
     );
   }
@@ -873,7 +887,7 @@ export function SessionLogsWorkspace({
         } else if (statusFilter === 'NOT_BUY') {
           if (s.outcome !== 'NOT_BUY') return false;
         } else if (statusFilter === 'OUT_OF_STOCK') {
-          if (s.outcome !== 'OUT_OF_STOCK') return false;
+          if (s.outcome !== 'OUT_OF_STOCK' && !s.stockPendingReview) return false;
         } else if (statusFilter === 'CANCELLED') {
           if (s.outcome !== 'CUSTOMER_CANCELLED') return false;
         }
@@ -941,7 +955,7 @@ export function SessionLogsWorkspace({
     (s) => s.outcome === 'NOT_BUY',
   ).length;
   const outOfStockCount = baseFilteredSessions.filter(
-    (s) => s.outcome === 'OUT_OF_STOCK',
+    (s) => s.outcome === 'OUT_OF_STOCK' || Boolean(s.stockPendingReview),
   ).length;
   const cancelledCount = baseFilteredSessions.filter(
     (s) => s.outcome === 'CUSTOMER_CANCELLED',
@@ -949,6 +963,11 @@ export function SessionLogsWorkspace({
 
   // If a session is selected, render the Full-page Detail View
   if (selectedRef) {
+    const detailStatusLabel = selectedSession
+      ? selectedSession.outcome ??
+        (selectedSession.stockPendingReview ? 'RETURN_TO_STAFF (สินค้าไม่ครบ)' : selectedSession.state)
+      : '';
+
     return (
       <div className="session-logs-workspace">
         <div className="back-nav-bar">
@@ -970,7 +989,7 @@ export function SessionLogsWorkspace({
         {selectedSession ? (
           <Panel
             title={`Session: ${selectedSession.reference}`}
-            eyebrow={`สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''} · สถานะ: ${selectedSession.outcome ?? selectedSession.state}`}
+            eyebrow={`สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''} · สถานะ: ${detailStatusLabel}`}
           >
             <div
               className="detail-status-banner"
@@ -979,7 +998,7 @@ export function SessionLogsWorkspace({
               <Notice>
                 สถานะปัจจุบัน:{' '}
                 <strong>
-                  {selectedSession.outcome ?? selectedSession.state}
+                  {detailStatusLabel}
                 </strong>
                 {selectedSession.phone &&
                   ` · เบอร์โทรลูกค้า: ${selectedSession.phone}`}
@@ -1293,7 +1312,7 @@ export function SessionLogsWorkspace({
                 {f === 'ACTIVE' && `กำลังบริการ (${activeCount})`}
                 {f === 'COMPLETED' && `สำเร็จ (${completedCount})`}
                 {f === 'NOT_BUY' && `ไม่ซื้อ (${notBuyCount})`}
-                {f === 'OUT_OF_STOCK' && `สินค้าหมด (${outOfStockCount})`}
+                {f === 'OUT_OF_STOCK' && `สินค้าหมด / ของขาด (${outOfStockCount})`}
                 {f === 'CANCELLED' && `ยกเลิก (${cancelledCount})`}
               </button>
             ))}

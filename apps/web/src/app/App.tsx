@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   User as UserIcon,
   Package,
@@ -12,6 +12,7 @@ import {
   Layers,
   Menu,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -88,6 +89,7 @@ export function App({
   const [view, setView] = useState<AppView>(() => getInitialView(user));
   const [notice, setNotice] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [dismissedAlertRefs, setDismissedAlertRefs] = useState<string[]>([]);
 
   // Sync view state with browser hash routing (Back/Forward buttons)
   useEffect(() => {
@@ -189,6 +191,22 @@ export function App({
         'BILL_OPENED',
       ].includes(s.state),
   ).length;
+
+  const isManagerOrAdmin = user.roles.includes('MANAGER') || user.roles.includes('ADMIN');
+  const managerAlertSessions = useMemo(() => {
+    if (!isManagerOrAdmin) return [];
+    return branchSessions.filter(
+      (s) =>
+        !dismissedAlertRefs.includes(s.reference) &&
+        (Boolean(s.stockPendingReview) ||
+          (s.outcome === 'OUT_OF_STOCK' && isToday(s.timestamps.customer_walk_in_at))),
+    );
+  }, [isManagerOrAdmin, branchSessions, dismissedAlertRefs]);
+
+  const handleDismissAlerts = () => {
+    const currentRefs = managerAlertSessions.map((s) => s.reference);
+    setDismissedAlertRefs((prev) => Array.from(new Set([...prev, ...currentRefs])));
+  };
 
   const handleUpdateSession = (updated: MockSession) => {
     setSessions((prev) =>
@@ -367,6 +385,86 @@ export function App({
             </button>
           </div>
         </header>
+
+        {isManagerOrAdmin && managerAlertSessions.length > 0 && (
+          <div
+            className="manager-alert-banner"
+            style={{
+              background: '#fef2f2',
+              borderBottom: '1px solid #fecaca',
+              padding: '10px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#991b1b', fontSize: '13px' }}>
+              <AlertTriangle size={18} color="#dc2626" />
+              <span>
+                <strong>แจ้งเตือนผู้จัดการสาขา:</strong> มี <strong>{managerAlertSessions.length}</strong> รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่
+                {' '}({managerAlertSessions.map((s) => s.reference).join(', ')})
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button
+                type="button"
+                className="text-button"
+                style={{
+                  background: '#fee2e2',
+                  color: '#991b1b',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  border: '1px solid #fca5a5',
+                  cursor: 'pointer',
+                }}
+                onClick={() => handleSelectView('products')}
+              >
+                ตรวจสอบ Stock สินค้า →
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                style={{
+                  background: '#ffffff',
+                  color: '#991b1b',
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  border: '1px solid #fca5a5',
+                  cursor: 'pointer',
+                }}
+                onClick={() => handleSelectView('logs')}
+              >
+                ดูประวัติรายการ →
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                style={{
+                  background: 'transparent',
+                  color: '#991b1b',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                onClick={handleDismissAlerts}
+                title="ปิดการแจ้งเตือนนี้"
+                aria-label="Close manager notification"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        )}
 
         <main id="main">
           {view === 'staff' && canAccessStaff && (

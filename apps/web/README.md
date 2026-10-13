@@ -4,7 +4,7 @@ Run API first (`npm run dev:api` from root), then `npm run dev`. Vite proxies `/
 
 Staff/Stock/Cashier workspaces remain explicitly marked mock. Product fixtures and confirmed option lists stay local; no workflow data is sent to MySQL. Refresh/logout resets mock work. There is no cross-device workflow synchronization yet. Workspace access follows assigned operational roles; ADMIN global scope is not treated as an implicit role grant
 
-Walk-in → DEMO → BUY/NOT_BUY → product selection/review → confirmation → Stock → Cashier → separate COMPLETED action. Phone is collected only after BUY and must be exactly ten ASCII digits before product selection. Accessory quantity starts at 1, is a positive integer, appears inline and clears when deselected. None never becomes a selected transaction line
+Walk-in → DEMO → BUY/NOT_BUY → product selection/review → confirmation → Stock → Cashier → separate COMPLETED action. The phone number is the first step of a walk-in (D56) and must be exactly ten ASCII digits; the walk-in also picks a customer type and gets a queue number (D57). Accessory quantity starts at 1, is a positive integer, appears inline and clears when deselected. None never becomes a selected transaction line
 
 ## Still unresolved
 

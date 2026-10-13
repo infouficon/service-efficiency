@@ -2,16 +2,18 @@ import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
 
 /** How long a "missing / out of stock" report (D41) keeps a SKU at 0 while warroom has not sent a newer snapshot. */
 export const OUT_OF_STOCK_HOURS = 6;
 
-/** A session that reached FOUND and still holds a unit: when (if ever) it was completed. */
+/** A session item that reached FOUND and still holds `quantity` units (one when absent): when (if ever) its session was completed. */
 export interface Reservation {
   branchId: string;
   skuId: string;
   completedAt: Date | null;
+  quantity?: number;
 }
 export interface ErpInventory {
   branchId: string;
@@ -41,9 +43,9 @@ export function availableUnits(
   )
     return 0;
   const asOf = inv.erpAsOf;
-  const held = (reservations.get(`${inv.branchId}\u0000${inv.skuId}`) ?? []).filter(
-    (r) => !r.completedAt || r.completedAt > asOf,
-  ).length;
+  const held = (reservations.get(`${inv.branchId}\u0000${inv.skuId}`) ?? [])
+    .filter((r) => !r.completedAt || r.completedAt > asOf)
+    .reduce((sum, r) => sum + (r.quantity ?? 1), 0);
   return Math.max(0, inv.erpReady - held);
 }
 
@@ -52,6 +54,7 @@ export class ProductsService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   /** True when the warroom numbers drive what staff see (WARROOM_STOCK_MODE=on and a warroom database is set). */
@@ -85,13 +88,13 @@ export class ProductsService implements OnModuleInit {
     const sessions = await this.prisma.customerSession.findMany({
       where: {
         ...(branchId ? { branchId } : {}),
-        skuId: { not: null },
+        items: { some: {} },
         stockFoundAt: { gte: since },
         outcome: null,
       },
       select: {
         branchId: true,
-        skuId: true,
+        items: { select: { skuId: true, quantity: true } },
         events: {
           where: { eventType: 'COMPLETED' },
           select: { createdAt: true },
@@ -99,17 +102,20 @@ export class ProductsService implements OnModuleInit {
         },
       },
     });
+    // F3: every item of the session holds its quantity
     const map = new Map<string, Reservation[]>();
     for (const s of sessions) {
-      if (!s.skuId) continue;
-      const key = `${s.branchId}\u0000${s.skuId}`;
-      const list = map.get(key) ?? [];
-      list.push({
-        branchId: s.branchId,
-        skuId: s.skuId,
-        completedAt: s.events[0]?.createdAt ?? null,
-      });
-      map.set(key, list);
+      for (const item of s.items) {
+        const key = `${s.branchId}\u0000${item.skuId}`;
+        const list = map.get(key) ?? [];
+        list.push({
+          branchId: s.branchId,
+          skuId: item.skuId,
+          completedAt: s.events[0]?.createdAt ?? null,
+          quantity: item.quantity,
+        });
+        map.set(key, list);
+      }
     }
     return map;
   }
@@ -343,6 +349,8 @@ export class ProductsService implements OnModuleInit {
   async findByBranch(branchId: string) {
     await this.syncBranchInventory();
     const erpOn = this.erpOn();
+    // D59: while "stock unlimited" is on nothing is blocked by stock; the real number is still returned for display
+    const unlimited = await this.settings.stockUnlimited();
 
     const products = await this.prisma.product.findMany({
       where: { active: true },
@@ -406,6 +414,12 @@ export class ProductsService implements OnModuleInit {
                 active: s.active,
                 erpManaged: s.erpManaged,
                 stock: available ?? inv?.stock ?? 0,
+                /** where `stock` comes from: `unlimited` = the switch is on (D59, nothing blocked), `erp` = warroom minus promised units (D52), `manual` = the number ADMIN keeps (D41) */
+                stockSource: unlimited
+                  ? ('unlimited' as const)
+                  : available != null
+                    ? ('erp' as const)
+                    : ('manual' as const),
                 erpCovered: inv?.erpReady != null,
                 erpAsOf: inv?.erpAsOf ?? null,
                 branchActive: inv?.active ?? true,

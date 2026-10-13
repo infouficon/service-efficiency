@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import {
   User as UserIcon,
   Package,
@@ -16,6 +16,8 @@ import {
   Users,
   Activity,
   RefreshCw,
+  Ticket,
+  Wallet,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -33,7 +35,10 @@ import {
 import {
   isToday,
   getSessionMissingDescription,
+  goodsToReturn,
+  needsStockAck,
 } from '../features/session/workflow';
+import { playAlertBeep } from '../utils/beep';
 
 function parseHashView(hash: string): AppView | null {
   const clean = hash.replace(/^#\/?/, '');
@@ -143,7 +148,7 @@ export function App({
                 merged.phone = local.phone || serverS.phone;
                 merged.selection =
                   local.selection &&
-                  (local.selection.product ||
+                  (local.selection.items.length > 0 ||
                     Object.keys(local.selection.accessories).length > 0)
                     ? {
                         ...serverS.selection,
@@ -220,6 +225,18 @@ export function App({
             isToday(s.timestamps.customer_walk_in_at))),
     );
   }, [isManagerOrAdmin, branchSessions, dismissedAlertRefs]);
+
+  // F12: cancels after the stock request that stock has not acknowledged yet, on every page for stock users, with a beep
+  // when a new one arrives. The notice itself is stored on the server, so every device shows it until stock acknowledges.
+  const stockNotices = useMemo(
+    () => (canAccessStock ? branchSessions.filter(needsStockAck) : []),
+    [canAccessStock, branchSessions],
+  );
+  const seenStockNotices = useRef(0);
+  useEffect(() => {
+    if (stockNotices.length > seenStockNotices.current) playAlertBeep();
+    seenStockNotices.current = stockNotices.length;
+  }, [stockNotices.length]);
 
   const handleDismissAlerts = () => {
     const targets = [...managerAlertSessions];
@@ -431,6 +448,28 @@ export function App({
                       >
                         <RefreshCw size={14} /> <span>ซิงก์ ERP</span>
                       </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'queue' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('queue');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Ticket size={14} /> <span>ประเภทลูกค้า / คิว</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'payments' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('payments');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Wallet size={14} /> <span>ช่องทางชำระเงิน</span>
+                      </button>
                     </>
                   )}
                 </div>
@@ -536,7 +575,7 @@ export function App({
                           lineHeight: 1.4,
                         }}
                       >
-                        <strong>{s.reference}:</strong>
+                        <strong>คิว {s.queue}:</strong>
                         <span>{missingText}</span>
                         {note && (
                           <span
@@ -618,6 +657,23 @@ export function App({
                 <X size={18} />
               </button>
             </div>
+          </div>
+        )}
+
+        {stockNotices.length > 0 && view !== 'stock' && (
+          <div className="stock-cancel-banner" role="alert">
+            <span>
+              <AlertTriangle size={18} />{' '}
+              <strong>มี {stockNotices.length} คิวที่ถูกยกเลิก — Stock ต้องดำเนินการ:</strong>{' '}
+              {stockNotices
+                .slice(0, 6)
+                .map((s) => `คิว ${s.queue}${goodsToReturn(s) ? ' (คืนสินค้าเข้าชั้น)' : ' (หยุดค้นหา)'}`)
+                .join(', ')}
+              {stockNotices.length > 6 ? ' …' : ''}
+            </span>
+            <Button size="sm" onClick={() => handleSelectView('stock')}>
+              ไปที่คลังสินค้า →
+            </Button>
           </div>
         )}
 

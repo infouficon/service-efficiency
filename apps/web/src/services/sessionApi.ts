@@ -1,43 +1,65 @@
 import { api } from './api';
 import type {
+  AppSettings,
+  CustomerType,
+  PaymentMethod,
   MockSession,
   Outcome,
   Selection,
   Timestamp,
   WorkflowState,
 } from '../types/session';
+import { formatQueue } from '../features/session/workflow';
 
 export interface ApiSession {
   id: string;
   reference: string;
   branchId: string;
-  branch?: { id: string; code: string; name: string; phone: string };
+  branch?: {
+    id: string;
+    code: string;
+    name: string;
+    phone: string;
+    registrationUrl?: string | null;
+  };
   staffId: string;
   customerId?: string | null;
   phone?: string | null;
+  customerTypeId?: string | null;
+  customerType?: { id: string; letter: string; name: string } | null;
+  queueLetter?: string | null;
+  queueNo?: number | null;
   state: WorkflowState;
   confirmed: boolean;
   outcome?: Outcome | null;
   reason?: string | null;
   otherReason?: string | null;
   cancelledBy?: string | null;
-  productId?: string | null;
-  modelId?: string | null;
-  skuId?: string | null;
-  product?: { id: string; category: string; name: string } | null;
-  model?: { id: string; name: string } | null;
-  sku?: {
+  stockAckAt?: string | null;
+  stockAckBy?: string | null;
+  posBillNo?: string | null;
+  posBillOpenedAt?: string | null;
+  rebuyOf?: { id: string; reference: string } | null;
+  rebuiltAs?: { id: string; reference: string } | null;
+  /** F3: the main products, each with its SKU, model and product. */
+  items?: {
     id: string;
-    sku: string;
-    name: string;
-    color?: string;
-    storage?: string;
-    model?: {
+    skuId: string;
+    quantity: number;
+    deducted: number;
+    sku: {
       id: string;
+      sku: string;
       name: string;
-      product?: { id: string; category: string; name: string };
+      color?: string | null;
+      storage?: string | null;
+      model: {
+        id: string;
+        name: string;
+        product: { id: string; category: string; name: string };
+      };
     };
-  } | null;
+  }[];
   customerWalkInAt?: string | null;
   demoStartAt?: string | null;
   demoEndAt?: string | null;
@@ -57,6 +79,7 @@ export interface ApiSession {
   payments?: { method: string }[];
   stockReview?: {
     missingItems?: string[];
+    missingItemIds?: string[];
     foundItems?: string[];
     stockNote?: string | null;
     reportedAt?: string;
@@ -95,28 +118,18 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
   if (s.billOpenedAt) timestamps.bill_opened_at = s.billOpenedAt;
   if (s.cancelledAt) timestamps.cancelled_at = s.cancelledAt;
 
-  const resolvedCategory =
-    s.product?.category ||
-    s.sku?.model?.product?.category ||
-    'iPhone';
-  const resolvedProductName =
-    s.product?.name ||
-    s.sku?.model?.product?.name ||
-    s.sku?.name ||
-    '';
-  const resolvedModelName =
-    s.model?.name ||
-    s.sku?.model?.name ||
-    s.sku?.name ||
-    '';
-
-  const hasProduct = Boolean(s.product || s.sku || s.model || s.productId || s.skuId);
-
   return {
     id: s.id,
     reference: s.reference,
+    queue:
+      s.queueNo != null ? formatQueue(s.queueLetter, s.queueNo) : s.reference,
+    customerTypeId: s.customerTypeId || undefined,
+    customerTypeLetter: s.customerType?.letter || s.queueLetter || undefined,
+    customerTypeName: s.customerType?.name || undefined,
     branchCode: s.branch?.code || s.branchId,
     branchName: s.branch?.name || '',
+    branchPhone: s.branch?.phone || undefined,
+    branchRegistrationUrl: s.branch?.registrationUrl || undefined,
     phone: s.phone || '',
     staffId: s.staffId,
     state: s.state,
@@ -125,17 +138,25 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     reason: s.reason || undefined,
     otherReason: s.otherReason || undefined,
     cancelledBy: s.cancelledBy || undefined,
+    posBillNo: s.posBillNo || undefined,
+    posBillOpenedAt: s.posBillOpenedAt || undefined,
+    stockAckAt: s.stockAckAt || undefined,
+    stockAckBy: s.stockAckBy || undefined,
+    rebuyOf: s.rebuyOf || undefined,
+    rebuiltAs: s.rebuiltAs || undefined,
     timestamps,
     selection: {
-      product: hasProduct
-        ? {
-            id: s.sku?.id || s.productId || s.skuId || s.product?.id || '',
-            category: resolvedCategory,
-            product: resolvedProductName,
-            model: resolvedModelName,
-            sku: s.sku?.sku || '',
-          }
-        : null,
+      items: (s.items ?? []).map((item) => ({
+        id: item.id,
+        quantity: item.quantity,
+        product: {
+          id: item.sku.id,
+          category: item.sku.model.product.category,
+          product: item.sku.model.product.name,
+          model: item.sku.name || item.sku.model.name,
+          sku: item.sku.sku,
+        },
+      })),
       accessories: accessoriesMap,
       ontop: s.ontop ? s.ontop.map((o) => o.name) : [],
       points: s.points ? s.points.map((p) => p.name) : [],
@@ -145,6 +166,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     stockPendingReview: s.stockReview
       ? {
           missingItems: s.stockReview.missingItems || [],
+          missingItemIds: s.stockReview.missingItemIds || [],
           foundItems: s.stockReview.foundItems || [],
           stockNote: s.stockReview.stockNote || undefined,
           reportedAt: s.stockReview.reportedAt || '',
@@ -162,9 +184,66 @@ export async function fetchSessionsApi(branchId?: string): Promise<MockSession[]
   return data.map(mapApiSessionToMockSession);
 }
 
-export async function createWalkInApi(branchId?: string): Promise<MockSession> {
-  const data = await api<ApiSession>('/sessions', 'POST', { branchId });
+/** D56/D57: a walk-in starts with the customer's phone number and a customer type; the server gives it the queue number. */
+export async function createWalkInApi(
+  branchId: string | undefined,
+  phone: string,
+  customerTypeId?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>('/sessions', 'POST', {
+    branchId,
+    phone,
+    customerTypeId,
+  });
   return mapApiSessionToMockSession(data);
+}
+
+/** Global ADMIN switches (D59): everybody reads them, only ADMIN changes them. */
+export function fetchSettingsApi(): Promise<AppSettings> {
+  return api<AppSettings>('/settings');
+}
+
+export function saveStockUnlimitedApi(stockUnlimited: boolean): Promise<AppSettings> {
+  return api<AppSettings>('/settings', 'PUT', { stockUnlimited });
+}
+
+/** Payment methods in display order (F6); `all` (ADMIN) includes the switched-off ones. */
+export function fetchPaymentMethodsApi(all = false): Promise<PaymentMethod[]> {
+  return api<PaymentMethod[]>(`/payment-methods${all ? '?all=true' : ''}`);
+}
+
+export function createPaymentMethodApi(name: string): Promise<PaymentMethod> {
+  return api<PaymentMethod>('/payment-methods', 'POST', { name });
+}
+
+export function setPaymentMethodActiveApi(id: string, active: boolean): Promise<PaymentMethod> {
+  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}`, 'PUT', { active });
+}
+
+export function movePaymentMethodApi(id: string, direction: 'up' | 'down'): Promise<PaymentMethod> {
+  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/move`, 'POST', { direction });
+}
+
+/** Active customer types in letter order; `all` (ADMIN) includes the switched-off ones. */
+export function fetchCustomerTypesApi(all = false): Promise<CustomerType[]> {
+  return api<CustomerType[]>(`/customer-types${all ? '?all=true' : ''}`);
+}
+
+export function saveCustomerTypeApi(
+  type: { letter?: string; name: string; description?: string | null; active?: boolean },
+  existingId?: string,
+): Promise<CustomerType> {
+  return existingId
+    ? api<CustomerType>(`/customer-types/${encodeURIComponent(existingId)}`, 'PUT', {
+        name: type.name,
+        description: type.description ?? null,
+        active: type.active,
+      })
+    : api<CustomerType>('/customer-types', 'POST', {
+        letter: type.letter || undefined,
+        name: type.name,
+        description: type.description || undefined,
+      });
 }
 
 export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
@@ -184,7 +263,6 @@ export async function updateSelectionApi(
   id: string,
   selection: Selection,
   phone: string,
-  rawProductIds?: { productId?: string; modelId?: string; skuId?: string },
 ): Promise<MockSession> {
   const accessoriesList = Object.entries(selection.accessories).map(([accessoryName, qty]) => ({
     accessoryName,
@@ -198,18 +276,12 @@ export async function updateSelectionApi(
     points: selection.points,
     burnPoints: selection.burnPoints,
     payments: selection.payments,
+    // F3: the main products as a whole list (SKU id + quantity)
+    items: selection.items.map((item) => ({
+      skuId: item.product.id,
+      quantity: item.quantity,
+    })),
   };
-
-  if (rawProductIds !== undefined) {
-    payload.productId = rawProductIds.productId || null;
-    payload.modelId = rawProductIds.modelId || null;
-    payload.skuId = rawProductIds.skuId || null;
-  } else if (selection.product) {
-    if (selection.product.id) {
-      payload.skuId = selection.product.id;
-      payload.productId = selection.product.id;
-    }
-  }
 
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/selection`, 'PUT', payload);
   return mapApiSessionToMockSession(data);
@@ -246,16 +318,43 @@ export async function cancelSessionApi(id: string, reason: string, otherReason?:
   return mapApiSessionToMockSession(data);
 }
 
+/** F13: the cashier sends the order back to stock (wrong item picked). */
+export async function cashierRejectApi(
+  id: string,
+  reason: string,
+  otherReason?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/reject`, 'POST', {
+    reason,
+    otherReason,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
+/** F12: stock confirms it has seen a cancel (and brought the goods back). */
+export async function acknowledgeStockCancelApi(id: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/acknowledge-cancel`, 'POST');
+  return mapApiSessionToMockSession(data);
+}
+
+/** F11: buy again after a "change" cancel: a new session with the old data and the old queue number. */
+export async function rebuyApi(id: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/rebuy`, 'POST');
+  return mapApiSessionToMockSession(data);
+}
+
 export async function reportStockMissingApi(
   id: string,
   missingItems: string[],
   foundItems?: string[],
   stockNote?: string,
+  missingItemIds?: string[],
 ): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/report-missing`, 'POST', {
     missingItems,
     foundItems,
     stockNote,
+    missingItemIds,
   });
   return mapApiSessionToMockSession(data);
 }
@@ -294,6 +393,8 @@ export interface AuditLogItem {
   branchName: string;
   sessionId?: string;
   sessionReference?: string;
+  /** "A012" (D57): what staff call the customer by. */
+  sessionQueue?: string;
   metadata?: Record<string, unknown> | null;
 }
 

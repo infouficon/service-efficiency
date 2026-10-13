@@ -134,12 +134,24 @@ test('availability: ERP ready minus promised units; completed before the snapsho
     0,
     'never negative',
   );
+  // `now` is fixed: the missing-report rule expires after OUT_OF_STOCK_HOURS, so the real clock must not decide this test
+  const reportedAt = new Date('2026-10-12T05:30:00Z');
   assert.equal(
     products.availableUnits(
-      { ...inv, outOfStockAt: new Date('2026-10-12T05:30:00Z') },
+      { ...inv, outOfStockAt: reportedAt },
       new Map(),
+      new Date('2026-10-12T06:00:00Z'),
     ),
     0,
+  );
+  assert.equal(
+    products.availableUnits(
+      { ...inv, outOfStockAt: reportedAt },
+      new Map(),
+      new Date('2026-10-12T12:00:00Z'),
+    ),
+    3,
+    'a report older than 6 hours stops blocking the SKU',
   );
   assert.equal(
     products.availableUnits(
@@ -559,9 +571,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
               branchId: b1.id,
               staffId,
               state: 'FOUND',
-              productId: hand.id,
-              modelId: hand.models[0].id,
-              skuId: sku1.id,
+              items: { create: { skuId: sku1.id, quantity: 1 } },
               stockFoundAt: new Date(),
               events: { create: events },
             },
@@ -973,9 +983,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
             branchId: b1.id,
             staffId,
             state: 'FOUND',
-            productId: hand.id,
-            modelId: hand.models[0].id,
-            skuId: sku1.id,
+            items: { create: { skuId: sku1.id, quantity: 1 } },
             stockFoundAt: new Date(Date.now() - 26 * 3600_000),
           },
         });
@@ -984,7 +992,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
           where: {
             reference: { startsWith: prefix },
             state: 'FOUND',
-            skuId: sku1.id,
+            items: { some: { skuId: sku1.id } },
           },
           select: { id: true },
         });

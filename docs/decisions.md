@@ -831,3 +831,97 @@ Owner instruction: "products come from warroom" and the read-only connection of 
 4. **Locks in mode `on`.** Manual stock edits are refused for rows with ERP data (ADMIN may still switch `active`); names, codes, colour, storage and category of `erpManaged` products/models/SKUs are read-only.
 5. **Scope.** All categories found in `stock_mv`, only parts that some SES branch stocks, branches matched by `Branch.code`. Category text that the rules do not recognise is skipped and reported, never guessed.
 OPEN: the final category rules (after the first dry run), a dedicated read-only database role for SES, and whether the 12.5 h overnight gap needs an extra warroom slot.
+
+## D56 — A walk-in starts at the customer's phone number (2026-10-13)
+
+Owner, relaying the 2026-10-13 meeting: "เริ่มการทำงานที่ กรอก เบอร์โทร". **Supersedes** requirements §6 and `erd.md` "Confirmed phone collection timing" (phone only after BUY, never at walk-in or NOT_BUY).
+
+1. **First step.** `POST /api/sessions` needs `phone` (exactly 10 ASCII digits, as before). The `Customer` row is created or linked in the same transaction and the session stores `phone` and `customerId` from the first moment.
+2. **Consequences.** A NOT_BUY or cancelled visit now keeps the customer's phone number (the privacy wording and any retention rule are the owner's call). The phone field at the BUY step stays, pre-filled, so a typo can still be corrected before confirmation (the 10-digit check at confirmation is unchanged).
+3. **Walk-in time.** `customerWalkInAt` is the moment the start form is submitted; the phone is typed before the session exists.
+4. **Default, not yet confirmed.** The phone is required and there is no "customer refused" path. OPEN: must a customer who refuses still be servable? If yes, say how it is recorded (a reason, a flag).
+
+## D57 — Customer types and queue numbers replace the `SES-…` reference on screen (2026-10-13)
+
+Owner: "เปลี่ยนการรันคิวแบบดูง่ายเพื่อให้เรียกลูกค้าง่าย", "ให้ทุกที่ที่เป็น SES-XXXXX เปลี่ยนเป็น คิว ให้หมด", "แยกประเภทลูกค้าเป็น A B โดยแบ่ง B พวกใช้เวลานาน"; asked how the types are made, the owner chose: "ทำให้ตั้งค่าหลังบ้าน สร้าง type เอง เรียงจาก a-z". Supersedes D6 for what is shown; D6's format stays as the internal key.
+
+1. **Customer types** are a back-office list (ADMIN: Admin → "ประเภทลูกค้า / คิว"): a letter A-Z (unique, the sort order, never changed after creation), a name, a description, an active flag. The migration seeds `A ลูกค้าทั่วไป` and `B ลูกค้าใช้เวลานาน`; the owner renames them or adds more (a new type takes the next free letter unless one is given). Types are switched off, never deleted, and at least one stays active.
+2. **Choosing.** The staff member picks the type at the phone step; the active type with the lowest letter is the default. The type cannot be changed afterwards (default, not yet confirmed).
+3. **Queue number** = type letter + a running number, **per branch, per type letter, per Bangkok calendar day** (restarts at 00:00 Asia/Bangkok): `A001`, `B012`; four digits after 999. It is stored on the session (`queueLetter`, `queueNo`, the letter frozen at creation) and shown as "คิว A012" on every screen (staff, stock, cashier, logs, alerts, audit view, export).
+4. **`reference` stays** as the internal unique key (`SES-YYYYMMDD-NNNNNN`, now with the Bangkok date): lookups, deep links, React keys. It is not shown, except as the last identification column of the CSV export, because queue numbers repeat across branches, types and days.
+5. **Sessions from before this change** show their old per-day running number without a letter ("คิว 007").
+6. **"B = takes long"** is only the name the owner gives. Reports compare durations by type; the export has a "ประเภทลูกค้า" column (the per-step durations arrive with the export change).
+7. **Allocation** is atomic (`DailyCounter`, one INSERT … ON DUPLICATE KEY UPDATE inside the walk-in transaction) and fixes H-05. See [ADR 0001](adr/0001-atomic-daily-counters-for-queue-numbers.md).
+
+## D58 — Receipt shows no prices (2026-10-13)
+
+Owner, asked whether the printed receipt shows prices: "ไม่แสดงราคา (แนะนำ)". The "พิมพ์ใบเสร็จ" button prints an **order summary**: branch name and phone, date and time, queue number, staff, items with quantities, payment method names and the branch registration QR. No prices or totals; the legal receipt stays in U POS. SES keeps storing no money amounts (requirements §20, D26). Defaults, not yet confirmed: 80 mm paper, printable once the order is confirmed.
+
+**Built 2026-10-13.** A "พิมพ์ใบเสร็จ" button under the order summary on the cashier screen and in the history detail (confirmed sessions), a print stylesheet for an 80 mm sheet (the browser's print dialog; nothing else is printed), titled "ใบเสร็จรับสินค้า (สรุปรายการ ไม่แสดงราคา)": branch name and phone, the time of printing, the queue number, the staff, the main products and accessories with quantities, the payment methods, Ontop / points, the registration QR (D67) and a thank-you line. No customer phone number is printed.
+
+## D59 — "Stock unlimited" is one global ADMIN switch (2026-10-13)
+
+Owner, asked for the scope of the temporary "unlimited stock" request: "สวิตช์รวมของ ADMIN (แนะนำ)". One setting, stored in the database (not an env var), switched by ADMIN; **on** by default until the warroom sync is switched to `on` (D55). While on: no SKU is blocked by stock (D41's "สินค้าหมด" does not apply), the screens show "ไม่จำกัด", FOUND does not decrement and a cancel does not give a unit back; it overrides the ERP numbers.
+
+**Built 2026-10-13.** The switch is a `Setting` row (`stockUnlimited`; no row = on), changed at Admin → ซิงก์ ERP (shows who and when) via `GET/PUT /api/settings`. `GET /api/products` marks every SKU with `stockSource` (`unlimited` | `erp` | `manual`) and still returns the real number. FOUND records how many units it really took in the STOCK_FOUND event (`metadata.deducted`) and a cancel gives back exactly that, so toggling the switch between FOUND and cancel can never invent or lose a unit; events from before this change carry no figure and count as one unit, as before. D41's other rules (zero on a missing report, the manager alert) are unchanged.
+
+## D60 — Bill opening on U POS works both ways (2026-10-13)
+
+Owner, asked how SES and U POS (`infouficon/UFPOS`) should meet so the cashier no longer does the work twice and the KPI can be measured: "สองทาง (แนะนำ)". SES sends the order lines to U POS so the bill is pre-filled; U POS reports back when the bill is really opened, and SES records that moment (instead of the click on "เปิดบิล"). It needs a contract with the U POS team (a GitHub issue labelled `integration:pos` in `infouficon/UFPOS`); nothing has been opened there yet.
+
+**SES side built 2026-10-13, U POS side not started.** `GET /api/integrations/pos/orders?branch=<code>[&queue=]` (the orders at the cashier with their lines, no prices) and `POST /api/integrations/pos/bills {reference, billNo, openedAt}` (moves an order at the cashier to BILL_OPENED at the real time, or stores the bill beside the cashier's own click; idempotent), behind a bearer key `POS_API_KEY` (unset or shorter than 32 characters = the routes answer 404). The contract and the request to paste into UFPOS: [docs/agents/pos-integration.md](agents/pos-integration.md).
+
+## D61 — A session holds several main products, each with a quantity (2026-10-13)
+
+Owner, relaying the 2026-10-13 meeting: "Main product เพิ่มได้หลายอัน" and "ตัวเลข จำนวนที่เพิ่ม ให้มี + − เพื่อให้ง่ายต่อการใช้". **Supersedes** requirements §5 / D8 ("exactly one main Product", `erd.md` "One main Product once selected").
+
+1. **Items.** A Customer Session has any number of main products: `SessionItem` = a SKU and a quantity of 1 or more; a SKU appears once per session (picking it again raises its quantity). The old `productId/modelId/skuId` columns of `CustomerSession` are kept for history and never written again; the migration copied every existing main product into one item (quantity 1).
+2. **Confirmation** needs at least one main product (as before: at least one). Accessories stay the fixed list of D48.
+3. **Stock follows the items.** FOUND takes each item's quantity off the branch shelf (unless the D59 switch is on) and records it per item (`deducted`); a cancel gives back exactly that. D41's "missing report sets the SKU to 0" applies to each missing item. The ERP availability (D52/D55) subtracts the quantity of every promised item.
+4. **Stock review (D40).** STOCK ticks what it found item by item and reports the missing main products **by item id** (accessories still by name). ACCEPT_PARTIAL keeps the rest (and takes it off the shelf); CHANGE_ITEMS drops the missing ones and reopens the selection. A review made before this change names the main product instead and is still understood.
+5. **Default, not confirmed.** In the screen, `+` on a main product stops at the stock figure unless "stock unlimited" is on (a customer cannot be promised more than is on the shelf).
+
+## D62 — The product picker goes step by step, like the trade-in app (2026-10-13)
+
+Owner: "กดเลือกหมวดหมู่ ทำแบบเทรนอิน เพื่อให้ดูง่าย". The picker shows big tiles: **category** (iPhone, iPad, Mac, Watch) → **product** → **model** → **capacity / colour**; a step with a single choice is skipped, a back button climbs one step, and every pick lands in the list of chosen main products (D61). Built from the hierarchy the catalog already has (Product → Model → SKU). OPEN: the trade-in app (u-bid.uficon.com, behind a login) could not be looked at, so the tiles follow the description only; a screenshot of its category screen would let the look match.
+
+## D63 — Any role can cancel; stock is told until it acknowledges (2026-10-13)
+
+Owner, relaying the meeting: "ยกเลิกได้ทุก role เมื่อยกเลิกแล้ว แจ้ง stock แบบเห็นชัดๆ". **Supersedes** the stage-based cancel matrix (`permissions.md`, H-13; OQ-01 / OQ-02 about who may cancel where no longer matter). D20 stays: a cancelled session is final, nothing reopens it.
+
+1. **Who and when.** Any signed-in role of the branch (STAFF, STOCK, CASHIER, MANAGER; ADMIN everywhere) can cancel any session that has not ended, at any stage. The reason is required (`อื่น ๆ` needs text).
+2. **Stock is told.** When the session had already been confirmed (the stock request exists), the cancel is a notice for stock: a red banner on **every page** for STOCK users (with a short beep when a new one arrives) and a list at the top of the stock page. It says "ต้องคืนสินค้าเข้าชั้น" when the goods had been picked (FOUND or later) and "หยุดค้นหา" otherwise, with the items, the reason and who cancelled.
+3. **It stays until acknowledged.** A STOCK user, a MANAGER of the branch or an ADMIN presses "คืนของเข้าชั้นแล้ว" / "รับทราบ". That is stored on the session (`stockAckAt`, `stockAckBy`, event `STOCK_ACKNOWLEDGED_CANCEL`) and shows on every device, replacing the browser-only dismissal (H-23 for this alert). A STOCK user who cancels before anything was picked needs no acknowledgement; a cancel before the stock request tells stock nothing.
+4. **Units** go back exactly as D41/D59/D61 say.
+
+## D64 — The cashier can send an order back to stock (2026-10-13)
+
+Owner: "Cashier สามารถ reject order กลับมา stock ได้ กรณีหยิบสินค้ามาผิด".
+
+1. **When.** From SENT_TO_CASHIER, CASHIER_RECEIVED or CASHIER_SCAN (not once the bill is open), by a CASHIER, with a reason: `หยิบสินค้าผิด`, `สินค้าชำรุด/มีตำหนิ` or `อื่น ๆ` (+ text). The reasons are a default, the owner gave none.
+2. **Effect.** The whole order (not per item, default) goes back to the stock stage (`SEARCHING`); the units FOUND took return to the shelf; the stock-found, cashier-received and cashier-scan milestones start over for the new pass (the first pass stays in the events); event `CASHIER_REJECTED {reason, fromState}`. Stock sees "Cashier ส่งกลับ: <reason>" on the card and in the detail until it finds the goods again.
+3. This is the first backward transition besides D40's CHANGE_ITEMS. The per-step durations in the export (F14) now add up the steps of every pass.
+
+## D65 — Change reasons and "buy again" (2026-10-13)
+
+Owner: "เหตุผลในการเปลี่ยน เปลี่ยนรุ่น สี ความจุ พนง เลือกสินค้าผิดพลาด (มีปุ่ม ให้กดซื้อใหม่โดยดึง data อันเก่า ใช้คิวเก่าในการทำงาน)".
+
+1. **Reasons.** Four new cancel reasons: `เปลี่ยนรุ่น`, `เปลี่ยนสี`, `เปลี่ยนความจุ`, `พนักงานเลือกสินค้าผิดพลาด`.
+2. **Buy again.** A session cancelled with one of them shows "ซื้อใหม่ (คิว A012)" to STAFF. It creates a **new** session (D20: nothing is reopened) pre-filled with the customer, customer type, the queue letter **and number** (the counter does not move), items, accessories, Ontop, Points, Burn Points and payments. It starts at product selection (the customer already decided to buy; no DEMO), belongs to the staff who pressed the button, and points back with `rebuyOfId`. Each cancelled session can be bought again once; a bought-again session can itself be changed again.
+3. **Time.** The new session has its own milestones (walk-in = the moment of the rebuy). The visit as a whole (first walk-in to the end of the last session) is a column of the export, next to columns that link the two references; the stock side of the old session is an ordinary cancel (D63).
+
+## D66 — Payment methods are a list the back office keeps (2026-10-13)
+
+Owner, relaying the meeting: "เพิ่มช่องทางชำระเงินอีก 3 ช่องทาง". The names were not given, so instead of three hard-coded guesses the list becomes data ADMIN keeps; the owner adds the three (and any later ones) at Admin → ช่องทางชำระเงิน with no deploy. **This relaxes D15 for this one list** (the fixed option lists stay fixed in code, and "admin UI for the fixed option lists" in CONTEXT §5 is no longer true for payments). Default, not confirmed: say if three fixed names are preferred.
+
+1. **List.** `PaymentMethod` (name unique, active, position). The migration seeds the eleven methods the app offered, in their order.
+2. **What ADMIN can do.** Add a method (it goes to the end), switch one off or on, move it up or down. A name is what a session stores, so it is **never renamed or deleted**; at least one method stays active.
+3. **Staff** see the active methods in that order when they pick payments (the built-in list is the fallback when it cannot be loaded). A method switched off after it was picked on a session stays visible on that session. The server still does not check the picked names against the list (H-11 stays open for payments).
+
+## D67 — One registration QR per branch, at the foot of the receipt (2026-10-13)
+
+Owner: "QR แนบท้ายใบเสร็จ เพื่อกรอกข้อมูลลงทะเบียน ไว้ (QR แยกแต่ละสาขา)". The address to encode was not given (OQ-15), so it is data: `Branch.registrationUrl`.
+
+1. **Where it is set.** Admin → จัดการสาขา → "QR ลงทะเบียน" (ADMIN): an http(s) address up to 512 characters, with a live preview of the QR; empty clears it. `PUT /branches/:id/registration-url`. It also works on ERP-managed branches (the ERP does not own this field, D53).
+2. **On the receipt.** The QR is drawn in the browser from the branch's address (error correction M, quiet zone, black on white; the text is encoded as UTF-8). A branch without an address prints no QR, and the screen says so next to the print button.
+3. **The address pattern is the owner's / the U POS team's.** U POS's `/register` has no branch parameter today; a `?branch=<code>` would let it attribute the registration (to ask in the integration request, see D60). Until then any address can be set.

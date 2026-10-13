@@ -7,6 +7,7 @@ import {
   CreditCard,
 } from 'lucide-react';
 import type { MockSession } from '../../types/session';
+import { itemName } from './workflow';
 
 interface SummaryProps {
   session: MockSession;
@@ -70,22 +71,18 @@ export function Summary({
             <ShoppingBag size={15} /> รายการสินค้า & อุปกรณ์เสริม
           </div>
           <div className="subsection-grid">
-            {s?.product ? (
-              <>
-                <div className="info-item-row">
-                  <span className="info-item-label">สินค้าหลัก (Model):</span>
-                  <span className="info-item-value">
-                    {s.product.category ? `${s.product.category} · ` : ''}
-                    {s.product.model || s.product.product}
+            {s?.items && s.items.length > 0 ? (
+              s.items.map((item) => (
+                <div className="info-item-row" key={item.id ?? item.product.id}>
+                  <span className="info-item-label">สินค้าหลัก:</span>
+                  <span className="info-item-value" style={{ textAlign: 'right' }}>
+                    {item.product.category ? `${item.product.category} · ` : ''}
+                    {itemName(item)}{' '}
+                    <strong style={{ color: '#0abab5' }}>× {item.quantity}</strong>{' '}
+                    <span className="product-sku-chip">{item.product.sku || '—'}</span>
                   </span>
                 </div>
-                <div className="info-item-row">
-                  <span className="info-item-label">รหัสสินค้า (SKU):</span>
-                  <span className="product-sku-chip">
-                    {s.product.sku || '—'}
-                  </span>
-                </div>
-              </>
+              ))
             ) : (
               <div className="info-item-row">
                 <span className="info-item-label">สินค้าหลัก:</span>
@@ -154,6 +151,17 @@ export function Summary({
                 )}
               </div>
             </div>
+            {session.posBillNo && (
+              <div className="info-item-row">
+                <span className="info-item-label">บิลใน U POS:</span>
+                <span className="info-item-value">
+                  {session.posBillNo}
+                  {session.posBillOpenedAt
+                    ? ` · เปิดเมื่อ ${new Date(session.posBillOpenedAt).toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' })}`
+                    : ''}
+                </span>
+              </div>
+            )}
             {s?.ontop && s.ontop.length > 0 && (
               <div className="info-item-row">
                 <span className="info-item-label">Ontop:</span>

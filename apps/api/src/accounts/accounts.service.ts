@@ -9,6 +9,7 @@ import {
 import { Prisma, type RoleCode } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { formatQueue } from '../queue/queue.service';
 import {
   hashPassword,
   IDLE_MS,
@@ -25,6 +26,12 @@ type Tx = Prisma.TransactionClient;
 export const ERP_MANAGED_ROLES: RoleCode[] = ['STAFF', 'STOCK', 'CASHIER'];
 const ERP_PASSWORD_MESSAGE =
   'บัญชีนี้ใช้รหัสผ่านเดียวกับ ERP กรุณาเปลี่ยนรหัสผ่านที่ ERP (ระบบซิงก์ทุกวัน 10:00)';
+const queueOf = (
+  session?: { queueLetter: string | null; queueNo: number | null } | null,
+) =>
+  session?.queueNo != null
+    ? formatQueue(session.queueLetter, session.queueNo)
+    : undefined;
 export function publicAccount(account: Account) {
   const fullName = [account.firstName, account.lastName].filter(Boolean).join(' ');
   return {
@@ -394,6 +401,18 @@ export class AccountsService {
     });
   }
 
+  /** F10: the QR on the receipt. ADMIN only; the ERP does not own this field, so ERP-managed branches take it too. */
+  setBranchRegistrationUrl(token: string | undefined, id: string, url: string | null) {
+    return this.transaction(async (tx) => {
+      const actor = await this.actor(tx, token);
+      if (!actor.roles.some((r) => r.roleCode === 'ADMIN'))
+        throw new ForbiddenException();
+      const branch = await tx.branch.findUnique({ where: { id } });
+      if (!branch) throw new NotFoundException('ไม่พบสาขา');
+      return tx.branch.update({ where: { id }, data: { registrationUrl: url } });
+    });
+  }
+
   async getAuditLogs(limit = 200) {
     const [events, loginSessions, staffMembers, sessionsWithAck] = await Promise.all([
       this.prisma.sessionEvent.findMany({
@@ -404,6 +423,8 @@ export class AccountsService {
             select: {
               id: true,
               reference: true,
+              queueLetter: true,
+              queueNo: true,
               branch: { select: { name: true, code: true } },
             },
           },
@@ -433,6 +454,8 @@ export class AccountsService {
         select: {
           id: true,
           reference: true,
+          queueLetter: true,
+          queueNo: true,
           stockReview: true,
           branch: { select: { name: true, code: true } },
         },
@@ -458,6 +481,8 @@ export class AccountsService {
       branchName: string;
       sessionId?: string;
       sessionReference?: string;
+      /** What staff call the customer by (D57), e.g. "A012". */
+      sessionQueue?: string;
       metadata?: Record<string, unknown> | null;
     }> = [];
 
@@ -490,6 +515,8 @@ export class AccountsService {
         case 'CASHIER_SCANNED': label = 'แคชเชียร์ยิงบาร์โค้ด'; break;
         case 'BILL_OPENED': label = 'เปิดบิลชำระเงิน'; break;
         case 'COMPLETED': label = 'ทำรายการเสร็จสมบูรณ์'; break;
+        case 'CASHIER_REJECTED': label = 'แคชเชียร์ส่งสินค้ากลับ Stock'; break;
+        case 'STOCK_ACKNOWLEDGED_CANCEL': label = 'Stock รับทราบการยกเลิก / คืนสินค้าเข้าชั้นแล้ว'; break;
       }
 
       auditItems.push({
@@ -503,6 +530,7 @@ export class AccountsService {
         branchName: e.session?.branch?.name || '-',
         sessionId: e.sessionId,
         sessionReference: e.session?.reference,
+        sessionQueue: queueOf(e.session),
         metadata: (e.metadata as Record<string, unknown>) || null,
       });
     }
@@ -522,6 +550,7 @@ export class AccountsService {
           branchName: s.branch?.name || '-',
           sessionId: s.id,
           sessionReference: s.reference,
+          sessionQueue: queueOf(s),
           metadata: { acknowledgedAt: sr.acknowledgedAt, acknowledgedBy: sr.acknowledgedBy },
         });
       }

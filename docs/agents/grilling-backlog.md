@@ -90,6 +90,12 @@ Settled 2026-10-12 (D54): scrypt hash at import; login id = `staff_id` (also the
 Agreed proposal, not yet challenged: leavers and closed branches (deactivate only accounts the sync created, revoke sessions, spare the last ADMIN; staff of a closed branch get no account); the 10:00 Bangkok job with a DB slot claim, an ADMIN "run now" and a run log; the shared `dashboard` account in Coolify env for now, a dedicated read-only account later.
 8. Branch sync (D53): fields copied, frequency (same 10:00 job), unique `Branch.code`.
 
+## G-13 Meeting feedback of 2026-10-13 (17 requests). Read [meeting-feedback-2026-10-13.md](meeting-feedback-2026-10-13.md) first
+It supersedes parts of G-1 (cancellation: any role can cancel, F12), G-3 (ownership), G-5 (queue numbers replace `SES-…` references, F7/F8) and the old rule "phone only after BUY" (F1).
+Answered 2026-10-13: Q1 receipt without prices (D58), Q2 types configured in the back office, A-Z (D57), Q3 U POS two-way (D60), Q4 one global ADMIN switch (D59). Still open: payment method names, registration URL, whether a customer may refuse to give a phone number (§5 there).
+**Built:** F1 phone first (D56), F7/F8 queue numbers and wording, F15 customer types (D57, ADR 0001) on branch `feat/queue-types-phone-first`.
+Order: quick wins → small schema → model changes (phone first, multiple main products, buy again, cashier reject) → cross-repo U POS.
+
 ---
 
 ### Suggested order and dependencies

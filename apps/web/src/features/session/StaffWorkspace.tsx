@@ -12,14 +12,21 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
-import { cancelReasons, notBuyReasons, stages } from '../../constants/options';
+import {
+  cancelReasons,
+  changeReasons,
+  notBuyReasons,
+  stages,
+} from '../../constants/options';
 import type { MockSession, MockUser, Selection } from '../../types/session';
 import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
+import { WalkInForm } from './WalkInForm';
 import {
   advance,
   confirmSelection,
+  itemsText,
   phoneIsValid,
   progressIndex,
   type StepAction,
@@ -29,12 +36,19 @@ import {
   cancelSessionApi,
   confirmPurchaseApi,
   createWalkInApi,
+  rebuyApi,
   recordNotBuyApi,
   resolveStockReviewApi,
   updateSelectionApi,
 } from '../../services/sessionApi';
 
 const previewTime = () => new Date().toISOString();
+
+/** F11: cancelled for a change (model, colour, capacity, wrong product) and not bought again yet. The server checks it too. */
+const canRebuy = (s: MockSession) =>
+  s.outcome === 'CUSTOMER_CANCELLED' &&
+  (changeReasons as readonly string[]).includes(s.reason ?? '') &&
+  !s.rebuiltAs;
 
 interface StaffWorkspaceProps {
   user: MockUser;
@@ -122,159 +136,42 @@ export function StaffWorkspace({
     }
   }, [activeSessionRef, activeSession?.state, activeSession?.confirmed, form]);
 
+  /** The customer keeps what is left (D40 ACCEPT_PARTIAL): the server drops the missing items and the session moves on to FOUND. */
   const handleCustomerAcceptPartial = async (session: MockSession) => {
-    if (!session.stockPendingReview) return;
-    const { missingItems } = session.stockPendingReview;
-
+    if (!session.stockPendingReview || !session.id) return;
     setBusy(true);
     setError('');
     try {
-      if (session.id) {
-        try {
-          const updated = await resolveStockReviewApi(session.id, 'ACCEPT_PARTIAL');
-          onUpdateSession({
-            ...updated,
-            stockPendingReview: undefined,
-          });
-          return;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg.includes('No pending stock review found')) {
-            onUpdateSession({
-              ...session,
-              state: 'FOUND',
-              stockPendingReview: undefined,
-            });
-            return;
-          }
-          setError(msg || 'ดำเนินการไม่สำเร็จ');
-          return;
-        }
-      }
-
-      // Fallback in-memory
-      const newAccessories: Record<string, string> = {};
-      Object.entries(session.selection.accessories).forEach(([k, v]) => {
-        if (!missingItems.includes(k)) {
-          newAccessories[k] = v;
-        }
-      });
-
-      const isMainProductMissing = (() => {
-        if (!session.selection.product) return false;
-        const prod = session.selection.product;
-        const found = session.stockPendingReview?.foundItems || [];
-        const prodName = prod.model || prod.product || 'สินค้าหลัก';
-        if (found.some((f) => f === prodName || (prod.model && f.includes(prod.model)))) {
-          return false;
-        }
-        return missingItems.some((item) => {
-          if (item === 'สินค้าหลัก') return true;
-          if (prod.model && item === prod.model) return true;
-          if (prod.sku && item === prod.sku) return true;
-          return false;
-        });
-      })();
-
-      const newSelection: Selection = {
-        ...session.selection,
-        product: isMainProductMissing ? null : session.selection.product,
-        accessories: newAccessories,
-      };
-
-      const updated: MockSession = {
-        ...session,
-        selection: newSelection,
-        state: 'FOUND',
-        stockPendingReview: undefined,
-      };
-      onUpdateSession(updated);
+      const updated = await resolveStockReviewApi(session.id, 'ACCEPT_PARTIAL');
+      onUpdateSession({ ...updated, stockPendingReview: undefined });
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
   };
 
+  /** The customer wants other items instead (D40 CHANGE_ITEMS): the missing items drop out and the selection reopens. */
   const handleCustomerChangeItems = async (session: MockSession) => {
-    if (!session.stockPendingReview) return;
+    if (!session.stockPendingReview || !session.id) return;
     setBusy(true);
     setError('');
     try {
-      if (session.id) {
-        try {
-          const updated = await resolveStockReviewApi(session.id, 'CHANGE_ITEMS');
-          onUpdateSession({
-            ...updated,
-            stockPendingReview: undefined,
-          });
-          setForm('normal');
-          return;
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : '';
-          if (msg.includes('No pending stock review found')) {
-            onUpdateSession({
-              ...session,
-              state: 'PRODUCT_SELECTION',
-              confirmed: false,
-              stockPendingReview: undefined,
-            });
-            setForm('normal');
-            return;
-          }
-          setError(msg || 'ดำเนินการไม่สำเร็จ');
-          return;
-        }
-      }
-
-      // Fallback in-memory
-      const { missingItems = [] } = session.stockPendingReview || {};
-      const newAccessories: Record<string, string> = {};
-      Object.entries(session.selection.accessories).forEach(([k, v]) => {
-        if (!missingItems.includes(k)) {
-          newAccessories[k] = v;
-        }
-      });
-
-      const isMainProductMissing = (() => {
-        if (!session.selection.product) return false;
-        const prod = session.selection.product;
-        const found = session.stockPendingReview?.foundItems || [];
-        const prodName = prod.model || prod.product || 'สินค้าหลัก';
-        if (found.some((f) => f === prodName || (prod.model && f.includes(prod.model)))) {
-          return false;
-        }
-        return missingItems.some((item) => {
-          if (item === 'สินค้าหลัก') return true;
-          if (prod.model && item === prod.model) return true;
-          if (prod.sku && item === prod.sku) return true;
-          return false;
-        });
-      })();
-
-      const newSelection: Selection = {
-        ...session.selection,
-        product: isMainProductMissing ? null : session.selection.product,
-        accessories: newAccessories,
-      };
-
-      const updated: MockSession = {
-        ...session,
-        selection: newSelection,
-        state: 'PRODUCT_SELECTION',
-        confirmed: false,
-        stockPendingReview: undefined,
-      };
-      onUpdateSession(updated);
+      const updated = await resolveStockReviewApi(session.id, 'CHANGE_ITEMS');
+      onUpdateSession({ ...updated, stockPendingReview: undefined });
       setForm('normal');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
   };
 
-  const startNewWalkIn = async () => {
+  const startNewWalkIn = async (phone: string, customerTypeId?: string) => {
     setBusy(true);
     setError('');
     try {
-      const newS = await createWalkInApi(user.branchCode);
+      const newS = await createWalkInApi(user.branchCode, phone, customerTypeId);
       onAddSession(newS);
       setActiveSessionRef(newS.reference);
       setForm('normal');
@@ -303,6 +200,27 @@ export function StaffWorkspace({
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** F11: a new session with the old data and the old queue number; the cancelled one stays cancelled. */
+  const handleRebuy = async () => {
+    if (!activeSession?.id) return;
+    setBusy(true);
+    setError('');
+    try {
+      const created = await rebuyApi(activeSession.id);
+      onUpdateSession({
+        ...activeSession,
+        rebuiltAs: { id: created.id ?? '', reference: created.reference },
+      });
+      onAddSession(created);
+      setActiveSessionRef(created.reference);
+      setForm('normal');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ซื้อใหม่ไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -426,10 +344,16 @@ export function StaffWorkspace({
           </div>
         </div>
         <div>
-          <Button onClick={startNewWalkIn} disabled={busy}>
+          <Button
+            onClick={() => {
+              setActiveSessionRef(null);
+              setForm('normal');
+            }}
+            disabled={busy}
+          >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
               <Plus size={16} />
-              {busy ? 'กำลังสร้าง…' : 'ลงทะเบียนลูกค้าใหม่'}
+              รับลูกค้าใหม่
             </span>
           </Button>
         </div>
@@ -460,7 +384,7 @@ export function StaffWorkspace({
                     <AlertTriangle size={16} color="#dc2626" />
                     ฝ่ายคลัง (Stock) แจ้งเตือน:
                   </strong>{' '}
-                  Session <strong>{ps.reference}</strong> ({ps.selection.product?.model || 'สินค้า'}) —{' '}
+                  คิว <strong>{ps.queue}</strong> ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
                   มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
                 </span>
                 <Button
@@ -495,7 +419,7 @@ export function StaffWorkspace({
                 }}
               >
                 <div className="card-top">
-                  <span className="card-ref">{s.reference}</span>
+                  <span className="card-ref">คิว {s.queue}</span>
                   {s.stockPendingReview ? (
                     <span
                       className="status-tag status-outcome"
@@ -516,10 +440,13 @@ export function StaffWorkspace({
                   )}
                 </div>
                 <div className="card-product">
-                  {s.selection.product?.model || 'ยังไม่ระบุสินค้า'}
+                  {itemsText(s.selection.items) || 'ยังไม่ระบุสินค้า'}
                 </div>
                 <div className="card-meta">
-                  <span>ผู้ดูแล: {s.staffId}</span>
+                  <span>
+                    ผู้ดูแล: {s.staffId}
+                    {s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
+                  </span>
                   <span>{s.phone || 'ยังไม่มีเบอร์'}</span>
                 </div>
               </div>
@@ -531,23 +458,10 @@ export function StaffWorkspace({
           {!activeSession ? (
             <div className="content-grid">
               <Panel
-                title="เริ่มต้อนรับลูกค้า (Walk-in)"
+                title="รับลูกค้าใหม่ (Walk-in)"
                 eyebrow="01 / CUSTOMER ARRIVAL"
               >
-                <p className="muted">
-                  สร้าง Customer Session ทันทีที่ลูกค้าเดินเข้ามาในร้าน
-                </p>
-                <div style={{ marginTop: '1.5rem' }}>
-                  <Button onClick={startNewWalkIn} disabled={busy}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                      <Plus size={16} />
-                      {busy ? 'กำลังสร้าง Session…' : 'ลูกค้าเดินเข้าร้าน'}
-                    </span>
-                  </Button>
-                </div>
-                <p className="fine" style={{ marginTop: '1rem' }}>
-                  * เบอร์โทรศัพท์จะถูกขอเมื่อลูกค้าตัดสินใจ "ซื้อ" เท่านั้น
-                </p>
+                <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
               </Panel>
             </div>
           ) : (
@@ -562,13 +476,20 @@ export function StaffWorkspace({
                     <ArrowLeft size={14} /> รายการ Session ({branchSessions.length})
                   </button>
                   <span className="eyebrow">
-                    SESSION REFERENCE · {activeSession.branchName}
+                    QUEUE · {activeSession.branchName}
                   </span>
-                  <h2>{activeSession.reference}</h2>
+                  <h2 className="queue-title">คิว {activeSession.queue}</h2>
+                  {activeSession.rebuyOf && (
+                    <span className="status-tag status-found" style={{ marginRight: '8px' }}>
+                      ซื้อใหม่ (ใช้คิวเดิม)
+                    </span>
+                  )}
                   <span className="muted">
+                    {activeSession.customerTypeName
+                      ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
+                      : ''}
                     Customer Phone ·{' '}
-                    {activeSession.phone ||
-                      'ยังไม่ได้เก็บเบอร์โทร (รอหลังตัดสินใจ BUY)'}
+                    {activeSession.phone || 'ไม่มีเบอร์โทร'}
                   </span>
                 </div>
                 <span className={`state-pill ${finished ? 'terminal' : ''}`}>
@@ -632,6 +553,17 @@ export function StaffWorkspace({
                           <p>ผู้ยกเลิก: {activeSession.cancelledBy}</p>
                         )}
                         <Summary session={activeSession} />
+                        {canRebuy(activeSession) && (
+                          <div className="rebuy-box">
+                            <p>
+                              <strong>ลูกค้าต้องการเปลี่ยนสินค้า</strong> — ซื้อใหม่ได้ทันที
+                              โดยดึงข้อมูลเดิมมาแก้ไข และใช้คิว {activeSession.queue} เดิม
+                            </p>
+                            <Button onClick={handleRebuy} disabled={busy}>
+                              ซื้อใหม่ (คิว {activeSession.queue})
+                            </Button>
+                          </div>
+                        )}
                         <div style={{ marginTop: '1rem' }}>
                           <Button
                             onClick={() => {
@@ -760,7 +692,7 @@ export function StaffWorkspace({
                                 Decision: BUY
                               </Notice>
                               <label>
-                                หมายเลขโทรศัพท์ลูกค้า (Customer Phone Number)
+                                ยืนยันเบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
                                 <input
                                   type="tel"
                                   inputMode="numeric"

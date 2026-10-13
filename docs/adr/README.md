@@ -8,7 +8,7 @@ It is where `/grill-with-docs` writes its ADRs.
 
 | | `docs/decisions.md` | `docs/adr/` |
 | --- | --- | --- |
-| Content | **Business** decisions confirmed by the owner (D1–D51): rules, permissions, UI behaviour | **Technical** decisions with alternatives and consequences |
+| Content | **Business** decisions confirmed by the owner (D1–D67): rules, permissions, UI behaviour | **Technical** decisions with alternatives and consequences |
 | Id | `D##` | `NNNN-kebab-title.md` |
 | Written by | agent, after the owner confirms | agent, after a grilling or design session |
 
@@ -30,4 +30,4 @@ Copy [0000-template.md](0000-template.md).
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| *(none yet)* | | |
+| [0001](0001-atomic-daily-counters-for-queue-numbers.md) | Allocate queue numbers and references with an atomic counter row | accepted |

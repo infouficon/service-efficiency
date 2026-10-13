@@ -13,6 +13,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import {
   AdvanceStepDto,
   CancelSessionDto,
+  CashierRejectDto,
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
@@ -104,6 +105,31 @@ export class SessionsController {
   ) {
     const user = await this.accounts.authenticate(req);
     return this.sessions.cancelSession(user, id, dto);
+  }
+
+  /** F13: the cashier sends the order back to stock (the wrong item was picked). */
+  @Post(':id/cashier/reject')
+  async cashierReject(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: CashierRejectDto,
+  ) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.cashierReject(user, id, dto);
+  }
+
+  /** F12: stock confirms it has seen a cancel (and brought the goods back). */
+  @Post(':id/stock/acknowledge-cancel')
+  async acknowledgeStockCancel(@Req() req: Request, @Param('id') id: string) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.acknowledgeStockCancel(user, id);
+  }
+
+  /** F11: buy again after a "change" cancel: a new session with the old data and the old queue number. */
+  @Post(':id/rebuy')
+  async rebuy(@Req() req: Request, @Param('id') id: string) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.rebuy(user, id);
   }
 
   @Post(':id/stock/report-missing')

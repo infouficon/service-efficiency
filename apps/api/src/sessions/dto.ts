@@ -1,11 +1,13 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   Min,
   ValidateNested,
@@ -31,6 +33,19 @@ export class CreateSessionDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  /** D56: a walk-in starts at the customer's phone number: exactly 10 ASCII digits. */
+  @IsString()
+  @Matches(/^[0-9]{10}$/, {
+    message: 'Phone number must contain exactly 10 digits (0-9)',
+  })
+  phone!: string;
+
+  /** D57: the customer type picked at the phone step. Left out, the active type with the lowest letter is used. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(36)
+  customerTypeId?: string;
 }
 
 export class AdvanceStepDto {
@@ -50,6 +65,18 @@ export class NotBuyDto {
 }
 
 export class CancelSessionDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  otherReason?: string;
+}
+
+/** F13: the cashier sends an order back to stock; the reason is required (`อื่น ๆ` needs text, like every other reason). */
+export class CashierRejectDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(191)
@@ -93,22 +120,30 @@ export class AccessorySelectionDto {
   quantity!: number;
 }
 
+/** One main product of a session (F3): a SKU (its id or its SKU code) and how many. */
+export class SessionItemDto {
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(64)
+  skuId!: string;
+
+  @IsInt()
+  @Min(1)
+  quantity!: number;
+}
+
 export class UpdateSelectionDto {
   @IsOptional()
   @IsString()
   phone?: string;
 
+  /** The main products as a whole list; left out, the current ones stay. An empty list clears them. */
   @IsOptional()
-  @IsString()
-  productId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  modelId?: string | null;
-
-  @IsOptional()
-  @IsString()
-  skuId?: string | null;
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => SessionItemDto)
+  items?: SessionItemDto[];
 
   @IsOptional()
   @IsArray()
@@ -138,9 +173,16 @@ export class UpdateSelectionDto {
 }
 
 export class ReportStockMissingDto {
+  /** What is missing, as text for the review and the history (accessories are matched by this name). */
   @IsArray()
   @IsString({ each: true })
   missingItems!: string[];
+
+  /** F3: the ids of the missing main products (`SessionItem.id`). Left out, they are matched by name, as before F3. */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  missingItemIds?: string[];
 
   @IsOptional()
   @IsArray()

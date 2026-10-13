@@ -20,8 +20,18 @@ import type { Role } from '../../types/session';
 import { SystemAuditLogs } from './SystemAuditLogs';
 import { ErpSyncPanel } from './ErpSyncPanel';
 import { WarroomSyncPanel } from './WarroomSyncPanel';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit` and `erp`. */
-export type AdminSubView = 'users' | 'branches' | 'audit' | 'erp';
+import { QrCodeSvg } from '../session/Receipt';
+import { CustomerTypesPanel } from './CustomerTypesPanel';
+import { StockUnlimitedPanel } from './StockUnlimitedPanel';
+import { PaymentMethodsPanel } from './PaymentMethodsPanel';
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue` and `payments`. */
+export type AdminSubView =
+  | 'users'
+  | 'branches'
+  | 'audit'
+  | 'erp'
+  | 'queue'
+  | 'payments';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -68,6 +78,9 @@ export function AdminHub({
   const [editing, setEditing] = useState(false);
   const [branch, setBranch] = useState<ManagedBranch | null>(null);
   const [branchEditing, setBranchEditing] = useState(false);
+  // F10: the address the receipt QR of a branch opens (set for ERP-managed branches too)
+  const [qrBranch, setQrBranch] = useState<ManagedBranch | null>(null);
+  const [qrUrl, setQrUrl] = useState('');
   const [resetId, setResetId] = useState<string | null>(null);
   const [temporary, setTemporary] = useState('');
   const load = useCallback(async () => {
@@ -142,7 +155,11 @@ export function AdminHub({
               ? 'ประวัติการทำงานของระบบ (System Audit Logs)'
               : subTab === 'erp'
                 ? 'ซิงก์ข้อมูลจาก ERP (ERP Sync)'
-                : 'จัดการผู้ใช้ (Staff Members)'}
+                : subTab === 'queue'
+                  ? 'ประเภทลูกค้าและคิว (Customer Types)'
+                  : subTab === 'payments'
+                    ? 'ช่องทางชำระเงิน (Payment Methods)'
+                    : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -153,9 +170,14 @@ export function AdminHub({
         <SystemAuditLogs />
       ) : admin && subTab === 'erp' ? (
         <>
+          <StockUnlimitedPanel />
           <ErpSyncPanel />
           <WarroomSyncPanel />
         </>
+      ) : admin && subTab === 'queue' ? (
+        <CustomerTypesPanel />
+      ) : admin && subTab === 'payments' ? (
+        <PaymentMethodsPanel />
       ) : (
         <>
           {error && (
@@ -356,6 +378,7 @@ export function AdminHub({
                           <th>Code</th>
                           <th>Name</th>
                           <th>Phone</th>
+                          <th>QR ลงทะเบียน</th>
                           <th>Status</th>
                           <th>Actions</th>
                         </tr>
@@ -368,6 +391,18 @@ export function AdminHub({
                             </td>
                             <td>{b.name}</td>
                             <td>{b.phone || '—'}</td>
+                            <td>
+                              <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => {
+                                  setQrBranch(b);
+                                  setQrUrl(b.registrationUrl ?? '');
+                                }}
+                              >
+                                {b.registrationUrl ? 'ตั้งค่าแล้ว · แก้ไข' : 'ตั้งค่า QR'}
+                              </Button>
+                            </td>
                             <td>
                               <span
                                 className={`status-tag ${b.active ? 'status-found' : 'status-outcome'}`}
@@ -653,6 +688,60 @@ export function AdminHub({
                 variant="secondary"
                 disabled={busy}
                 onClick={() => setBranch(null)}
+              >
+                ยกเลิก
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+      {qrBranch && (
+        <Modal
+          title={`QR ลงทะเบียนบนใบเสร็จ: ${qrBranch.code}`}
+          isOpen
+          onClose={() => setQrBranch(null)}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void save(
+                () =>
+                  api(
+                    `/branches/${encodeURIComponent(qrBranch.id)}/registration-url`,
+                    'PUT',
+                    { url: qrUrl.trim() || null },
+                  ),
+                () => setQrBranch(null),
+              );
+            }}
+          >
+            <Notice>
+              ใบเสร็จของสาขานี้จะพิมพ์ QR ที่เปิดที่อยู่ด้านล่าง (ใส่ที่อยู่หน้าลงทะเบียนของสาขา เช่น
+              .../register?branch={qrBranch.code}) ปล่อยว่างเพื่อไม่พิมพ์ QR ตั้งค่าได้แม้สาขาซิงก์จาก ERP
+            </Notice>
+            <label>
+              ที่อยู่หน้าลงทะเบียน (URL)
+              <input
+                type="url"
+                maxLength={512}
+                placeholder="https://..."
+                value={qrUrl}
+                onChange={(e) => setQrUrl(e.target.value)}
+              />
+            </label>
+            {qrUrl.trim() && (
+              <div style={{ margin: '12px 0' }}>
+                <QrCodeSvg text={qrUrl.trim()} size={160} />
+              </div>
+            )}
+            <div className="actions">
+              <Button type="submit" disabled={busy}>
+                บันทึก
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setQrBranch(null)}
               >
                 ยกเลิก
               </Button>

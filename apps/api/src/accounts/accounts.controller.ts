@@ -19,6 +19,7 @@ import type { Request, Response } from 'express';
 import { AccountsService } from './accounts.service';
 import {
   BranchDto,
+  BranchRegistrationDto,
   ChangePasswordDto,
   LoginDto,
   ResetPasswordDto,
@@ -145,6 +146,14 @@ export class AccountsController {
     @Body() body: BranchDto,
   ) {
     return this.accounts.saveBranch(token(request), body, id);
+  }
+  /** F10: set or clear a branch's registration URL (ADMIN). Unlike `PUT /branches/:id` it also works for ERP-managed branches. */
+  @Put('branches/:id/registration-url') setRegistrationUrl(
+    @Req() request: Request,
+    @Param('id') id: string,
+    @Body() body: BranchRegistrationDto,
+  ) {
+    return this.accounts.setBranchRegistrationUrl(token(request), id, body.url);
   }
   @Get('admin/audit-logs')
   async getAuditLogs(

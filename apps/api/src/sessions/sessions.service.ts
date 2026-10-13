@@ -1,23 +1,28 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type { PublicAccount } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
+import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
   CancelSessionDto,
+  CashierRejectDto,
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
   ReportStockMissingDto,
   ResolveStockReviewDto,
+  SessionItemDto,
   StepAction,
   UpdateSelectionDto,
 } from './dto';
-import { EventType, WorkflowState } from '@prisma/client';
+import { EventType, Prisma, WorkflowState } from '@prisma/client';
 
 const STEPS: Record<
   StepAction,
@@ -106,9 +111,180 @@ const STEPS: Record<
   },
 };
 
+/** What every endpoint returns for a Customer Session: one shape, so the web mapper can rely on it (H-19). */
+const sessionInclude = {
+  branch: true,
+  staff: { select: { staffId: true, branchId: true } },
+  customerType: { select: { id: true, letter: true, name: true } },
+  // F3: the main products, in the order the staff added them, each with its SKU, model and product
+  items: {
+    include: { sku: { include: { model: { include: { product: true } } } } },
+    orderBy: { createdAt: 'asc' },
+  },
+  accessories: true,
+  ontop: true,
+  points: true,
+  burnPoints: true,
+  payments: true,
+  events: { orderBy: { createdAt: 'asc' } },
+  // F11: the cancelled session this one was bought again from, and the one that replaced this one
+  rebuyOf: { select: { id: true, reference: true } },
+  rebuiltAs: { select: { id: true, reference: true } },
+} satisfies Prisma.CustomerSessionInclude;
+
+/**
+ * F11: cancel reasons that allow "buy again" (the customer changes the model, colour or capacity, or the staff picked
+ * the wrong product). Keep equal to `changeReasons` in apps/web/src/constants/options.ts.
+ */
+const CHANGE_REASONS = [
+  'เปลี่ยนรุ่น',
+  'เปลี่ยนสี',
+  'เปลี่ยนความจุ',
+  'พนักงานเลือกสินค้าผิดพลาด',
+];
+
+type Tx = Prisma.TransactionClient;
+/** States in which STOCK has already picked the goods (a cancel then needs them brought back). */
+const FOUND_OR_LATER: string[] = [
+  'FOUND',
+  'SENT_TO_CASHIER',
+  'CASHIER_RECEIVED',
+  'CASHIER_SCAN',
+  'BILL_OPENED',
+];
+type SessionItemRow = Prisma.CustomerSessionGetPayload<{
+  include: typeof sessionInclude;
+}>['items'][number];
+
 @Injectable()
 export class SessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly queue: QueueService,
+    private readonly settings: SettingsService,
+  ) {}
+
+  /**
+   * Takes the quantity of each item off the branch shelf when STOCK finds them (D41), unless "stock unlimited" is on
+   * (D59). Each item records how many units were really taken (`deducted`): a cancel gives back exactly that, whatever the
+   * switch says by then. Returns the total (written on the STOCK_FOUND event).
+   */
+  private async takeItemsFromShelf(
+    tx: Tx,
+    branchId: string,
+    items: { id: string; skuId: string; quantity: number }[],
+  ): Promise<number> {
+    if (items.length === 0 || (await this.settings.stockUnlimited(tx))) return 0;
+    let total = 0;
+    for (const item of items) {
+      const { count } = await tx.branchInventory.updateMany({
+        where: { branchId, skuId: item.skuId },
+        data: { stock: { decrement: item.quantity } },
+      });
+      if (count > 0) {
+        await tx.sessionItem.update({
+          where: { id: item.id },
+          data: { deducted: item.quantity },
+        });
+        total += item.quantity;
+      }
+    }
+    return total;
+  }
+
+  /** Gives back what FOUND took off the shelf: each item's `deducted` units, then nothing is held any more. */
+  private async returnItemsToShelf(
+    tx: Tx,
+    branchId: string,
+    items: { id: string; skuId: string; deducted: number }[],
+  ) {
+    for (const item of items) {
+      if (item.deducted <= 0) continue;
+      await tx.branchInventory.updateMany({
+        where: { branchId, skuId: item.skuId },
+        data: { stock: { increment: item.deducted } },
+      });
+      await tx.sessionItem.update({
+        where: { id: item.id },
+        data: { deducted: 0 },
+      });
+    }
+  }
+
+  /** D41: a main product reported missing / out of stock sets that SKU's branch stock to 0 until a newer ERP snapshot. */
+  private async zeroShelf(
+    tx: Tx,
+    branchId: string,
+    items: { skuId: string }[],
+    now: Date,
+  ) {
+    for (const item of items) {
+      await tx.branchInventory.updateMany({
+        where: { branchId, skuId: item.skuId },
+        data: { stock: 0, outOfStockAt: now },
+      });
+    }
+  }
+
+  /**
+   * The main products a stock report names the way reports did before F3: by name ("สินค้าหลัก", the model, the SKU name or
+   * code), unless the product is also listed as found. Reports made now carry item ids and never reach this.
+   */
+  private legacyMissingItems(
+    items: SessionItemRow[],
+    missingNames: string[],
+    foundNames: string[],
+  ): SessionItemRow[] {
+    return items.filter((item) => {
+      const modelName = item.sku.model.name;
+      const label = modelName || item.sku.name || item.sku.model.product.name;
+      if (foundNames.some((f) => f === label || f.includes(modelName))) return false;
+      return missingNames.some(
+        (name) =>
+          name === 'สินค้าหลัก' ||
+          name === modelName ||
+          name === item.sku.name ||
+          name === item.sku.sku,
+      );
+    });
+  }
+
+  /**
+   * SES-YYYYMMDD-NNNNNN is the internal key (lookups, links); staff see the queue number instead (D57). A number that is
+   * already taken (a session from before the counters existed, a restored backup) is skipped, never failed.
+   */
+  private async newReference(tx: Tx, day: string): Promise<string> {
+    let reference: string;
+    do {
+      const referenceNo = await this.queue.nextNumber(tx, 'reference', day);
+      reference = `SES-${day.replaceAll('-', '')}-${String(referenceNo).padStart(6, '0')}`;
+    } while (
+      await tx.customerSession.findUnique({
+        where: { reference },
+        select: { id: true },
+      })
+    );
+    return reference;
+  }
+
+  /** The items of a selection: every SKU must exist (an id or a SKU code) and appear only once. */
+  private async resolveItems(tx: Tx, items: SessionItemDto[]) {
+    const resolved: { skuId: string; quantity: number }[] = [];
+    for (const item of items) {
+      const sku = await tx.productSku.findFirst({
+        where: { OR: [{ id: item.skuId }, { sku: item.skuId }] },
+        select: { id: true },
+      });
+      if (!sku) {
+        throw new BadRequestException(`ไม่พบสินค้า (SKU) ${item.skuId}`);
+      }
+      if (resolved.some((r) => r.skuId === sku.id)) {
+        throw new BadRequestException(`สินค้า (SKU) ${item.skuId} ซ้ำในรายการ`);
+      }
+      resolved.push({ skuId: sku.id, quantity: item.quantity });
+    }
+    return resolved;
+  }
 
   private checkRole(user: PublicAccount, role: 'STAFF' | 'STOCK' | 'CASHIER' | 'MANAGER' | 'ADMIN') {
     if (user.roles.includes('ADMIN')) return;
@@ -143,29 +319,7 @@ export class SessionsService {
 
     return this.prisma.customerSession.findMany({
       where: branchId ? { branchId } : undefined,
-      include: {
-        branch: true,
-        staff: { select: { staffId: true, branchId: true } },
-        product: true,
-        model: true,
-        sku: {
-          include: {
-            model: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        accessories: true,
-        ontop: true,
-        points: true,
-        burnPoints: true,
-        payments: true,
-        events: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
+      include: sessionInclude,
       orderBy: { customerWalkInAt: 'desc' },
     });
   }
@@ -175,29 +329,7 @@ export class SessionsService {
       where: {
         OR: [{ id: idOrRef }, { reference: idOrRef }],
       },
-      include: {
-        branch: true,
-        staff: { select: { staffId: true, branchId: true } },
-        product: true,
-        model: true,
-        sku: {
-          include: {
-            model: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        accessories: true,
-        ontop: true,
-        points: true,
-        burnPoints: true,
-        payments: true,
-        events: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
+      include: sessionInclude,
     });
 
     if (!session) {
@@ -233,34 +365,35 @@ export class SessionsService {
       throw new BadRequestException('ยังไม่มีสาขา (Branch) ในระบบ กรุณาสร้างสาขาก่อนเริ่มบันทึก Session');
     }
 
+    // READ COMMITTED (see the options at the end): the counters are hot rows, so each statement must see the latest
+    // committed number. Under MariaDB's snapshot isolation a REPEATABLE READ walk-in would fail on a row another one just
+    // committed (ADR 0001).
     return this.prisma.$transaction(async (tx) => {
-      // Generate sequential reference SES-YYYYMMDD-NNNNNN
       const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      const datePrefix = `SES-${yyyy}${mm}${dd}-`;
+      const day = bangkokDay(now);
 
-      const lastForDay = await tx.customerSession.findFirst({
-        where: { reference: { startsWith: datePrefix } },
-        orderBy: { reference: 'desc' },
+      // D56: a walk-in starts at the phone number, so the Customer exists from the first moment.
+      const customer = await tx.customer.upsert({
+        where: { phone: dto.phone },
+        create: { phone: dto.phone },
+        update: {},
       });
+      const queue = await this.queue.allocate(
+        tx,
+        targetBranch.id,
+        dto.customerTypeId,
+        now,
+      );
+      const reference = await this.newReference(tx, day);
 
-      let nextNum = 1;
-      if (lastForDay) {
-        const lastSeq = parseInt(lastForDay.reference.replace(datePrefix, ''), 10);
-        if (!Number.isNaN(lastSeq)) {
-          nextNum = lastSeq + 1;
-        }
-      }
-
-      const reference = `${datePrefix}${String(nextNum).padStart(6, '0')}`;
-
-      const session = await tx.customerSession.create({
+      return tx.customerSession.create({
         data: {
           reference,
           branchId: targetBranch.id,
           staffId: user.staffId,
+          customerId: customer.id,
+          phone: dto.phone,
+          ...queue,
           state: 'WALK_IN',
           customerWalkInAt: now,
           events: {
@@ -268,26 +401,134 @@ export class SessionsService {
               eventType: 'SESSION_CREATED',
               actorStaffId: user.staffId,
               createdAt: now,
+              metadata: {
+                queue: formatQueue(queue.queueLetter, queue.queueNo),
+              },
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: true,
-        },
+        include: sessionInclude,
       });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+  }
 
-      return session;
+  /**
+   * F17 (D60): the orders of a branch that have reached the cashier and have no bill yet, with their lines, for U POS to
+   * prefill a bill from. `queue` ("A012") narrows to one queue number. Read-only; the caller is U POS, not a user.
+   */
+  async posOrders(branchCode: string, queue?: string) {
+    const branch = await this.prisma.branch.findFirst({
+      where: { code: branchCode },
+      orderBy: { active: 'desc' },
     });
+    if (!branch) throw new NotFoundException('Unknown branch');
+    const sessions = await this.prisma.customerSession.findMany({
+      where: {
+        branchId: branch.id,
+        outcome: null,
+        state: { in: ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'] },
+      },
+      include: sessionInclude,
+      orderBy: { customerWalkInAt: 'asc' },
+    });
+    const wanted = queue?.toUpperCase();
+    return {
+      branch: { code: branch.code, name: branch.name },
+      orders: sessions
+        .map((s) => ({
+          reference: s.reference,
+          queue: s.queueNo === null ? s.reference : formatQueue(s.queueLetter, s.queueNo),
+          state: s.state,
+          customerPhone: s.phone,
+          staffId: s.staffId,
+          confirmedAt: s.productSelectionConfirmedAt,
+          items: s.items.map((i) => ({
+            partNo: i.sku.sku,
+            name: i.sku.name,
+            quantity: i.quantity,
+          })),
+          accessories: s.accessories.map((a) => ({
+            name: a.accessoryName,
+            quantity: a.quantity,
+          })),
+          payments: s.payments.map((p) => p.method),
+          ontop: s.ontop.map((o) => o.name),
+          points: s.points.map((p) => p.name),
+          burnPoints: s.burnPoints.map((b) => b.name),
+          posBillNo: s.posBillNo,
+        }))
+        .filter((order) => !wanted || order.queue === wanted),
+    };
+  }
+
+  /**
+   * F17 (D60): U POS opened the bill of an order. The bill number and its real time are recorded; an order that is still at
+   * the cashier moves on to BILL_OPENED (milestone = the real time, the cashier does not press anything in SES). When the
+   * cashier pressed first, SES's own milestone stays and the U POS bill is added beside it. The same report again changes
+   * nothing; another bill number for the same order is a conflict.
+   */
+  async recordPosBill(dto: { reference: string; billNo: string; openedAt: string }) {
+    const session = await this.prisma.customerSession.findUnique({
+      where: { reference: dto.reference },
+      include: sessionInclude,
+    });
+    if (!session) throw new NotFoundException('Unknown order');
+    if (session.outcome) throw new ConflictException('The order has ended');
+    const summary = (s: { reference: string; state: string; posBillNo: string | null; posBillOpenedAt: Date | null; billOpenedAt: Date | null }) => ({
+      reference: s.reference,
+      state: s.state,
+      posBillNo: s.posBillNo,
+      posBillOpenedAt: s.posBillOpenedAt,
+      billOpenedAt: s.billOpenedAt,
+    });
+    if (session.posBillNo !== null) {
+      if (session.posBillNo === dto.billNo) return summary(session);
+      throw new ConflictException('This order already has another bill');
+    }
+
+    const openedAt = new Date(dto.openedAt);
+    const now = Date.now();
+    if (
+      openedAt.getTime() > now + 5 * 60_000 ||
+      openedAt.getTime() < now - 366 * 86_400_000 ||
+      openedAt < session.customerWalkInAt
+    ) {
+      throw new BadRequestException('openedAt is not a plausible time for this order');
+    }
+    const atCashier = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state);
+    if (!atCashier && !['BILL_OPENED', 'COMPLETED'].includes(session.state)) {
+      throw new ConflictException('The order has not reached the cashier');
+    }
+
+    // the event keeps its place in the history even if the bill was opened before SES saw the last step
+    const lastEvent = session.events.at(-1)?.createdAt ?? openedAt;
+    const eventAt = openedAt > lastEvent ? openedAt : lastEvent;
+    const updated = await this.prisma.customerSession.update({
+      where: { id: session.id },
+      data: {
+        posBillNo: dto.billNo,
+        posBillOpenedAt: openedAt,
+        ...(atCashier
+          ? {
+              state: 'BILL_OPENED',
+              billOpenedAt: openedAt,
+              events: {
+                create: {
+                  eventType: 'BILL_OPENED',
+                  actorStaffId: 'U-POS',
+                  createdAt: eventAt,
+                  metadata: {
+                    source: 'U-POS',
+                    billNo: dto.billNo,
+                    openedAt: openedAt.toISOString(),
+                  },
+                },
+              },
+            }
+          : {}),
+      },
+    });
+    return summary(updated);
   }
 
   async advanceStep(user: PublicAccount, id: string, dto: AdvanceStepDto) {
@@ -317,12 +558,10 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      if (dto.action === 'found' && session.skuId && session.branchId) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: { decrement: 1 } },
-        });
-      }
+      const deducted =
+        dto.action === 'found'
+          ? await this.takeItemsFromShelf(tx, session.branchId, session.items)
+          : undefined;
 
       const updated = await tx.customerSession.update({
         where: { id: session.id },
@@ -334,24 +573,11 @@ export class SessionsService {
               eventType: step.eventType,
               actorStaffId: user.staffId,
               createdAt: now,
+              ...(deducted === undefined ? {} : { metadata: { deducted } }),
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
 
       return updated;
@@ -389,21 +615,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -435,6 +647,24 @@ export class SessionsService {
           update: {},
         });
         customerId = customer.id;
+      }
+
+      // F3: the main products, replaced as a whole (a save without `items` leaves them alone)
+      if (dto.items) {
+        const items = await this.resolveItems(tx, dto.items);
+        await tx.sessionItem.deleteMany({ where: { sessionId: session.id } });
+        const base = Date.now();
+        for (const [index, item] of items.entries()) {
+          await tx.sessionItem.create({
+            data: {
+              sessionId: session.id,
+              skuId: item.skuId,
+              quantity: item.quantity,
+              // one millisecond apart, so they come back in the order the staff added them
+              createdAt: new Date(base + index),
+            },
+          });
+        }
       }
 
       // Update accessories
@@ -499,80 +729,13 @@ export class SessionsService {
         }
       }
 
-      // Safely resolve foreign keys for product/model/sku
-      let resolvedProductId = session.productId;
-      let resolvedModelId = session.modelId;
-      let resolvedSkuId = session.skuId;
-
-      if (dto.skuId) {
-        const foundSku = await tx.productSku.findFirst({
-          where: { OR: [{ id: dto.skuId }, { sku: dto.skuId }] },
-          include: { model: true },
-        });
-        if (foundSku) {
-          resolvedSkuId = foundSku.id;
-          resolvedModelId = foundSku.modelId;
-          resolvedProductId = foundSku.model.productId;
-        }
-      } else if (dto.skuId === null) {
-        resolvedSkuId = null;
-      }
-
-      if (dto.modelId && !resolvedModelId) {
-        const foundModel = await tx.productModel.findUnique({
-          where: { id: dto.modelId },
-        });
-        if (foundModel) {
-          resolvedModelId = foundModel.id;
-          resolvedProductId = foundModel.productId;
-        }
-      } else if (dto.modelId === null && dto.skuId === null) {
-        resolvedModelId = null;
-      }
-
-      if (dto.productId && !resolvedProductId) {
-        const foundProduct = await tx.product.findUnique({
-          where: { id: dto.productId },
-        });
-        if (foundProduct) {
-          resolvedProductId = foundProduct.id;
-        }
-      } else if (dto.productId === null && dto.skuId === null && dto.modelId === null) {
-        resolvedProductId = null;
-      }
-
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
           phone: dto.phone ?? session.phone,
           customerId,
-          productId: resolvedProductId,
-          modelId: resolvedModelId,
-          skuId: resolvedSkuId,
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: {
-            include: {
-              model: {
-                include: {
-                  product: true,
-                },
-              },
-            },
-          },
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -589,7 +752,7 @@ export class SessionsService {
       throw new BadRequestException('Valid customer phone number (10 digits) is required to confirm purchase');
     }
 
-    if (!session.skuId && !session.productId) {
+    if (session.items.length === 0) {
       throw new BadRequestException('A main product selection is required before confirmation');
     }
 
@@ -610,21 +773,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -643,22 +792,21 @@ export class SessionsService {
     return this.prisma.$transaction(async (tx) => {
       if (dto.action === 'partial') {
         // Customer proceeds with remaining items: remove out of stock items and advance to FOUND
-        const removeMainProduct =
-          outOfStockItems.includes('MAIN_PRODUCT') ||
-          (session.sku?.sku && outOfStockItems.includes(session.sku.sku)) ||
-          (session.product?.name && outOfStockItems.includes(session.product.name));
-
-        if (removeMainProduct && session.skuId && session.branchId) {
-          await tx.branchInventory.updateMany({
-            where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: 0, outOfStockAt: now },
-          });
-        } else if (!removeMainProduct && session.skuId && session.branchId) {
-          await tx.branchInventory.updateMany({
-            where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: { decrement: 1 } },
-          });
-        }
+        const missing = session.items.filter(
+          (item) =>
+            outOfStockItems.includes('MAIN_PRODUCT') ||
+            outOfStockItems.includes(item.sku.sku) ||
+            outOfStockItems.includes(item.sku.model.product.name),
+        );
+        await this.zeroShelf(tx, session.branchId, missing, now);
+        await tx.sessionItem.deleteMany({
+          where: { id: { in: missing.map((item) => item.id) } },
+        });
+        const deducted = await this.takeItemsFromShelf(
+          tx,
+          session.branchId,
+          session.items.filter((item) => !missing.includes(item)),
+        );
 
         if (outOfStockItems.length > 0) {
           await tx.sessionAccessory.deleteMany({
@@ -674,7 +822,6 @@ export class SessionsService {
           data: {
             state: 'FOUND',
             stockFoundAt: now,
-            ...(removeMainProduct ? { productId: null, modelId: null, skuId: null } : {}),
             events: {
               create: {
                 eventType: 'STOCK_FOUND',
@@ -684,43 +831,17 @@ export class SessionsService {
                   partialFulfillment: true,
                   outOfStockItems,
                   note: dto.note || dto.otherReason || null,
+                  deducted,
                 },
               },
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
       // Customer cancels entire session due to out of stock
-      if (session.skuId && session.branchId) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: 0, outOfStockAt: now },
-        });
-      }
+      await this.zeroShelf(tx, session.branchId, session.items, now);
 
       const detailedReason =
         dto.otherReason ||
@@ -744,29 +865,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: {
-            include: {
-              model: {
-                include: {
-                  product: true,
-                },
-              },
-            },
-          },
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -778,36 +877,21 @@ export class SessionsService {
       throw new BadRequestException('Session is already ended');
     }
 
-    // Role check by state
-    if (['DEMO', 'PRODUCT_SELECTION'].includes(session.state)) {
-      this.checkRole(user, 'STAFF');
-    } else if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state)) {
-      this.checkRole(user, 'STOCK');
-    } else if (['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(session.state)) {
-      this.checkRole(user, 'CASHIER');
-    }
-
+    // F12: any role of the branch can cancel at any stage (`getById` already limited the session to the user's branch)
     if (!dto.reason || (dto.reason === 'อื่น ๆ' && !dto.otherReason?.trim())) {
       throw new BadRequestException('Cancellation reason is required');
     }
 
     const now = new Date();
+    // F12: after the stock request, stock has to be told (the notice stays until it acknowledges). Nothing to tell when
+    // a STOCK user cancels before anything was picked: they know already.
+    const goodsPicked = session.stockFoundAt !== null || FOUND_OR_LATER.includes(session.state);
+    const stockKnows =
+      session.productSelectionConfirmedAt !== null && !goodsPicked && user.roles.includes('STOCK');
 
     return this.prisma.$transaction(async (tx) => {
-      // Restore stock if session was already at FOUND or beyond
-      if (
-        session.skuId &&
-        session.branchId &&
-        (session.stockFoundAt ||
-          ['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(
-            session.state,
-          ))
-      ) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: { increment: 1 } },
-        });
-      }
+      // Give back what FOUND took off the shelf (D41): exactly the units recorded per item (none while "stock unlimited" was on, D59)
+      await this.returnItemsToShelf(tx, session.branchId, session.items);
 
       return tx.customerSession.update({
         where: { id: session.id },
@@ -817,6 +901,7 @@ export class SessionsService {
           otherReason: dto.otherReason?.trim() || null,
           cancelledBy: user.staffId,
           cancelledAt: now,
+          ...(stockKnows ? { stockAckAt: now, stockAckBy: user.staffId } : {}),
           events: {
             create: {
               eventType: 'CUSTOMER_CANCELLED',
@@ -826,23 +911,183 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: true,
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
+  }
+
+  /**
+   * F13: the cashier sends the order back to stock (the wrong item was picked). Allowed from SENT_TO_CASHIER,
+   * CASHIER_RECEIVED and CASHIER_SCAN, not once the bill is open. The units FOUND took go back to the shelf, the session is
+   * at the stock stage again (SEARCHING) and its milestones for the stock-found and cashier steps start over; the first
+   * round stays in the events (CASHIER_REJECTED, then a second STOCK_FOUND...).
+   */
+  async cashierReject(user: PublicAccount, id: string, dto: CashierRejectDto) {
+    this.checkRole(user, 'CASHIER');
+    const session = await this.getById(user, id);
+
+    if (
+      session.outcome ||
+      !['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state)
+    ) {
+      throw new BadRequestException(
+        'Only an order that is with the cashier and not yet billed can be sent back to stock',
+      );
+    }
+    if (dto.reason === 'อื่น ๆ' && !dto.otherReason?.trim()) {
+      throw new BadRequestException('Reason is required to send an order back to stock');
+    }
+
+    const now = new Date();
+    return this.prisma.$transaction(async (tx) => {
+      await this.returnItemsToShelf(tx, session.branchId, session.items);
+      return tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          state: 'SEARCHING',
+          stockFoundAt: null,
+          cashierReceivedAt: null,
+          cashierScanAt: null,
+          events: {
+            create: {
+              eventType: 'CASHIER_REJECTED',
+              actorStaffId: user.staffId,
+              createdAt: now,
+              metadata: {
+                reason: dto.reason,
+                otherReason: dto.otherReason?.trim() || null,
+                fromState: session.state,
+              },
+            },
+          },
+        },
+        include: sessionInclude,
+      });
+    });
+  }
+
+  /**
+   * F12: stock (or a manager of the branch, or an admin) confirms it has seen a cancel and, when the goods had been
+   * picked, brought them back. Stored on the session so every device sees it; only once.
+   */
+  async acknowledgeStockCancel(user: PublicAccount, id: string) {
+    const session = await this.getById(user, id);
+    const isManagerOfBranch = user.roles.includes('MANAGER') && user.branchId === session.branchId;
+    if (!user.roles.includes('ADMIN') && !user.roles.includes('STOCK') && !isManagerOfBranch) {
+      throw new ForbiddenException('Only stock, a branch manager or an admin can acknowledge a cancelled order');
+    }
+    if (
+      session.outcome !== 'CUSTOMER_CANCELLED' ||
+      session.productSelectionConfirmedAt === null ||
+      session.stockAckAt !== null
+    ) {
+      throw new BadRequestException('Nothing to acknowledge on this session');
+    }
+
+    const now = new Date();
+    return this.prisma.customerSession.update({
+      where: { id: session.id },
+      data: {
+        stockAckAt: now,
+        stockAckBy: user.staffId,
+        events: {
+          create: {
+            eventType: 'STOCK_ACKNOWLEDGED_CANCEL',
+            actorStaffId: user.staffId,
+            createdAt: now,
+          },
+        },
+      },
+      include: sessionInclude,
+    });
+  }
+
+  /**
+   * F11: "buy again" after a cancel for a change reason (model, colour, capacity, wrong product picked). A NEW session,
+   * pre-filled from the cancelled one (customer, items, accessories, Ontop, points, payments) that keeps its queue number
+   * and type, starts at product selection (the customer already decided to buy) and links back with `rebuyOfId`. The
+   * cancelled session stays cancelled (D20: no reopen); each can be bought again once.
+   */
+  async rebuy(user: PublicAccount, id: string) {
+    this.checkRole(user, 'STAFF');
+    const old = await this.getById(user, id);
+
+    if (old.outcome !== 'CUSTOMER_CANCELLED' || !CHANGE_REASONS.includes(old.reason ?? '')) {
+      throw new BadRequestException(
+        'Only a session cancelled for a change (model, colour, capacity, wrong product) can be bought again',
+      );
+    }
+    if (old.rebuiltAs) {
+      throw new ConflictException('This session has already been bought again');
+    }
+
+    const now = new Date();
+    // one millisecond later, so the two events and the milestone keep their order
+    const started = new Date(now.getTime() + 1);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const reference = await this.newReference(tx, bangkokDay(now));
+        return tx.customerSession.create({
+          data: {
+            reference,
+            branchId: old.branchId,
+            staffId: user.staffId,
+            customerId: old.customerId,
+            phone: old.phone,
+            customerTypeId: old.customerTypeId,
+            queueLetter: old.queueLetter,
+            queueNo: old.queueNo,
+            state: 'PRODUCT_SELECTION',
+            customerWalkInAt: now,
+            decisionAt: now,
+            productSelectionStartAt: started,
+            rebuyOfId: old.id,
+            items: {
+              create: old.items.map((item, index) => ({
+                skuId: item.skuId,
+                quantity: item.quantity,
+                createdAt: new Date(now.getTime() + index),
+              })),
+            },
+            accessories: {
+              create: old.accessories.map((a) => ({
+                accessoryName: a.accessoryName,
+                quantity: a.quantity,
+              })),
+            },
+            ontop: { create: old.ontop.map((o) => ({ name: o.name })) },
+            points: { create: old.points.map((p) => ({ name: p.name })) },
+            burnPoints: { create: old.burnPoints.map((b) => ({ name: b.name })) },
+            payments: { create: old.payments.map((p) => ({ method: p.method })) },
+            events: {
+              create: [
+                {
+                  eventType: 'SESSION_CREATED',
+                  actorStaffId: user.staffId,
+                  createdAt: now,
+                  metadata: {
+                    queue: formatQueue(old.queueLetter, old.queueNo ?? 0),
+                    rebuyOf: old.reference,
+                  },
+                },
+                {
+                  eventType: 'PRODUCT_SELECTION_STARTED',
+                  actorStaffId: user.staffId,
+                  createdAt: started,
+                },
+              ],
+            },
+          },
+          include: sessionInclude,
+        });
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
+    } catch (err) {
+      // two staff pressing "buy again" on the same cancelled session at the same moment
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('This session has already been bought again');
+      }
+      throw err;
+    }
   }
 
   async reportStockMissing(user: PublicAccount, id: string, dto: ReportStockMissingDto) {
@@ -857,6 +1102,18 @@ export class SessionsService {
       throw new BadRequestException('At least one missing item is required');
     }
 
+    // F3: the missing main products are named by id; a report without ids (an older client) names them like before
+    let missingRows: SessionItemRow[];
+    if (dto.missingItemIds === undefined) {
+      missingRows = this.legacyMissingItems(session.items, dto.missingItems, dto.foundItems ?? []);
+    } else {
+      const own = new Set(session.items.map((item) => item.id));
+      if (dto.missingItemIds.some((itemId) => !own.has(itemId))) {
+        throw new BadRequestException('missingItemIds must be items of this session');
+      }
+      missingRows = session.items.filter((item) => dto.missingItemIds?.includes(item.id));
+    }
+
     const now = new Date();
     const stockReviewData = {
       missingItems: dto.missingItems,
@@ -864,32 +1121,12 @@ export class SessionsService {
       stockNote: dto.stockNote?.trim() || null,
       reportedAt: now.toISOString(),
       reportedBy: user.staffId,
+      missingItemIds: missingRows.map((item) => item.id),
     };
 
-    const isMainProductMissing = (() => {
-      if (!session.skuId && !session.productId) return false;
-      const prodName =
-        session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
-      if (dto.foundItems?.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
-        return false;
-      }
-      return dto.missingItems.some((item) => {
-        if (item === 'สินค้าหลัก') return true;
-        if (session.model?.name && item === session.model.name) return true;
-        if (session.sku?.name && item === session.sku.name) return true;
-        if (session.sku?.sku && item === session.sku.sku) return true;
-        return false;
-      });
-    })();
-
     return this.prisma.$transaction(async (tx) => {
-      // Set branch stock to 0 ONLY if the main product SKU was reported missing
-      if (isMainProductMissing && session.skuId && session.branchId) {
-        await tx.branchInventory.updateMany({
-          where: { branchId: session.branchId, skuId: session.skuId },
-          data: { stock: 0, outOfStockAt: now },
-        });
-      }
+      // D41: a missing main product sets that SKU's branch stock to 0 (and only that one)
+      await this.zeroShelf(tx, session.branchId, missingRows, now);
 
       return tx.customerSession.update({
         where: { id: session.id },
@@ -904,29 +1141,7 @@ export class SessionsService {
             },
           },
         },
-        include: {
-          branch: true,
-          staff: { select: { staffId: true, branchId: true } },
-          product: true,
-          model: true,
-          sku: {
-            include: {
-              model: {
-                include: {
-                  product: true,
-                },
-              },
-            },
-          },
-          accessories: true,
-          ontop: true,
-          points: true,
-          burnPoints: true,
-          payments: true,
-          events: {
-            orderBy: { createdAt: 'asc' },
-          },
-        },
+        include: sessionInclude,
       });
     });
   }
@@ -952,45 +1167,34 @@ export class SessionsService {
     }
 
     const now = new Date();
-    const stockReviewObj = session.stockReview as { missingItems?: string[]; foundItems?: string[] };
-    const missingItems = Array.isArray(stockReviewObj?.missingItems) ? stockReviewObj.missingItems : [];
+    const review = session.stockReview as {
+      missingItems?: string[];
+      foundItems?: string[];
+      missingItemIds?: string[];
+    };
+    const missingItems = Array.isArray(review?.missingItems) ? review.missingItems : [];
+    // F3: the review points at the missing items by id; a review made before F3 names the main product instead
+    const missingRows = Array.isArray(review?.missingItemIds)
+      ? session.items.filter((item) => review.missingItemIds?.includes(item.id))
+      : this.legacyMissingItems(session.items, missingItems, review?.foundItems ?? []);
+    const missingAccessory = (name: string) => name.replace(/\s*\(x\d+\)$/, '').trim();
 
     return this.prisma.$transaction(async (tx) => {
       if (dto.action === 'ACCEPT_PARTIAL') {
-        // Remove missing accessories
+        // Remove missing accessories and main products, then take what is left off the shelf
         for (const missing of missingItems) {
           await tx.sessionAccessory.deleteMany({
-            where: {
-              sessionId: session.id,
-              accessoryName: missing.replace(/\s*\(x\d+\)$/, '').trim(),
-            },
+            where: { sessionId: session.id, accessoryName: missingAccessory(missing) },
           });
         }
-
-        // Check if main product was among missing items
-        const isMainProductMissing = (() => {
-          if (!session.skuId && !session.productId) return false;
-          const prodName =
-            session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
-          const found = stockReviewObj.foundItems || [];
-          if (found.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
-            return false;
-          }
-          return missingItems.some((item) => {
-            if (item === 'สินค้าหลัก') return true;
-            if (session.model?.name && item === session.model.name) return true;
-            if (session.sku?.name && item === session.sku.name) return true;
-            if (session.sku?.sku && item === session.sku.sku) return true;
-            return false;
-          });
-        })();
-
-        if (!isMainProductMissing && session.skuId && session.branchId) {
-          await tx.branchInventory.updateMany({
-            where: { branchId: session.branchId, skuId: session.skuId },
-            data: { stock: { decrement: 1 } },
-          });
-        }
+        await tx.sessionItem.deleteMany({
+          where: { id: { in: missingRows.map((item) => item.id) } },
+        });
+        const deducted = await this.takeItemsFromShelf(
+          tx,
+          session.branchId,
+          session.items.filter((item) => !missingRows.includes(item)),
+        );
 
         return tx.customerSession.update({
           where: { id: session.id },
@@ -998,9 +1202,6 @@ export class SessionsService {
             state: 'FOUND',
             stockFoundAt: now,
             stockReview: null as unknown as undefined,
-            productId: isMainProductMissing ? null : session.productId,
-            modelId: isMainProductMissing ? null : session.modelId,
-            skuId: isMainProductMissing ? null : session.skuId,
             events: {
               create: [
                 {
@@ -1013,65 +1214,25 @@ export class SessionsService {
                   eventType: 'STOCK_FOUND',
                   actorStaffId: user.staffId,
                   createdAt: now,
-                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL' },
+                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL', deducted },
                 },
               ],
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
       if (dto.action === 'CHANGE_ITEMS') {
-        // Remove missing accessories
+        // Remove missing accessories and main products and reopen the selection
         for (const missing of missingItems) {
           await tx.sessionAccessory.deleteMany({
-            where: {
-              sessionId: session.id,
-              accessoryName: missing.replace(/\s*\(x\d+\)$/, '').trim(),
-            },
+            where: { sessionId: session.id, accessoryName: missingAccessory(missing) },
           });
         }
-
-        // Check if main product was among missing items
-        const isMainProductMissing = (() => {
-          if (!session.skuId && !session.productId) return false;
-          const prodName =
-            session.model?.name || session.sku?.name || session.product?.name || 'สินค้าหลัก';
-          const found = stockReviewObj.foundItems || [];
-          if (found.some((f) => f === prodName || (session.model && f.includes(session.model.name)))) {
-            return false;
-          }
-          return missingItems.some((item) => {
-            if (item === 'สินค้าหลัก') return true;
-            if (session.model?.name && item === session.model.name) return true;
-            if (session.sku?.name && item === session.sku.name) return true;
-            if (session.sku?.sku && item === session.sku.sku) return true;
-            return false;
-          });
-        })();
+        await tx.sessionItem.deleteMany({
+          where: { id: { in: missingRows.map((item) => item.id) } },
+        });
 
         return tx.customerSession.update({
           where: { id: session.id },
@@ -1079,9 +1240,6 @@ export class SessionsService {
             state: 'PRODUCT_SELECTION',
             confirmed: false,
             stockReview: null as unknown as undefined,
-            productId: isMainProductMissing ? null : session.productId,
-            modelId: isMainProductMissing ? null : session.modelId,
-            skuId: isMainProductMissing ? null : session.skuId,
             events: {
               create: {
                 eventType: 'STAFF_RESOLVED_STOCK_REVIEW',
@@ -1091,29 +1249,7 @@ export class SessionsService {
               },
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
@@ -1148,29 +1284,7 @@ export class SessionsService {
               ],
             },
           },
-          include: {
-            branch: true,
-            staff: { select: { staffId: true, branchId: true } },
-            product: true,
-            model: true,
-            sku: {
-              include: {
-                model: {
-                  include: {
-                    product: true,
-                  },
-                },
-              },
-            },
-            accessories: true,
-            ontop: true,
-            points: true,
-            burnPoints: true,
-            payments: true,
-            events: {
-              orderBy: { createdAt: 'asc' },
-            },
-          },
+          include: sessionInclude,
         });
       }
 
@@ -1201,29 +1315,7 @@ export class SessionsService {
       data: {
         stockReview: updatedReview,
       },
-      include: {
-        branch: true,
-        staff: { select: { staffId: true, branchId: true } },
-        product: true,
-        model: true,
-        sku: {
-          include: {
-            model: {
-              include: {
-                product: true,
-              },
-            },
-          },
-        },
-        accessories: true,
-        ontop: true,
-        points: true,
-        burnPoints: true,
-        payments: true,
-        events: {
-          orderBy: { createdAt: 'asc' },
-        },
-      },
+      include: sessionInclude,
     });
   }
 }

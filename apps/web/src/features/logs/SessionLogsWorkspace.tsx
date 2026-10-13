@@ -22,6 +22,14 @@ import {
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
+import { ReceiptPrint } from '../session/Receipt';
+import {
+  formatDuration,
+  itemName,
+  itemsText,
+  stepDurations,
+  visitDuration,
+} from '../session/workflow';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
 
 interface SessionLogsWorkspaceProps {
@@ -83,14 +91,11 @@ function getSessionTimestamp(
 }
 
 function getLatestItemText(s: MockSession): string {
-  if (s.selection?.product?.model) {
+  const items = s.selection?.items ?? [];
+  if (items.length > 0) {
     const accCount = Object.keys(s.selection.accessories || {}).length;
-    return accCount > 0
-      ? `${s.selection.product.model} (+${accCount} อุปกรณ์เสริม)`
-      : s.selection.product.model;
-  }
-  if (s.selection?.product?.product) {
-    return s.selection.product.product;
+    const main = itemsText(items);
+    return accCount > 0 ? `${main} (+${accCount} อุปกรณ์เสริม)` : main;
   }
   if (s.state === 'WALK_IN' || s.state === 'DEMO') {
     return 'กำลัง DEMO / ให้คำปรึกษา';
@@ -200,7 +205,8 @@ function renderStatusTag(s: MockSession) {
 interface ExportColumn {
   key: string;
   label: string;
-  getValue: (s: MockSession) => string;
+  /** `all` = every loaded session, for columns that follow a "buy again" chain. */
+  getValue: (s: MockSession, all: MockSession[]) => string;
 }
 
 interface ExportCategory {
@@ -212,7 +218,15 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
   {
     category: '1. ข้อมูลพื้นฐาน Session',
     columns: [
-      { key: 'reference', label: 'Session Reference', getValue: (s) => s.reference },
+      { key: 'queue', label: 'คิว (Queue)', getValue: (s) => s.queue },
+      {
+        key: 'customerType',
+        label: 'ประเภทลูกค้า',
+        getValue: (s) =>
+          s.customerTypeLetter
+            ? `${s.customerTypeLetter}${s.customerTypeName ? ` - ${s.customerTypeName}` : ''}`
+            : '',
+      },
       {
         key: 'walkInAt',
         label: 'วันที่และเวลา Walk-in',
@@ -223,6 +237,8 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       { key: 'branchName', label: 'ชื่อสาขา', getValue: (s) => s.branchName || '' },
       { key: 'staffId', label: 'ผู้ดูแล (Staff ID)', getValue: (s) => s.staffId },
       { key: 'phone', label: 'เบอร์โทรศัพท์ลูกค้า', getValue: (s) => s.phone || '' },
+      // The queue number repeats (per branch, type and day); this key is unique, so rows can still be joined.
+      { key: 'reference', label: 'รหัสอ้างอิงระบบ (ไม่ซ้ำ)', getValue: (s) => s.reference },
     ],
   },
   {
@@ -231,22 +247,31 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       {
         key: 'category',
         label: 'หมวดหมู่สินค้า',
-        getValue: (s) => s.selection?.product?.category || '',
+        getValue: (s) =>
+          [...new Set((s.selection?.items ?? []).map((i) => i.product.category))].join('; '),
       },
       {
         key: 'product',
         label: 'ชื่อสินค้า',
-        getValue: (s) => s.selection?.product?.product || '',
+        getValue: (s) =>
+          (s.selection?.items ?? []).map((i) => i.product.product).join('; '),
       },
       {
         key: 'model',
         label: 'รุ่นสินค้า (Model)',
-        getValue: (s) => s.selection?.product?.model || '',
+        getValue: (s) => (s.selection?.items ?? []).map(itemName).join('; '),
+      },
+      {
+        key: 'quantity',
+        label: 'จำนวนสินค้าหลัก (ตามลำดับรุ่น)',
+        getValue: (s) =>
+          (s.selection?.items ?? []).map((i) => String(i.quantity)).join('; '),
       },
       {
         key: 'sku',
         label: 'รหัส SKU',
-        getValue: (s) => s.selection?.product?.sku || '',
+        getValue: (s) =>
+          (s.selection?.items ?? []).map((i) => i.product.sku).join('; '),
       },
       {
         key: 'accessories',
@@ -298,6 +323,36 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         key: 'cancelledBy',
         label: 'ผู้บันทึกยกเลิก',
         getValue: (s) => s.cancelledBy || '',
+      },
+      {
+        key: 'stockAckAt',
+        label: 'Stock รับทราบการยกเลิก (เวลา)',
+        getValue: (s) => formatTimestampForExport(s.stockAckAt),
+      },
+      {
+        key: 'stockAckBy',
+        label: 'Stock ผู้รับทราบการยกเลิก',
+        getValue: (s) => s.stockAckBy || '',
+      },
+      {
+        key: 'posBillNo',
+        label: 'เลขบิลใน U POS',
+        getValue: (s) => s.posBillNo || '',
+      },
+      {
+        key: 'posBillOpenedAt',
+        label: 'เวลาเปิดบิลจริงใน U POS',
+        getValue: (s) => formatTimestampForExport(s.posBillOpenedAt),
+      },
+      {
+        key: 'rebuyOf',
+        label: 'ซื้อใหม่จาก (รหัสอ้างอิงเดิม)',
+        getValue: (s) => s.rebuyOf?.reference || '',
+      },
+      {
+        key: 'rebuiltAs',
+        label: 'ถูกซื้อใหม่เป็น (รหัสอ้างอิงใหม่)',
+        getValue: (s) => s.rebuiltAs?.reference || '',
       },
     ],
   },
@@ -417,6 +472,35 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
   },
 ];
 
+// F14: the time spent in each step, one column per step in H:MM:SS, plus the whole visit in minutes. Derived from the
+// server milestones and events (`stepDurations`), so a step that did not happen stays empty.
+const BLANK_SESSION = { timestamps: {} } as MockSession;
+EXPORT_CATEGORIES.push({
+  category: '6. เวลาที่ใช้ในแต่ละขั้นตอน (H:MM:SS)',
+  columns: [
+    ...stepDurations(BLANK_SESSION).map(({ key, label }) => ({
+      key: `dur_${key}`,
+      label: `${label} (H:MM:SS)`,
+      getValue: (s: MockSession) =>
+        formatDuration(stepDurations(s).find((d) => d.key === key)?.ms ?? null),
+    })),
+    {
+      key: 'dur_visit',
+      label: 'เวลารวมทั้งการเข้าร้าน รวมการซื้อใหม่ (H:MM:SS)',
+      getValue: (s: MockSession, all: MockSession[]) =>
+        formatDuration(visitDuration(s, all)),
+    },
+    {
+      key: 'dur_total_minutes',
+      label: 'รวมทั้งหมด (นาที)',
+      getValue: (s: MockSession) => {
+        const ms = stepDurations(s).find((d) => d.key === 'total')?.ms ?? null;
+        return ms === null ? '' : (ms / 60000).toFixed(2);
+      },
+    },
+  ],
+});
+
 const ALL_COLUMN_KEYS = EXPORT_CATEGORIES.flatMap((cat) =>
   cat.columns.map((col) => col.key),
 );
@@ -529,7 +613,7 @@ function ExportModal({
 
     const headerLine = activeCols.map((c) => escapeCsv(c.label)).join(',');
     const dataLines = filtered.map((s) =>
-      activeCols.map((c) => escapeCsv(c.getValue(s))).join(','),
+      activeCols.map((c) => escapeCsv(c.getValue(s, sessions))).join(','),
     );
 
     const csvContent = [headerLine, ...dataLines].join('\r\n');
@@ -843,14 +927,17 @@ export function SessionLogsWorkspace({
       // Search query
       if (search.trim()) {
         const q = search.trim().toLowerCase();
-        const matchRef = s.reference.toLowerCase().includes(q);
+        const matchRef =
+          s.queue.toLowerCase().includes(q) ||
+          s.reference.toLowerCase().includes(q);
         const matchPhone = s.phone?.toLowerCase().includes(q) || false;
         const matchStaff = s.staffId?.toLowerCase().includes(q) || false;
-        const matchProduct =
-          s.selection?.product?.model?.toLowerCase().includes(q) ||
-          s.selection?.product?.product?.toLowerCase().includes(q) ||
-          s.selection?.product?.sku?.toLowerCase().includes(q) ||
-          false;
+        const matchProduct = (s.selection?.items ?? []).some(
+          (i) =>
+            itemName(i).toLowerCase().includes(q) ||
+            i.product.product?.toLowerCase().includes(q) ||
+            i.product.sku?.toLowerCase().includes(q),
+        );
         const matchBranch =
           s.branchCode?.toLowerCase().includes(q) ||
           s.branchName?.toLowerCase().includes(q) ||
@@ -988,7 +1075,7 @@ export function SessionLogsWorkspace({
 
         {selectedSession ? (
           <Panel
-            title={`Session: ${selectedSession.reference}`}
+            title={`คิว ${selectedSession.queue}`}
             eyebrow={`สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''} · สถานะ: ${detailStatusLabel}`}
           >
             <div
@@ -1120,6 +1207,7 @@ export function SessionLogsWorkspace({
             {/* Order & Payment Summary */}
             <div className="session-summary-section">
               <Summary session={selectedSession} />
+              {selectedSession.confirmed && <ReceiptPrint session={selectedSession} />}
             </div>
           </Panel>
         ) : (
@@ -1212,7 +1300,7 @@ export function SessionLogsWorkspace({
           <div className="logs-search-wrap">
             <input
               type="search"
-              placeholder="ค้นหา Session Ref, เบอร์โทรลูกค้า, ผู้ดูแล, สินค้า..."
+              placeholder="ค้นหาคิว, เบอร์โทรลูกค้า, ผู้ดูแล, สินค้า..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
@@ -1341,7 +1429,7 @@ export function SessionLogsWorkspace({
         <table className="logs-table">
           <thead>
             <tr>
-              <th style={{ width: '150px' }}>Session Ref</th>
+              <th style={{ width: '150px' }}>คิว</th>
               <th style={{ width: '120px' }}>เบอร์ลูกค้า</th>
               <th>รายการล่าสุด</th>
               <th style={{ width: '170px' }}>สถานะ</th>
@@ -1378,7 +1466,7 @@ export function SessionLogsWorkspace({
                   onClick={() => handleSelectRef(s.reference)}
                 >
                   <td>
-                    <span className="logs-table-ref">{s.reference}</span>
+                    <span className="logs-table-ref">คิว {s.queue}</span>
                   </td>
                   <td>
                     <span
@@ -1394,9 +1482,9 @@ export function SessionLogsWorkspace({
                   </td>
                   <td>
                     <strong>{getLatestItemText(s)}</strong>
-                    {s.selection?.product?.sku && (
+                    {s.selection?.items?.length > 0 && (
                       <span className="card-sku" style={{ display: 'block', marginTop: '2px' }}>
-                        SKU: {s.selection.product.sku}
+                        SKU: {s.selection.items.map((i) => i.product.sku).join(', ')}
                       </span>
                     )}
                   </td>
@@ -1486,13 +1574,15 @@ export function SessionLogsWorkspace({
               onClick={() => handleSelectRef(s.reference)}
             >
               <div className="card-top">
-                <span className="card-ref">{s.reference}</span>
+                <span className="card-ref">คิว {s.queue}</span>
                 {renderStatusTag(s)}
               </div>
               <div className="mobile-log-product">
                 <strong style={{ fontSize: '14px', color: '#103836' }}>{getLatestItemText(s)}</strong>
-                {s.selection?.product?.sku && (
-                  <span className="card-sku" style={{ marginTop: '2px' }}>SKU: {s.selection.product.sku}</span>
+                {s.selection?.items?.length > 0 && (
+                  <span className="card-sku" style={{ marginTop: '2px' }}>
+                    SKU: {s.selection.items.map((i) => i.product.sku).join(', ')}
+                  </span>
                 )}
               </div>
               <div className="mobile-log-meta">

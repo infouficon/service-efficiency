@@ -70,6 +70,8 @@ This is the unfinalized hierarchy from D13, not approved foreign keys. SubCatego
 
 The association names above are design vocabulary, not added business fields. Exact technical IDs, lengths, index definitions and referential actions are deferred to physical design. No blanket `created_at`/`updated_at`, deletion timestamps, money fields, or arbitrary Customer/Branch fields are added.
 
+> **Superseded by D61 (2026-10-13):** main products are `SessionItem` rows (SKU + quantity); the sentence below is the original rule.
+
 Main Product is absent at walk-in and selected during Product Selection (D8). This clarifies the older “exactly one” invariant as one main Product when selected, not a fabricated mandatory Product at creation. A completed purchase cannot contain multiple main Products. No product is forced onto NOT_BUY Sessions.
 
 Technical design: model selected options as child records rather than delimited strings. No selection means zero associated records; UI `None` never becomes a selected line. Option definitions are fixed for version one, with no Admin edit UI (D15). Quantity belongs only to SessionAccessory. Whether an option may appear more than once must be confirmed before adding pair uniqueness constraints.
@@ -168,6 +170,8 @@ FK/check constraints alone cannot enforce all cross-record authorization and lif
 OQ-04–09 cover workflow state storage/action boundaries, master hierarchy/history, numbering and remaining data constraints. D39 separately authorizes the account-only physical implementation. Open permissions also gate action contracts. See [open questions](open-questions.md). This conceptual ERD must not be treated as permission to generate migrations before those details and the ERD are approved.
 
 ## Confirmed phone collection timing
+
+> **Superseded by D56 (2026-10-13):** the phone number is collected at walk-in. `CustomerSession.customerId` is set from the first moment; the original text follows.
 
 Collect Customer Phone Number only after BUY. Walk-in/DEMO and NOT_BUY do not collect a phone number. This timing does not settle Customer identity creation/linking or physical nullability; those remain part of OQ-06/OQ-09.
 

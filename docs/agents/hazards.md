@@ -1,7 +1,7 @@
 # Hazards register: known gaps, risks and doc drift
 
-A numbered list of problems found by reading the code (`main` @ `1c9eaf1`, 2026-10-12).
-**Nothing here has been fixed.** Each item is a candidate topic for `/grill-with-docs` or a
+A numbered list of problems found by reading the code (`main` @ `1c9eaf1`, 2026-10-12; updated 2026-10-13).
+Items marked `fixed in …` have been fixed (H-05, H-19 so far); **everything else is still open.** Each item is a candidate topic for `/grill-with-docs` or a
 GitHub issue. Fixing one usually needs a business decision first, so record that decision
 as a new `D5x` entry in [docs/decisions.md](../decisions.md) before or with the code.
 
@@ -23,7 +23,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 ---
 
 ### H-01: State is checked outside the transaction, so actions can double-apply · S1 · confirmed
-- **Where:** `apps/api/src/sessions/sessions.service.ts`: each mutating method calls `getById()` (a plain read) and then `$transaction(... update({ where: { id } }))` without re-checking state inside the transaction. Example: `advanceStep` `:294` reads, `:307` checks, `:319-358` writes.
+- **Where:** `apps/api/src/sessions/sessions.service.ts`: each mutating method calls `getById()` (a plain read) and then `$transaction(... update({ where: { id } }))` without re-checking state inside the transaction. Example: `advanceStep` reads with `getById`, checks `state === from`, and only then writes in `$transaction`.
 - **Impact:** a double-click or a retry of `found` deducts `BranchInventory.stock` twice and writes two `STOCK_FOUND` events, and the second request overwrites `stockFoundAt`. `cancel` and `found` racing can leave the stock off by one. This breaks state-machine.md: "Duplicate clicks/retries must not overwrite timestamps or create a second accepted transition".
 - **Fix direction:** a conditional write inside the transaction, `updateMany({ where: { id, state: from, outcome: null } })`, then treat `count === 0` as 409 Conflict (or `SELECT … FOR UPDATE` on the row). Decide the HTTP contract for a duplicate (409 or idempotent 200); that is OQ-06.
 
@@ -38,13 +38,12 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Fix direction:** move `OriginGuard` to a shared file and register it globally (`APP_GUARD`) or on all three controllers. Check that the web client always sends `X-Requested-With: ServiceEfficiency` (see codebase-map §Frontend).
 
 ### H-04: "One active DEMO per Staff" (D5) is not enforced · S2 · confirmed
-- **Where:** the `startDemo` step (`sessions.service.ts:32-38`) checks only the session's own state.
+- **Where:** the `startDemo` entry of the `STEPS` map (`sessions.service.ts`) checks only the session's own state.
 - **Fix direction:** inside the transaction, count the actor's sessions in `DEMO` with `outcome IS NULL` and reject when the count is above 0. Concurrency needs the same care as H-01. OQ-06 (ownership and handoff) affects whose workload counts.
 
-### H-05: The session reference allocator collides under concurrency and uses server-local time · S2 · confirmed (TZ part: verify)
-- **Where:** `createWalkIn` `sessions.service.ts:238-257` reads the day's highest reference and adds 1, with no lock. `reference` is `@unique`, so two walk-ins at the same moment produce P2002 → **HTTP 500** (this service does not map P2002).
-- **TZ:** `getFullYear()/getMonth()/getDate()` use the container's timezone. If the API container runs in UTC (verify on Coolify), sessions created between 00:00 and 07:00 Bangkok time get the previous day's date prefix. The business timezone is OQ-08.
-- **Fix direction:** a counter table per day (or per branch, after OQ-08) incremented with `SELECT … FOR UPDATE`, or retry on P2002. Compute the date in `Asia/Bangkok` explicitly once OQ-08 is decided.
+### H-05: The session reference allocator collides under concurrency and uses server-local time · S2 · **fixed in the D56/D57 PR** (feat/queue-types-phone-first)
+- **Was:** `createWalkIn` read the day's highest reference and added 1 with no lock; two walk-ins at the same moment produced P2002 → HTTP 500, and the date prefix came from the container's time zone.
+- **Fix:** the reference and the new queue number (D57) both come from `DailyCounter` rows incremented atomically inside the walk-in transaction, per Asia/Bangkok day ([ADR 0001](../adr/0001-atomic-daily-counters-for-queue-numbers.md)). A number that is already taken is skipped; the migration seeds the `reference` counters from existing sessions. Covered by `apps/api/tests/queue.test.mjs` (8 parallel walk-ins, the Bangkok midnight boundary, a taken reference).
 
 ### H-06: `GET /sessions` is unbounded, and history visibility exists only in the UI · S2 · confirmed
 - **Where:** `list()` `sessions.service.ts:127-171` returns every session of the branch (ADMIN: all branches) with all child rows and the full event history. There is no date filter and no paging.
@@ -52,33 +51,38 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Fix direction:** server-side filters (`date`, `state`, `mine`) chosen by role, plus paging for the logs view. This needs a decision on the STAFF "own current work" predicate (OQ-06).
 
 ### H-07: Branch stock can go negative, and stock changes leave no audit trail · S2 · confirmed
-- **Where:** `stock: { decrement: 1 }` at `sessions.service.ts:323, 659, 991` has no floor. ADMIN `PUT …/stock` sets an absolute value (`products.service.ts:358-377`) with no event. Cancelling after FOUND adds `+1` (`:798-810`) even when out-of-stock or missing-item handling already set the stock to 0.
+- **Where:** `stock: { decrement: 1 }` in `advanceStep` (`found`), `recordOutOfStock` (partial) and `resolveStockReview` (ACCEPT_PARTIAL) has no floor. ADMIN `PUT …/stock` sets an absolute value (`products.service.ts:358-377`) with no event. Cancelling after FOUND adds `+1` (`cancelSession`) even when out-of-stock or missing-item handling already set the stock to 0.
 - **Impact:** the inventory can drift from reality, and nobody can tell who changed a quantity or when.
+- **Update 2026-10-13 (D59):** a cancel now gives back exactly the units the STOCK_FOUND event recorded (`metadata.deducted`), so it can no longer add a unit that was never taken (the switch "stock unlimited"). The floor and the audit trail are still missing.
 - **Fix direction:** guard with `stock > 0` (or decide that negative stock is allowed and shown). Add an inventory movement log if the business wants an audit trail (this needs a decision).
 
 ### H-08: Clearing `stockReview` with a plain `null` · S1 if real · verify
-- **Where:** `stockReview: null as unknown as undefined` at `sessions.service.ts:1000, 1081, 1133`. Prisma requires `Prisma.DbNull`/`Prisma.JsonNull` to null a `Json?` column. The cast hides the type error, but the runtime may still reject the value, and then all three resolve actions would return 500.
+- **Where:** `stockReview: null as unknown as undefined` in the three branches of `resolveStockReview` (`sessions.service.ts`). Prisma requires `Prisma.DbNull`/`Prisma.JsonNull` to null a `Json?` column. The cast hides the type error, but the runtime may still reject the value, and then all three resolve actions would return 500.
 - **Verify:** call resolve-stock-review against the dev DB. If it works, mark this item "not a bug" and replace the cast with `Prisma.DbNull` for clarity.
 
-### H-09: Two divergent "partial fulfilment" paths that match items by display name · S2 · confirmed
+### H-09: Two divergent "partial fulfilment" paths that match items by display name · S2 · partly fixed by D61 (2026-10-13)
+- **Update:** the D40 path (report-missing → resolve) now names the missing **main products by item id** (`missingItemIds`); only accessories and reports made before F3 still go by display name (`legacyMissingItems`). The unused STOCK-only `out-of-stock` partial path still matches by name and the two paths are still two.
 - **Where:** the STOCK path `POST /out-of-stock {action:'partial'}` (`:644-715`) matches `'MAIN_PRODUCT'`, the SKU code or the product name. The D40 path, report-missing and then resolve (`:848-1179`), matches `'สินค้าหลัก'`, the model, SKU name or code, and strips accessory names with the regex `\s*\(x\d+\)$`. The `isMainProductMissing` closure is copied three times.
 - **Impact:** renaming a product or model changes the matching behaviour, and the two paths can treat the same report differently.
 - **Fix direction:** decide whether D40 replaces the STOCK-only partial path. Send stable identifiers (`{ kind:'MAIN' } | { kind:'ACCESSORY', name }`) instead of display strings.
 
-### H-10: The selection API accepts any SKU · S2 · confirmed
+### H-10: The selection API accepts any SKU · S2 · partly fixed by D61 (2026-10-13)
+- **Update:** `items` are validated: an unknown SKU, a quantity below 1 or a SKU twice is a 400 (the old silent ignore is gone). Still not checked: the branch inventory, `stock > 0`, and the `active` flags.
 - **Where:** `updateSelection` `:507-542` resolves `skuId` by UUID or SKU code across **all** branches. It does not check `BranchInventory.active`, `stock > 0`, or whether the SKU, model or product is active. An unknown SKU is silently ignored and the old value kept. Changing the model without a SKU is a no-op once a model is already set.
 - **Impact:** D41's selectability rule is enforced only by the UI.
 - **Fix direction:** validate against the branch's inventory inside the transaction, and return 400 for an unknown or unavailable SKU.
 
 ### H-11: Fixed option lists are not validated by the server · S3 · confirmed
 - **Where:** `UpdateSelectionDto` (`sessions/dto.ts:95-130`), plus the NOT_BUY and cancel `reason` fields, accept any string. Payments are not filtered for `None`. Duplicates are allowed (OQ-09).
+- **Update 2026-10-13 (D66):** the payment methods are now a list in the database (`PaymentMethod`) and the web loads them; the server still does not check a session's `payments` against it.
 - **Fix direction:** move the fixed lists (currently in `apps/web/src/constants/options.ts`) into `packages/shared` (it is empty: `export {}`) and validate with `@IsIn` in the DTOs.
 
 ### H-12: One `reason`/`otherReason` pair serves three meanings · S3 · confirmed
 - NOT_BUY result, cancellation reason, and out-of-stock reason (which defaults to `'OUT_OF_STOCK'`) share the same two columns. docs/erd.md says NOT_BUY text and cancellation text "must not be merged into an ambiguous shared reason field". Today `outcome` tells them apart, so reports must always read `reason` together with `outcome`. Decide whether to keep this (and update the ERD) or to split the columns.
 
-### H-13: Cancellation permissions differ from the confirmed matrix · S1 · confirmed
-- **Where:** `cancelSession` `:781-788`.
+### H-13: Cancellation permissions differ from the confirmed matrix · S1 · fixed by D63 (feat/cancel-reject-rebuy)
+- **Fixed:** the owner decided (D63) that any role of the branch can cancel at any stage; `cancelSession` no longer checks a role by stage. The rest of this entry describes the old behaviour.
+- **Where:** `cancelSession` (the role check by state, `sessions.service.ts`).
 - **Differences:** (a) STAFF cannot cancel in the Stock and Cashier stages without the STOCK or CASHIER role, although requirements §25 and permissions.md confirm STAFF *can* cancel in DEMO, PRODUCT_SELECTION, STOCK and CASHIER. (b) In WALK_IN and DECISION there is **no role check at all**: any authenticated user of the branch (for example a CASHIER-only account) can cancel. Cancelling in those states is not in the confirmed flow either. (c) OQ-02 (which exact substates allow cancellation) is still open.
 - **Fix direction:** settle OQ-02 and record it as a decision, then encode one explicit `stage → allowedRoles` table.
 
@@ -91,6 +95,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 ### H-15: The session and product workflow has no real tests · S2 · confirmed
 - **Update 2026-10-12:** `apps/api/tests/accounts.test.mjs`, the one real integration test, **fails on `main`** (7 of 8 subtests): `StaffUpdateDto.firstName/lastName` are `@IsString()` without `@IsOptional()` (added by migration `202609280004_staff_names`) but the test's `account()` helper does not send them, so `POST /staff` returns 400. Not caused by the ERP work. **Fixed on `feat/erp-sync`**: the helpers now send the names and the suite passes 8/8 (note: its last-ADMIN test counts ADMIN accounts in the whole database, so run it on an empty test DB). Whether the DTO fields should be optional is still open (`createStaff` already supports `?? ''`).
 - `apps/api/tests/sessions.test.mjs` asserts literal constants (for example "an array of strings does not include `stockRequestedAt`") and never calls the API or the database. Only `accounts.test.mjs` is a real HTTP + MySQL integration test. `apps/web/tests/workflow.test.mjs` tests the pure helpers in `features/session/workflow.ts`.
+- **Update 2026-10-13:** `apps/api/tests/queue.test.mjs` is the first real integration test of the session workflow (walk-in, queue numbers, customer types); it uses the shared harness `apps/api/tests/support.mjs` (boot the app, seed a branch world with one account per role, clean up; `TEST_LOG=1` shows server errors). The step/stock/cancel paths are still untested.
 - **Rule:** before fixing H-01, H-04, H-07, H-10 or H-13, add a failing integration test in the style of `accounts.test.mjs`. It uses an isolated `service_efficiency_test` DB and refuses any other DB name.
 
 ### H-16: A push to `main` deploys production, and a bad migration stops the API · S1 (process) · confirmed
@@ -102,19 +107,21 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Fix direction:** create the BranchInventory rows when a branch or SKU is created (D41 says "Defaults when a new SKU or Branch is created"), and move the seed behind an explicit script.
 
 ### H-18: Weak trail for stock review resolution and alert acknowledgment · S3 · confirmed
-- "Assigned staff" means `session.staffId === actor`, with no role check (`:938`). The session creator is the only Staff link, and there is no reassignment (OQ-06). `acknowledgeAlert` (`:1181-1228`) runs outside a transaction and writes no `SessionEvent`; the acknowledgment survives only inside the JSON blob, which resolve then wipes.
+- "Assigned staff" means `session.staffId === actor`, with no role check . The session creator is the only Staff link, and there is no reassignment (OQ-06). `acknowledgeAlert` runs outside a transaction and writes no `SessionEvent`; the acknowledgment survives only inside the JSON blob, which resolve then wipes.
 
-### H-19: Copy-pasted Prisma `include` blocks · S3 · confirmed
-- The same `include: { branch, staff, product, model, sku…, events }` block appears about 12 times in `sessions.service.ts`, with small differences (some include `sku.model.product`, some do not). Responses therefore differ in shape between endpoints. Extract one `const sessionInclude` (in the same file, following the cohesion rule) when you touch this code.
+### H-19: Copy-pasted Prisma `include` blocks · S3 · **fixed in the D56/D57 PR** (feat/queue-types-phone-first)
+- **Was:** the same `include: { branch, staff, product, model, sku…, events }` block appeared 15 times in `sessions.service.ts` with small differences, so responses differed in shape between endpoints.
+- **Fix:** one `sessionInclude` constant (`satisfies Prisma.CustomerSessionInclude`) used by every method; every endpoint now returns the same shape (sku with model and product, `customerType`, events oldest first).
 
 ### H-20: ADMIN walk-in silently picks a branch · S3 · confirmed
-- `createWalkIn` (`:225-230`): an ADMIN with no `branchId` and no home branch gets the first active branch ordered by code, so sessions can land in an arbitrary branch. Prefer requiring `branchId` for ADMIN (400).
+- `createWalkIn`: an ADMIN with no `branchId` and no home branch gets the first active branch ordered by code, so sessions can land in an arbitrary branch. Prefer requiring `branchId` for ADMIN (400).
 
 ---
 
 ## Frontend hazards (`apps/web`)
 
-### H-21: The UI fakes success on API errors · S1 · confirmed
+### H-21: The UI fakes success on API errors · S1 · partly fixed (2026-10-13)
+- **Update:** the in-memory fallbacks of the stock-review resolution (Staff) and of report-missing (Stock) are gone (the three D40 handlers show the error and stop). The empty `catch` in `CashierWorkspace`, the NOT_BUY fallback and the Stock cancel/step fallbacks remain.
 - **Where:** `CashierWorkspace.tsx:85-130`: when `advanceStepApi` or `cancelSessionApi` throws, the `catch` is empty and the code falls through to a **local** `advance()` / local cancel. `StaffWorkspace.tsx:808-842`: when `recordNotBuyApi` fails, the error is shown, but there is no `return`, so the code goes on to apply a local NOT_BUY. Similar local fallbacks exist for stock-review resolution (`Staff:142-149, 213-221`) and Stock cancel (`Stock:244-254`).
 - **Impact:** a rejected action (403, 400 "wrong state", network error) looks accepted on that screen, then the next 4-second poll replaces it with the server state. The user sees the state "jump back". The local copy also invents timestamps and `cancelledBy` in the browser, which breaks AGENTS rules 7 and 8.
 - **Fix direction:** show the error and stop (`return`). Delete the offline fallbacks; the `!session.id` branches never run for API-loaded sessions.
@@ -123,7 +130,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - **Where:** `App.tsx:131-145`. For an unconfirmed, non-terminal session the local `phone` and `selection` win. Another device's edit is therefore hidden until the first device saves again.
 - **Impact:** two devices on one session overwrite each other (last write wins, and `updateSelection` replaces whole lists). No conflict handling exists.
 
-### H-23: Dismissal state lives in `localStorage` or component state · S3 · confirmed
+### H-23: Dismissal state lives in `localStorage` or component state · S3 · partly fixed (feat/cancel-reject-rebuy)
+- **Update:** the stock cancel alert is now acknowledged on the server (`stockAckAt`, D63) and shows on every device. The manager banner's local dismissal remains.
 - Stock cancel alerts are dismissed only in `localStorage` (`service_efficiency_stock_dismissed_cancels`, `Stock:29-54`). The manager banner's "dismiss" calls `acknowledge-alert` per session but swallows errors (`App.tsx:210-226`). Different browsers/devices see different alerts.
 
 ### H-24: Event names in the CSV export don't match the real enum · S2 · verify
@@ -144,7 +152,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - `Mock*` type names and `previewTime()` are used for live data. Rename only as part of a feature change, never as a drive-by.
 - `ui.tsx` `Modal` always uses `id="modal-title"`, so two open modals give duplicate IDs. `ExportModal` validates with `alert()`. `.spin` has no CSS rule (only `@keyframes spin`).
 
-### H-28: The fallback catalog sends IDs that don't exist · S3 · confirmed
+### H-28: The fallback catalog sends IDs that don't exist · S3 · fixed in the D61/D62 PR (feat/session-items-wizard)
+- **Fixed:** the picker no longer falls back to `mocks/data.ts`; a failed `/products` shows an error. (The mocks file itself is now unused: H-27.)
 - If `/products` fails or is empty, `SelectionEditor` uses `mocks/data.ts` products (`sku-1`, …). `updateSelectionApi` sends them, and the server tries to match them as a SKU id or code. An unknown value is **silently ignored** (H-10), so the UI shows a product that the server never saved. Remove the fallback or show an error.
 
 ### H-29: The ERP's OData service can hang, and a filtered query is the prime suspect · S1 (shared with the shops) · partly verified

@@ -62,6 +62,8 @@ enum EventType {
   CASHIER_SCANNED
   BILL_OPENED
   COMPLETED
+  CASHIER_REJECTED
+  STOCK_ACKNOWLEDGED_CANCEL
 }
 
 model Branch {
@@ -72,6 +74,8 @@ model Branch {
   active   Boolean           @default(true)
   // ERP branch_id when the row is kept in sync with the ERP (D53); null for hand-made branches
   erpBranchId Int?           @unique
+  // F10: the address the receipt's QR code opens (customer registration), one per branch; set by ADMIN, also on ERP branches
+  registrationUrl String?    @db.VarChar(512)
   staff    Staff[]
   sessions CustomerSession[]
   inventory BranchInventory[]
@@ -132,6 +136,46 @@ model Customer {
   sessions  CustomerSession[]
 }
 
+// D57: back-office list of customer types. The letter (A-Z, unique) is the queue letter and the sort order.
+model CustomerType {
+  id          String            @id @default(uuid()) @db.VarChar(36)
+  letter      String            @unique @db.VarChar(1)
+  name        String            @db.VarChar(64)
+  description String?           @db.VarChar(191)
+  active      Boolean           @default(true)
+  createdAt   DateTime          @default(now()) @db.DateTime(3)
+  updatedAt   DateTime          @updatedAt @db.DateTime(3)
+  sessions    CustomerSession[]
+}
+
+// D59: global switches set by ADMIN (today only `stockUnlimited`). The value is text so it reads the same on MySQL and MariaDB.
+model Setting {
+  name      String   @id @db.VarChar(64)
+  value     String   @db.VarChar(255)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
+  updatedBy String?  @db.VarChar(64)
+}
+
+// F6: the payment methods staff can pick on a session, kept by ADMIN. The name is the value stored on a session's payments
+// (history), so a method is switched off, never renamed or deleted. `position` is the order shown.
+model PaymentMethod {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  name      String   @unique @db.VarChar(64)
+  active    Boolean  @default(true)
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+}
+
+// Atomic running numbers that restart every Asia/Bangkok day: scope `reference` (SES-YYYYMMDD-NNNNNN) and
+// `queue:<branchId>:<letter>` (D57). Incremented with INSERT ... ON DUPLICATE KEY UPDATE inside the caller's transaction.
+model DailyCounter {
+  scope   String @db.VarChar(80)
+  day     String @db.VarChar(10)
+  lastNo  Int
+
+  @@id([scope, day])
+}
+
 model Product {
   id        String            @id @default(uuid()) @db.VarChar(36)
   category  ProductCategory
@@ -168,6 +212,7 @@ model ProductSku {
   erpManaged Boolean          @default(false)
   sessions  CustomerSession[]
   inventory BranchInventory[]
+  sessionItems SessionItem[]
 
   @@index([modelId])
 }
@@ -211,7 +256,26 @@ model CustomerSession {
   otherReason String?      @db.Text
   cancelledBy String?      @db.VarChar(64)
   stockReview Json?
+  // D57: the type chosen at the phone step and the queue number it produced ("A012"); the letter is frozen here so
+  // renaming or re-lettering a type never rewrites history. Null on sessions created before D57 (queueNo then holds
+  // the old per-day running number).
+  customerTypeId String?       @db.VarChar(36)
+  customerType   CustomerType? @relation(fields: [customerTypeId], references: [id], onDelete: Restrict)
+  queueLetter    String?       @db.VarChar(1)
+  queueNo        Int?
+  // F12: the stock side of a cancel. Null while stock still has to act (bring the goods back, stop searching).
+  stockAckAt     DateTime?     @db.DateTime(3)
+  stockAckBy     String?       @db.VarChar(64)
+  // F11: the cancelled session this one was opened from with "buy again" (it keeps the queue number); once per session
+  // F17 (D60): the bill U POS opened for this order, reported by U POS: its number and the real time it was opened
+  posBillNo       String?       @db.VarChar(64)
+  posBillOpenedAt DateTime?     @db.DateTime(3)
+  rebuyOfId      String?       @unique @db.VarChar(36)
+  rebuyOf        CustomerSession? @relation("Rebuy", fields: [rebuyOfId], references: [id], onDelete: SetNull)
+  rebuiltAs      CustomerSession? @relation("Rebuy")
 
+  // F3: the main products of a session are `items` (SKU + quantity). These three columns are the old single main
+  // product: kept for sessions from before F3 (the migration copied each into an item) and never written any more.
   productId  String?       @db.VarChar(36)
   product    Product?      @relation(fields: [productId], references: [id], onDelete: Restrict)
   modelId    String?       @db.VarChar(36)
@@ -232,6 +296,7 @@ model CustomerSession {
   billOpenedAt                DateTime? @db.DateTime(3)
   cancelledAt                 DateTime? @db.DateTime(3)
 
+  items       SessionItem[]
   accessories SessionAccessory[]
   ontop       SessionOntop[]
   points      SessionPoint[]
@@ -243,6 +308,22 @@ model CustomerSession {
   @@index([staffId])
   @@index([state])
   @@index([customerWalkInAt])
+}
+
+// F3: one main product of a Customer Session: a SKU and how many. `deducted` = the units FOUND really took off the
+// branch shelf (0 while "stock unlimited" is on, D59); a cancel gives back exactly these.
+model SessionItem {
+  id        String          @id @default(uuid()) @db.VarChar(36)
+  sessionId String          @db.VarChar(36)
+  session   CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  skuId     String          @db.VarChar(36)
+  sku       ProductSku      @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  quantity  Int             @default(1)
+  deducted  Int             @default(0)
+  createdAt DateTime        @default(now()) @db.DateTime(3)
+
+  @@index([sessionId])
+  @@index([skuId])
 }
 
 model SessionAccessory {

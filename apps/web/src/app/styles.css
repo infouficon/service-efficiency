@@ -3429,8 +3429,8 @@ input[aria-invalid='true'] {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 56px;
+  height: 56px;
   border-radius: var(--radius-md, 8px);
   background: var(--primary-subtle, #e6f6f5);
   color: var(--primary, #0abab5);

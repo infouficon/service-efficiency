@@ -265,19 +265,7 @@ export function SelectionEditor({
         : deviceCategories,
     [categoryList],
   );
-  const products = useMemo(
-    () => (catalog ?? []).filter((p) => p.category === category),
-    [catalog, category],
-  );
-  const product = products.find((p) => p.id === productId) ?? null;
-  const model = product?.models.find((m) => m.id === modelId) ?? null;
-  const step: WizardStep = !category
-    ? 'category'
-    : !product
-      ? 'product'
-      : !model
-        ? 'model'
-        : 'sku';
+
   // Available models for selected category
   const availableModels = useMemo(() => {
     if (!catalog || !category) return [];
@@ -567,7 +555,7 @@ export function SelectionEditor({
                     onChange={(e) => handleCategoryChange(e.target.value)}
                   >
                     <option value="">-- เลือกประเภทอุปกรณ์ --</option>
-                    {deviceCategories.map((cat) => {
+                    {categoryTiles.map((cat) => {
                       const count = catalog.filter(
                         (p) => p.category === cat,
                       ).length;

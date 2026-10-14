@@ -1148,3 +1148,11 @@ Owner, after D79 went live: a Mac showed "ความจุ: 24GB", the model "
 3. **Model name** is cleaned with the corrected storage, so "1TB" no longer stays in "MacBook Pro M5 14.2 1TB".
 4. **Existing rows** are corrected by the next sync run (SKU attributes are refreshed, and the SKUs are re-filed, D78). The picker's selected-product card now shows the category picture.
 
+## D81 — A change of the catalog rules re-runs the sync by itself after the deploy (2026-10-15)
+
+Owner, after D80 was merged: the Mac still showed "ความจุ 24GB" and the model "MacBook Air M5 15.3 1TB". Nothing was missing from the data: the corrected rules only apply when a sync run happens, and the scheduled check runs once per (snapshot time, content fingerprint), so a deploy that changed the rules did not trigger any run until warroom's data changed or an ADMIN pressed "ซิงก์ตอนนี้".
+
+1. `CATALOG_RULES_VERSION` (in `warroom-sync.service.ts`) is mixed into the run-slot fingerprint. After a deploy that raises it, the next scheduled check (every `WARROOM_SYNC_MINUTES`, default 10) processes the snapshot again and corrects, updates and re-files what the old rules made.
+2. **Rule for contributors:** raise it whenever `mapCategory`, `buildCatalog` or the helpers they use (`modelNameOf`, `storageOf`, `colorOf`, `memoryOf`, `withoutCapacity`) change what a catalog item looks like.
+3. Needs mode `on` (in `shadow` nothing is written to the catalog) and the usual guards still apply; an ADMIN can still run it by hand.
+

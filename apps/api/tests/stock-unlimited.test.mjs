@@ -60,8 +60,6 @@ test('stock unlimited: one global ADMIN switch, on by default (D59)', async (t) 
       );
       assert.equal(created.status, 201, JSON.stringify(created.data));
       const id = created.data.id;
-      for (const action of ['startDemo', 'endDemo', 'buy', 'startSelection'])
-        assert.equal((await step(id, action, 'staff')).status, 201, action);
       const chosen = await request(
         `/sessions/${id}/selection`,
         'PUT',

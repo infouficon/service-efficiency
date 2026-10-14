@@ -118,14 +118,25 @@ export function toggleOption(selected: string[], option: string): string[] {
 export function reasonIsValid(reason: string, text: string) {
   return Boolean(reason) && (reason !== 'อื่น ๆ' || Boolean(text.trim()));
 }
-export function progressIndex(session: MockSession): number {
+export function progressIndex(session: MockSession, isReviewing = false): number {
   if (session.state === 'WALK_IN') return 0;
-  if (session.state === 'DEMO') return 1;
-  if (session.state === 'DECISION') return 2;
-  if (session.state === 'PRODUCT_SELECTION') return session.confirmed ? 4 : 3;
+  if (session.state === 'PRODUCT_SELECTION') {
+    if (session.confirmed) return 2;
+    return isReviewing ? 2 : 1;
+  }
   if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state))
-    return 5;
-  return 6;
+    return 3;
+  if (
+    [
+      'SENT_TO_CASHIER',
+      'CASHIER_RECEIVED',
+      'CASHIER_SCAN',
+      'BILL_OPENED',
+      'COMPLETED',
+    ].includes(session.state)
+  )
+    return 4;
+  return 1;
 }
 
 /**
@@ -238,10 +249,6 @@ export interface StepDuration {
 
 /** The steps of a visit, in order, with the label shown in the export. `total` is the whole session. */
 const STEP_LABELS: [string, string][] = [
-  ['wait_demo', 'รอก่อนเริ่ม DEMO'],
-  ['demo', 'DEMO'],
-  ['decision', 'ตัดสินใจหลัง DEMO'],
-  ['to_selection', 'เริ่มเลือกสินค้าหลังตัดสินใจ'],
   ['selection', 'เลือกสินค้าจนยืนยัน'],
   ['wait_stock', 'รอ Stock รับงาน'],
   ['stock_search', 'Stock ค้นหาสินค้า'],
@@ -257,17 +264,14 @@ const STEP_LABELS: [string, string][] = [
 function phaseStartedBy(event: SessionEventItem): string | 'END' | undefined {
   const meta = (event.metadata ?? {}) as Record<string, unknown>;
   switch (event.eventType) {
-    // a session opened by "buy again" has no waiting-for-demo step: it starts at product selection
     case 'SESSION_CREATED':
-      return meta.rebuyOf ? undefined : 'wait_demo';
-    case 'DEMO_STARTED':
-      return 'demo';
-    case 'DEMO_ENDED':
-      return 'decision';
-    case 'DECISION_MADE':
-      return meta.outcome === 'NOT_BUY' ? 'END' : 'to_selection';
     case 'PRODUCT_SELECTION_STARTED':
       return 'selection';
+    case 'DEMO_STARTED':
+    case 'DEMO_ENDED':
+      return undefined;
+    case 'DECISION_MADE':
+      return meta.outcome === 'NOT_BUY' ? 'END' : undefined;
     case 'PRODUCT_SELECTION_CONFIRMED':
       return 'wait_stock';
     case 'STOCK_SEARCHING':

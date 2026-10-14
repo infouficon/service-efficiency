@@ -44,7 +44,7 @@ export function QrCodeSvg({
   );
 }
 
-function ReceiptSheet({
+export function ReceiptSheet({
   session,
   printedAt,
 }: {
@@ -118,7 +118,7 @@ function ReceiptSheet({
 }
 
 /** The time on the paper (th-TH, short). */
-const nowText = () =>
+export const nowText = () =>
   new Date().toLocaleString('th-TH', {
     dateStyle: 'short',
     timeStyle: 'short',

@@ -369,35 +369,6 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
           ]),
       },
       {
-        key: 'ts_demo_start_at',
-        label: 'Demo Start At',
-        getValue: (s) =>
-          getSessionTimestamp(s, 'demo_start_at', [
-            'DEMO_START',
-            'DEMO_STARTED',
-          ]),
-      },
-      {
-        key: 'ts_demo_end_at',
-        label: 'Demo End At',
-        getValue: (s) =>
-          getSessionTimestamp(s, 'demo_end_at', [
-            'DEMO_END',
-            'DEMO_ENDED',
-          ]),
-      },
-      {
-        key: 'ts_decision_at',
-        label: 'Decision At',
-        getValue: (s) =>
-          getSessionTimestamp(s, 'decision_at', [
-            'DECISION',
-            'CUSTOMER_DECISION',
-            'BUY',
-            'NOT_BUY',
-          ]),
-      },
-      {
         key: 'ts_product_selection_start_at',
         label: 'Product Selection Start At',
         getValue: (s) =>

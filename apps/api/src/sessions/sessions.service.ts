@@ -378,12 +378,16 @@ export class SessionsService {
         create: { phone: dto.phone },
         update: {},
       });
-      const queue = await this.queue.allocate(
-        tx,
-        targetBranch.id,
-        dto.customerTypeId,
-        now,
-      );
+      if (dto.customerTypeId) {
+        const type = await tx.customerType.findUnique({
+          where: { id: dto.customerTypeId },
+        });
+        if (!type || !type.active) {
+          throw new BadRequestException('ไม่พบประเภทลูกค้าที่เปิดใช้งาน');
+        }
+      }
+
+      // D70: queue number is allocated at confirmation, not at walk-in.
       const reference = await this.newReference(tx, day);
 
       return tx.customerSession.create({
@@ -393,18 +397,28 @@ export class SessionsService {
           staffId: user.staffId,
           customerId: customer.id,
           phone: dto.phone,
-          ...queue,
-          state: 'WALK_IN',
+          customerTypeId: null,
+          queueLetter: null,
+          queueNo: null,
+          state: 'PRODUCT_SELECTION',
           customerWalkInAt: now,
+          productSelectionStartAt: now,
           events: {
-            create: {
-              eventType: 'SESSION_CREATED',
-              actorStaffId: user.staffId,
-              createdAt: now,
-              metadata: {
-                queue: formatQueue(queue.queueLetter, queue.queueNo),
+            create: [
+              {
+                eventType: 'SESSION_CREATED',
+                actorStaffId: user.staffId,
+                createdAt: now,
+                metadata: {
+                  phone: dto.phone,
+                },
               },
-            },
+              {
+                eventType: 'PRODUCT_SELECTION_STARTED',
+                actorStaffId: user.staffId,
+                createdAt: now,
+              },
+            ],
           },
         },
         include: sessionInclude,
@@ -719,7 +733,8 @@ export class SessionsService {
         }
       }
 
-      // Update payments
+      // Update payments and auto-classify customer type (D69, D70)
+      let nextCustomerTypeId = session.customerTypeId;
       if (dto.payments) {
         await tx.sessionPayment.deleteMany({ where: { sessionId: session.id } });
         for (const method of dto.payments) {
@@ -729,11 +744,85 @@ export class SessionsService {
         }
       }
 
+      if (dto.payments || dto.ontop || dto.points || dto.burnPoints) {
+        const types = await tx.customerType.findMany({
+          where: { active: true },
+          orderBy: { letter: 'asc' },
+        });
+
+        const allPayments =
+          dto.payments ??
+          (
+            await tx.sessionPayment.findMany({
+              where: { sessionId: session.id },
+            })
+          ).map((p) => p.method);
+        const allOntop =
+          dto.ontop ??
+          (
+            await tx.sessionOntop.findMany({
+              where: { sessionId: session.id },
+            })
+          ).map((o) => o.name);
+        const allPoints =
+          dto.points ??
+          (
+            await tx.sessionPoint.findMany({
+              where: { sessionId: session.id },
+            })
+          ).map((p) => p.name);
+        const allBurnPoints =
+          dto.burnPoints ??
+          (
+            await tx.sessionBurnPoint.findMany({
+              where: { sessionId: session.id },
+            })
+          ).map((b) => b.name);
+
+        const matchesType = (t: {
+          paymentMethods: unknown;
+          ontop: unknown;
+          points: unknown;
+          burnPoints: unknown;
+        }) => {
+          const pm = Array.isArray(t.paymentMethods)
+            ? (t.paymentMethods as string[])
+            : [];
+          const ot = Array.isArray(t.ontop) ? (t.ontop as string[]) : [];
+          const pt = Array.isArray(t.points) ? (t.points as string[]) : [];
+          const bp = Array.isArray(t.burnPoints)
+            ? (t.burnPoints as string[])
+            : [];
+
+          return (
+            pm.some((m) => allPayments.includes(m)) ||
+            ot.some((m) => allOntop.includes(m)) ||
+            pt.some((m) => allPoints.includes(m)) ||
+            bp.some((m) => allBurnPoints.includes(m))
+          );
+        };
+
+        const matchedType =
+          types.find((t) => t.letter === 'B' && matchesType(t)) ||
+          types.find((t) => matchesType(t));
+
+        if (matchedType) {
+          nextCustomerTypeId = matchedType.id;
+        } else if (session.queueLetter) {
+          const defaultType = types.find((t) => t.letter === session.queueLetter);
+          if (defaultType) nextCustomerTypeId = defaultType.id;
+        } else {
+          const defaultType = types.find((t) => t.letter === 'A') || types[0];
+          if (defaultType) nextCustomerTypeId = defaultType.id;
+        }
+      }
+
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
           phone: dto.phone ?? session.phone,
           customerId,
+          customerTypeId: nextCustomerTypeId,
         },
         include: sessionInclude,
       });
@@ -759,17 +848,85 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
+      // D70: allocate queue number if not already allocated (e.g. rebuy keeps old queue)
+      let customerTypeId = session.customerTypeId;
+      let queueLetter = session.queueLetter;
+      let queueNo = session.queueNo;
+
+      if (queueNo === null) {
+        const types = await tx.customerType.findMany({
+          where: { active: true },
+          orderBy: { letter: 'asc' },
+        });
+
+        const paymentNames = session.payments.map((p) => p.method);
+        const ontopNames = session.ontop.map((o) => o.name);
+        const pointNames = session.points.map((p) => p.name);
+        const burnPointNames = session.burnPoints.map((b) => b.name);
+
+        const matchesType = (t: {
+          paymentMethods: unknown;
+          ontop: unknown;
+          points: unknown;
+          burnPoints: unknown;
+        }) => {
+          const pm = Array.isArray(t.paymentMethods)
+            ? (t.paymentMethods as string[])
+            : [];
+          const ot = Array.isArray(t.ontop) ? (t.ontop as string[]) : [];
+          const pt = Array.isArray(t.points) ? (t.points as string[]) : [];
+          const bp = Array.isArray(t.burnPoints)
+            ? (t.burnPoints as string[])
+            : [];
+
+          return (
+            pm.some((m) => paymentNames.includes(m)) ||
+            ot.some((m) => ontopNames.includes(m)) ||
+            pt.some((m) => pointNames.includes(m)) ||
+            bp.some((m) => burnPointNames.includes(m))
+          );
+        };
+
+        const matchedType =
+          types.find((t) => t.letter === 'B' && matchesType(t)) ||
+          types.find((t) => matchesType(t)) ||
+          types.find((t) => t.letter === 'A') ||
+          types[0];
+
+        if (!matchedType) {
+          throw new BadRequestException('ไม่พบประเภทลูกค้าที่เปิดใช้งาน');
+        }
+
+        const queue = await this.queue.allocate(
+          tx,
+          session.branchId,
+          matchedType.id,
+          now,
+        );
+        customerTypeId = queue.customerTypeId;
+        queueLetter = queue.queueLetter;
+        queueNo = queue.queueNo;
+      }
+
+      const queueStr = formatQueue(queueLetter, queueNo ?? 0);
+
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
           confirmed: true,
           state: 'STOCK_REQUESTED',
           productSelectionConfirmedAt: now,
+          customerTypeId,
+          queueLetter,
+          queueNo,
           events: {
             create: {
               eventType: 'PRODUCT_SELECTION_CONFIRMED',
               actorStaffId: user.staffId,
               createdAt: now,
+              metadata: {
+                queue: queueStr,
+              },
             },
           },
         },

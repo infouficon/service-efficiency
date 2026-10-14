@@ -107,6 +107,18 @@ export class QueueService {
           letter,
           name: dto.name,
           description: dto.description || null,
+          paymentMethods:
+            dto.paymentMethods && dto.paymentMethods.length > 0
+              ? dto.paymentMethods
+              : Prisma.DbNull,
+          ontop:
+            dto.ontop && dto.ontop.length > 0 ? dto.ontop : Prisma.DbNull,
+          points:
+            dto.points && dto.points.length > 0 ? dto.points : Prisma.DbNull,
+          burnPoints:
+            dto.burnPoints && dto.burnPoints.length > 0
+              ? dto.burnPoints
+              : Prisma.DbNull,
         },
       });
     } catch (err) {
@@ -142,6 +154,36 @@ export class QueueService {
           ? { description: dto.description || null }
           : {}),
         ...(dto.active !== undefined ? { active: dto.active } : {}),
+        ...(dto.paymentMethods !== undefined
+          ? {
+              paymentMethods:
+                dto.paymentMethods && dto.paymentMethods.length > 0
+                  ? dto.paymentMethods
+                  : Prisma.DbNull,
+            }
+          : {}),
+        ...(dto.ontop !== undefined
+          ? {
+              ontop:
+                dto.ontop && dto.ontop.length > 0 ? dto.ontop : Prisma.DbNull,
+            }
+          : {}),
+        ...(dto.points !== undefined
+          ? {
+              points:
+                dto.points && dto.points.length > 0
+                  ? dto.points
+                  : Prisma.DbNull,
+            }
+          : {}),
+        ...(dto.burnPoints !== undefined
+          ? {
+              burnPoints:
+                dto.burnPoints && dto.burnPoints.length > 0
+                  ? dto.burnPoints
+                  : Prisma.DbNull,
+            }
+          : {}),
       },
     });
   }

@@ -35,7 +35,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
       );
       assert.equal(created.status, 201, JSON.stringify(created.data));
       const id = created.data.id;
-      if (lastAction === 'walkIn') return created.data;
+      if (lastAction === 'walkIn' || lastAction === 'startSelection') return created.data;
       for (const [action, role] of PATH) {
         if (action === 'confirm') {
           const put = await call(
@@ -85,9 +85,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
       'every role of the branch can cancel at every stage (F12)',
       async () => {
         const stages = [
-          'startDemo',
-          'buy',
-          'startSelection',
+          'walkIn',
           'confirm',
           'search',
           'found',
@@ -125,7 +123,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
     await t.test(
       'a reason is required, a finished session cannot be cancelled, another branch cannot',
       async () => {
-        const session = await driveTo('startDemo');
+        const session = await driveTo('walkIn');
         assert.equal(
           (await call(`/sessions/${session.id}/cancel`, 'POST', {}, 'staff'))
             .status,
@@ -434,14 +432,14 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           409,
           'once per cancelled session',
         );
-        // the queue counter did not move: the next walk-in of type B takes the next number
+        // the queue counter did not move: walk-in has no queue yet (D70)
         const walkIn = await call(
           '/sessions',
           'POST',
-          { phone: '0999900399', customerTypeId: typeB.id },
+          { phone: '0999900399' },
           'staff',
         );
-        assert.equal(walkIn.data.queueNo, old.queueNo + 1);
+        assert.equal(walkIn.data.queueNo, null);
         // the new session goes on like any other
         assert.equal(
           (await call(`/sessions/${s.id}/confirm`, 'POST', undefined, 'staff'))

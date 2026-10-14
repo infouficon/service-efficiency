@@ -2,14 +2,14 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D67);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D71);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `ecd82e0` plus the D56/D57 change (2026-10-13).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71 changes (2026-10-14).
 
 ## 1. What the system is for
 
@@ -38,17 +38,17 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 
 | Term (UI / Thai) | Meaning | Code |
 | --- | --- | --- |
-| Customer Session | One customer visit in one Branch. Created at walk-in from the customer's phone number and customer type (D56, D57); the product is chosen later. | `CustomerSession` (`schema.prisma`) |
+| Customer Session | One customer visit in one Branch. Created at walk-in from the customer's phone number (D56, D68, D70); the product is chosen next and the queue number is issued at order confirmation (D70). | `CustomerSession` (`schema.prisma`) |
 | Session Reference | Internal key `SES-YYYYMMDD-NNNNNN` (Bangkok day, one running number for all branches, D6). Used for lookups, deep links and React keys; **not shown to staff** since D57. | `CustomerSession.reference`, allocated in `createWalkIn` from a `DailyCounter` row (ADR 0001, H-05 fixed). |
-| Queue number / คิว | What staff call the customer by: the customer type's letter + a running number per branch, per letter, per Bangkok day (`A012`, `B003`; four digits after 999). Shown as "คิว A012" on every screen. Sessions from before D57 have no letter ("คิว 007"). Not unique: a re-buy will keep the old number (F11). | `CustomerSession.queueLetter` / `queueNo` (letter frozen at creation), allocated by `QueueService.allocate`; label built by `formatQueue` (API and web) |
-| Customer type / ประเภทลูกค้า | Back-office list (ADMIN) chosen by staff at the phone step: letter A-Z (unique, never changes, the sort order), name, description, active. Seeded A `ลูกค้าทั่วไป`, B `ลูกค้าใช้เวลานาน` ("B takes long" is only the name the owner gives). Switched off, never deleted; one stays active. Not to be confused with U POS's repair-queue ticket types A/B/D (unrelated). | `CustomerType`, `apps/api/src/queue/`, `GET/POST/PUT /api/customer-types`, Admin → "ประเภทลูกค้า / คิว" (D57) |
+| Queue number / คิว | What staff call the customer by: the customer type's letter + a running number per branch, per letter, per Bangkok day (`A012`, `B003`; four digits after 999). Allocated upon order confirmation (D70); prior to confirmation, the customer's phone number is shown instead. Sessions from before D57 have no letter ("คิว 007"). Not unique: a re-buy will keep the old number (F11). | `CustomerSession.queueLetter` / `queueNo`, allocated by `QueueService.allocate` at confirmation; label built by `formatQueue` (API and web) |
+| Customer type / ประเภทลูกค้า | Back-office list (ADMIN): letter A-Z (unique, never changes, the sort order), name, description, active, paymentMethods, ontop, points, burnPoints (D70). Seeded A `ลูกค้าทั่วไป`, B `ลูกค้าใช้เวลานาน`. Any configured criterion in Payment, Ontop, Points, or Burn Point classifies the session to Type B upon confirmation (OR logic, D70). Switched off, never deleted; one stays active. | `CustomerType`, `apps/api/src/queue/`, `GET/POST/PUT /api/customer-types`, Admin → "ประเภทลูกค้า (Customer Types)" (D57, D69, D70) |
 | Stock unlimited (D59) | One global ADMIN switch (`Setting` row `stockUnlimited`, **on** unless someone turned it off): no SKU is blocked by stock, the screens say "Stock ไม่จำกัด", FOUND takes nothing from the shelf and a cancel gives nothing back. Overrides the ERP numbers while on. | `SettingsService.stockUnlimited`, `GET/PUT /api/settings`, `stockSource` on the branch product list, Admin → ซิงก์ ERP |
-| Receipt / พิมพ์ใบเสร็จ (D58, D67) | A browser-printed 80 mm order summary, **no prices**, with the branch's registration QR at the foot. Not a legal receipt (that stays in U POS). | `Receipt.tsx` (`ReceiptPrint`), print stylesheet, `Branch.registrationUrl`, `utils/qr.ts` |
+| Receipt / พิมพ์ใบเสร็จ (D58, D67) | A browser-printed 80 mm order summary, **no prices**, with the branch's registration QR at the foot. Not a legal receipt (that stays in U POS). Automatically printed upon order confirmation (D70). | `Receipt.tsx` (`ReceiptPrint`, `ReceiptSheet`), print stylesheet, `Branch.registrationUrl`, `utils/qr.ts` |
 | U POS door (D60, F17) | Server-to-server routes for U POS (`infouficon/UFPOS`): the orders waiting for a bill at a branch, and the bill it opened (number + real time, `posBillNo` / `posBillOpenedAt`; actor `U-POS`). Bearer key `POS_API_KEY`, 404 when unset. | `apps/api/src/pos/`, `SessionsService.posOrders` / `recordPosBill`, [pos-integration.md](docs/agents/pos-integration.md) |
 | Daily counter | One row per counter and Bangkok day (`reference`, `queue:<branchId>:<letter>`), incremented atomically inside the walk-in transaction (READ COMMITTED). | `DailyCounter`, `QueueService.nextNumber` (ADR 0001) |
-| Walk-in | Creating the session when the customer is at the counter: phone number + customer type in, queue number out (D56, D57). Sets `customerWalkInAt` (the moment the form is submitted). | `POST /api/sessions` `{phone, customerTypeId?, branchId?}` |
-| DEMO | A Staff member demonstrating products. A Staff member may run only one active DEMO at a time (D5), **[documented]** (not enforced, H-04). | states `DEMO`; `demoStartAt` / `demoEndAt` |
-| Decision | The customer's choice after DEMO: `BUY` or `NOT_BUY`. `NOT_PURCHASE` is forbidden (D11). | `buy` step sets `decisionAt`; `POST /decision/not-buy` sets `outcome=NOT_BUY` |
+| Walk-in | Creating the session when the customer is at the counter: phone number in (D56, D68, D70). Starts directly at product selection without customer type selection or queue issuance (D68, D70). | `POST /api/sessions` `{phone, branchId?}` |
+| DEMO | Historical only (D68). Formerly staff demonstrating products; now removed from operational workflow. | states `DEMO`; `demoStartAt` / `demoEndAt` (historical) |
+| Decision | Historical only (D68). Formerly customer choice after DEMO; now removed from operational workflow. Drop-offs during selection are handled via cancellation (`CUSTOMER_CANCELLED`). | `buy` step sets `decisionAt`; `POST /decision/not-buy` (historical) |
 | NOT_BUY result | Exactly: `ราคา`, `ยังไม่ตัดสินใจ`, `เปลี่ยนใจ`, `สินค้าไม่ตรงความต้องการ`, `ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ`, `อื่น ๆ` (+ required text). | `reason` / `otherReason`; lists in `apps/web/src/constants/options.ts` |
 | Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected **at walk-in** (D56; supersedes requirements §6 "only after BUY", so NOT_BUY visits keep a phone too). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
 | Product Selection / Purchase data | The purchase being assembled: **main product** (Product → Model → SKU), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |

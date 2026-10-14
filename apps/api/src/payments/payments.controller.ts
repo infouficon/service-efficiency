@@ -16,6 +16,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import {
   PaymentMethodCreateDto,
   PaymentMethodMoveDto,
+  PaymentMethodReorderDto,
   PaymentMethodUpdateDto,
 } from './dto';
 import { PaymentsService } from './payments.service';
@@ -47,6 +48,12 @@ export class PaymentsController {
   async create(@Req() req: Request, @Body() dto: PaymentMethodCreateDto) {
     await this.admin(req);
     return this.payments.create(dto.name);
+  }
+
+  @Put('reorder')
+  async reorder(@Req() req: Request, @Body() dto: PaymentMethodReorderDto) {
+    await this.admin(req);
+    return this.payments.reorder(dto.ids);
   }
 
   @Put(':id')

@@ -318,7 +318,7 @@ export function SelectionEditor({
   const crumbs = [
     { label: 'หมวดหมู่', done: Boolean(category) },
     { label: 'รุ่น', done: Boolean(product) },
-    { label: 'ตัวเลือก', done: Boolean(model) },
+    { label: 'โมเดลเครื่อง', done: Boolean(model) },
   ];
   const currentCrumb = crumbs.findIndex((c) => !c.done);
 

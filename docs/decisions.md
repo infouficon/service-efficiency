@@ -926,7 +926,76 @@ Owner: "QR แนบท้ายใบเสร็จ เพื่อกรอ�
 2. **On the receipt.** The QR is drawn in the browser from the branch's address (error correction M, quiet zone, black on white; the text is encoded as UTF-8). A branch without an address prints no QR, and the screen says so next to the print button.
 3. **The address pattern is the owner's / the U POS team's.** U POS's `/register` has no branch parameter today; a `?branch=<code>` would let it attribute the registration (to ask in the integration request, see D60). Until then any address can be set.
 
-## D68 — Product categories are data; other brands get a category of their own, switched off (2026-10-14)
+## D68 — Direct to Product Selection on Walk-in, Demo and Buy/Not-Buy Removed (2026-10-14)
+
+Owner instruction via `/grill-me`: "หลังจากกรอกเบอร์โทรเรียบร้อย ให้เริ่มที่ step Product เลย ตัดส่วน demo และ BUY / NOT BUY ออกได้เลย ไม่เก็บข้อมูล timestemp ส่วนนี้แล้ว". Supersedes D10/D11 and the former DEMO/DECISION intermediate states for the walk-in service flow.
+
+1. **Direct to Product Selection.** Submitting the walk-in form (10-digit phone number and customer type, D56/D57) immediately creates the session in `PRODUCT_SELECTION` state (`customerWalkInAt = now()`, `productSelectionStartAt = now()`, events `SESSION_CREATED` and `PRODUCT_SELECTION_STARTED`). The Staff Workspace immediately opens the step-by-step product selection wizard (D62).
+2. **DEMO and BUY / NOT BUY Removed.** The `startDemo`, `endDemo`, and `buy` steps are completely removed from the operational workflow. Milestones `demoStartAt`, `demoEndAt`, and `decisionAt` are no longer recorded (remain null for new sessions). The database columns are retained as nullable so historical data remains intact.
+3. **Customer Drop-off / Not Buy.** If a customer decides not to purchase or walks away during selection, Staff uses the existing "ยกเลิกคำขอบริการ" (Cancel) button, selecting reason "ลูกค้าเปลี่ยนใจ" (outcome: `CUSTOMER_CANCELLED`). No separate NOT BUY button is provided.
+4. **Product Selection Duration.** Time spent on product selection begins at the moment the walk-in form is submitted (`productSelectionStartAt = customerWalkInAt`) and ends when staff confirms the purchase (`productSelectionConfirmedAt`).
+5. **Staff Workspace Progress Bar.** The progress stepper on the staff screen displays five clear steps:
+   - 1. กรอกเบอร์โทร (Completed upon walk-in submission)
+   - 2. เลือกสินค้า (Active during product selection)
+   - 3. ตรวจสอบยืนยัน (Active during order review)
+   - 4. ฝ่ายคลัง (Active while in stock queue and searching)
+   - 5. แคชเชียร์ (Active while at cashier until completion)
+6. **Phone Number Verification & Correction.** Staff can inspect and edit the customer's phone number on the "ตรวจสอบยืนยัน" (Review & Confirmation) screen before clicking "ยืนยันการสั่งซื้อ" to handle any typo made at the walk-in step.
+7. **CSV Export & Duration Reports.** The export columns for `Demo Start At`, `Demo End At`, `Decision At`, and duration steps `รอก่อนเริ่ม DEMO`, `DEMO`, `ตัดสินใจหลัง DEMO`, `เริ่มเลือกสินค้าหลังตัดสินใจ` are removed from the CSV export, showing only the active operational steps.
+
+## D69 — Customer Type Auto-Classification by Payment Method (2026-10-14)
+
+Owner instruction via `/grill-me`: "หน้า ประเภทลูกค้าและคิว (Customer Types) ให้สามารถกดได้ว่าการจ่ายเงินแบบไหนบ้างเป็นประเภท A / B".
+
+1. **Payment Methods Configured per Customer Type.** In Admin → ประเภทลูกค้าและคิว (`CustomerTypesPanel`), ADMIN can configure which payment methods map to a customer type (stored as `CustomerType.paymentMethods` JSON array of payment method names). By default, Type B ("ลูกค้าใช้เวลานาน") maps long-service financing/installment methods (`0% Credit Card`, `PayNext`, `UFund`, `Ulite`, `Thisshop`, `Kashjoy`).
+2. **Walk-in Flow Unchanged.** Walk-in queue issuance does not require payment method selection; the customer receives an initial ticket (e.g. A001) as usual.
+3. **Auto-Classification on Payment Selection.** When Staff selects payment method(s) on a session (`PUT /sessions/:id/selection`), the system checks if any selected method matches an active Customer Type with configured `paymentMethods`. If matched (including in split payments where at least one method matches, e.g. Cash + UFund), `session.customerTypeId` automatically updates to that type (e.g. Type B). If no methods match, `session.customerTypeId` reverts to the type corresponding to the original walk-in `queueLetter` (e.g. Type A).
+4. **Queue Number Invariant.** The customer's physical ticket (`queueLetter` and `queueNo`, e.g. "A001") is never altered mid-service so the customer does not lose their place or ticket number. Only `customerTypeId` and report classification update to reflect the accurate KPI and service duration category.
+
+## D70 — Queue Number Allocation at Order Confirmation & Multi-Criteria Type B (2026-10-14)
+
+Owner instruction via `/grill-me`: "ในส่วน ประเภทลูกค้าและคิว (Customer Types) ให้สามารถกำหนดได้ว่าถ้าเลือก Ontop Points Burn Point หรือ Payment แบบใดบ้างจะเป็นคิว B โดยที่จะมีคิวขึ้นก็ต่อเมื่อ ตรวจสอบยืนยัน เรียบร้อย ก่อนหน้าขั้นตอนนี้ หากต้องมีการแสดงคิว ให้แสดงเป็นเบอร์โทรลูกค้า และเอาการเลือก A B ในหน้า Walk in ออก"
+
+1. **Walk-in Form Simplification:**
+   - The Customer Type (A / B) selection is removed from the Walk-in screen.
+   - Walk-in requires only the customer's 10-digit phone number.
+   - No queue number is issued at Walk-in (`queueLetter = null`, `queueNo = null`, `customerTypeId = null`).
+2. **Display Pre-Confirmation:**
+   - Prior to confirmation (during Walk-in and Product Selection), wherever a queue number was previously displayed (workspace header, session list cards, stock alerts, rebuy button), the customer's phone number is displayed instead (e.g. `ลูกค้า 0812345678`).
+   - Customer Type badges (e.g. `ประเภท A`) are hidden until a queue number is allocated.
+3. **Multi-Criteria for Customer Type B:**
+   - In Admin → ประเภทลูกค้าและคิว, ADMIN can configure matching criteria across four categories: **Payment Methods**, **Ontop promotions**, **Points earn**, and **Burn Points** (stored as JSON arrays on `CustomerType`: `paymentMethods`, `ontop`, `points`, `burnPoints`).
+   - Matching rule: **OR logic** across all four categories. If an order matches ANY configured criterion in Payment, Ontop, Points, or Burn Point, it is classified as Type B; otherwise Type A (or default active type).
+4. **Queue Allocation at Confirmation:**
+   - When Staff clicks "ยืนยันการสั่งซื้อ" (`confirmPurchase`), the system evaluates the order's selected payments, ontop, points, and burn points against active Customer Types.
+   - The queue number (e.g. `A001` or `B001`) is atomically allocated via `QueueService.allocate(tx, branchId, matchedTypeId, now)`.
+   - The order moves to `STOCK_REQUESTED`.
+5. **Automatic 80mm Slip Printing:**
+   - Immediately upon confirmation, the system triggers the print dialog (`window.print()`) rendering the 80mm receipt/queue slip (`ReceiptSheet`).
+   - The slip displays the allocated Queue Number in large font, branch name/code, date/time, customer phone number, selected products/accessories, payment methods, and the branch registration QR.
+6. **Cancellation Before Confirmation:**
+   - If a customer cancels before order confirmation, no queue number is allocated. In reports and session history, their reference and phone number identify the session.
+7. **Buy Again (Rebuy) Invariant (F11):**
+   - Retains the existing queue letter and number from the original session so the customer keeps their queue place.
+
+## D71 — Payment Methods Drag-and-Drop Reordering (2026-10-14)
+
+Owner instruction via `/grill-me`: "ช่องทางชำระเงิน ให้สามารถกดแล้วลากเพื่อเลื่อนจัดอันดับได้". Extends D66 (payment methods management).
+
+1. **Drag & Drop Handle:**
+   - In Admin → ช่องทางชำระเงิน (`PaymentMethodsPanel`), each row in the table contains a dedicated drag handle column with a `GripVertical` icon (`⠿`) at the left.
+   - Dragging is enabled specifically when interacting with the drag handle to prevent unintended row dragging when clicking action buttons or selecting text.
+   - Visual feedback during drag: dragged row displays reduced opacity (`0.35`), target insertion row displays clear drop highlight indicator (`#0abab5` border).
+2. **Auto-save on Drop:**
+   - When a row is dropped at a new position, the UI updates optimistically and immediately persists the new ordering to the backend via `PUT /api/payment-methods/reorder` with `{ ids: string[] }`.
+   - On success, displays a toast notification: "บันทึกลำดับช่องทางชำระเงินเรียบร้อย".
+   - If an error occurs, the order reverts to its previous state and an error toast is displayed.
+3. **Retention of Up / Down Buttons:**
+   - The single-step Up / Down arrow buttons (`↑` / `↓`) in the Actions column are retained alongside drag & drop for accessibility and touch/mobile devices.
+4. **Backend Atomic Reordering:**
+   - Endpoint `PUT /api/payment-methods/reorder` executes within a single transaction, validating all IDs and reassigning `position = 1..n`.
+
+## D72 — Product categories are data; other brands get a category of their own, switched off (2026-10-14)
 
 Owner, after the first warroom dry run (5,078 parts, 18 warroom categories, 7 of them "not mapped"): "ทำไมสินค้ายังไม่เข้าระบบ … สร้างหมวดหมู่เพิ่มได้หากไม่มีรองรับ อย่างเช่น Apple Accy คือหมวดของ Accessories ระบบ SES ตอนนี้เปิดเฉพาะ Apple ยังไม่เอาสินค้าจาก HUAWEI แต่อนาคตอาจจะมีก็ได้ … SKU เอาตาม warroom เลย".
 
@@ -938,7 +1007,7 @@ Owner, after the first warroom dry run (5,078 parts, 18 warroom categories, 7 of
 6. **SKU = warroom part number** (`product_model`, unchanged since D52). The UPC (`product_upc`) is kept next to it in `ProductSku.upc` (filled by the sync, searchable in the back office).
 7. **Not decided.** Whether staff should pick an accessory SKU (Apple Accy, 577 SKUs) the way they pick a main product: today accessories are the fixed list with quantities (OQ-16).
 
-## D69 — "Clear the old catalog and queue history" is an ADMIN action, and the demo catalog is gone (2026-10-14)
+## D73 — "Clear the old catalog and queue history" is an ADMIN action, and the demo catalog is gone (2026-10-14)
 
 Owner: "clear ของเก่าออกให้หมดเลย แล้วใช้ตามในนี้" and, asked what to do with products old queues point at: "ลบทุกอย่างรวมประวัติคิว".
 

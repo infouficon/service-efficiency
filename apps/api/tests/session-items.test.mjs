@@ -109,12 +109,6 @@ test('a session holds several main products with quantities (D40 flow, F3)', asy
         cookies.staff,
       );
       assert.equal(created.status, 201, JSON.stringify(created.data));
-      for (const action of ['startDemo', 'endDemo', 'buy', 'startSelection'])
-        assert.equal(
-          (await step(created.data.id, action, 'staff')).status,
-          201,
-          action,
-        );
       return created.data.id;
     };
     const confirmed = async (items) => {

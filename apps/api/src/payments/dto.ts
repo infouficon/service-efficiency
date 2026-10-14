@@ -1,5 +1,13 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsIn, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  ArrayNotEmpty,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 export class PaymentMethodCreateDto {
   @Transform(({ value }: { value: unknown }) =>
@@ -20,4 +28,11 @@ export class PaymentMethodUpdateDto {
 export class PaymentMethodMoveDto {
   @IsIn(['up', 'down'])
   direction!: 'up' | 'down';
+}
+
+export class PaymentMethodReorderDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  ids!: string[];
 }

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   User as UserIcon,
   Plus,
@@ -23,6 +24,7 @@ import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
 import { WalkInForm } from './WalkInForm';
+import { ReceiptSheet, nowText } from './Receipt';
 import {
   advance,
   confirmSelection,
@@ -104,6 +106,7 @@ export function StaffWorkspace({
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [printSession, setPrintSession] = useState<MockSession | null>(null);
 
   // Filter staff's branch sessions for today
   const branchSessions = sessions.filter((s) => {
@@ -167,11 +170,11 @@ export function StaffWorkspace({
     }
   };
 
-  const startNewWalkIn = async (phone: string, customerTypeId?: string) => {
+  const startNewWalkIn = async (phone: string) => {
     setBusy(true);
     setError('');
     try {
-      const newS = await createWalkInApi(user.branchCode, phone, customerTypeId);
+      const newS = await createWalkInApi(user.branchCode, phone);
       onAddSession(newS);
       setActiveSessionRef(newS.reference);
       setForm('normal');
@@ -240,14 +243,19 @@ export function StaffWorkspace({
     setBusy(true);
     setError('');
     try {
+      let updated: MockSession;
       if (activeSession.id) {
-        const updated = await confirmPurchaseApi(activeSession.id);
+        updated = await confirmPurchaseApi(activeSession.id);
         onUpdateSession(updated);
       } else {
-        const updated = confirmSelection(activeSession, new Date().toISOString());
+        updated = confirmSelection(activeSession, new Date().toISOString());
         onUpdateSession(updated);
       }
       setForm('normal');
+      setPrintSession(updated);
+      setTimeout(() => {
+        window.print();
+      }, 150);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ยืนยันการสั่งซื้อไม่สำเร็จ');
     } finally {
@@ -384,7 +392,16 @@ export function StaffWorkspace({
                     <AlertTriangle size={16} color="#dc2626" />
                     ฝ่ายคลัง (Stock) แจ้งเตือน:
                   </strong>{' '}
-                  คิว <strong>{ps.queue}</strong> ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
+                  {ps.queueNo != null ? (
+                    <>
+                      คิว <strong>{ps.queue}</strong>
+                    </>
+                  ) : (
+                    <>
+                      ลูกค้า <strong>{ps.phone || ps.reference}</strong>
+                    </>
+                  )}{' '}
+                  ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
                   มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
                 </span>
                 <Button
@@ -419,7 +436,9 @@ export function StaffWorkspace({
                 }}
               >
                 <div className="card-top">
-                  <span className="card-ref">คิว {s.queue}</span>
+                  <span className="card-ref">
+                    {s.queueNo != null ? `คิว ${s.queue}` : `ลูกค้า ${s.phone || s.reference}`}
+                  </span>
                   {s.stockPendingReview ? (
                     <span
                       className="status-tag status-outcome"
@@ -445,7 +464,7 @@ export function StaffWorkspace({
                 <div className="card-meta">
                   <span>
                     ผู้ดูแล: {s.staffId}
-                    {s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
+                    {s.queueNo != null && s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
                   </span>
                   <span>{s.phone || 'ยังไม่มีเบอร์'}</span>
                 </div>
@@ -476,16 +495,20 @@ export function StaffWorkspace({
                     <ArrowLeft size={14} /> รายการ Session ({branchSessions.length})
                   </button>
                   <span className="eyebrow">
-                    QUEUE · {activeSession.branchName}
+                    {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
                   </span>
-                  <h2 className="queue-title">คิว {activeSession.queue}</h2>
+                  <h2 className="queue-title">
+                    {activeSession.queueNo != null
+                      ? `คิว ${activeSession.queue}`
+                      : `ลูกค้า ${activeSession.phone || activeSession.reference}`}
+                  </h2>
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>
                       ซื้อใหม่ (ใช้คิวเดิม)
                     </span>
                   )}
                   <span className="muted">
-                    {activeSession.customerTypeName
+                    {activeSession.queueNo != null && activeSession.customerTypeName
                       ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
                       : ''}
                     Customer Phone ·{' '}
@@ -498,28 +521,31 @@ export function StaffWorkspace({
               </section>
 
               <ol className="progress" ref={progressContainerRef}>
-                {stages.map((label, index) => (
-                  <li
-                    key={label}
-                    className={
-                      index === progressIndex(activeSession)
-                        ? 'current'
-                        : index < progressIndex(activeSession)
-                          ? 'done'
-                          : ''
-                    }
-                    aria-current={
-                      index === progressIndex(activeSession)
-                        ? 'step'
-                        : undefined
-                    }
-                  >
-                    <span>
-                      {index < progressIndex(activeSession) ? <Check size={14} /> : index + 1}
-                    </span>
-                    {label}
-                  </li>
-                ))}
+                {stages.map((label, index) => {
+                  const pIndex = progressIndex(activeSession, form === 'review');
+                  return (
+                    <li
+                      key={label}
+                      className={
+                        index === pIndex
+                          ? 'current'
+                          : index < pIndex
+                            ? 'done'
+                            : ''
+                      }
+                      aria-current={
+                        index === pIndex
+                          ? 'step'
+                          : undefined
+                      }
+                    >
+                      <span>
+                        {index < pIndex ? <Check size={14} /> : index + 1}
+                      </span>
+                      {label}
+                    </li>
+                  );
+                })}
               </ol>
 
               <div className="content-grid">
@@ -557,10 +583,11 @@ export function StaffWorkspace({
                           <div className="rebuy-box">
                             <p>
                               <strong>ลูกค้าต้องการเปลี่ยนสินค้า</strong> — ซื้อใหม่ได้ทันที
-                              โดยดึงข้อมูลเดิมมาแก้ไข และใช้คิว {activeSession.queue} เดิม
+                              โดยดึงข้อมูลเดิมมาแก้ไข
+                              {activeSession.queueNo != null ? ` และใช้คิว ${activeSession.queue} เดิม` : ''}
                             </p>
                             <Button onClick={handleRebuy} disabled={busy}>
-                              ซื้อใหม่ (คิว {activeSession.queue})
+                              {activeSession.queueNo != null ? `ซื้อใหม่ (คิว ${activeSession.queue})` : 'ซื้อใหม่'}
                             </Button>
                           </div>
                         )}
@@ -653,152 +680,46 @@ export function StaffWorkspace({
                           </div>
                         )}
 
-                        {activeSession.state === 'WALK_IN' && (
-                          <>
-                            <p className="muted">
-                              เริ่มการสาธิตสินค้า (DEMO) โดย <strong>{user.staffId}</strong>
-                            </p>
-                            <Button onClick={() => handleStep('startDemo')}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                Start DEMO
-                                <ArrowRight size={16} />
-                              </span>
-                            </Button>
-                          </>
-                        )}
-
-                        {activeSession.state === 'DEMO' && (
-                          <>
-                            <Notice>
-                              กำลังสาธิตสินค้า (DEMO) โดย {user.staffId}
-                            </Notice>
-                            <p>
-                              นำเสนอสินค้า ให้คำแนะนำ
-                              และทดลองใช้งานร่วมกับลูกค้า
-                            </p>
-                            <Button onClick={() => handleStep('endDemo')}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                End DEMO
-                                <ArrowRight size={16} />
-                              </span>
-                            </Button>
-                          </>
-                        )}
-
-                        {activeSession.state === 'DECISION' &&
-                          (activeSession.timestamps.decision_at ? (
-                            <>
-                              <Notice>
-                                Decision: BUY
-                              </Notice>
-                              <label>
-                                ยืนยันเบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
-                                <input
-                                  type="tel"
-                                  inputMode="numeric"
-                                  aria-invalid={
-                                    Boolean(phoneAttempted[activeSession.reference] && !phoneIsValid(currentPhone))
-                                  }
-                                  aria-describedby="phone-help"
-                                  autoComplete="off"
-                                  placeholder="เบอร์โทรศัพท์ 10 หลัก (0-9)"
-                                  value={currentPhone}
-                                  onChange={(e) =>
-                                    handleUpdatePhone(e.target.value)
-                                  }
-                                />
-                              </label>
-                              <p
-                                id="phone-help"
-                                className={
-                                  phoneIsValid(currentPhone)
-                                    ? 'fine'
-                                    : phoneAttempted[activeSession.reference]
-                                      ? 'field-error'
-                                      : 'fine'
-                                }
-                              >
-                                {phoneIsValid(currentPhone) ? (
-                                  ''
-                                ) : phoneAttempted[activeSession.reference] ? (
-                                  `กรุณากรอกตัวเลข 0–9 ให้ครบ 10 หลัก (ขณะนี้ ${currentPhone.length}/10)`
-                                ) : (
-                                  ''
-                                )}
-                              </p>
-                              <div style={{ marginTop: '1.25rem' }}>
-                                <Button
-                                  onClick={handleStartSelection}
-                                >
-                                  เลือกสินค้า →
-                                </Button>
-                              </div>
-                            </>
-                          ) : form === 'notBuy' ? (
-                            <ReasonForm
-                              options={notBuyReasons}
-                              label="ยืนยัน"
-                              onBack={() => setForm('normal')}
-                              onSubmit={async (reason, text) => {
-                                if (activeSession.id) {
-                                  try {
-                                    const updated = await recordNotBuyApi(
-                                      activeSession.id,
-                                      reason,
-                                      text,
-                                    );
-                                    onUpdateSession(updated);
-                                    setForm('normal');
-                                    return;
-                                  } catch (err: unknown) {
-                                    setError(
-                                      err instanceof Error
-                                        ? err.message
-                                        : 'Failed to record NOT BUY',
-                                    );
-                                  }
-                                }
-                                const updated: MockSession = {
-                                  ...activeSession,
-                                  outcome: 'NOT_BUY',
-                                  reason,
-                                  otherReason: text || undefined,
-                                  timestamps: {
-                                    ...activeSession.timestamps,
-                                    decision_at: previewTime(),
-                                  },
-                                };
-                                onUpdateSession(updated);
-                                setForm('normal');
-                              }}
-                            />
-                          ) : (
-                            <>
-                              <h3>ลูกค้าตัดสินใจอย่างไร?</h3>
-                              <p className="muted">
-                                บันทึกผลการตัดสินใจหลังจากการ DEMO
-                              </p>
-                              <div className="actions">
-                                <Button onClick={() => handleStep('buy')}>
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                    <Check size={16} /> BUY
-                                  </span>
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  onClick={() => setForm('notBuy')}
-                                >
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                    <X size={16} /> NOT BUY
-                                  </span>
-                                </Button>
-                              </div>
-                            </>
-                          ))}
-
-                        {activeSession.state === 'PRODUCT_SELECTION' &&
+                        {(activeSession.state === 'PRODUCT_SELECTION' ||
+                          ['WALK_IN', 'DEMO', 'DECISION'].includes(activeSession.state)) &&
                           (form === 'review' ? (
                             <>
+                              <div
+                                style={{
+                                  marginBottom: '1rem',
+                                  padding: '1rem',
+                                  background: '#f8fafc',
+                                  borderRadius: '8px',
+                                  border: '1px solid #e2e8f0',
+                                }}
+                              >
+                                <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+                                  เบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
+                                  <input
+                                    type="tel"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    placeholder="เบอร์โทรศัพท์ 10 หลัก (0-9)"
+                                    value={currentPhone}
+                                    onChange={(e) => handleUpdatePhone(e.target.value)}
+                                    style={{
+                                      marginTop: '6px',
+                                      width: '100%',
+                                      maxWidth: '320px',
+                                      display: 'block',
+                                      padding: '8px 12px',
+                                      borderRadius: '6px',
+                                      border: '1px solid #cbd5e1',
+                                      fontSize: '14px',
+                                    }}
+                                  />
+                                </label>
+                                {currentPhone && !phoneIsValid(currentPhone) && (
+                                  <p className="field-error" style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
+                                    กรุณากรอกตัวเลข 0–9 ให้ครบ 10 หลัก (ขณะนี้ {currentPhone.length}/10)
+                                  </p>
+                                )}
+                              </div>
                               <Summary session={activeSession} />
                               <div className="actions">
                                 <Button
@@ -809,7 +730,7 @@ export function StaffWorkspace({
                                     <ArrowLeft size={16} /> กลับไปแก้ไข
                                   </span>
                                 </Button>
-                                <Button onClick={handleConfirm}>
+                                <Button onClick={handleConfirm} disabled={!phoneIsValid(currentPhone)}>
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                     <Check size={16} /> ยืนยันการสั่งซื้อ
                                   </span>
@@ -903,6 +824,11 @@ export function StaffWorkspace({
           )}
         </div>
       </div>
+      {printSession &&
+        createPortal(
+          <ReceiptSheet session={printSession} printedAt={nowText()} />,
+          document.body,
+        )}
     </div>
   );
 }

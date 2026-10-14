@@ -20,6 +20,7 @@ import {
   itemLabel,
   itemsText,
   getSessionMissingDescription,
+  progressIndex,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 const fixture = () => ({
@@ -185,25 +186,19 @@ test('step durations come from the events, add up when a step happens twice, and
     state: 'COMPLETED',
     events: [
       ev('SESSION_CREATED', at(0)),
-      ev('DEMO_STARTED', at(2)),
-      ev('DEMO_ENDED', at(12)),
-      ev('DECISION_MADE', at(13)),
-      ev('PRODUCT_SELECTION_STARTED', at(14)),
-      ev('PRODUCT_SELECTION_CONFIRMED', at(20)),
-      ev('STOCK_SEARCHING', at(21)),
-      ev('STOCK_FOUND', at(25, 30)),
-      ev('STOCK_SENT_TO_CASHIER', at(26)),
-      ev('CASHIER_RECEIVED', at(28)),
-      ev('CASHIER_SCANNED', at(29)),
-      ev('BILL_OPENED', at(31)),
-      ev('COMPLETED', at(36, 5)),
+      ev('PRODUCT_SELECTION_STARTED', at(0)),
+      ev('PRODUCT_SELECTION_CONFIRMED', at(6)),
+      ev('STOCK_SEARCHING', at(7)),
+      ev('STOCK_FOUND', at(11, 30)),
+      ev('STOCK_SENT_TO_CASHIER', at(12)),
+      ev('CASHIER_RECEIVED', at(14)),
+      ev('CASHIER_SCANNED', at(15)),
+      ev('BILL_OPENED', at(17)),
+      ev('COMPLETED', at(22, 5)),
     ],
   };
   const by = (session) => Object.fromEntries(stepDurations(session).map((d) => [d.key, d.ms]));
   const d = by(complete);
-  assert.equal(d.wait_demo, 2 * 60_000);
-  assert.equal(d.demo, 10 * 60_000);
-  assert.equal(d.decision, 60_000);
   assert.equal(d.selection, 6 * 60_000);
   assert.equal(d.stock_search, (4 * 60 + 30) * 1000);
   assert.equal(d.stock_send, 30_000);
@@ -211,8 +206,8 @@ test('step durations come from the events, add up when a step happens twice, and
   assert.equal(d.cashier_scan, 60_000);
   assert.equal(d.cashier_bill, 2 * 60_000);
   assert.equal(d.cashier_complete, (5 * 60 + 5) * 1000);
-  assert.equal(d.total, (36 * 60 + 5) * 1000);
-  assert.equal(formatDuration(d.total), '0:36:05');
+  assert.equal(d.total, (22 * 60 + 5) * 1000);
+  assert.equal(formatDuration(d.total), '0:22:05');
   assert.equal(formatDuration(3_725_000), '1:02:05');
   assert.equal(formatDuration(null), '');
 
@@ -256,32 +251,29 @@ test('step durations come from the events, add up when a step happens twice, and
     ],
   };
   const c = by(changed);
-  assert.equal(c.selection, (2 + 2) * 60_000);
+  assert.equal(c.selection, (3 + 2) * 60_000);
   assert.equal(c.stock_search, 3 * 60_000, 'the wait for the customer after the report counts as searching');
   assert.equal(c.total, null, 'still running');
 
-  // cancelled during DEMO: only the steps that happened; the total ends at the cancel
+  // cancelled during selection: only the steps that happened; the total ends at the cancel
   const cancelled = {
     ...fixture(),
     outcome: 'CUSTOMER_CANCELLED',
-    events: [ev('SESSION_CREATED', at(0)), ev('DEMO_STARTED', at(1)), ev('CUSTOMER_CANCELLED', at(4))],
+    events: [ev('SESSION_CREATED', at(0)), ev('CUSTOMER_CANCELLED', at(4))],
   };
   const x = by(cancelled);
-  assert.equal(x.wait_demo, 60_000);
-  assert.equal(x.demo, 3 * 60_000);
-  assert.equal(x.decision, null);
+  assert.equal(x.selection, 4 * 60_000);
   assert.equal(x.total, 4 * 60_000);
 
   // NOT_BUY ends at the decision
   const notBuy = {
     ...fixture(),
     outcome: 'NOT_BUY',
-    events: [ev('SESSION_CREATED', at(0)), ev('DEMO_STARTED', at(1)), ev('DEMO_ENDED', at(5)), ev('DECISION_MADE', at(7), { outcome: 'NOT_BUY' })],
+    events: [ev('SESSION_CREATED', at(0)), ev('DECISION_MADE', at(7), { outcome: 'NOT_BUY' })],
   };
   assert.equal(by(notBuy).total, 7 * 60_000);
-  assert.equal(by(notBuy).to_selection, null);
 
-  // a session opened by "buy again" has no waiting-for-demo step
+  // a session opened by "buy again" starts at product selection
   const rebuy = {
     ...fixture(),
     events: [
@@ -290,8 +282,7 @@ test('step durations come from the events, add up when a step happens twice, and
       ev('PRODUCT_SELECTION_CONFIRMED', at(3)),
     ],
   };
-  assert.equal(by(rebuy).wait_demo, null);
-  assert.equal(by(rebuy).selection, (2 * 60 + 59) * 1000);
+  assert.equal(by(rebuy).selection, 3 * 60_000);
 });
 
 test('a visit that was bought again is timed from its first walk-in to the end of its last session (F11)', () => {
@@ -390,4 +381,19 @@ test('the receipt QR is a real QR matrix: finder patterns in three corners, the 
   assert.ok(qrCode('สวัสดีสวัสดีสวัสดี').size > qrCode('abcdefghijklmnopqr').size);
   // a longer address needs a bigger matrix
   assert.ok(qrCode(`https://pos.example.test/register?branch=${'x'.repeat(200)}`).size > a.size);
+});
+
+test('progressIndex maps to the 5 steps: phone, product, confirmation, stock, cashier (D68)', () => {
+  const s = fixture();
+  s.state = 'PRODUCT_SELECTION';
+  assert.equal(progressIndex(s, false), 1, 'selecting product');
+  assert.equal(progressIndex(s, true), 2, 'reviewing before confirmation');
+  s.state = 'STOCK_REQUESTED';
+  assert.equal(progressIndex(s), 3, 'stock queue');
+  s.state = 'SEARCHING';
+  assert.equal(progressIndex(s), 3, 'stock searching');
+  s.state = 'SENT_TO_CASHIER';
+  assert.equal(progressIndex(s), 4, 'cashier stage');
+  s.state = 'COMPLETED';
+  assert.equal(progressIndex(s), 4, 'completed');
 });

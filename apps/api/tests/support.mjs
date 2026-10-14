@@ -202,12 +202,8 @@ export async function seedCatalog(ctx, world, count = 2, stock = 5) {
   return skus;
 }
 
-/** The steps of the happy path in order, with the role that performs each one. */
+/** The steps of the happy path in order (D68: starts at product selection), with the role that performs each one. */
 export const PATH = [
-  ['startDemo', 'staff'],
-  ['endDemo', 'staff'],
-  ['buy', 'staff'],
-  ['startSelection', 'staff'],
   ['confirm', 'staff'],
   ['search', 'stock'],
   ['found', 'stock'],

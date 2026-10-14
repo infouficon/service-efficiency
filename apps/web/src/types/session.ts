@@ -147,13 +147,17 @@ export interface SessionEventItem {
   metadata?: Record<string, unknown> | null;
 }
 
-/** A back-office customer type (D57): its letter is the queue letter ("A012") and the sort order. */
+/** A back-office customer type (D57, D69, D70): its letter is the queue letter ("A012") and the sort order. */
 export interface CustomerType {
   id: string;
   letter: string;
   name: string;
   description?: string | null;
   active: boolean;
+  paymentMethods?: string[] | null;
+  ontop?: string[] | null;
+  points?: string[] | null;
+  burnPoints?: string[] | null;
 }
 
 export interface MockSession {
@@ -163,8 +167,10 @@ export interface MockSession {
   branchRegistrationUrl?: string;
   /** Internal key (SES-YYYYMMDD-NNNNNN): React keys, lookups, links. Staff see `queue` instead (D57). */
   reference: string;
-  /** What staff call the customer by, e.g. "A012" (letter + number); sessions from before D57 have no letter ("007"). */
+  /** What staff call the customer by, e.g. "A012" (letter + number); before confirmation it is the phone number (D70). */
   queue: string;
+  queueNo?: number | null;
+  queueLetter?: string | null;
   customerTypeId?: string;
   customerTypeLetter?: string;
   customerTypeName?: string;

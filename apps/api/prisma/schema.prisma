@@ -128,16 +128,22 @@ model Customer {
   sessions  CustomerSession[]
 }
 
-// D57: back-office list of customer types. The letter (A-Z, unique) is the queue letter and the sort order.
+// D57, D69: back-office list of customer types. The letter (A-Z, unique) is the queue letter and the sort order.
+// D57, D69, D70: back-office list of customer types. The letter (A-Z, unique) is the queue letter and the sort order.
+// Criteria (paymentMethods, ontop, points, burnPoints) auto-classify sessions to this customer type upon confirmation (D70).
 model CustomerType {
-  id          String            @id @default(uuid()) @db.VarChar(36)
-  letter      String            @unique @db.VarChar(1)
-  name        String            @db.VarChar(64)
-  description String?           @db.VarChar(191)
-  active      Boolean           @default(true)
-  createdAt   DateTime          @default(now()) @db.DateTime(3)
-  updatedAt   DateTime          @updatedAt @db.DateTime(3)
-  sessions    CustomerSession[]
+  id             String            @id @default(uuid()) @db.VarChar(36)
+  letter         String            @unique @db.VarChar(1)
+  name           String            @db.VarChar(64)
+  description    String?           @db.VarChar(191)
+  active         Boolean           @default(true)
+  paymentMethods Json?
+  ontop          Json?
+  points         Json?
+  burnPoints     Json?
+  createdAt      DateTime          @default(now()) @db.DateTime(3)
+  updatedAt      DateTime          @updatedAt @db.DateTime(3)
+  sessions       CustomerSession[]
 }
 
 // D59: global switches set by ADMIN (today only `stockUnlimited`). The value is text so it reads the same on MySQL and MariaDB.

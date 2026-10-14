@@ -17,10 +17,12 @@ import {
   ShoppingBag,
   Percent,
   ClipboardList,
+  RefreshCw,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { ReasonForm } from '../session/ReasonForm';
 import { CashierRejectForm } from './CashierRejectForm';
+import { ChangeItemModal } from '../session/ChangeItemModal';
 import { cancelReasons, rejectReasons } from '../../constants/options';
 import { Summary } from '../session/Summary';
 import { ReceiptPrint } from '../session/Receipt';
@@ -30,6 +32,7 @@ import {
   cancelSessionApi,
   cashierRejectApi,
   cashierRemoveDamagedApi,
+  changeSessionItemApi,
 } from '../../services/sessionApi';
 import { advance, isToday, itemsText, removeDamagedItems } from '../session/workflow';
 
@@ -55,6 +58,8 @@ export function CashierWorkspace({
     useState<MockSession | null>(null);
   // F13: sending an order back to stock (the wrong item was picked)
   const [rejectingSession, setRejectingSession] = useState<MockSession | null>(null);
+  // D78: changing an item (model, color, capacity) and sending back to stock
+  const [changingItemSession, setChangingItemSession] = useState<MockSession | null>(null);
   const [error, setError] = useState('');
 
   // Filter sessions by branch and today only (D47)
@@ -165,6 +170,27 @@ export function CashierWorkspace({
     }
   };
 
+  /** D78: cashier changes item and sends back to stock. */
+  const handleChangeItem = async (
+    oldItemId: string,
+    newSkuId: string,
+    reason: string,
+    note?: string,
+  ) => {
+    if (!changingItemSession || !changingItemSession.id) return;
+    setError('');
+    const updated = await changeSessionItemApi(
+      changingItemSession.id,
+      oldItemId,
+      newSkuId,
+      reason,
+      note,
+    );
+    onUpdateSession(updated);
+    setChangingItemSession(null);
+    setSelectedRef(null);
+  };
+
   const handleCancel = async (reason: string, text: string) => {
     if (!cancellingSession) return;
     if (cancellingSession.id) {
@@ -273,6 +299,15 @@ export function CashierWorkspace({
             </span>
           </Notice>
         </div>
+      )}
+
+      {changingItemSession && (
+        <ChangeItemModal
+          session={changingItemSession}
+          isOpen={Boolean(changingItemSession)}
+          onClose={() => setChangingItemSession(null)}
+          onSubmit={handleChangeItem}
+        />
       )}
 
       {rejectingSession ? (
@@ -556,6 +591,14 @@ export function CashierWorkspace({
                         </Button>
                         <Button
                           variant="secondary"
+                          onClick={() => setChangingItemSession(selectedSession)}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <RefreshCw size={15} /> เปลี่ยนสินค้า
+                          </span>
+                        </Button>
+                        <Button
+                          variant="secondary"
                           onClick={() => setRejectingSession(selectedSession)}
                         >
                           ส่งกลับ Stock (หยิบผิด)
@@ -578,6 +621,14 @@ export function CashierWorkspace({
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                             <FileText size={18} />
                             ยืนยันเปิดบิล FileMaker เรียบร้อย
+                          </span>
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setChangingItemSession(selectedSession)}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <RefreshCw size={15} /> เปลี่ยนสินค้า
                           </span>
                         </Button>
                         <Button

@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ArrowLeft,
   AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
@@ -28,6 +29,7 @@ import {
   cashierRejectNotice,
   goodsToReturn,
   isToday,
+  itemChangeNotice,
   itemLabel,
   itemName,
   itemsText,
@@ -128,6 +130,11 @@ export function StockWorkspace({
       (e) => e.eventType === 'CASHIER_REJECTED',
     )?.createdAt ?? null;
 
+  const lastItemChangeTimestamp =
+    [...(selectedSession?.events ?? [])].reverse().find(
+      (e) => e.eventType === 'ITEM_CHANGED',
+    )?.createdAt ?? null;
+
   useEffect(() => {
     if (!selectedSession) {
       setFoundSelection([]);
@@ -140,8 +147,26 @@ export function StockWorkspace({
       setStockNote('');
     }
 
+    const itemChange = itemChangeNotice(selectedSession);
     const reject = cashierRejectNotice(selectedSession);
-    if (reject && (reject.wrongItemIds?.length || reject.wrongItems?.length)) {
+
+    if (itemChange) {
+      // D78: Pre-select items that were not changed so Stock only needs to find the newly replaced item
+      const preSelected: string[] = [];
+      for (const item of selectedSession.selection.items) {
+        const itemId = item.id ?? item.product.id;
+        const isNewItem =
+          item.product.id === itemChange.newSkuId ||
+          item.product.sku === itemChange.newSku;
+        if (!isNewItem) {
+          preSelected.push(itemId);
+        }
+      }
+      Object.entries(selectedSession.selection.accessories).forEach(([name]) => {
+        preSelected.push(name);
+      });
+      setFoundSelection(preSelected);
+    } else if (reject && (reject.wrongItemIds?.length || reject.wrongItems?.length)) {
       const wrongIds = new Set(reject.wrongItemIds ?? []);
       const wrongNames = new Set(reject.wrongItems ?? []);
       const preSelected: string[] = [];
@@ -176,7 +201,7 @@ export function StockWorkspace({
     } else {
       setFoundSelection([]);
     }
-  }, [selectedSession?.id, selectedSession?.state, lastRejectTimestamp]);
+  }, [selectedSession?.id, selectedSession?.state, lastRejectTimestamp, lastItemChangeTimestamp]);
 
   // F12: every cancel after the stock request that stock has not acknowledged, whatever day it was (not only today)
   const cancelledAlertSessions = sessions.filter(
@@ -489,7 +514,19 @@ export function StockWorkspace({
                   >
                     <div className="card-top">
                       <span className="card-ref">{s.queue}</span>
-                      {cashierRejectNotice(s) ? (
+                      {itemChangeNotice(s) ? (
+                        <span
+                          className="status-tag"
+                          style={{
+                            background: '#fef3c7',
+                            color: '#b45309',
+                            border: '1px solid #fde68a',
+                            fontWeight: 700,
+                          }}
+                        >
+                          เปลี่ยนสินค้า
+                        </span>
+                      ) : cashierRejectNotice(s) ? (
                         <span
                           className="status-tag status-outcome"
                           style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}
@@ -575,6 +612,50 @@ export function StockWorkspace({
                       </div>
                     </Notice>
                   )}
+                  {itemChangeNotice(selectedSession) && (() => {
+                    const notice = itemChangeNotice(selectedSession);
+                    if (!notice) return null;
+                    return (
+                      <div
+                        style={{
+                          padding: '12px 16px',
+                          borderRadius: '10px',
+                          background: '#fffbeb',
+                          border: '1.5px solid #f59e0b',
+                          color: '#92400e',
+                          fontSize: '14px',
+                          marginBottom: '16px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700, fontSize: '15px' }}>
+                          <AlertTriangle size={18} style={{ color: '#d97706' }} />
+                          <span>
+                            มีการเปลี่ยนสินค้าในคิวนี้ (เปลี่ยนโดย {notice.changedByRole === 'CASHIER' ? 'แคชเชียร์' : 'พนักงานขาย'}: {notice.actorStaffId})
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '13px' }}>
+                          <strong>เหตุผล:</strong> {notice.reason} {notice.note ? `(${notice.note})` : ''}
+                        </div>
+                        <div style={{ fontSize: '13px', background: '#fef3c7', padding: '8px 12px', borderRadius: '6px' }}>
+                          <div>
+                            <span style={{ color: '#b91c1c', fontWeight: 600 }}>❌ สินค้าเดิม:</span> {notice.oldName} ({notice.oldSku})
+                          </div>
+                          <div style={{ marginTop: '2px' }}>
+                            <span style={{ color: '#15803d', fontWeight: 600 }}>✅ สินค้าใหม่ที่ต้องหยิบ:</span> {notice.newName} ({notice.newSku})
+                          </div>
+                        </div>
+                        {notice.hadPickedOldItem && (
+                          <div style={{ fontSize: '13px', color: '#b91c1c', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                            <AlertCircle size={15} />
+                            ⚠️ สินค้าเดิมเคยถูกหยิบไปแล้ว กรุณานำเครื่องเดิมคืนชั้นวางสินค้าในคลัง
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {cashierRejectNotice(selectedSession) && (() => {
                     const reject = cashierRejectNotice(selectedSession);
                     const wrongList =
@@ -647,6 +728,12 @@ export function StockWorkspace({
                   {selectedSession.selection.items.map((item) => {
                     const itemId = item.id ?? item.product.id;
                     const reject = cashierRejectNotice(selectedSession);
+                    const itemChange = itemChangeNotice(selectedSession);
+                    const isNewSwappedItem = Boolean(
+                      itemChange &&
+                        (item.product.id === itemChange.newSkuId ||
+                          item.product.sku === itemChange.newSku),
+                    );
                     const wrongBadge = getWrongItemBadgeText(
                       reject,
                       itemId,
@@ -663,12 +750,36 @@ export function StockWorkspace({
                                 borderColor: '#ef4444',
                                 backgroundColor: '#fff5f5',
                               }
-                            : undefined
+                            : isNewSwappedItem
+                              ? {
+                                  borderColor: '#10b981',
+                                  backgroundColor: '#f0fdf4',
+                                }
+                              : undefined
                         }
                       >
                         <div className="product-title">
                           {itemName(item)}{' '}
                           <span className="qty-badge">× {item.quantity}</span>
+                          {isNewSwappedItem && (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                backgroundColor: '#ecfdf5',
+                                color: '#047857',
+                                border: '1px solid #a7f3d0',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                marginLeft: '8px',
+                              }}
+                            >
+                              ✨ สินค้าใหม่ที่เปลี่ยน (ต้องหยิบ)
+                            </span>
+                          )}
                           {wrongBadge && (
                             <span
                               style={{
@@ -798,6 +909,12 @@ export function StockWorkspace({
                               const itemId = item.id ?? item.product.id;
                               const isFound = foundSelection.includes(itemId);
                               const reject = cashierRejectNotice(selectedSession);
+                              const itemChange = itemChangeNotice(selectedSession);
+                              const isNewSwappedItem = Boolean(
+                                itemChange &&
+                                  (item.product.id === itemChange.newSkuId ||
+                                    item.product.sku === itemChange.newSku),
+                              );
                               const wrongBadge = getWrongItemBadgeText(
                                 reject,
                                 itemId,
@@ -816,7 +933,12 @@ export function StockWorkspace({
                                           borderColor: '#ef4444',
                                           backgroundColor: '#fff5f5',
                                         }
-                                      : undefined
+                                      : isNewSwappedItem && !isFound
+                                        ? {
+                                            borderColor: '#10b981',
+                                            backgroundColor: '#f0fdf4',
+                                          }
+                                        : undefined
                                   }
                                 >
                                   <label
@@ -843,6 +965,24 @@ export function StockWorkspace({
                                       <strong>สินค้าหลัก:</strong> {itemName(item)} (
                                       {item.product.sku}) จำนวน {item.quantity} ชิ้น
                                     </span>
+                                    {isNewSwappedItem && (
+                                      <span
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          backgroundColor: '#ecfdf5',
+                                          color: '#047857',
+                                          border: '1px solid #a7f3d0',
+                                          borderRadius: '4px',
+                                          padding: '2px 6px',
+                                          fontSize: '11px',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        ✨ ชิ้นใหม่ที่ต้องหยิบ
+                                      </span>
+                                    )}
                                     {wrongBadge && (
                                       <span
                                         style={{

@@ -1090,3 +1090,31 @@ Owner instruction via `/grill-me`: "หากกรณี สินค้าช�
    - `cashierRejectNotice` ignores events where `action === 'REMOVE_DAMAGED'`, preventing ghost reject notifications in Stock.
 4. **API Endpoint:**
    - `POST /api/sessions/:id/cashier/remove-damaged` accepting `CashierRemoveDamagedDto` `{ itemIds: string[], note?: string }`.
+
+## D78 — Staff and Cashier Item Change with Stock Notification (2026-10-14)
+
+Owner instruction via `/grill-me`: "Cashier และ Staff สามารถ เปลี่ยนรุ่น สี ความจุ ได้ ระหว่างการทำงาน และมีการแจ้งเตือนไปที่ Stock".
+
+1. **Scope and Permitted Stages:**
+   - **Staff**: Can change main product items while waiting for Stock (`STOCK_REQUESTED`, `SEARCHING`, `FOUND`).
+   - **Cashier**: Can change main product items while checking/scanning at cashier desk (`CASHIER_RECEIVED`, `CASHIER_SCAN` before bill is opened).
+   - Only main products are swapped 1-to-1 (`SessionItem`). If the customer wants to modify accessories, they can still do so through Stock Review (`CHANGE_ITEMS`).
+2. **UI & Replacement Selection:**
+   - In both `StaffWorkspace.tsx` and `CashierWorkspace.tsx`, an action button "เปลี่ยนสินค้า (รุ่น/สี/ความจุ)" opens `ChangeItemModal`.
+   - The modal lists current main products in the order; user selects which item to replace.
+   - 4-level cascading dropdowns (Category -> Model -> Storage -> Color) allow picking the replacement SKU. Out-of-stock items are disabled/warned.
+   - Reason dropdown: `ลูกค้าเปลี่ยนใจ`, `แนะนำรุ่นอื่น/โปรโมชั่น`, `อื่น ๆ` with optional detail note.
+3. **Workflow & Stock Transition:**
+   - Submitting the change resets the session to `SEARCHING` state.
+   - Milestones `stockFoundAt`, `cashierReceivedAt`, and `cashierScanAt` are cleared.
+   - If the previous item was already picked (`FOUND` or later), previously deducted shelf stock is returned to `BranchInventory` via `returnItemsToShelf`.
+   - The replaced `SessionItem` has its `skuId` updated to the new SKU.
+   - A `SessionEvent` is appended with `eventType: 'ITEM_CHANGED'`, `actorStaffId`, and metadata `{ oldItemId, oldSkuId, oldSku, oldName, newSkuId, newSku, newName, reason, note, changedByRole }`.
+4. **Stock Notification & Visibility:**
+   - In `StockWorkspace.tsx`, a prominent amber alert banner notifies Stock: "⚠️ มีการเปลี่ยนสินค้า: นำ [เครื่องเดิม] คืนคลัง และหยิบ [เครื่องใหม่] แทน (เปลี่ยนโดย [Staff/Cashier]) — เหตุผล: [reason] [note]".
+   - The queue item card displays an amber badge `[เปลี่ยนสินค้า]`.
+   - Audio beep (`playAlertBeep`) alerts Stock to the updated task.
+   - In the search checklist, unaffected items are pre-checked, leaving the newly swapped item unchecked for picking.
+   - Once Stock picks the new item and clicks "พบสินค้าครบแล้ว" (`found`) -> "ส่งต่อให้แคชเชียร์" (`send`), the order progresses back through the standard cashier receiving flow.
+5. **API Endpoint:**
+   - `POST /api/sessions/:id/change-item` accepting `ChangeSessionItemDto` `{ oldItemId: string, newSkuId: string, reason: string, note?: string }`.

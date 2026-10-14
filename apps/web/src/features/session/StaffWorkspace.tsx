@@ -9,8 +9,8 @@ import {
   Package,
   CreditCard,
   ArrowLeft,
-  ArrowRight,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import {
@@ -24,6 +24,7 @@ import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
 import { WalkInForm } from './WalkInForm';
+import { ChangeItemModal } from './ChangeItemModal';
 import { ReceiptSheet, nowText } from './Receipt';
 import {
   advance,
@@ -36,6 +37,7 @@ import {
 import {
   advanceStepApi,
   cancelSessionApi,
+  changeSessionItemApi,
   confirmPurchaseApi,
   createWalkInApi,
   rebuyApi,
@@ -107,6 +109,7 @@ export function StaffWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [printSession, setPrintSession] = useState<MockSession | null>(null);
+  const [changingItemSession, setChangingItemSession] = useState<MockSession | null>(null);
 
   // Filter staff's branch sessions for today
   const branchSessions = sessions.filter((s) => {
@@ -291,6 +294,26 @@ export function StaffWorkspace({
     } finally {
       setBusy(false);
     }
+  };
+
+  /** D78: staff changes item and sends back to stock. */
+  const handleChangeItem = async (
+    oldItemId: string,
+    newSkuId: string,
+    reason: string,
+    note?: string,
+  ) => {
+    if (!changingItemSession || !changingItemSession.id) return;
+    setError('');
+    const updated = await changeSessionItemApi(
+      changingItemSession.id,
+      oldItemId,
+      newSkuId,
+      reason,
+      note,
+    );
+    onUpdateSession(updated);
+    setChangingItemSession(null);
   };
 
   const handleUpdateSelection = async (selection: Selection) => {
@@ -760,6 +783,16 @@ export function StaffWorkspace({
                               "คลังสินค้า" เพื่ออัปเดตสถานะได้
                             </p>
                             <Summary session={activeSession} />
+                            <div style={{ marginTop: '16px' }}>
+                              <Button
+                                variant="secondary"
+                                onClick={() => setChangingItemSession(activeSession)}
+                              >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                  <RefreshCw size={15} /> เปลี่ยนสินค้า (รุ่น/สี/ความจุ)
+                                </span>
+                              </Button>
+                            </div>
                           </>
                         )}
 
@@ -824,6 +857,14 @@ export function StaffWorkspace({
           )}
         </div>
       </div>
+      {changingItemSession && (
+        <ChangeItemModal
+          session={changingItemSession}
+          isOpen={Boolean(changingItemSession)}
+          onClose={() => setChangingItemSession(null)}
+          onSubmit={handleChangeItem}
+        />
+      )}
       {printSession &&
         createPortal(
           <ReceiptSheet session={printSession} printedAt={nowText()} />,

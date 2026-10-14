@@ -394,6 +394,23 @@ export async function cashierRemoveDamagedApi(
   return mapApiSessionToMockSession(data);
 }
 
+/** D78: Staff or Cashier changes an item (model, color, capacity) in the order and sends it to Stock. */
+export async function changeSessionItemApi(
+  id: string,
+  oldItemId: string,
+  newSkuId: string,
+  reason: string,
+  note?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/change-item`, 'POST', {
+    oldItemId,
+    newSkuId,
+    reason,
+    note,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
 /** F12: stock confirms it has seen a cancel (and brought the goods back). */
 export async function acknowledgeStockCancelApi(id: string): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/acknowledge-cancel`, 'POST');

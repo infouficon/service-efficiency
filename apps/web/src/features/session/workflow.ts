@@ -436,6 +436,74 @@ export function cashierRejectNotice(
   return out;
 }
 
+/**
+ * D78: when stock has the order again because Staff or Cashier changed an item (model, color, capacity).
+ * Active while session is in SEARCHING (or STOCK_REQUESTED) without an outcome,
+ * and the ITEM_CHANGED event is newer than the last STOCK_FOUND.
+ */
+export function itemChangeNotice(
+  session: MockSession,
+): {
+  at: string;
+  actorStaffId: string;
+  oldItemId: string;
+  oldSkuId: string;
+  oldSku: string;
+  oldName: string;
+  newSkuId: string;
+  newSku: string;
+  newName: string;
+  reason: string;
+  note?: string;
+  changedByRole: 'STAFF' | 'CASHIER';
+  fromState?: string;
+  hadPickedOldItem: boolean;
+} | undefined {
+  if (!['STOCK_REQUESTED', 'SEARCHING'].includes(session.state) || session.outcome) return undefined;
+  const events = session.events ?? [];
+  const changeEv = [...events].reverse().find((e) => e.eventType === 'ITEM_CHANGED');
+  if (!changeEv) return undefined;
+
+  const found = [...events].reverse().find((e) => e.eventType === 'STOCK_FOUND');
+  if (found && new Date(found.createdAt) > new Date(changeEv.createdAt)) return undefined;
+
+  const meta = (changeEv.metadata ?? {}) as {
+    oldItemId?: string;
+    oldSkuId?: string;
+    oldSku?: string;
+    oldName?: string;
+    newSkuId?: string;
+    newSku?: string;
+    newName?: string;
+    reason?: string;
+    note?: string | null;
+    changedByRole?: 'STAFF' | 'CASHIER';
+    fromState?: string;
+  };
+
+  const hadPickedOldItem = Boolean(
+    meta.fromState &&
+      ['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(meta.fromState),
+  );
+
+  return {
+    at: changeEv.createdAt,
+    actorStaffId: changeEv.actorStaffId,
+    oldItemId: meta.oldItemId || '',
+    oldSkuId: meta.oldSkuId || '',
+    oldSku: meta.oldSku || '',
+    oldName: meta.oldName || meta.oldSku || '',
+    newSkuId: meta.newSkuId || '',
+    newSku: meta.newSku || '',
+    newName: meta.newName || meta.newSku || '',
+    reason: meta.reason || '',
+    note: meta.note || undefined,
+    changedByRole: meta.changedByRole || 'STAFF',
+    fromState: meta.fromState,
+    hadPickedOldItem,
+  };
+}
+
 /** `H:MM:SS` (hours are not capped); empty when there is no duration. */
 export function formatDuration(ms: number | null): string {
   if (ms === null) return '';

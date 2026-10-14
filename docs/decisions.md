@@ -1100,3 +1100,30 @@ Owner, after seeing the dropdown picker (D74) with real warroom data: "ทำไ
 3. **Batteries are a category.** A part whose sub-category (or sub-sub-category) starts with "Battery" goes to the category `Battery`, not iPhone or Accessories (unless the warroom category is another brand's). The category is added switched off, like every new warroom category (D72): staff see it once ADMIN opens it.
 4. **Existing ERP products are re-filed by the sync.** An ERP-made SKU filed under another category / product / model than today's rules give (the old per-capacity models, batteries under iPhone) is moved to the right ones on the next run (`moved` in the run summary; a dry run counts it); the ERP-made models and products left empty are removed. Hand-made records are never touched.
 5. **"Delete only what is not from the ERP".** Admin → ซิงก์ ERP → "นับสินค้าที่ไม่ได้มาจาก ERP" (`POST /admin/warroom-sync/reset-catalog?scope=non-erp`): counts first, then the typed confirmation. It removes SKUs (with branch stock) that are not `erpManaged`, the hand-made models/products left empty by that, and every queue session that used any of them (a session cannot keep a product that is gone). ERP-made products, customers and the other queues stay. Irreversible: back up first.
+## D79 — Staff and Cashier Item Change with Stock Notification (2026-10-14)
+
+Owner instruction via `/grill-me`: "Cashier และ Staff สามารถ เปลี่ยนรุ่น สี ความจุ ได้ ระหว่างการทำงาน และมีการแจ้งเตือนไปที่ Stock".
+
+1. **Scope and Permitted Stages:**
+   - **Staff**: Can change main product items while waiting for Stock (`STOCK_REQUESTED`, `SEARCHING`, `FOUND`).
+   - **Cashier**: Can change main product items while checking/scanning at cashier desk (`CASHIER_RECEIVED`, `CASHIER_SCAN` before bill is opened).
+   - Only main products are swapped 1-to-1 (`SessionItem`). If the customer wants to modify accessories, they can still do so through Stock Review (`CHANGE_ITEMS`).
+2. **UI & Replacement Selection:**
+   - In both `StaffWorkspace.tsx` and `CashierWorkspace.tsx`, an action button "เปลี่ยนสินค้า (รุ่น/สี/ความจุ)" opens `ChangeItemModal`.
+   - The modal lists current main products in the order; user selects which item to replace.
+   - 4-level cascading dropdowns (Category -> Model -> Storage -> Color) allow picking the replacement SKU. Out-of-stock items are disabled/warned.
+   - Reason dropdown: `ลูกค้าเปลี่ยนใจ`, `แนะนำรุ่นอื่น/โปรโมชั่น`, `อื่น ๆ` with optional detail note.
+3. **Workflow & Stock Transition:**
+   - Submitting the change resets the session to `SEARCHING` state.
+   - Milestones `stockFoundAt`, `cashierReceivedAt`, and `cashierScanAt` are cleared.
+   - If the previous item was already picked (`FOUND` or later), previously deducted shelf stock is returned to `BranchInventory` via `returnItemsToShelf`.
+   - The replaced `SessionItem` has its `skuId` updated to the new SKU.
+   - A `SessionEvent` is appended with `eventType: 'ITEM_CHANGED'`, `actorStaffId`, and metadata `{ oldItemId, oldSkuId, oldSku, oldName, newSkuId, newSku, newName, reason, note, changedByRole }`.
+4. **Stock Notification & Visibility:**
+   - In `StockWorkspace.tsx`, a prominent amber alert banner notifies Stock: "⚠️ มีการเปลี่ยนสินค้า: นำ [เครื่องเดิม] คืนคลัง และหยิบ [เครื่องใหม่] แทน (เปลี่ยนโดย [Staff/Cashier]) — เหตุผล: [reason] [note]".
+   - The queue item card displays an amber badge `[เปลี่ยนสินค้า]`.
+   - Audio beep (`playAlertBeep`) alerts Stock to the updated task.
+   - In the search checklist, unaffected items are pre-checked, leaving the newly swapped item unchecked for picking.
+   - Once Stock picks the new item and clicks "พบสินค้าครบแล้ว" (`found`) -> "ส่งต่อให้แคชเชียร์" (`send`), the order progresses back through the standard cashier receiving flow.
+5. **API Endpoint:**
+   - `POST /api/sessions/:id/change-item` accepting `ChangeSessionItemDto` `{ oldItemId: string, newSkuId: string, reason: string, note?: string }`.

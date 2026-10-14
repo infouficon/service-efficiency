@@ -22,6 +22,7 @@ import {
   getSessionMissingDescription,
   progressIndex,
   removeDamagedItems,
+  itemChangeNotice,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 const fixture = () => ({
@@ -475,4 +476,63 @@ test('removeDamagedItems cancels session when all items are removed (D75)', () =
   assert.equal(updated.reason, 'สินค้าชำรุด/มีตำหนิ');
   assert.equal(updated.otherReason, 'หน้าจอแตก');
   assert.equal(updated.timestamps.cancelled_at, '2026-10-14T10:00:00Z');
+});
+
+test('itemChangeNotice extracts item change details and clears after STOCK_FOUND (D78)', () => {
+  const session = {
+    ...fixture(),
+    state: 'SEARCHING',
+    events: [
+      {
+        id: 'ev-1',
+        eventType: 'STOCK_FOUND',
+        actorStaffId: 'staff-1',
+        createdAt: '2026-10-14T10:00:00Z',
+      },
+      {
+        id: 'ev-2',
+        eventType: 'ITEM_CHANGED',
+        actorStaffId: 'cashier-1',
+        createdAt: '2026-10-14T10:05:00Z',
+        metadata: {
+          oldItemId: 'item-1',
+          oldSkuId: 'sku-1',
+          oldSku: 'IPHONE-16-128',
+          oldName: 'iPhone 16 128GB Black',
+          newSkuId: 'sku-2',
+          newSku: 'IPHONE-16-256',
+          newName: 'iPhone 16 256GB Black',
+          reason: 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
+          note: 'เปลี่ยนเป็น 256GB',
+          changedByRole: 'CASHIER',
+          fromState: 'CASHIER_RECEIVED',
+        },
+      },
+    ],
+  };
+
+  const notice = itemChangeNotice(session);
+  assert.ok(notice);
+  assert.equal(notice.oldName, 'iPhone 16 128GB Black');
+  assert.equal(notice.newName, 'iPhone 16 256GB Black');
+  assert.equal(notice.reason, 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)');
+  assert.equal(notice.note, 'เปลี่ยนเป็น 256GB');
+  assert.equal(notice.changedByRole, 'CASHIER');
+  assert.equal(notice.hadPickedOldItem, true);
+
+  // When Stock finds the new replacement item, the notice clears
+  const foundSession = {
+    ...session,
+    state: 'FOUND',
+    events: [
+      ...session.events,
+      {
+        id: 'ev-3',
+        eventType: 'STOCK_FOUND',
+        actorStaffId: 'stock-1',
+        createdAt: '2026-10-14T10:10:00Z',
+      },
+    ],
+  };
+  assert.equal(itemChangeNotice(foundSession), undefined);
 });

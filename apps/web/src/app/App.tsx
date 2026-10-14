@@ -36,6 +36,7 @@ import {
   isToday,
   getSessionMissingDescription,
   goodsToReturn,
+  itemChangeNotice,
   needsStockAck,
 } from '../features/session/workflow';
 import { playAlertBeep } from '../utils/beep';
@@ -238,6 +239,17 @@ export function App({
     if (stockNotices.length > seenStockNotices.current) playAlertBeep();
     seenStockNotices.current = stockNotices.length;
   }, [stockNotices.length]);
+
+  // D78: alert sound when an item change notice arrives for stock
+  const itemChangeNotices = useMemo(
+    () => (canAccessStock ? branchSessions.filter((s) => Boolean(itemChangeNotice(s))) : []),
+    [canAccessStock, branchSessions],
+  );
+  const seenItemChanges = useRef(0);
+  useEffect(() => {
+    if (itemChangeNotices.length > seenItemChanges.current) playAlertBeep();
+    seenItemChanges.current = itemChangeNotices.length;
+  }, [itemChangeNotices.length]);
 
   const handleDismissAlerts = () => {
     const targets = [...managerAlertSessions];

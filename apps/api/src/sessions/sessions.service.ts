@@ -14,6 +14,7 @@ import type {
   CancelSessionDto,
   CashierRejectDto,
   CashierRemoveDamagedDto,
+  ChangeSessionItemDto,
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
@@ -1222,6 +1223,129 @@ export class SessionsService {
                 otherReason: dto.note?.trim() || null,
                 removedItems: removedNames,
                 removedItemIds: dto.itemIds,
+              },
+            },
+          },
+        },
+        include: sessionInclude,
+      });
+    });
+  }
+
+  /**
+   * D78: Staff or Cashier changes a main product item (model, color, capacity) in the order.
+   * Allowed stages:
+   * - STAFF (or ADMIN): STOCK_REQUESTED, SEARCHING, FOUND
+   * - CASHIER (or ADMIN): CASHIER_RECEIVED, CASHIER_SCAN (before bill is opened)
+   * The old item is replaced with the new SKU. If the session had already reached FOUND or later,
+   * previously deducted shelf stock is returned. The session transitions back to SEARCHING for Stock to pick the new item.
+   */
+  async changeItem(user: PublicAccount, id: string, dto: ChangeSessionItemDto) {
+    const session = await this.getById(user, id);
+
+    if (session.outcome || session.state === 'COMPLETED' || session.state === 'BILL_OPENED') {
+      throw new BadRequestException('คิวนี้เสร็จสิ้นหรือเปิดบิลแล้ว ไม่สามารถเปลี่ยนสินค้าได้');
+    }
+
+    const isAdmin = user.roles.includes('ADMIN');
+    const isCashier = user.roles.includes('CASHIER');
+    const isStaff = user.roles.includes('STAFF');
+
+    const cashierStates: WorkflowState[] = ['CASHIER_RECEIVED', 'CASHIER_SCAN'];
+    const staffStates: WorkflowState[] = ['STOCK_REQUESTED', 'SEARCHING', 'FOUND'];
+
+    let actorRole: 'STAFF' | 'CASHIER';
+    if ((isCashier || isAdmin) && cashierStates.includes(session.state)) {
+      actorRole = 'CASHIER';
+    } else if ((isStaff || isAdmin) && staffStates.includes(session.state)) {
+      actorRole = 'STAFF';
+    } else {
+      if (!isCashier && !isStaff && !isAdmin) {
+        throw new ForbiddenException('เฉพาะ Staff หรือ Cashier เท่านั้นที่มีสิทธิ์เปลี่ยนสินค้า');
+      }
+      throw new BadRequestException(
+        `ไม่สามารถเปลี่ยนสินค้าในสถานะ ${session.state} ได้ (Staff: รอค้นหา/พบแล้ว, Cashier: ตรวจรับ/สแกน)`,
+      );
+    }
+
+    if (!dto.reason?.trim()) {
+      throw new BadRequestException('กรุณาระบุเหตุผลในการเปลี่ยนสินค้า');
+    }
+
+    // Find the old item in the session
+    const oldItem = session.items.find(
+      (it) => it.id === dto.oldItemId || it.skuId === dto.oldItemId,
+    );
+    if (!oldItem) {
+      throw new BadRequestException('ไม่พบรายการสินค้าที่ต้องการเปลี่ยนในคิวนี้');
+    }
+
+    // Find the new SKU
+    const newSku = await this.prisma.productSku.findFirst({
+      where: {
+        OR: [{ id: dto.newSkuId }, { sku: dto.newSkuId }],
+        active: true,
+      },
+      include: {
+        model: {
+          include: {
+            product: true,
+          },
+        },
+      },
+    });
+    if (!newSku) {
+      throw new BadRequestException('ไม่พบสินค้าใหม่ที่เลือก หรือสินค้านี้ปิดการขายแล้ว');
+    }
+
+    if (newSku.id === oldItem.skuId) {
+      throw new BadRequestException('สินค้าใหม่เป็นรายการเดิม กรุณาเลือกรุ่น สี หรือความจุอื่น');
+    }
+
+    const now = new Date();
+    const oldProductName = `${oldItem.sku.model.product.name} ${oldItem.sku.model.name} ${[oldItem.sku.storage, oldItem.sku.color].filter(Boolean).join(' ')}`.trim();
+    const newProductName = `${newSku.model.product.name} ${newSku.model.name} ${[newSku.storage, newSku.color].filter(Boolean).join(' ')}`.trim();
+
+    return this.prisma.$transaction(async (tx) => {
+      // If the old item had been picked (FOUND or cashier states), return shelf stock
+      if (['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state)) {
+        await this.returnItemsToShelf(tx, session.branchId, session.items);
+      }
+
+      // Update the session item to the new SKU
+      await tx.sessionItem.update({
+        where: { id: oldItem.id },
+        data: {
+          skuId: newSku.id,
+          deducted: 0,
+        },
+      });
+
+      // Reset session to SEARCHING for Stock to pick the new item
+      return tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          state: 'SEARCHING',
+          stockFoundAt: null,
+          cashierReceivedAt: null,
+          cashierScanAt: null,
+          events: {
+            create: {
+              eventType: 'ITEM_CHANGED',
+              actorStaffId: user.staffId,
+              createdAt: now,
+              metadata: {
+                oldItemId: oldItem.id,
+                oldSkuId: oldItem.skuId,
+                oldSku: oldItem.sku.sku,
+                oldName: oldProductName,
+                newSkuId: newSku.id,
+                newSku: newSku.sku,
+                newName: newProductName,
+                reason: dto.reason.trim(),
+                note: dto.note?.trim() || null,
+                changedByRole: actorRole,
+                fromState: session.state,
               },
             },
           },

@@ -15,6 +15,7 @@ import {
   CancelSessionDto,
   CashierRejectDto,
   CashierRemoveDamagedDto,
+  ChangeSessionItemDto,
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
@@ -168,6 +169,16 @@ export class SessionsController {
   async acknowledgeAlert(@Req() req: Request, @Param('id') id: string) {
     const user = await this.accounts.authenticate(req);
     return this.sessions.acknowledgeAlert(user, id);
+  }
+
+  @Post(':id/change-item')
+  async changeItem(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: ChangeSessionItemDto,
+  ) {
+    const user = await this.accounts.authenticate(req);
+    return this.sessions.changeItem(user, id, dto);
   }
 }
 

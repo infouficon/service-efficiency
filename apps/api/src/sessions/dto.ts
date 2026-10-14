@@ -231,3 +231,22 @@ export class CashierRemoveDamagedDto {
   @IsString()
   note?: string;
 }
+
+export class ChangeSessionItemDto {
+  @IsString()
+  @IsNotEmpty()
+  oldItemId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  newSkuId!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(191)
+  reason!: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}

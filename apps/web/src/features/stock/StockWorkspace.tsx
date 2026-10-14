@@ -58,6 +58,7 @@ export function StockWorkspace({
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   /** F12: stock confirms it has seen a cancel and brought the goods back; stored on the session, so every device sees it. */
   const handleAcknowledgeCancel = async (session: MockSession) => {
@@ -77,9 +78,12 @@ export function StockWorkspace({
     return isTargetBranch && isTodaySession;
   });
 
+  // D73: sessions sent back to staff (stockPendingReview) are excluded from the stock queue
   const stockQueue = branchSessions.filter(
     (s) =>
-      !s.outcome && ['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(s.state),
+      !s.outcome &&
+      !s.stockPendingReview &&
+      ['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(s.state),
   );
 
   const filteredQueue = stockQueue.filter((s) => {
@@ -106,6 +110,7 @@ export function StockWorkspace({
     setSelectedRef(reference);
     setMobileShowDetail(true);
     setError('');
+    setSuccessMessage('');
     const target = stockQueue.find((s) => s.reference === reference);
     if (target?.stockPendingReview) {
       setStockNote(target.stockPendingReview.stockNote || '');
@@ -120,6 +125,7 @@ export function StockWorkspace({
     action: 'search' | 'found' | 'send',
   ) => {
     setError('');
+    setSuccessMessage('');
     if (session.id) {
       try {
         const updated = await advanceStepApi(session.id, action);
@@ -182,6 +188,13 @@ export function StockWorkspace({
         missingItemIds,
       );
       onUpdateSession(updated);
+      setSelectedRef(null);
+      setMobileShowDetail(false);
+      setFoundSelection([]);
+      setStockNote('');
+      setSuccessMessage(
+        `ส่งเรื่องให้ Staff เรียบร้อยแล้ว (คิว ${session.queue || session.reference} ถูกส่งกลับไปให้ Staff ดำเนินการต่อ)`,
+      );
     } catch (err: unknown) {
       console.error('Failed to report missing stock:', err);
       setError(err instanceof Error ? err.message : 'ไม่สามารถแจ้งสินค้าไม่ครบได้');
@@ -252,6 +265,42 @@ export function StockWorkspace({
           </span>
         </div>
       </div>
+
+      {successMessage && (
+        <div style={{ marginBottom: '1rem' }}>
+          <Notice>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                width: '100%',
+                gap: '8px',
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#0d8a72',
+                  fontWeight: 600,
+                }}
+              >
+                <CheckCircle2 size={18} color="#0abab5" />
+                {successMessage}
+              </span>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => setSuccessMessage('')}
+              >
+                ปิด
+              </Button>
+            </div>
+          </Notice>
+        </div>
+      )}
 
       {error && (
         <div style={{ marginBottom: '1rem' }}>
@@ -367,7 +416,7 @@ export function StockWorkspace({
                     onClick={() => handleSelectCard(s.reference)}
                   >
                     <div className="card-top">
-                      <span className="card-ref">คิว {s.queue}</span>
+                      <span className="card-ref">{s.queue}</span>
                       {cashierRejectNotice(s) ? (
                         <span
                           className="status-tag status-outcome"

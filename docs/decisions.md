@@ -1018,6 +1018,22 @@ Owner instruction via `/grill-me`: "ตอนเลือก เพิ่มส�
    - The dropdown form automatically collapses/closes, while retaining the "+ เพิ่มสินค้าหลัก" button to reopen and add more items at any time.
    - When no main products are currently selected (`value.items.length === 0`), the dropdown form remains open by default.
 
+## D73 — Return to Staff on Missing Stock (2026-10-14)
+
+Owner instruction via `/grill-me`: "เมื่อ stock แจ้งสินค้าไม่ครบ/หมด (0/4) → ส่งเรื่องให้ Staff ให้คิวนั้นหายไปจาก stock เพราะ คิวนั้นได้กลับไปให้ staff แล้ว". Extends D40 (Stock Review).
+
+1. **Immediate Removal from Stock Queue:**
+   - In `StockWorkspace.tsx`, when Stock reports missing items (`reportStockMissingApi` / "แจ้งสินค้าไม่ครบ/หมด → ส่งเรื่องให้ Staff"), the session is immediately excluded from `stockQueue` (where `!s.stockPendingReview`).
+   - Applies to all returned cases (both 0 items found and partial items found), as responsibility for customer consultation has transitioned back to Staff.
+2. **Sidebar & Stats Counter Consistency:**
+   - The pending counter pills in Stock Workspace and the sidebar menu badge (`stockPendingCount` in `App.tsx`) exclude `stockPendingReview` sessions so stock staff only see actionable search tasks.
+3. **User Feedback:**
+   - Upon successfully reporting missing items, Stock Workspace displays a prominent success notice ("ส่งเรื่องให้ Staff เรียบร้อยแล้ว (คิว ... ถูกส่งกลับไปให้ Staff ดำเนินการต่อ)") and resets the selection/view to return to the active queue list.
+4. **Return Paths to Stock:**
+   - If Staff and the customer choose to proceed with remaining found items (`ACCEPT_PARTIAL`), the session advances to `FOUND` (with `stockReview` cleared) and reappears in the Stock Workspace "พบแล้ว" tab to be dispatched to Cashier.
+   - If Staff and the customer choose to change items (`CHANGE_ITEMS`), the session reopens at `PRODUCT_SELECTION` (confirmed=false); once Staff confirms the replacement selection, the session returns to Stock Workspace as a new `STOCK_REQUESTED` request.
+
+
 
 
 

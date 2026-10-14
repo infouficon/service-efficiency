@@ -69,7 +69,7 @@ export function ReceiptSheet({
         <hr />
         <p className="receipt-center receipt-title">ใบเสร็จรับสินค้า</p>
         <p className="receipt-center receipt-note">(สรุปรายการ ไม่แสดงราคา)</p>
-        <p className="receipt-queue">คิว {session.queue}</p>
+        <p className="receipt-queue">{session.queue}</p>
         <p className="receipt-row">
           <span>วันที่</span>
           <span>{printedAt}</span>

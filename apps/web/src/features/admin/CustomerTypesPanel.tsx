@@ -23,7 +23,7 @@ interface TypeDraft {
 }
 
 /**
- * Back-office list of customer types (D57, D69, D70). The letter is the queue letter ("คิว A012") and the sort order; the owner
+ * Back-office list of customer types (D57, D69, D70). The letter is the queue letter ("A012") and the sort order; the owner
  * creates as many types as needed (A, B, C, ...). A letter never changes once created: queue numbers already given
  * out carry it. Types are switched off, never deleted, so history keeps its meaning.
  * Criteria (Payment, Ontop, Points, Burn Point) mapped to a type (D70) auto-classify a session into that type upon confirmation.

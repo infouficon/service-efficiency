@@ -2,6 +2,7 @@ import { api } from './api';
 import type {
   AppSettings,
   CustomerType,
+  Category,
   PaymentMethod,
   MockSession,
   Outcome,
@@ -224,6 +225,26 @@ export function setPaymentMethodActiveApi(id: string, active: boolean): Promise<
 
 export function movePaymentMethodApi(id: string, direction: 'up' | 'down'): Promise<PaymentMethod> {
   return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/move`, 'POST', { direction });
+}
+
+/** Product categories in display order (D68); `all` (ADMIN) includes the switched-off ones with their product counts. */
+export function fetchCategoriesApi(all = false): Promise<Category[]> {
+  return api<Category[]>(`/categories${all ? '?all=true' : ''}`);
+}
+
+export function createCategoryApi(name: string, isAccessory: boolean): Promise<Category> {
+  return api<Category>('/categories', 'POST', { name, isAccessory });
+}
+
+export function saveCategoryApi(
+  id: string,
+  patch: { active?: boolean; isAccessory?: boolean },
+): Promise<Category> {
+  return api<Category>(`/categories/${encodeURIComponent(id)}`, 'PUT', patch);
+}
+
+export function moveCategoryApi(id: string, direction: 'up' | 'down'): Promise<Category> {
+  return api<Category>(`/categories/${encodeURIComponent(id)}/move`, 'POST', { direction });
 }
 
 export function reorderPaymentMethodsApi(ids: string[]): Promise<PaymentMethod[]> {

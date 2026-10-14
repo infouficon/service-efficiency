@@ -995,7 +995,27 @@ Owner instruction via `/grill-me`: "ช่องทางชำระเงิ�
 4. **Backend Atomic Reordering:**
    - Endpoint `PUT /api/payment-methods/reorder` executes within a single transaction, validating all IDs and reassigning `position = 1..n`.
 
-## D72 — Cascading Dropdowns for Main Product Selection (2026-10-14)
+## D72 — Product categories are data; other brands get a category of their own, switched off (2026-10-14)
+
+Owner, after the first warroom dry run (5,078 parts, 18 warroom categories, 7 of them "not mapped"): "ทำไมสินค้ายังไม่เข้าระบบ … สร้างหมวดหมู่เพิ่มได้หากไม่มีรองรับ อย่างเช่น Apple Accy คือหมวดของ Accessories ระบบ SES ตอนนี้เปิดเฉพาะ Apple ยังไม่เอาสินค้าจาก HUAWEI แต่อนาคตอาจจะมีก็ได้ … SKU เอาตาม warroom เลย".
+
+1. **Why nothing came in.** Two reasons, neither a bug: mode `shadow` never creates products (D52), and `mapCategory` did not know "Apple Accy" (577), "Third Party Accy" (4,107) or the five "HUAWEI …" categories (129), so 4,813 of the 5,078 parts were skipped.
+2. **Categories become data.** `Category` (name unique and never renamed, `active`, `position`, `isAccessory`, `erpManaged`). The migration seeds the five Apple categories (iPhone, iPad, Mac, Watch, Accessories) and turns `Product.category` from the `ProductCategory` enum into a plain string holding the name (supersedes the enum of D46). ADMIN keeps the list in Admin → หมวดหมู่สินค้า: add, switch on/off, move, flag accessory-like. A product can only be put in a category that exists.
+3. **Mapping.** Apple words still map to the five categories, and "Apple Accy" now maps to Accessories. Anything else, and every other brand ("HUAWEI …", "Third Party Accy"), becomes a category named exactly as warroom spells it. The sync adds it **switched off** (in `shadow` and `on`, not in a dry run).
+4. **Only active categories get products.** A part whose category is off is counted as `waitingForCategory` and not created; staff only see products of an active category. When ADMIN opens a category, the next sync run ("ซิงก์ตอนนี้") creates its products. Stock numbers are only stored for SKUs that exist (or are about to be created).
+5. **Picker.** The main-product tiles are the active categories that are not accessory-like (accessories keep their own step, D48); the four device lines are the fallback when the list cannot be loaded.
+6. **SKU = warroom part number** (`product_model`, unchanged since D52). The UPC (`product_upc`) is kept next to it in `ProductSku.upc` (filled by the sync, searchable in the back office).
+7. **Not decided.** Whether staff should pick an accessory SKU (Apple Accy, 577 SKUs) the way they pick a main product: today accessories are the fixed list with quantities (OQ-16).
+
+## D73 — "Clear the old catalog and queue history" is an ADMIN action, and the demo catalog is gone (2026-10-14)
+
+Owner: "clear ของเก่าออกให้หมดเลย แล้วใช้ตามในนี้" and, asked what to do with products old queues point at: "ลบทุกอย่างรวมประวัติคิว".
+
+1. **What it removes.** Every queue session (with items, accessories, payments, events …), the customers, the queue counters, and every product / model / SKU with its branch stock. Staff, branches, categories, payment methods, customer types and settings stay.
+2. **How.** Admin → ซิงก์ ERP → "ล้างสินค้าและประวัติคิวเดิม": a first click only counts (`POST /admin/warroom-sync/reset-catalog?dryRun=true`); the real run needs the typed word `ล้างข้อมูล` in the body. It is refused while a sync is running, runs in one transaction, and leaves a `catalog-reset` row (who, counts) in the run history table. Irreversible: take a database backup first. It is deliberately not a migration, so nobody gets it by deploying.
+3. **The demo catalog is removed.** `ProductsService` used to create a hard-coded demo catalog (fake SKUs, 5 units in every branch) whenever `Product` was empty, so a cleared catalog would have refilled itself at the next restart (H-17, the seed half). Nothing is seeded any more: the catalog comes from warroom or from ADMIN.
+
+## D74 — Cascading Dropdowns for Main Product Selection (2026-10-14)
 
 Owner instruction via `/grill-me`: "ตอนเลือก เพิ่มสินค้าหลัก ข้างใน ให้เป็นรูปแบบ dropdown เลือก ประเภทอุปกรณ์ รุ่น ความจุ สี". Supersedes the 4-step wizard tiles picker (D62).
 
@@ -1018,7 +1038,7 @@ Owner instruction via `/grill-me`: "ตอนเลือก เพิ่มส�
    - The dropdown form automatically collapses/closes, while retaining the "+ เพิ่มสินค้าหลัก" button to reopen and add more items at any time.
    - When no main products are currently selected (`value.items.length === 0`), the dropdown form remains open by default.
 
-## D73 — Return to Staff on Missing Stock (2026-10-14)
+## D75 — Return to Staff on Missing Stock (2026-10-14)
 
 Owner instruction via `/grill-me`: "เมื่อ stock แจ้งสินค้าไม่ครบ/หมด (0/4) → ส่งเรื่องให้ Staff ให้คิวนั้นหายไปจาก stock เพราะ คิวนั้นได้กลับไปให้ staff แล้ว". Extends D40 (Stock Review).
 
@@ -1033,7 +1053,7 @@ Owner instruction via `/grill-me`: "เมื่อ stock แจ้งสิน�
    - If Staff and the customer choose to proceed with remaining found items (`ACCEPT_PARTIAL`), the session advances to `FOUND` (with `stockReview` cleared) and reappears in the Stock Workspace "พบแล้ว" tab to be dispatched to Cashier.
    - If Staff and the customer choose to change items (`CHANGE_ITEMS`), the session reopens at `PRODUCT_SELECTION` (confirmed=false); once Staff confirms the replacement selection, the session returns to Stock Workspace as a new `STOCK_REQUESTED` request.
 
-## D74 — Cashier Reject Item Selection & Stock Re-pick (2026-10-14)
+## D76 — Cashier Reject Item Selection & Stock Re-pick (2026-10-14)
 
 Owner instruction via `/grill-me`: "ส่งสินค้ากลับ Stock ให้สามารถเลือกได้ด้วยว่าหยิบชิ้นไหนผิด" and "ตรงด้านขวาของสินค้าที่แสดง แจ้งหยิบผิด ให้เป็น dropdown เลือกเหตุผลว่า หยิบสินค้าผิด สินค้าชำรุด/มีตำหนิ หรือ อื่น ๆ พร้อมกรอก ข้อความเพิ่มเติม (ระบุรายละเอียด) *". Extends D64 (Cashier Reject).
 
@@ -1053,7 +1073,7 @@ Owner instruction via `/grill-me`: "ส่งสินค้ากลับ Stoc
    - When viewing a rejected session in `SEARCHING` state, items that were NOT flagged with a problem are automatically pre-checked as "พบแล้ว".
    - Only the problematic items remain unchecked, enabling Stock staff to quickly re-pick only the affected items and tick them off once found, without needing to re-verify the entire order.
 
-## D75 — Cashier Remove Damaged Items (2026-10-14)
+## D77 — Cashier Remove Damaged Items (2026-10-14)
 
 Owner instruction via `/grill-me`: "หากกรณี สินค้าชำรุด ให้ cashier สามารถเอาสินค้านั้นออกเพื่อดำเนินการต่อได้". Extends D64 and D74 (Cashier Reject).
 
@@ -1070,12 +1090,3 @@ Owner instruction via `/grill-me`: "หากกรณี สินค้าช�
    - `cashierRejectNotice` ignores events where `action === 'REMOVE_DAMAGED'`, preventing ghost reject notifications in Stock.
 4. **API Endpoint:**
    - `POST /api/sessions/:id/cashier/remove-damaged` accepting `CashierRemoveDamagedDto` `{ itemIds: string[], note?: string }`.
-
-
-
-
-
-
-
-
-

@@ -9,7 +9,7 @@ unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73/D74/D75 changes (2026-10-14).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73/D74/D75/D76/D77 changes (2026-10-14).
 
 ## 1. What the system is for
 
@@ -27,7 +27,7 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | --- | --- | --- |
 | **Session** | (a) **Customer Session** (`CustomerSession`), the business object. (b) **Login Session** (`LoginSession`), a cookie-auth record with an 8-hour idle timeout. | Always qualify: "Customer Session" or "Login Session". The API's `/sessions` = Customer Sessions; `/auth/*` = Login Sessions. |
 | **Stock** | (a) the **STOCK role** (warehouse/back-room staff). (b) the **Stock stage** of the workflow (`STOCK_REQUESTED`→`SENT_TO_CASHIER`). (c) `BranchInventory.stock`, an on-hand **quantity**. | Say "STOCK role", "stock stage", "stock quantity". |
-| **Accessories** | (a) **accessory options**: the fixed list (`Apple Pencil`, `Case`, …) stored as free text in `SessionAccessory.accessoryName` with a quantity. (b) the `Accessories` value of **ProductCategory** (D46), a real catalog LOB with SKUs and branch stock. | Main-device tabs exclude `Accessories` (D48); session add-ons are (a). They are not linked: an accessory option has no SKU or inventory row. |
+| **Accessories** | (a) **accessory options**: the fixed list (`Apple Pencil`, `Case`, …) stored as free text in `SessionAccessory.accessoryName` with a quantity. (b) the `Accessories` **Category** (D46, D68), a real catalog LOB with SKUs and branch stock. | Main-device tabs exclude `Accessories` (D48); session add-ons are (a). They are not linked: an accessory option has no SKU or inventory row. |
 | **Reason** | `CustomerSession.reason` / `otherReason` hold the **NOT_BUY result**, the **cancellation reason** *or* the **out-of-stock reason**, whichever ended the session. | docs/erd.md says NOT_BUY text and cancellation text "must not be merged". Code merges them into one column pair; `outcome` tells which one it is. See H-12. |
 | **Active** | `Staff.active`, `Branch.active` (account admin); `Product/ProductModel/ProductSku.active` (master catalog, cascades down, D42); `BranchInventory.active` (per-branch visibility, a.k.a. `branchActive` in API output). | A SKU is selectable by branch staff only if it, its model and its product are active **and** its `BranchInventory` row is active **and** stock > 0 (D41). |
 | **Confirmed / Confirmation** | `CustomerSession.confirmed` (boolean) + `productSelectionConfirmedAt`. Accepting the confirmation **is** the stock request (D51): one action, one timestamp. | There is no persisted `CONFIRMATION` state and no `stock_requested_at` (D51). |
@@ -53,7 +53,7 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected **at walk-in** (D56; supersedes requirements §6 "only after BUY", so NOT_BUY visits keep a phone too). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
 | Product Selection / Purchase data | The purchase being assembled: **main product** chosen via cascading dropdowns (Category → Model → Capacity → Color, D72), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
 | Main Product / Session item | Any number per session (D61, supersedes D8): a SKU and a quantity ≥ 1, each SKU once. `deducted` = the units FOUND really took off the shelf (0 while "stock unlimited" is on); a cancel gives back exactly that. The old `productId/modelId/skuId` columns on the session are history only. | `SessionItem` (`items` on every session response); dropped by partial fulfilment or `CHANGE_ITEMS` |
-| LOB / Category | `ProductCategory`: `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`. | enum `ProductCategory` |
+| LOB / Category | A `Category` row (D68), kept by ADMIN and added by the warroom sync (switched off until opened). The migration seeds `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`; `Product.category` stores the name. Other brands (HUAWEI …) get their own. | `Category`, `Product.category` (string) |
 | Ontop | Telco/partner add-on (`AIS`, `True`, `CATH`, `KTS`). Multi-select, no amount. | `SessionOntop.name` |
 | Points / Burn Point | Loyalty programs earned / redeemed (`MCard`, `The 1`, `UJOY`). Two separate lists. | `SessionPoint`, `SessionBurnPoint` |
 | Payment | Payment methods, multi-select, **no amounts**. The choices are the active rows of the back-office list `PaymentMethod` (D66; seeded `Cash`, `Transfer`, `SPayLater`, …; ADMIN adds, switches off, reorders, never renames); a session stores the name. | `SessionPayment.method`, `GET/POST/PUT /api/payment-methods` |

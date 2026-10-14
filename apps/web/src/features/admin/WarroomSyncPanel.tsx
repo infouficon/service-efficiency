@@ -16,11 +16,36 @@ interface WarroomCatalogSummary {
   /** New items that exist in the snapshot but were not created because the mode is not `on` */
   wouldCreate: number;
   updated: number;
+  /** parts warroom gave no category text for */
   skippedNoCategory: number;
-  /** `mapped` is null for a category SES has no rule for yet (it is also listed in `unmapped`) */
-  categories: { value: string; mapped: string | null; parts: number }[];
+  /** D68: parts of a category ADMIN has not switched on yet; they are created once the category is opened (absent in older runs) */
+  waitingForCategory?: number;
+  /** categories this run added to the SES list, switched off (absent in older runs) */
+  newCategories?: number;
+  /** `mapped` is the SES category; `status`: active = products are created, off = switched off, new = will be added switched off */
+  categories: {
+    value: string;
+    mapped: string | null;
+    parts: number;
+    status?: 'active' | 'off' | 'new';
+  }[];
   unmapped: { value: string; parts: number }[];
 }
+interface CatalogResetCounts {
+  sessions: number;
+  customers: number;
+  products: number;
+  models: number;
+  skus: number;
+  inventoryRows: number;
+}
+/** The word the API wants typed before it clears the old catalog and queue history (D68). */
+const RESET_CONFIRM = 'ล้างข้อมูล';
+const CATEGORY_STATUS: Record<string, string> = {
+  active: 'เปิดอยู่',
+  off: 'ปิดอยู่ (สินค้ายังไม่เข้า)',
+  new: 'ใหม่ (เพิ่มแบบปิดไว้)',
+};
 interface WarroomStockSummary {
   updatedRows: number;
   zeroedRows: number;
@@ -94,7 +119,7 @@ const MODES: Record<string, { label: string; short: string; hint: string }> = {
   on: {
     label: 'ใช้งาน',
     short: 'ใช้งาน',
-    hint: 'พนักงานเห็นสต็อกจาก warroom (หักจำนวนที่ SES จองไว้แล้ว) และระบบสร้างหรืออัปเดตสินค้า รุ่น และ SKU ที่มาจาก ERP ให้อัตโนมัติ',
+    hint: 'พนักงานเห็นสต็อกจาก warroom (หักจำนวนที่ SES จองไว้แล้ว) และระบบสร้างหรืออัปเดตสินค้า รุ่น และ SKU ที่มาจาก ERP ให้อัตโนมัติ เฉพาะหมวดที่เปิดอยู่ (หมวดใหม่จาก warroom จะปิดไว้ก่อน เปิดได้ที่เมนูหมวดหมู่สินค้า)',
   },
 };
 /** Labels of a mode the UI does not know yet fall back to the raw value. */
@@ -129,7 +154,7 @@ function formatAge(iso: string, now: number): string {
 }
 
 const catalogText = (c: WarroomCatalogSummary) =>
-  `สร้าง ${c.created} · อัปเดต ${c.updated}${c.wouldCreate ? ` · รอสร้าง ${c.wouldCreate}` : ''}`;
+  `สร้าง ${c.created} · อัปเดต ${c.updated}${c.wouldCreate ? ` · รอสร้าง ${c.wouldCreate}` : ''}${c.waitingForCategory ? ` · รอเปิดหมวด ${c.waitingForCategory}` : ''}`;
 
 const stockText = (s: WarroomStockSummary) =>
   `อัปเดต ${s.updatedRows} · ปรับเป็นศูนย์ ${s.zeroedRows}`;
@@ -227,6 +252,9 @@ function RunDetail({ run }: { run: WarroomRun }) {
   }
   const { catalog, stock, branches } = summary;
   const unmapped = catalog.unmapped ?? [];
+  const waitingCategories = (catalog.categories ?? []).filter(
+    (c) => c.status === 'off' || c.status === 'new',
+  );
   const unknownBranches = branches.unknown ?? [];
   return (
     <>
@@ -242,31 +270,39 @@ function RunDetail({ run }: { run: WarroomRun }) {
         {formatTime(summary.asOf)}
       </p>
 
-      {unmapped.length > 0 ? (
+      {waitingCategories.length > 0 && (
         <div className="warroom-unmapped">
           <strong>
-            หมวดสินค้าจาก warroom ที่ยังไม่ได้แมป ({unmapped.length})
+            หมวดจาก warroom ที่ยังปิดอยู่ใน SES ({waitingCategories.length})
           </strong>
           <p className="fine">
-            ยังไม่มีหมวดใน SES ที่ตรงกับหมวดเหล่านี้ (ข้ามไป{' '}
-            {catalog.skippedNoCategory.toLocaleString('th-TH')} รายการ)
+            สินค้าของหมวดเหล่านี้ (
+            {(catalog.waitingForCategory ?? 0).toLocaleString('th-TH')} รายการ)
+            ยังไม่ถูกสร้าง และพนักงานยังไม่เห็น เปิดหมวดที่ต้องการที่เมนู
+            หมวดหมู่สินค้า แล้วกด “ซิงก์ตอนนี้” สินค้าของหมวดนั้นจะเข้ามา
           </p>
           <ul className="warroom-chips">
-            {unmapped.slice(0, LIST_LIMIT).map((item, index) => (
+            {waitingCategories.slice(0, LIST_LIMIT).map((item, index) => (
               <li className="warroom-chip" key={`${item.value}:${index}`}>
                 {item.value}{' '}
                 <strong>{item.parts.toLocaleString('th-TH')}</strong>
               </li>
             ))}
           </ul>
-          {unmapped.length > LIST_LIMIT && (
-            <p className="fine">
-              +{unmapped.length - LIST_LIMIT} หมวดที่ไม่ได้แสดง
-            </p>
-          )}
         </div>
-      ) : (
-        <p className="fine">หมวดสินค้าจาก warroom แมปได้ครบทุกหมวด</p>
+      )}
+      {unmapped.length > 0 && (
+        <div className="warroom-unmapped">
+          <strong>
+            สินค้าที่ warroom ไม่ระบุหมวด ({unmapped.length})
+          </strong>
+          <p className="fine">
+            ข้ามไป {catalog.skippedNoCategory.toLocaleString('th-TH')} รายการ
+          </p>
+        </div>
+      )}
+      {waitingCategories.length === 0 && unmapped.length === 0 && (
+        <p className="fine">หมวดสินค้าจาก warroom เข้าหมวดใน SES ครบทุกหมวดที่เปิดอยู่</p>
       )}
 
       <Counters
@@ -283,7 +319,8 @@ function RunDetail({ run }: { run: WarroomRun }) {
           [run.dryRun ? 'จะสร้างใหม่' : 'สร้างใหม่', catalog.created],
           ['รอสร้างเมื่อเปิดโหมดใช้งาน', catalog.wouldCreate],
           [run.dryRun ? 'จะอัปเดต' : 'อัปเดต', catalog.updated],
-          ['ข้าม (ไม่มีหมวดที่ตรงกัน)', catalog.skippedNoCategory],
+          ['รอเปิดหมวด', catalog.waitingForCategory ?? 0],
+          ['ข้าม (warroom ไม่ระบุหมวด)', catalog.skippedNoCategory],
         ]}
       />
       <Counters
@@ -305,10 +342,11 @@ function RunDetail({ run }: { run: WarroomRun }) {
       <ListTable
         open
         title="การแมปหมวดสินค้า"
-        headers={['หมวดจาก warroom', 'หมวดใน SES', 'จำนวนสินค้า']}
+        headers={['หมวดจาก warroom', 'หมวดใน SES', 'สถานะหมวด', 'จำนวนสินค้า']}
         rows={(catalog.categories ?? []).map((c) => [
           c.value,
-          c.mapped ?? '— ยังไม่ได้แมป',
+          c.mapped ?? '— ไม่ระบุหมวด',
+          c.status ? (CATEGORY_STATUS[c.status] ?? c.status) : '—',
           c.parts,
         ])}
       />
@@ -333,6 +371,10 @@ export function WarroomSyncPanel() {
   // The run this admin started: its outcome is announced once the polled status shows it finished.
   const startedRunId = useRef<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  // D68: "clear the old catalog and queue history": counted first, then done on a typed confirmation
+  const [resetCounts, setResetCounts] = useState<CatalogResetCounts | null>(null);
+  const [resetTyped, setResetTyped] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
 
   // Bumping the counter reloads the status; only the latest request may write state.
   const [refreshCount, setRefreshCount] = useState(0);
@@ -404,6 +446,38 @@ export function WarroomSyncPanel() {
     } finally {
       reload();
       setBusy(false);
+    }
+  };
+
+  const countReset = async () => {
+    setResetBusy(true);
+    try {
+      const res = await api<{ counts: CatalogResetCounts }>(
+        '/admin/warroom-sync/reset-catalog?dryRun=true',
+        'POST',
+      );
+      setResetTyped('');
+      setResetCounts(res.counts);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'นับข้อมูลไม่สำเร็จ', 6000);
+    } finally {
+      setResetBusy(false);
+    }
+  };
+  const doReset = async () => {
+    setResetBusy(true);
+    try {
+      await api('/admin/warroom-sync/reset-catalog', 'POST', {
+        confirm: resetTyped.trim(),
+      });
+      setResetCounts(null);
+      setResetTyped('');
+      toast.success('ล้างสินค้าและประวัติคิวเดิมเรียบร้อย', 6000);
+      reload();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ล้างข้อมูลไม่สำเร็จ', 6000);
+    } finally {
+      setResetBusy(false);
     }
   };
 
@@ -526,6 +600,20 @@ export function WarroomSyncPanel() {
         )}
       </Panel>
 
+      <Panel title="ล้างสินค้าและประวัติคิวเดิม (ครั้งเดียวก่อนใช้ข้อมูลจริง)">
+        <p className="muted" style={{ marginTop: 0 }}>
+          ลบ <strong>สินค้า รุ่น SKU และสต็อกสาขาทั้งหมด</strong> รวมถึง{' '}
+          <strong>คิวทุกคิว (ประวัติ) ลูกค้า และเลขคิว</strong> เพื่อเริ่มใหม่ด้วยสินค้าจริงจาก warroom
+          ส่วนพนักงาน สาขา หมวดหมู่ ช่องทางชำระเงิน และการตั้งค่าไม่ถูกลบ
+          ลบแล้วย้อนกลับไม่ได้ (ควรสำรองฐานข้อมูลก่อน) ระบบจะนับให้ดูก่อน
+        </p>
+        <div className="actions">
+          <Button variant="secondary" disabled={resetBusy || status?.running} onClick={() => void countReset()}>
+            นับสิ่งที่จะถูกลบ
+          </Button>
+        </div>
+      </Panel>
+
       <Panel title="ประวัติการซิงก์สินค้าและสต็อกล่าสุด">
         {runs.length === 0 ? (
           <p>ยังไม่เคยซิงก์</p>
@@ -614,6 +702,51 @@ export function WarroomSyncPanel() {
         >
           <RunDetail key={selected.id} run={selected} />
         </Panel>
+      )}
+
+      {resetCounts && (
+        <Modal
+          title="ยืนยันการล้างสินค้าและประวัติคิวเดิม"
+          onClose={() => setResetCounts(null)}
+          maxWidth="520px"
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <AlertTriangle size={26} color="#dc2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div>
+              <p style={{ marginTop: 0 }}>จะลบข้อมูลต่อไปนี้ถาวร:</p>
+              <ul>
+                <li>คิว (ประวัติ session): <strong>{resetCounts.sessions.toLocaleString('th-TH')}</strong></li>
+                <li>ลูกค้า: <strong>{resetCounts.customers.toLocaleString('th-TH')}</strong></li>
+                <li>สินค้าหลัก: <strong>{resetCounts.products.toLocaleString('th-TH')}</strong> · รุ่น: <strong>{resetCounts.models.toLocaleString('th-TH')}</strong> · SKU: <strong>{resetCounts.skus.toLocaleString('th-TH')}</strong></li>
+                <li>แถวสต็อกสาขา: <strong>{resetCounts.inventoryRows.toLocaleString('th-TH')}</strong></li>
+              </ul>
+              <p className="fine">
+                หลังลบ ให้ตั้งโหมด warroom เป็น “ใช้งาน” แล้วกด “ซิงก์ตอนนี้” เพื่อนำสินค้าจริงเข้า
+              </p>
+            </div>
+          </div>
+          <label style={{ display: 'block', marginTop: '12px' }}>
+            พิมพ์ “{RESET_CONFIRM}” เพื่อยืนยัน
+            <input
+              value={resetTyped}
+              onChange={(e) => setResetTyped(e.target.value)}
+              placeholder={RESET_CONFIRM}
+              autoComplete="off"
+            />
+          </label>
+          <div className="actions" style={{ justifyContent: 'flex-end' }}>
+            <Button variant="secondary" onClick={() => setResetCounts(null)}>
+              ยกเลิก
+            </Button>
+            <Button
+              variant="danger"
+              disabled={resetBusy || resetTyped.trim() !== RESET_CONFIRM}
+              onClick={() => void doReset()}
+            >
+              ลบถาวร
+            </Button>
+          </div>
+        </Modal>
       )}
 
       {confirmLive && (

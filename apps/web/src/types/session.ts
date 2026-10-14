@@ -85,6 +85,20 @@ export interface PaymentMethod {
   position: number;
 }
 
+/** A product category (D68), kept by ADMIN and added by the warroom sync. The name is what products store. */
+export interface Category {
+  id: string;
+  name: string;
+  active: boolean;
+  position: number;
+  /** accessory-like: not offered as a main product in the picker */
+  isAccessory: boolean;
+  /** created by the warroom sync */
+  erpManaged: boolean;
+  /** back office list only */
+  productCount?: number;
+}
+
 /** Global ADMIN switches (D59). `updatedAt` / `updatedBy` are sent to ADMIN only. */
 export interface AppSettings {
   stockUnlimited: boolean;

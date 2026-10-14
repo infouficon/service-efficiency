@@ -7,7 +7,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Prisma, type ProductCategory } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { Client } from 'pg';
 import {
   ErpSyncService,
@@ -32,6 +32,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export type WarroomMode = 'off' | 'shadow' | 'on';
 const KIND = 'warroom-products';
+const RESET_KIND = 'catalog-reset';
 const TICK_MS = 60_000;
 const FIRST_TICK_MS = 15_000;
 const CHUNK = 500;
@@ -77,17 +78,25 @@ export interface WarroomRow {
 }
 export interface CatalogItem {
   partNo: string;
-  category: ProductCategory;
+  /** name of the SES category (D68): one of the Apple lines, or warroom's own category text */
+  category: string;
+  isAccessory: boolean;
   productName: string;
   modelName: string;
   skuName: string;
   color: string | null;
   storage: string | null;
+  upc: string | null;
 }
+/** How a warroom category text is handled (D68): which SES category it goes to, and whether SES has it switched on. */
 export interface CategoryTally {
   value: string;
-  mapped: ProductCategory | null;
+  /** the SES category name; null only when warroom gave no category text at all */
+  mapped: string | null;
+  isAccessory: boolean;
   parts: number;
+  /** `active` = products are created; `off` = exists but switched off; `new` = will be created switched off */
+  status?: 'active' | 'off' | 'new';
 }
 export interface WarroomSummary {
   mode: WarroomMode;
@@ -103,7 +112,12 @@ export interface WarroomSummary {
     created: number;
     wouldCreate: number;
     updated: number;
+    /** parts with no category text in warroom at all */
     skippedNoCategory: number;
+    /** parts of a category ADMIN has not switched on yet (D68): created when the category is opened */
+    waitingForCategory: number;
+    /** categories added to the SES list by this run (switched off) */
+    newCategories: number;
     /** parts whose SKU code collided with an existing one (case-insensitively) while being created */
     collisions: number;
     categories: CategoryTally[];
@@ -116,6 +130,16 @@ export interface WarroomSummary {
     transferUnits: number;
   };
 }
+/** What "clear the old catalog and queue history" removes (D68): shown first, then done only on a typed confirmation. */
+export interface CatalogResetCounts {
+  sessions: number;
+  customers: number;
+  products: number;
+  models: number;
+  skus: number;
+  inventoryRows: number;
+}
+export const RESET_CONFIRM = 'ล้างข้อมูล';
 export type WarroomRunDto = Omit<ErpSyncRunDto, 'summary'> & {
   summary: WarroomSummary | null;
 };
@@ -123,27 +147,38 @@ export type WarroomRunDto = Omit<ErpSyncRunDto, 'summary'> & {
 // ---------------------------------------------------------------------------
 // Pure rules (unit tested without a database)
 // ---------------------------------------------------------------------------
+/** A rule result: the SES category a warroom category text belongs to. */
+export interface CategoryRule {
+  name: string;
+  isAccessory: boolean;
+}
+
+/** Brands SES does not sell yet (D68): never folded into an Apple category by a keyword. */
+const OTHER_BRAND = /huawei|third[\s-]*party/;
+const APPLE_ACCESSORY =
+  /accessor|^apple\s+accy\b|airpods|airtag|beats|homepod|apple\s*tv|apple\s*care|applecare|\bcase\b|cover|charger|cable|adapter|pencil|keyboard|mouse|trackpad|strap|\bband\b|protect|film|glass/;
+
 /**
- * ERP category text -> SES ProductCategory. Accessory words win over device words ("iPhone Case" is an accessory).
- * Anything unrecognised is NOT guessed: the part is skipped and the text is listed in the run summary so the
- * rules can be fixed after the first dry run.
+ * ERP category text -> SES category (D68). The five Apple lines are recognised by words (accessory words win over device
+ * words: "iPhone Case" is an accessory; "Apple Accy" is Accessories). Anything else, and every other brand ("HUAWEI Phone",
+ * "Third Party Accy"), becomes a category of its own named exactly as warroom spells it; the sync adds it switched OFF so
+ * staff see nothing until ADMIN opens it. Only an empty text gives null.
  */
 export function mapCategory(
   value: string | null | undefined,
-): ProductCategory | null {
-  const v = (value ?? '').trim().toLowerCase();
-  if (!v) return null;
-  if (
-    /accessor|airpods|airtag|beats|homepod|apple\s*tv|apple\s*care|applecare|\bcase\b|cover|charger|cable|adapter|pencil|keyboard|mouse|trackpad|strap|\bband\b|protect|film|glass/.test(
-      v,
-    )
-  )
-    return 'Accessories';
-  if (/iphone/.test(v)) return 'iPhone';
-  if (/ipad/.test(v)) return 'iPad';
-  if (/watch/.test(v)) return 'Watch';
-  if (/mac/.test(v)) return 'Mac';
-  return null;
+): CategoryRule | null {
+  const raw = clean(value, 100);
+  if (!raw) return null;
+  const v = raw.toLowerCase();
+  if (!OTHER_BRAND.test(v)) {
+    if (APPLE_ACCESSORY.test(v))
+      return { name: 'Accessories', isAccessory: true };
+    if (/iphone/.test(v)) return { name: 'iPhone', isAccessory: false };
+    if (/ipad/.test(v)) return { name: 'iPad', isAccessory: false };
+    if (/watch/.test(v)) return { name: 'Watch', isAccessory: false };
+    if (/mac/.test(v)) return { name: 'Mac', isAccessory: false };
+  }
+  return { name: raw, isAccessory: /\baccy\b|accessor/.test(v) };
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -190,22 +225,32 @@ export function buildCatalog(rows: WarroomRow[]): {
     const subcat = first(rs, (r) => r.subcat);
     const subsubcat = first(rs, (r) => r.subsubcat);
     const name = first(rs, (r) => r.productName);
-    // The sub-category is only a fallback for an EMPTY category: an unrecognised category ("Huawei Phone") must not be
+    // The sub-category is only a fallback for an EMPTY category: a category of another brand ("Huawei Phone") must not be
     // rescued by a model-looking sub-category.
-    const category = clean(cat, 100) ? mapCategory(cat) : mapCategory(subcat);
+    const rule = clean(cat, 100) ? mapCategory(cat) : mapCategory(subcat);
     const label = clean(cat, 100) ?? clean(subcat, 100) ?? '(ว่าง)';
-    const key = `${label}\u0000${category ?? ''}`;
-    const t = tally.get(key) ?? { value: label, mapped: category, parts: 0 };
+    const key = `${label}\u0000${rule?.name ?? ''}`;
+    const t = tally.get(key) ?? {
+      value: label,
+      mapped: rule?.name ?? null,
+      isAccessory: rule?.isAccessory ?? false,
+      parts: 0,
+    };
     t.parts += 1;
     tally.set(key, t);
-    if (!category) {
+    if (!rule) {
       skippedNoCategory += 1;
       continue;
     }
     const productName = clean(subcat, 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
     items.push({
       partNo,
-      category,
+      category: rule.name,
+      isAccessory: rule.isAccessory,
+      upc: clean(
+        first(rs, (r) => r.upc),
+        64,
+      ),
       productName,
       modelName: clean(subsubcat, 191) ?? productName,
       skuName: shortName(name, partNo).slice(0, 191),
@@ -568,6 +613,23 @@ export class WarroomSyncService
     const parts = new Set(rows.map((r) => r.partNo));
     const { items, categories, skippedNoCategory } = buildCatalog(rows);
 
+    // The SES category list (D68): a category's products are only created while it is switched on; the ones warroom has and
+    // SES does not are added switched off. Names compare without regard to case, like the database.
+    const registry = await this.prisma.category.findMany({
+      select: { name: true, active: true },
+    });
+    const regByName = new Map(registry.map((c) => [norm(c.name), c]));
+    for (const item of items)
+      item.category = regByName.get(norm(item.category))?.name ?? item.category;
+    for (const c of categories) {
+      if (c.mapped === null) continue;
+      const known = regByName.get(norm(c.mapped));
+      c.mapped = known?.name ?? c.mapped;
+      c.status = known ? (known.active ? 'active' : 'off') : 'new';
+    }
+    const isOn = (category: string) =>
+      regByName.get(norm(category))?.active === true;
+
     // Branches: SES Branch.code is the ERP branch_code (D53). Unknown codes (HO, iMedic, Huawei...) are only counted.
     const sesBranches = await this.prisma.branch.findMany({
       select: { id: true, code: true, erpBranchId: true },
@@ -594,15 +656,18 @@ export class WarroomSyncService
         name: true,
         color: true,
         storage: true,
+        upc: true,
       },
     });
     const skuByCode = new Map(skuRows.map((s) => [norm(s.sku), s]));
     const existingParts = [...parts].filter((p) => skuByCode.has(norm(p)));
     // Only parts some SES branch has: a model that exists in HO / iMedic / Huawei only would just clutter the catalog.
     const knownParts = new Set(knownRows.map((r) => r.partNo));
-    const missing = items.filter(
+    const notYet = items.filter(
       (i) => !skuByCode.has(norm(i.partNo)) && knownParts.has(i.partNo),
     );
+    // Only parts of a switched-on category are created; the rest wait until ADMIN opens their category (D68).
+    const missing = notYet.filter((i) => isOn(i.category));
 
     // Safety. A broken warroom is more likely than a fire sale; `force` lifts these for a snapshot that is right.
     const covered = await this.prisma.branchInventory.findMany({
@@ -657,6 +722,8 @@ export class WarroomSyncService
         wouldCreate: mode === 'on' && !options.dryRun ? 0 : missing.length,
         updated: 0,
         skippedNoCategory,
+        waitingForCategory: notYet.length - missing.length,
+        newCategories: 0,
         collisions: 0,
         categories: categories.slice(0, NOTE_LIMIT),
         unmapped: categories
@@ -668,7 +735,11 @@ export class WarroomSyncService
     };
 
     // Stock numbers per (branch, SKU). In `shadow` only SKUs SES already has; in `on` the new ones too.
-    const wanted = new Set(mode === 'on' ? [...parts] : existingParts);
+    const wanted = new Set(
+      mode === 'on'
+        ? [...existingParts, ...missing.map((m) => m.partNo)]
+        : existingParts,
+    );
     const agg = new Map<
       string,
       { branchId: string; code: string; ready: number; transfer: number }
@@ -723,9 +794,34 @@ export class WarroomSyncService
         s?.erpManaged === true &&
         (s.name !== i.skuName ||
           (s.color ?? null) !== i.color ||
-          (s.storage ?? null) !== i.storage)
+          (s.storage ?? null) !== i.storage ||
+          (i.upc !== null && (s.upc ?? null) !== i.upc))
       );
     });
+    // New warroom categories join the SES list switched off (shadow or on), so ADMIN can open them later.
+    const fresh = new Map<string, CatalogItem>();
+    for (const item of items)
+      if (!regByName.has(norm(item.category)) && !fresh.has(norm(item.category)))
+        fresh.set(norm(item.category), item);
+    summary.catalog.newCategories = fresh.size;
+    if (!options.dryRun && fresh.size > 0) {
+      const last = await this.prisma.category.aggregate({
+        _max: { position: true },
+      });
+      let position = last._max.position ?? 0;
+      await this.prisma.category.createMany({
+        data: [...fresh.values()]
+          .sort((a, b) => a.category.localeCompare(b.category))
+          .map((c) => ({
+            name: c.category,
+            active: false,
+            isAccessory: c.isAccessory,
+            erpManaged: true,
+            position: (position += 1),
+          })),
+        skipDuplicates: true,
+      });
+    }
     if (mode === 'on') {
       if (options.dryRun) {
         summary.catalog.updated = wantUpdate.length;
@@ -868,6 +964,7 @@ export class WarroomSyncService
             name: item.skuName,
             color: item.color,
             storage: item.storage,
+            upc: item.upc,
             active: true,
             erpManaged: true,
           },
@@ -889,11 +986,82 @@ export class WarroomSyncService
       if (!sku) continue;
       await this.prisma.productSku.update({
         where: { id: sku.id },
-        data: { name: item.skuName, color: item.color, storage: item.storage },
+        data: {
+          name: item.skuName,
+          color: item.color,
+          storage: item.storage,
+          ...(item.upc !== null ? { upc: item.upc } : {}),
+        },
       });
       updated += 1;
     }
     return { created, updated, collisions };
+  }
+
+  /**
+   * ADMIN one-off (D68): starts from a clean slate before the real catalog comes from warroom. Removes every queue
+   * session (and what hangs on it), the customers, the queue counters, and every product / model / SKU with its branch
+   * stock. Staff, branches, categories, payment methods, customer types and settings stay. A dry run only counts.
+   * Irreversible, so a real run needs the typed confirmation and leaves a row in the run history.
+   */
+  async resetCatalog(
+    actorStaffId: string,
+    dryRun: boolean,
+    confirm: string | undefined,
+  ): Promise<{ dryRun: boolean; counts: CatalogResetCounts }> {
+    if (!dryRun && (confirm ?? '').trim() !== RESET_CONFIRM)
+      throw new BadRequestException(`พิมพ์ "${RESET_CONFIRM}" เพื่อยืนยัน`);
+    if (this.running)
+      throw new ConflictException('กำลังซิงก์ warroom อยู่ รอให้เสร็จก่อน');
+    this.running = true; // a sync must not write stock rows while the catalog is being removed
+    try {
+      if (await this.othersRunning())
+        throw new ConflictException(
+          'มีรอบซิงก์ warroom ที่ยังไม่จบอยู่ (อาจรันอยู่ที่ container อื่น)',
+        );
+      const [sessions, customers, products, models, skus, inventoryRows] =
+        await Promise.all([
+          this.prisma.customerSession.count(),
+          this.prisma.customer.count(),
+          this.prisma.product.count(),
+          this.prisma.productModel.count(),
+          this.prisma.productSku.count(),
+          this.prisma.branchInventory.count(),
+        ]);
+      const counts = { sessions, customers, products, models, skus, inventoryRows };
+      if (dryRun) return { dryRun, counts };
+      await this.prisma.$transaction(
+        async (tx) => {
+          // children first: sessions point at products, and a SKU at its model
+          await tx.customerSession.deleteMany();
+          await tx.customer.deleteMany();
+          await tx.dailyCounter.deleteMany();
+          await tx.productSku.deleteMany(); // takes the branch stock with it
+          await tx.productModel.deleteMany();
+          await tx.product.deleteMany();
+        },
+        { timeout: 120_000, maxWait: 10_000 },
+      );
+      const now = new Date();
+      await this.prisma.erpSyncRun.create({
+        data: {
+          kind: RESET_KIND,
+          slot: `reset-${now.toISOString()}-${Math.random().toString(16).slice(2, 6)}`,
+          trigger: 'manual',
+          actorStaffId,
+          startedAt: now,
+          finishedAt: now,
+          ok: true,
+          summary: counts as unknown as Prisma.InputJsonValue,
+        },
+      });
+      this.log.warn(
+        `catalog reset by ${actorStaffId}: ${JSON.stringify(counts)}`,
+      );
+      return { dryRun, counts };
+    } finally {
+      this.running = false;
+    }
   }
 
   async status(): Promise<{

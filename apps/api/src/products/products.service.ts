@@ -1,6 +1,10 @@
-import { ConflictException, Injectable, OnModuleInit } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ProductCategory } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
@@ -121,7 +125,6 @@ export class ProductsService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.seedCatalogIfEmpty();
     await this.syncBranchInventory();
   }
 
@@ -164,188 +167,6 @@ export class ProductsService implements OnModuleInit {
     }
   }
 
-  async seedCatalogIfEmpty() {
-    try {
-      const count = await this.prisma.product.count();
-      if (count > 0) return;
-
-      const catalog = [
-        {
-          category: 'iPhone' as const,
-          name: 'iPhone 16 Pro',
-          models: [
-            {
-              name: 'iPhone 16 Pro',
-              skus: [
-                { sku: 'IP16P-128-NAT', name: '128GB Natural Titanium', storage: '128GB', color: 'Natural Titanium' },
-                { sku: 'IP16P-256-BLK', name: '256GB Black Titanium', storage: '256GB', color: 'Black Titanium' },
-                { sku: 'IP16P-512-WHT', name: '512GB White Titanium', storage: '512GB', color: 'White Titanium' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'iPhone' as const,
-          name: 'iPhone 16',
-          models: [
-            {
-              name: 'iPhone 16',
-              skus: [
-                { sku: 'IP16-128-BLK', name: '128GB Black', storage: '128GB', color: 'Black' },
-                { sku: 'IP16-256-BLU', name: '256GB Ultramarine', storage: '256GB', color: 'Ultramarine' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'iPad' as const,
-          name: 'iPad Pro 11"',
-          models: [
-            {
-              name: 'iPad Pro (M4) 11"',
-              skus: [
-                { sku: 'IPAD-PRO11-256-SPB', name: '256GB Space Black', storage: '256GB', color: 'Space Black' },
-                { sku: 'IPAD-PRO11-512-SIL', name: '512GB Silver', storage: '512GB', color: 'Silver' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'iPad' as const,
-          name: 'iPad Air 11"',
-          models: [
-            {
-              name: 'iPad Air (M2) 11"',
-              skus: [
-                { sku: 'IPAD-AIR11-128-BLU', name: '128GB Blue', storage: '128GB', color: 'Blue' },
-                { sku: 'IPAD-AIR11-256-PUR', name: '256GB Purple', storage: '256GB', color: 'Purple' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'Mac' as const,
-          name: 'MacBook Air 13"',
-          models: [
-            {
-              name: 'MacBook Air (M3) 13"',
-              skus: [
-                { sku: 'MBA13-256-MID', name: '256GB Midnight', storage: '256GB', color: 'Midnight' },
-                { sku: 'MBA13-512-SLR', name: '512GB Starlight', storage: '512GB', color: 'Starlight' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'Watch' as const,
-          name: 'Apple Watch Series 10',
-          models: [
-            {
-              name: 'Apple Watch Series 10 (GPS)',
-              skus: [
-                { sku: 'AWS10-42-AL-BLK', name: '42mm Jet Black', storage: '64GB', color: 'Jet Black' },
-                { sku: 'AWS10-46-AL-RSG', name: '46mm Rose Gold', storage: '64GB', color: 'Rose Gold' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'Accessories' as const,
-          name: 'Power & Cables',
-          models: [
-            {
-              name: 'Apple 20W USB-C Power Adapter',
-              skus: [
-                { sku: 'ACC-20W-ADPT', name: '20W Power Adapter', storage: '', color: 'White' },
-              ],
-            },
-            {
-              name: '60W USB-C Charge Cable (1m)',
-              skus: [
-                { sku: 'ACC-USBC-1M', name: 'USB-C Cable (1m)', storage: '', color: 'White' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'Accessories' as const,
-          name: 'AirPods',
-          models: [
-            {
-              name: 'AirPods 4',
-              skus: [
-                { sku: 'ACC-AIRPODS4-STD', name: 'AirPods 4 Standard', storage: '', color: 'White' },
-                { sku: 'ACC-AIRPODS4-ANC', name: 'AirPods 4 with ANC', storage: '', color: 'White' },
-              ],
-            },
-          ],
-        },
-        {
-          category: 'Accessories' as const,
-          name: 'Cases & Protection',
-          models: [
-            {
-              name: 'iPhone 16 Pro Clear Case with MagSafe',
-              skus: [
-                { sku: 'ACC-IP16P-CLRCASE', name: 'Clear Case MagSafe', storage: '', color: 'Clear' },
-              ],
-            },
-          ],
-        },
-      ];
-
-      for (const item of catalog) {
-        const existing = await this.prisma.product.findFirst({
-          where: { name: item.name },
-        });
-        if (existing) continue;
-
-        const product = await this.prisma.product.create({
-          data: {
-            category: item.category,
-            name: item.name,
-            active: true,
-          },
-        });
-
-        for (const m of item.models) {
-          const model = await this.prisma.productModel.create({
-            data: {
-              productId: product.id,
-              name: m.name,
-              active: true,
-            },
-          });
-
-            for (const s of m.skus) {
-              const createdSku = await this.prisma.productSku.create({
-                data: {
-                  modelId: model.id,
-                  sku: s.sku,
-                  name: s.name,
-                  color: s.color,
-                  storage: s.storage,
-                  active: true,
-                },
-              });
-
-              // Give initial stock (5 units) so staff can immediately select and test without out-of-stock lock
-              const branches = await this.prisma.branch.findMany({ select: { id: true } });
-              for (const b of branches) {
-                await this.prisma.branchInventory.upsert({
-                  where: { branchId_skuId: { branchId: b.id, skuId: createdSku.id } },
-                  create: { branchId: b.id, skuId: createdSku.id, stock: 5, active: true },
-                  update: {},
-                });
-            }
-          }
-        }
-      }
-    } catch {
-      // Ignore if DB connection fails during build time
-    }
-  }
-
   async findByBranch(branchId: string) {
     await this.syncBranchInventory();
     const erpOn = this.erpOn();
@@ -353,7 +174,7 @@ export class ProductsService implements OnModuleInit {
     const unlimited = await this.settings.stockUnlimited();
 
     const products = await this.prisma.product.findMany({
-      where: { active: true },
+      where: { active: true, category: { in: await this.activeCategoryNames() } },
       include: {
         models: {
           where: { active: true },
@@ -433,7 +254,7 @@ export class ProductsService implements OnModuleInit {
 
   async findAll() {
     return this.prisma.product.findMany({
-      where: { active: true },
+      where: { active: true, category: { in: await this.activeCategoryNames() } },
       include: {
         models: {
           where: { active: true },
@@ -571,10 +392,30 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async createProduct(data: { category: ProductCategory; name: string }) {
+  /** The names of the active categories (D68): staff only see products of these. */
+  private async activeCategoryNames(): Promise<string[]> {
+    const rows = await this.prisma.category.findMany({
+      where: { active: true },
+      select: { name: true },
+    });
+    return rows.map((c) => c.name);
+  }
+
+  /** The stored spelling of a category name; a product can only be put in a category that exists (D68). */
+  private async categoryName(name: string): Promise<string> {
+    const found = await this.prisma.category.findUnique({ where: { name } });
+    if (!found)
+      throw new BadRequestException(
+        `ไม่พบหมวดหมู่ "${name}" เพิ่มหมวดหมู่ก่อนที่หน้า หมวดหมู่สินค้า`,
+      );
+    return found.name;
+  }
+
+  async createProduct(data: { category: string; name: string }) {
+    const category = await this.categoryName(data.category);
     return this.prisma.product.create({
       data: {
-        category: data.category,
+        category,
         name: data.name,
         active: true,
       },
@@ -586,7 +427,9 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async updateProduct(id: string, data: { category?: ProductCategory; name?: string; active?: boolean }) {
+  async updateProduct(id: string, data: { category?: string; name?: string; active?: boolean }) {
+    if (data.category !== undefined)
+      data = { ...data, category: await this.categoryName(data.category) };
     if (this.erpOn()) {
       const cur = await this.prisma.product.findUnique({
         where: { id },

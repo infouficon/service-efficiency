@@ -24,7 +24,8 @@ import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { StockUnlimitedBanner } from '../admin/StockUnlimitedPanel';
 import { api } from '../../services/api';
-import type { MockUser } from '../../types/session';
+import { fetchCategoriesApi } from '../../services/sessionApi';
+import type { Category, MockUser } from '../../types/session';
 import type { ManagedBranch } from '../../types/accounts';
 
 export interface BranchInventoryItem {
@@ -49,6 +50,8 @@ export interface SkuItem {
   name: string;
   color?: string | null;
   storage?: string | null;
+  /** barcode from warroom (D68), next to the part number in `sku` */
+  upc?: string | null;
   active: boolean;
   /** Created and kept in sync from the ERP: only `active` can be changed here. */
   erpManaged?: boolean;
@@ -65,7 +68,8 @@ export interface ModelItem {
 
 export interface ProductItem {
   id: string;
-  category: 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
+  /** the name of a category (D68) */
+  category: string;
   name: string;
   active: boolean;
   erpManaged?: boolean;
@@ -107,7 +111,8 @@ interface ProductWorkspaceProps {
   onSubViewChange?: (view: 'MAIN' | 'STOCK') => void;
 }
 
-type CategoryTab = 'ALL' | 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
+/** `ALL`, or the name of a category (D68) */
+type CategoryTab = string;
 
 export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWorkspaceProps) {
   const toast = useToast();
@@ -133,6 +138,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('ALL');
+  // D68: the categories ADMIN keeps (a manager reads the active ones); the five Apple lines until they load
+  const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
 
   // Branch Stock Breakdown Modal
@@ -186,7 +193,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   const [productModal, setProductModal] = useState<{
     open: boolean;
     editingId?: string;
-    category: 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories';
+    category: string;
     name: string;
     active: boolean;
   }>({
@@ -285,6 +292,20 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         if (active) setLoading(false);
       });
 
+    return () => {
+      active = false;
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    let active = true;
+    fetchCategoriesApi(isAdmin)
+      .then((list) => {
+        if (active) setCategories(list);
+      })
+      .catch(() => {
+        // the tabs and the category select then show only the categories of the loaded products
+      });
     return () => {
       active = false;
     };
@@ -507,6 +528,27 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     }
   };
 
+  // The tabs: every active category, plus a switched-off one that still has products (so the back office can find them).
+  const tabCategories = useMemo(() => {
+    const names = categories
+      .filter((c) => c.active || (c.productCount ?? 0) > 0)
+      .map((c) => c.name);
+    for (const p of products) if (!names.includes(p.category)) names.push(p.category);
+    return names;
+  }, [categories, products]);
+  const activeCategoryNames = useMemo(
+    () => categories.filter((c) => c.active).map((c) => c.name),
+    [categories],
+  );
+  // The category select of the product form: the active categories, plus the one the product being edited already has.
+  const categoryChoices = useMemo(
+    () =>
+      activeCategoryNames.includes(productModal.category) || !productModal.category
+        ? activeCategoryNames
+        : [...activeCategoryNames, productModal.category],
+    [activeCategoryNames, productModal.category],
+  );
+
   // Filter products by category and search
   const filteredProducts = products.filter((p) => {
     if (categoryTab !== 'ALL' && p.category !== categoryTab) return false;
@@ -536,6 +578,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           const query = search.toLowerCase();
           const match =
             s.sku.toLowerCase().includes(query) ||
+            (s.upc ?? '').toLowerCase().includes(query) ||
             s.name.toLowerCase().includes(query) ||
             p.name.toLowerCase().includes(query) ||
             m.name.toLowerCase().includes(query);
@@ -581,7 +624,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
             onClick={() =>
               setProductModal({
                 open: true,
-                category: categoryTab !== 'ALL' ? categoryTab : 'iPhone',
+                category: categoryTab !== 'ALL' ? categoryTab : (activeCategoryNames[0] ?? 'iPhone'),
                 name: '',
                 active: true,
               })
@@ -616,8 +659,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         }}
       >
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="category-tabs" style={{ display: 'flex', gap: '0.5rem' }}>
-            {(['ALL', 'iPhone', 'iPad', 'Mac', 'Watch', 'Accessories'] as CategoryTab[]).map((cat) => (
+          <div className="category-tabs" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {['ALL', ...tabCategories].map((cat) => (
               <button
                 key={cat}
                 className={`tab-btn ${categoryTab === cat ? 'active' : ''}`}
@@ -626,6 +669,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               >
                 {getCategoryIcon(cat)}
                 {cat === 'ALL' ? 'ทั้งหมด' : cat}
+                {cat !== 'ALL' && categories.some((c) => c.name === cat && !c.active) && (
+                  <span className="muted fine">(ปิด)</span>
+                )}
               </button>
             ))}
           </div>
@@ -848,6 +894,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                         <td>
                           <strong style={{ color: '#0f172a' }}>{sku.sku}</strong>
                           {sku.erpManaged && <ErpBadge />}
+                          {sku.upc && <div className="fine muted">UPC {sku.upc}</div>}
                         </td>
                         <td>
                           <div style={{ fontWeight: 600 }}>
@@ -1111,15 +1158,15 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 onChange={(e) =>
                   setProductModal({
                     ...productModal,
-                    category: e.target.value as 'iPhone' | 'iPad' | 'Mac' | 'Watch' | 'Accessories',
+                    category: e.target.value,
                   })
                 }
               >
-                <option value="iPhone">iPhone</option>
-                <option value="iPad">iPad</option>
-                <option value="Mac">Mac</option>
-                <option value="Watch">Watch</option>
-                <option value="Accessories">Accessories</option>
+                {categoryChoices.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
               </select>
             </label>
             <label>

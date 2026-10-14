@@ -471,6 +471,17 @@ export function App({
                       >
                         <Wallet size={14} /> <span>ช่องทางชำระเงิน</span>
                       </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'categories' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('categories');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Layers size={14} /> <span>หมวดหมู่สินค้า</span>
+                      </button>
                     </>
                   )}
                 </div>

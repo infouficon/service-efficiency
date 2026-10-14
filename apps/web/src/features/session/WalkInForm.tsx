@@ -1,46 +1,21 @@
-import { useEffect, useState, type FormEvent } from 'react';
-import { Ticket } from 'lucide-react';
-import { Button, Notice } from '../../components/ui';
-import { fetchCustomerTypesApi } from '../../services/sessionApi';
-import type { CustomerType } from '../../types/session';
+import { useState, type FormEvent } from 'react';
+import { UserCheck } from 'lucide-react';
+import { Button } from '../../components/ui';
 import { phoneIsValid } from './workflow';
 
 /**
- * Step 1 of a walk-in (D56, D57): the customer's phone number and customer type. Submitting creates the
- * session, and the server hands out the queue number ("คิว A012") that staff use to call the customer.
+ * Step 1 of a walk-in (D56, D68, D70): the customer's phone number. Submitting creates the
+ * session directly in PRODUCT_SELECTION. The queue number is allocated later at confirmation.
  */
 export function WalkInForm({
   busy,
   onSubmit,
 }: {
   busy: boolean;
-  onSubmit: (phone: string, customerTypeId?: string) => void;
+  onSubmit: (phone: string) => void;
 }) {
   const [phone, setPhone] = useState('');
   const [attempted, setAttempted] = useState(false);
-  const [types, setTypes] = useState<CustomerType[] | null>(null);
-  const [typeId, setTypeId] = useState('');
-  const [loadError, setLoadError] = useState('');
-
-  useEffect(() => {
-    let active = true;
-    fetchCustomerTypesApi()
-      .then((list) => {
-        if (!active) return;
-        setTypes(list);
-        // the list comes in letter order: the first one is the default type
-        setTypeId((current) => current || list[0]?.id || '');
-      })
-      .catch((err: unknown) => {
-        if (active)
-          setLoadError(
-            err instanceof Error ? err.message : 'โหลดประเภทลูกค้าไม่สำเร็จ',
-          );
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -48,7 +23,7 @@ export function WalkInForm({
       setAttempted(true);
       return;
     }
-    onSubmit(phone, typeId || undefined);
+    onSubmit(phone);
   };
 
   return (
@@ -77,38 +52,15 @@ export function WalkInForm({
       >
         {attempted && !phoneIsValid(phone)
           ? `กรุณากรอกตัวเลข 0–9 ให้ครบ 10 หลัก (ขณะนี้ ${phone.length}/10)`
-          : 'เริ่มที่เบอร์โทรลูกค้า แล้วเลือกประเภทลูกค้าเพื่อรับคิว'}
+          : 'กรอกเบอร์โทรศัพท์ลูกค้าเพื่อเริ่มให้บริการ'}
       </p>
 
-      <fieldset className="type-picker">
-        <legend>ประเภทลูกค้า</legend>
-        {loadError && <Notice error>{loadError}</Notice>}
-        {types === null && !loadError && (
-          <span className="fine">กำลังโหลด…</span>
-        )}
-        {types?.map((type) => (
-          <button
-            type="button"
-            key={type.id}
-            className={`type-card ${typeId === type.id ? 'selected' : ''}`}
-            aria-pressed={typeId === type.id}
-            onClick={() => setTypeId(type.id)}
-          >
-            <span className="type-letter">{type.letter}</span>
-            <span className="type-name">{type.name}</span>
-            {type.description && (
-              <span className="type-description">{type.description}</span>
-            )}
-          </button>
-        ))}
-      </fieldset>
-
-      <Button type="submit" size="lg" disabled={busy || types === null}>
+      <Button type="submit" size="lg" disabled={busy}>
         <span
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
-          <Ticket size={18} />
-          {busy ? 'กำลังรับคิว…' : 'รับคิว'}
+          <UserCheck size={18} />
+          {busy ? 'กำลังเริ่มบริการ…' : 'เริ่มบริการ'}
         </span>
       </Button>
     </form>

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   User as UserIcon,
   Plus,
@@ -23,6 +24,7 @@ import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
 import { WalkInForm } from './WalkInForm';
+import { ReceiptSheet, nowText } from './Receipt';
 import {
   advance,
   confirmSelection,
@@ -104,6 +106,7 @@ export function StaffWorkspace({
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [printSession, setPrintSession] = useState<MockSession | null>(null);
 
   // Filter staff's branch sessions for today
   const branchSessions = sessions.filter((s) => {
@@ -167,11 +170,11 @@ export function StaffWorkspace({
     }
   };
 
-  const startNewWalkIn = async (phone: string, customerTypeId?: string) => {
+  const startNewWalkIn = async (phone: string) => {
     setBusy(true);
     setError('');
     try {
-      const newS = await createWalkInApi(user.branchCode, phone, customerTypeId);
+      const newS = await createWalkInApi(user.branchCode, phone);
       onAddSession(newS);
       setActiveSessionRef(newS.reference);
       setForm('normal');
@@ -240,14 +243,19 @@ export function StaffWorkspace({
     setBusy(true);
     setError('');
     try {
+      let updated: MockSession;
       if (activeSession.id) {
-        const updated = await confirmPurchaseApi(activeSession.id);
+        updated = await confirmPurchaseApi(activeSession.id);
         onUpdateSession(updated);
       } else {
-        const updated = confirmSelection(activeSession, new Date().toISOString());
+        updated = confirmSelection(activeSession, new Date().toISOString());
         onUpdateSession(updated);
       }
       setForm('normal');
+      setPrintSession(updated);
+      setTimeout(() => {
+        window.print();
+      }, 150);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ยืนยันการสั่งซื้อไม่สำเร็จ');
     } finally {
@@ -384,7 +392,16 @@ export function StaffWorkspace({
                     <AlertTriangle size={16} color="#dc2626" />
                     ฝ่ายคลัง (Stock) แจ้งเตือน:
                   </strong>{' '}
-                  คิว <strong>{ps.queue}</strong> ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
+                  {ps.queueNo != null ? (
+                    <>
+                      คิว <strong>{ps.queue}</strong>
+                    </>
+                  ) : (
+                    <>
+                      ลูกค้า <strong>{ps.phone || ps.reference}</strong>
+                    </>
+                  )}{' '}
+                  ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
                   มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
                 </span>
                 <Button
@@ -419,7 +436,9 @@ export function StaffWorkspace({
                 }}
               >
                 <div className="card-top">
-                  <span className="card-ref">คิว {s.queue}</span>
+                  <span className="card-ref">
+                    {s.queueNo != null ? `คิว ${s.queue}` : `ลูกค้า ${s.phone || s.reference}`}
+                  </span>
                   {s.stockPendingReview ? (
                     <span
                       className="status-tag status-outcome"
@@ -445,7 +464,7 @@ export function StaffWorkspace({
                 <div className="card-meta">
                   <span>
                     ผู้ดูแล: {s.staffId}
-                    {s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
+                    {s.queueNo != null && s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
                   </span>
                   <span>{s.phone || 'ยังไม่มีเบอร์'}</span>
                 </div>
@@ -476,16 +495,20 @@ export function StaffWorkspace({
                     <ArrowLeft size={14} /> รายการ Session ({branchSessions.length})
                   </button>
                   <span className="eyebrow">
-                    QUEUE · {activeSession.branchName}
+                    {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
                   </span>
-                  <h2 className="queue-title">คิว {activeSession.queue}</h2>
+                  <h2 className="queue-title">
+                    {activeSession.queueNo != null
+                      ? `คิว ${activeSession.queue}`
+                      : `ลูกค้า ${activeSession.phone || activeSession.reference}`}
+                  </h2>
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>
                       ซื้อใหม่ (ใช้คิวเดิม)
                     </span>
                   )}
                   <span className="muted">
-                    {activeSession.customerTypeName
+                    {activeSession.queueNo != null && activeSession.customerTypeName
                       ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
                       : ''}
                     Customer Phone ·{' '}
@@ -560,10 +583,11 @@ export function StaffWorkspace({
                           <div className="rebuy-box">
                             <p>
                               <strong>ลูกค้าต้องการเปลี่ยนสินค้า</strong> — ซื้อใหม่ได้ทันที
-                              โดยดึงข้อมูลเดิมมาแก้ไข และใช้คิว {activeSession.queue} เดิม
+                              โดยดึงข้อมูลเดิมมาแก้ไข
+                              {activeSession.queueNo != null ? ` และใช้คิว ${activeSession.queue} เดิม` : ''}
                             </p>
                             <Button onClick={handleRebuy} disabled={busy}>
-                              ซื้อใหม่ (คิว {activeSession.queue})
+                              {activeSession.queueNo != null ? `ซื้อใหม่ (คิว ${activeSession.queue})` : 'ซื้อใหม่'}
                             </Button>
                           </div>
                         )}
@@ -800,6 +824,11 @@ export function StaffWorkspace({
           )}
         </div>
       </div>
+      {printSession &&
+        createPortal(
+          <ReceiptSheet session={printSession} printedAt={nowText()} />,
+          document.body,
+        )}
     </div>
   );
 }

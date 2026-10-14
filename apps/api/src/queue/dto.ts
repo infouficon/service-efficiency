@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsOptional,
   IsString,
@@ -31,6 +32,26 @@ export class CustomerTypeCreateDto {
   @IsString()
   @MaxLength(191)
   description?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  paymentMethods?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ontop?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  points?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  burnPoints?: string[];
 }
 
 /** The letter never changes after creation: queue numbers already given out carry it. */
@@ -52,4 +73,24 @@ export class CustomerTypeUpdateDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  paymentMethods?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  ontop?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  points?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  burnPoints?: string[];
 }

@@ -55,18 +55,18 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
     });
 
     await t.test(
-      'the first walk-in of the day is A001 and keeps its phone, customer and type',
+      'walk-in starts with phone, customer and no queue number (D70)',
       async () => {
         const res = await walkIn({ phone: '0999900001' });
         assert.equal(res.status, 201, JSON.stringify(res.data));
         assert.equal(
           res.data.queueLetter,
-          'A',
-          'default = the active type with the lowest letter',
+          null,
+          'queue number is allocated at confirmation, not at walk-in (D70)',
         );
-        assert.equal(res.data.queueNo, 1);
-        assert.equal(res.data.customerTypeId, typeA.id);
-        assert.equal(res.data.customerType.letter, 'A');
+        assert.equal(res.data.queueNo, null);
+        assert.equal(res.data.customerTypeId, null);
+        assert.equal(res.data.customerType, null);
         assert.equal(res.data.phone, '0999900001');
         assert.ok(res.data.customerId);
         assert.equal(res.data.state, 'PRODUCT_SELECTION');
@@ -74,7 +74,6 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
         assert.match(res.data.reference, /^SES-\d{8}-\d{6}$/);
         assert.equal(res.data.events.length, 2);
         assert.equal(res.data.events[0].eventType, 'SESSION_CREATED');
-        assert.equal(res.data.events[0].metadata.queue, 'A001');
         assert.equal(res.data.events[1].eventType, 'PRODUCT_SELECTION_STARTED');
         const customer = await db.customer.findUnique({
           where: { phone: '0999900001' },
@@ -84,52 +83,36 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
     );
 
     await t.test(
-      'numbers run per branch, per type, per day; the same phone is the same customer',
+      'walk-in keeps the same customer for the same phone; branch is assigned',
       async () => {
         const second = await walkIn({
           phone: '0999900001',
-          customerTypeId: typeA.id,
         });
-        assert.equal(second.data.queueNo, 2);
-        const firstB = await walkIn({
-          phone: '0999900002',
-          customerTypeId: typeB.id,
-        });
-        assert.equal(firstB.data.queueLetter, 'B');
-        assert.equal(firstB.data.queueNo, 1, 'B has its own running number');
-        const thirdA = await walkIn({ phone: '0999900003' });
-        assert.equal(thirdA.data.queueNo, 3);
+        assert.equal(second.data.queueNo, null);
+        const otherBranch = await walkIn({ phone: '0999900004' }, 'staffB');
+        assert.equal(otherBranch.status, 201);
+        assert.equal(otherBranch.data.queueNo, null);
+        assert.equal(otherBranch.data.branchId, branches.b.id);
         assert.equal(
           second.data.customerId,
           (await db.customer.findUnique({ where: { phone: '0999900001' } })).id,
         );
-        const otherBranch = await walkIn({ phone: '0999900004' }, 'staffB');
-        assert.equal(otherBranch.status, 201);
-        assert.equal(otherBranch.data.queueNo, 1, 'another branch starts at 1');
-        assert.equal(otherBranch.data.branchId, branches.b.id);
       },
     );
 
     await t.test(
-      'parallel walk-ins never collide on the queue number or the reference (H-05)',
+      'parallel walk-ins never collide on the reference (H-05)',
       async () => {
         const results = await Promise.all(
           Array.from({ length: 8 }, (_, i) =>
             walkIn({
               phone: `09999001${String(i).padStart(2, '0')}`,
-              customerTypeId: typeB.id,
             }),
           ),
         );
         assert.deepEqual(
           results.map((r) => r.status),
           Array(8).fill(201),
-        );
-        const nos = results.map((r) => r.data.queueNo).sort((x, y) => x - y);
-        assert.deepEqual(
-          nos,
-          [2, 3, 4, 5, 6, 7, 8, 9],
-          'B continues after B001, no gaps, no duplicates',
         );
         const refs = new Set(results.map((r) => r.data.reference));
         assert.equal(refs.size, 8);
@@ -210,51 +193,36 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
     );
 
     await t.test(
-      'a NOT_BUY visit keeps the phone given at the start',
+      'a cancelled visit keeps the phone given at the start',
       async () => {
         const created = await walkIn({ phone: '0999900011' });
         const id = created.data.id;
-        for (const action of ['startDemo', 'endDemo']) {
-          assert.equal(
-            (
-              await request(
-                `/sessions/${id}/step`,
-                'POST',
-                { action },
-                cookies.staff,
-              )
-            ).status,
-            201,
-          );
-        }
         const done = await request(
-          `/sessions/${id}/decision/not-buy`,
+          `/sessions/${id}/cancel`,
           'POST',
-          { reason: 'ราคา' },
+          { reason: 'ลูกค้าเปลี่ยนใจ' },
           cookies.staff,
         );
         assert.equal(done.status, 201, JSON.stringify(done.data));
-        assert.equal(done.data.outcome, 'NOT_BUY');
+        assert.equal(done.data.outcome, 'CUSTOMER_CANCELLED');
         assert.equal(done.data.phone, '0999900011');
         assert.ok(done.data.customerId);
       },
     );
 
-    await t.test('list and detail carry the queue fields', async () => {
+    await t.test('list and detail carry the session fields', async () => {
       const list = await request('/sessions', 'GET', undefined, cookies.staff);
       assert.equal(list.status, 200);
-      const row = list.data.find(
-        (s) => s.queueLetter === 'B' && s.queueNo === 1,
-      );
+      const row = list.data[0];
       assert.ok(row);
-      assert.equal(row.customerType.name, typeB.name);
       const detail = await request(
         `/sessions/${row.id}`,
         'GET',
         undefined,
         cookies.staff,
       );
-      assert.equal(detail.data.queueNo, 1);
+      assert.equal(detail.status, 200);
+      assert.equal(detail.data.id, row.id);
       const byRef = await request(
         `/sessions/${row.reference}`,
         'GET',
@@ -495,6 +463,76 @@ test('customer types: everyone reads, only ADMIN manages, letters fill A-Z in or
               data: { active: true },
             });
         }
+      },
+    );
+
+    await t.test(
+      'payment methods, ontop, points, and burn points auto-classify session to that type (D69, D70)',
+      async () => {
+        const types = (await list('admin')).data;
+        const typeB = types.find((x) => x.letter === 'B');
+        const typeA = types.find((x) => x.letter === 'A');
+        assert.ok(typeB && typeA);
+
+        const updated = await request(
+          `/customer-types/${typeB.id}`,
+          'PUT',
+          {
+            paymentMethods: ['UFund', 'Ulite'],
+            ontop: ['AIS Point'],
+            points: ['The 1'],
+            burnPoints: ['Burn KBank'],
+          },
+          cookies.admin,
+        );
+        assert.equal(updated.status, 200);
+        assert.deepEqual(updated.data.paymentMethods, ['UFund', 'Ulite']);
+        assert.deepEqual(updated.data.ontop, ['AIS Point']);
+        assert.deepEqual(updated.data.points, ['The 1']);
+        assert.deepEqual(updated.data.burnPoints, ['Burn KBank']);
+
+        const walkIn = await request(
+          '/sessions',
+          'POST',
+          { phone: '0999900099' },
+          cookies.staff,
+        );
+        assert.equal(walkIn.status, 201);
+        assert.equal(walkIn.data.queueLetter, null);
+        assert.equal(walkIn.data.customerTypeId, null);
+
+        const selectionRes = await request(
+          `/sessions/${walkIn.data.id}/selection`,
+          'PUT',
+          { payments: ['Cash', 'UFund'] },
+          cookies.staff,
+        );
+        assert.equal(selectionRes.status, 200);
+        assert.equal(selectionRes.data.customerTypeId, typeB.id);
+        assert.equal(selectionRes.data.queueLetter, null);
+        assert.equal(selectionRes.data.customerType.letter, 'B');
+
+        const reverted = await request(
+          `/sessions/${walkIn.data.id}/selection`,
+          'PUT',
+          { payments: ['Cash'] },
+          cookies.staff,
+        );
+        assert.equal(reverted.status, 200);
+        assert.equal(reverted.data.customerTypeId, typeA.id);
+        assert.equal(reverted.data.queueLetter, null);
+        assert.equal(reverted.data.customerType.letter, 'A');
+
+        // Ontop match also classifies to Type B
+        const ontopRes = await request(
+          `/sessions/${walkIn.data.id}/selection`,
+          'PUT',
+          { payments: ['Cash'], ontop: ['AIS Point'] },
+          cookies.staff,
+        );
+        assert.equal(ontopRes.status, 200);
+        assert.equal(ontopRes.data.customerTypeId, typeB.id);
+        assert.equal(ontopRes.data.customerType.letter, 'B');
       },
     );
   } finally {

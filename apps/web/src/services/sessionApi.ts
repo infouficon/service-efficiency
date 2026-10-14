@@ -122,7 +122,9 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     id: s.id,
     reference: s.reference,
     queue:
-      s.queueNo != null ? formatQueue(s.queueLetter, s.queueNo) : s.reference,
+      s.queueNo != null ? formatQueue(s.queueLetter, s.queueNo) : (s.phone || s.reference),
+    queueNo: s.queueNo,
+    queueLetter: s.queueLetter,
     customerTypeId: s.customerTypeId || undefined,
     customerTypeLetter: s.customerType?.letter || s.queueLetter || undefined,
     customerTypeName: s.customerType?.name || undefined,
@@ -230,7 +232,16 @@ export function fetchCustomerTypesApi(all = false): Promise<CustomerType[]> {
 }
 
 export function saveCustomerTypeApi(
-  type: { letter?: string; name: string; description?: string | null; active?: boolean },
+  type: {
+    letter?: string;
+    name: string;
+    description?: string | null;
+    active?: boolean;
+    paymentMethods?: string[];
+    ontop?: string[];
+    points?: string[];
+    burnPoints?: string[];
+  },
   existingId?: string,
 ): Promise<CustomerType> {
   return existingId
@@ -238,11 +249,19 @@ export function saveCustomerTypeApi(
         name: type.name,
         description: type.description ?? null,
         active: type.active,
+        paymentMethods: type.paymentMethods,
+        ontop: type.ontop,
+        points: type.points,
+        burnPoints: type.burnPoints,
       })
     : api<CustomerType>('/customer-types', 'POST', {
         letter: type.letter || undefined,
         name: type.name,
         description: type.description || undefined,
+        paymentMethods: type.paymentMethods,
+        ontop: type.ontop,
+        points: type.points,
+        burnPoints: type.burnPoints,
       });
 }
 

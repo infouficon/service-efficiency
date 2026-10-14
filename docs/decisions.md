@@ -943,3 +943,40 @@ Owner instruction via `/grill-me`: "หลังจากกรอกเบอ�
 6. **Phone Number Verification & Correction.** Staff can inspect and edit the customer's phone number on the "ตรวจสอบยืนยัน" (Review & Confirmation) screen before clicking "ยืนยันการสั่งซื้อ" to handle any typo made at the walk-in step.
 7. **CSV Export & Duration Reports.** The export columns for `Demo Start At`, `Demo End At`, `Decision At`, and duration steps `รอก่อนเริ่ม DEMO`, `DEMO`, `ตัดสินใจหลัง DEMO`, `เริ่มเลือกสินค้าหลังตัดสินใจ` are removed from the CSV export, showing only the active operational steps.
 
+## D69 — Customer Type Auto-Classification by Payment Method (2026-10-14)
+
+Owner instruction via `/grill-me`: "หน้า ประเภทลูกค้าและคิว (Customer Types) ให้สามารถกดได้ว่าการจ่ายเงินแบบไหนบ้างเป็นประเภท A / B".
+
+1. **Payment Methods Configured per Customer Type.** In Admin → ประเภทลูกค้าและคิว (`CustomerTypesPanel`), ADMIN can configure which payment methods map to a customer type (stored as `CustomerType.paymentMethods` JSON array of payment method names). By default, Type B ("ลูกค้าใช้เวลานาน") maps long-service financing/installment methods (`0% Credit Card`, `PayNext`, `UFund`, `Ulite`, `Thisshop`, `Kashjoy`).
+2. **Walk-in Flow Unchanged.** Walk-in queue issuance does not require payment method selection; the customer receives an initial ticket (e.g. A001) as usual.
+3. **Auto-Classification on Payment Selection.** When Staff selects payment method(s) on a session (`PUT /sessions/:id/selection`), the system checks if any selected method matches an active Customer Type with configured `paymentMethods`. If matched (including in split payments where at least one method matches, e.g. Cash + UFund), `session.customerTypeId` automatically updates to that type (e.g. Type B). If no methods match, `session.customerTypeId` reverts to the type corresponding to the original walk-in `queueLetter` (e.g. Type A).
+4. **Queue Number Invariant.** The customer's physical ticket (`queueLetter` and `queueNo`, e.g. "A001") is never altered mid-service so the customer does not lose their place or ticket number. Only `customerTypeId` and report classification update to reflect the accurate KPI and service duration category.
+
+## D70 — Queue Number Allocation at Order Confirmation & Multi-Criteria Type B (2026-10-14)
+
+Owner instruction via `/grill-me`: "ในส่วน ประเภทลูกค้าและคิว (Customer Types) ให้สามารถกำหนดได้ว่าถ้าเลือก Ontop Points Burn Point หรือ Payment แบบใดบ้างจะเป็นคิว B โดยที่จะมีคิวขึ้นก็ต่อเมื่อ ตรวจสอบยืนยัน เรียบร้อย ก่อนหน้าขั้นตอนนี้ หากต้องมีการแสดงคิว ให้แสดงเป็นเบอร์โทรลูกค้า และเอาการเลือก A B ในหน้า Walk in ออก"
+
+1. **Walk-in Form Simplification:**
+   - The Customer Type (A / B) selection is removed from the Walk-in screen.
+   - Walk-in requires only the customer's 10-digit phone number.
+   - No queue number is issued at Walk-in (`queueLetter = null`, `queueNo = null`, `customerTypeId = null`).
+2. **Display Pre-Confirmation:**
+   - Prior to confirmation (during Walk-in and Product Selection), wherever a queue number was previously displayed (workspace header, session list cards, stock alerts, rebuy button), the customer's phone number is displayed instead (e.g. `ลูกค้า 0812345678`).
+   - Customer Type badges (e.g. `ประเภท A`) are hidden until a queue number is allocated.
+3. **Multi-Criteria for Customer Type B:**
+   - In Admin → ประเภทลูกค้าและคิว, ADMIN can configure matching criteria across four categories: **Payment Methods**, **Ontop promotions**, **Points earn**, and **Burn Points** (stored as JSON arrays on `CustomerType`: `paymentMethods`, `ontop`, `points`, `burnPoints`).
+   - Matching rule: **OR logic** across all four categories. If an order matches ANY configured criterion in Payment, Ontop, Points, or Burn Point, it is classified as Type B; otherwise Type A (or default active type).
+4. **Queue Allocation at Confirmation:**
+   - When Staff clicks "ยืนยันการสั่งซื้อ" (`confirmPurchase`), the system evaluates the order's selected payments, ontop, points, and burn points against active Customer Types.
+   - The queue number (e.g. `A001` or `B001`) is atomically allocated via `QueueService.allocate(tx, branchId, matchedTypeId, now)`.
+   - The order moves to `STOCK_REQUESTED`.
+5. **Automatic 80mm Slip Printing:**
+   - Immediately upon confirmation, the system triggers the print dialog (`window.print()`) rendering the 80mm receipt/queue slip (`ReceiptSheet`).
+   - The slip displays the allocated Queue Number in large font, branch name/code, date/time, customer phone number, selected products/accessories, payment methods, and the branch registration QR.
+6. **Cancellation Before Confirmation:**
+   - If a customer cancels before order confirmation, no queue number is allocated. In reports and session history, their reference and phone number identify the session.
+7. **Buy Again (Rebuy) Invariant (F11):**
+   - Retains the existing queue letter and number from the original session so the customer keeps their queue place.
+
+
+

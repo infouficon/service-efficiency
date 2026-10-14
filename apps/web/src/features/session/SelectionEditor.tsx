@@ -332,7 +332,10 @@ export function SelectionEditor({
   }, [availableModels, modelKey]);
 
   // The choices of the SKUs of the selected model, in the order the dropdowns come (D79): memory, capacity, colour
-  const modelSkus = selectedModelObj?.model.skus ?? [];
+  const modelSkus = useMemo(
+    () => selectedModelObj?.model.skus ?? [],
+    [selectedModelObj],
+  );
   const availableMemories = useMemo(
     () => distinct(modelSkus.map((s) => s.memory)),
     [modelSkus],

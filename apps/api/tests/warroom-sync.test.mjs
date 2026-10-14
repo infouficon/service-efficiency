@@ -159,6 +159,8 @@ test('Mac attributes: warroom\'s capacity is the RAM, so the storage is read fro
   assert.equal(wr.colorOf('Deep Blue'), 'Deep Blue');
   assert.equal(wr.colorOf('1TB'), '1TB', 'never empty');
   assert.equal(wr.colorOf(null), null);
+  assert.notEqual(wr.fingerprint(10, 5), wr.fingerprint(11, 5));
+  assert.ok(Number.isInteger(wr.CATALOG_RULES_VERSION), 'the rules version is part of every run slot');
   assert.equal(wr.colorOf('  '), null);
   const row = {
     branchCode: 'B', partNo: 'MDE34TH/A', upc: 'u',
@@ -1396,6 +1398,63 @@ test('warroom sync: shadow then on, availability, guards, against real databases
         assert.ok(await staffSku(P5), 'the phone is still there for staff');
         const again = await run();
         assert.equal(again.data.summary.catalog.moved, 0, 'a second run has nothing to move');
+      },
+    );
+
+    await t.test(
+      'rows made by the old Mac rules (capacity = RAM, storage left in the model name) are corrected by a run (D80)',
+      async () => {
+        process.env.WARROOM_STOCK_MODE = 'on';
+        const P7 = part('MAC');
+        const sub = `${prefix} MacBook Air M5 15.3`;
+        // what warroom sends: capacity is the RAM, the colour carries the storage
+        await insert(P7, B1, 'ready', 2, {
+          cat: 'Mac',
+          subcat: 'MacBook Air',
+          subsub: `${sub} Ram 24 1TB`,
+          cap: '24GB',
+          color: '1TB SSD - Silver',
+        });
+        // what the old rules had stored
+        const old = await db.product.create({
+          data: {
+            category: 'Mac',
+            name: 'MacBook Air',
+            erpManaged: true,
+            models: {
+              create: {
+                name: `${sub} 1TB`,
+                erpManaged: true,
+                skus: {
+                  create: {
+                    sku: P7,
+                    name: 'x',
+                    erpManaged: true,
+                    storage: '24GB',
+                    memory: '24GB',
+                    color: '1TB SSD - Silver',
+                  },
+                },
+              },
+            },
+          },
+          include: { models: { include: { skus: true } } },
+        });
+        created.skuIds.push(old.models[0].skus[0].id);
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        const sku = await db.productSku.findUnique({
+          where: { sku: P7 },
+          include: { model: true },
+        });
+        assert.equal(sku.storage, '1TB');
+        assert.equal(sku.memory, '24GB');
+        assert.equal(sku.color, 'Silver');
+        assert.equal(sku.model.name, sub, 'the storage is gone from the model name');
+        const seen = await staffSku(P7);
+        assert.ok(seen, 'staff see the Mac');
+        assert.equal(seen.storage, '1TB');
+        assert.equal(seen.memory, '24GB');
       },
     );
 

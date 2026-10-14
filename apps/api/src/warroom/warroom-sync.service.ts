@@ -503,11 +503,24 @@ export async function peekSnapshot(url: string): Promise<Peek> {
 }
 
 /**
+ * Version of the rules that turn warroom rows into catalog items (categories, names, storage, memory, colour). It is part of
+ * the run slot, so after a deploy that changes the rules the next scheduled check re-processes the snapshot it already
+ * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
+ * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
+ */
+export const CATALOG_RULES_VERSION = 4;
+
+/**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still
- * produces a new run slot, and a max that steps back after sales still reads as news.
+ * produces a new run slot, and a max that steps back after sales still reads as news. The rules version is mixed in.
  */
 export function fingerprint(rows: number, qty: number): string {
-  return (((rows * 2654435761) ^ Math.round(qty * 1000)) >>> 0).toString(36);
+  return (
+    ((rows * 2654435761) ^
+      Math.round(qty * 1000) ^
+      (CATALOG_RULES_VERSION * 40503)) >>>
+    0
+  ).toString(36);
 }
 
 export async function readRows(url: string): Promise<WarroomRow[]> {

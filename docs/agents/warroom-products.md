@@ -76,6 +76,8 @@ A category is a row of `Category` (Admin → หมวดหมู่สิน�
 
 ## Re-filing
 
+A change of the catalog rules re-runs the sync by itself: `CATALOG_RULES_VERSION` is part of the run slot (D81), so after the deploy the next scheduled check (default every 10 min) processes the current snapshot again. Raise it whenever the rules change.
+
 When the rules change (D78), the next `on` run moves ERP-made SKUs to the product / model / category the rules give today (`moved` in the summary, counted by a dry run) and removes the ERP-made models and products left empty. Hand-made records are never moved.
 
 ## Starting from a clean slate (D73)

@@ -2,14 +2,14 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D71);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D72);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71 changes (2026-10-14).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72 changes (2026-10-14).
 
 ## 1. What the system is for
 
@@ -51,7 +51,7 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | Decision | Historical only (D68). Formerly customer choice after DEMO; now removed from operational workflow. Drop-offs during selection are handled via cancellation (`CUSTOMER_CANCELLED`). | `buy` step sets `decisionAt`; `POST /decision/not-buy` (historical) |
 | NOT_BUY result | Exactly: `ราคา`, `ยังไม่ตัดสินใจ`, `เปลี่ยนใจ`, `สินค้าไม่ตรงความต้องการ`, `ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ`, `อื่น ๆ` (+ required text). | `reason` / `otherReason`; lists in `apps/web/src/constants/options.ts` |
 | Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected **at walk-in** (D56; supersedes requirements §6 "only after BUY", so NOT_BUY visits keep a phone too). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
-| Product Selection / Purchase data | The purchase being assembled: **main product** (Product → Model → SKU), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
+| Product Selection / Purchase data | The purchase being assembled: **main product** chosen via cascading dropdowns (Category → Model → Capacity → Color, D72), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
 | Main Product / Session item | Any number per session (D61, supersedes D8): a SKU and a quantity ≥ 1, each SKU once. `deducted` = the units FOUND really took off the shelf (0 while "stock unlimited" is on); a cancel gives back exactly that. The old `productId/modelId/skuId` columns on the session are history only. | `SessionItem` (`items` on every session response); dropped by partial fulfilment or `CHANGE_ITEMS` |
 | LOB / Category | `ProductCategory`: `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`. | enum `ProductCategory` |
 | Ontop | Telco/partner add-on (`AIS`, `True`, `CATH`, `KTS`). Multi-select, no amount. | `SessionOntop.name` |

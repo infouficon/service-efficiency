@@ -995,6 +995,30 @@ Owner instruction via `/grill-me`: "ช่องทางชำระเงิ�
 4. **Backend Atomic Reordering:**
    - Endpoint `PUT /api/payment-methods/reorder` executes within a single transaction, validating all IDs and reassigning `position = 1..n`.
 
+## D72 — Cascading Dropdowns for Main Product Selection (2026-10-14)
+
+Owner instruction via `/grill-me`: "ตอนเลือก เพิ่มสินค้าหลัก ข้างใน ให้เป็นรูปแบบ dropdown เลือก ประเภทอุปกรณ์ รุ่น ความจุ สี". Supersedes the 4-step wizard tiles picker (D62).
+
+1. **4-Level Cascading Dropdowns Form:**
+   - In `SelectionEditor.tsx`, main product selection uses an inline form with four cascading `<select>` dropdowns:
+     1. **ประเภทอุปกรณ์ (Device Category)**: iPhone, iPad, Mac, Watch, Accessories.
+     2. **รุ่น (Model)**: Filtered models belonging to the selected category.
+     3. **ความจุ (Capacity / Storage)**: Storage options available for the selected model (e.g. 128GB, 256GB, 512GB, 1TB).
+     4. **สี (Color / SKU)**: Color options available for the selected model and storage.
+2. **Auto-Skip & Smart Pre-selection:**
+   - If a product model has no storage variations (e.g. AirPods, power adapters, cables, cases), the "ความจุ" dropdown is automatically skipped/hidden.
+   - If a model or storage selection has only a single option (or single SKU), it is automatically selected to minimize clicks.
+   - Changing an upstream dropdown resets downstream selections.
+3. **Stock Visibility & Prevention:**
+   - Stock availability is displayed directly inside the color dropdown `<option>` text (e.g. `Black Titanium (คงเหลือ 5 ชิ้น)` or `Desert Titanium (สินค้าหมด)`).
+   - An out-of-stock SKU option is disabled in the dropdown.
+   - A summary preview card renders the selected SKU code, specifications, and `StockBadge`. The "+ เพิ่มลงรายการ" button is disabled if the item is out of stock (unless unlimited stock mode D59 is active).
+4. **Post-Add Workflow:**
+   - Clicking "+ เพิ่มลงรายการ" adds the item to `value.items` using the existing stepper list (`addItem`).
+   - The dropdown form automatically collapses/closes, while retaining the "+ เพิ่มสินค้าหลัก" button to reopen and add more items at any time.
+   - When no main products are currently selected (`value.items.length === 0`), the dropdown form remains open by default.
+
+
 
 
 

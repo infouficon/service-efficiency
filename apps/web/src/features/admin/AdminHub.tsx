@@ -24,14 +24,16 @@ import { QrCodeSvg } from '../session/Receipt';
 import { CustomerTypesPanel } from './CustomerTypesPanel';
 import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue` and `payments`. */
+import { CategoriesPanel } from './CategoriesPanel';
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments` and `categories`. */
 export type AdminSubView =
   | 'users'
   | 'branches'
   | 'audit'
   | 'erp'
   | 'queue'
-  | 'payments';
+  | 'payments'
+  | 'categories';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -159,7 +161,9 @@ export function AdminHub({
                   ? 'ประเภทลูกค้าและคิว (Customer Types)'
                   : subTab === 'payments'
                     ? 'ช่องทางชำระเงิน (Payment Methods)'
-                    : 'จัดการผู้ใช้ (Staff Members)'}
+                    : subTab === 'categories'
+                      ? 'หมวดหมู่สินค้า (Categories)'
+                      : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -178,6 +182,8 @@ export function AdminHub({
         <CustomerTypesPanel />
       ) : admin && subTab === 'payments' ? (
         <PaymentMethodsPanel />
+      ) : admin && subTab === 'categories' ? (
+        <CategoriesPanel />
       ) : (
         <>
           {error && (

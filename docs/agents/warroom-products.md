@@ -19,7 +19,7 @@ ERP (FileMaker) ──5×/day──▶ warroom Postgres: mart.stock_mv ──rea
    that is still open (here or in another container) blocks a second one; a run is cut off after 10 minutes.
 3. Per SES `Branch` (matched by `Branch.code` = ERP `branch_code`, D53) and SKU (`ProductSku.sku` = Apple part number, compared
    case-insensitively, D52) it stores `BranchInventory.erpReady`, `erpTransfer`, `erpAsOf`, in ONE transaction. Every branch that is in
-   the snapshot gets a row (0 if need be) for every part warroom lists anywhere, so a hand-made SKU never keeps its manual stock where
+   the snapshot gets a row (0 if need be) for every part SES has or is creating in this run, so a hand-made SKU never keeps its manual stock where
    warroom says none. Rows of those branches for parts that left the snapshot become 0. A branch warroom did not report at all keeps
    its last numbers.
 4. What staff see = `availableUnits()` = `erpReady` − sessions that reached FOUND in the 24 h before the OLDEST snapshot in play (or
@@ -35,20 +35,28 @@ so it can be somewhat older than the real pull; that errs on the safe side (see 
 | Mode | Stores ERP numbers | Creates/updates catalog | Staff screen | Manual stock edit |
 | --- | --- | --- | --- | --- |
 | `off` | no | no | manual stock | allowed |
-| `shadow` | yes, for SKUs SES already has | **no** (dry run shows `wouldCreate`) | manual stock (unchanged) | allowed |
-| `on` | yes | yes (Product → Model → SKU, `erpManaged`) | ERP availability | refused (409) for rows with ERP data |
+| `shadow` | yes, for SKUs SES already has | **no products** (dry run shows `wouldCreate`); new warroom categories are added to the SES list, switched off (D68) | manual stock (unchanged) | allowed |
+| `on` | yes | yes, **only for active categories** (Product → Model → SKU, `erpManaged`, with the UPC) | ERP availability | refused (409) for rows with ERP data |
 
 Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stock): status, dry run, run now, last runs and, after a dry run, the
 **unmapped category list** (the thing to read first).
 
-## Catalog rules (provisional; first dry run decides)
+## Categories (D68)
 
-- Category from the ERP `product_cat` (fallback to `product_subcat` only if `product_cat` is empty): accessory words win
-  ("iPhone Case" → Accessories), then iphone / ipad / watch / mac. **Anything else is not guessed**: skipped and listed.
+A category is a row of `Category` (Admin → หมวดหมู่สินค้า). The migration seeds iPhone, iPad, Mac, Watch, Accessories (active). The sync maps each warroom `product_cat` like this:
+
+- Apple words → the five categories ("Apple Accy" → Accessories; accessory words win over device words: "iPhone Case" is an accessory).
+- Anything else, and any other brand ("HUAWEI Phone", "Third Party Accy"), → a category **named exactly as warroom spells it**, added **switched off** (`erpManaged`, `isAccessory` guessed from "accy"/"accessor").
+- A part whose category is off is **not created** (`waitingForCategory` in the run summary) and staff see nothing of it. Open the category, then "ซิงก์ตอนนี้": its products are created on that run. A part with no category text at all is skipped (`skippedNoCategory`).
+- Only the SKU **part number** (`product_model`) identifies a part; `product_upc` is stored in `ProductSku.upc`.
+
+## Catalog rules
+
+- Category from the ERP `product_cat` (fallback to `product_subcat` only if `product_cat` is empty), see *Categories* above.
 - Product = `product_subcat`, Model = `product_subsubcat` or the same name, SKU name = ERP product name without the "Apple <part>"
   prefix, colour and storage from warroom's parsed `color` / `capacity`. Only parts that some SES branch stocks are created.
 - Existing hand-made products/models are reused by (category, name) and never renamed; SKUs are matched by part number; only
-  `erpManaged` rows are updated; the sync never touches `active`. Nothing is ever deleted.
+  `erpManaged` rows are updated; the sync never touches `active`. The sync never deletes anything (only the ADMIN clear action does, D69).
 - In mode `on`, `erpManaged` product/model/SKU names, codes, colours, storage and category are read-only in the admin UI and API
   (409); `active` can still be switched.
 
@@ -63,6 +71,10 @@ Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stoc
   (`CREATE ROLE ses_reader LOGIN …; GRANT USAGE ON SCHEMA mart …; GRANT SELECT ON mart.stock_mv …`) and remember warroom re-creates
   `stock_mv` with `DROP … CASCADE` (its SQL re-grants only to `npi_reader`/`npi_writer`).
 
+## Starting from a clean slate (D69)
+
+Before the first real catalog, ADMIN can clear the old (test) catalog and queue history: Admin → ซิงก์ ERP → "ล้างสินค้าและประวัติคิวเดิม" → "นับสิ่งที่จะถูกลบ" (counts only) → type `ล้างข้อมูล` → "ลบถาวร". It removes every queue session, the customers, the queue counters and every product / model / SKU with branch stock; staff, branches, categories, payment methods, customer types and settings stay. Irreversible: back up the database first. The old demo catalog no longer re-creates itself.
+
 ## Switching on, step by step
 
 1. Coolify env of the SES `api` app: `WARROOM_DATABASE_URL` (the SES container must reach the warroom DB host; test with
@@ -70,7 +82,7 @@ Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stoc
 2. Admin → ซิงก์ ERP → "สินค้าและสต็อกจาก warroom" → **ทดลองรัน**. Read: parts, branches matched / unknown, the categories table and the
    **unmapped** list (extend `mapCategory` if real categories are missing), `wouldCreate`.
 3. Let it run in `shadow` for a day: compare `ready`/`available` in Admin → Products with the ERP.
-4. `WARROOM_STOCK_MODE=on`, restart, dry run again, then "ซิงก์ตอนนี้".
+4. (Optional, once) clear the old catalog and queue history (above). Check Admin → หมวดหมู่สินค้า: the Apple categories are on, every other warroom category is off. `WARROOM_STOCK_MODE=on`, restart, dry run again (`wouldCreate` = the Apple parts SES branches stock), then "ซิงก์ตอนนี้". To bring another category in later (HUAWEI …), open it in หมวดหมู่สินค้า and sync again.
 5. **Turn the "Stock ไม่จำกัด" switch off** (Admin → ซิงก์ ERP, top panel; D59). It is **on by default** and while it is on SES ignores every stock number when staff pick a product (and FOUND takes nothing from the shelf), so the ERP numbers only start to matter after this step.
 
 ## Troubleshooting a failed run (the error is in the run history)

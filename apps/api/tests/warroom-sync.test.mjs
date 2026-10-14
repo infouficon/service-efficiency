@@ -31,18 +31,45 @@ test('mode: off only without a url, shadow by default, junk falls back to shadow
   );
 });
 
-test('ERP category text maps to SES categories; accessories win; unknown is not guessed', () => {
-  assert.equal(wr.mapCategory('iPhone'), 'iPhone');
-  assert.equal(wr.mapCategory('iPad'), 'iPad');
-  assert.equal(wr.mapCategory('MacBook Pro'), 'Mac');
-  assert.equal(wr.mapCategory('iMac'), 'Mac');
-  assert.equal(wr.mapCategory('Apple Watch'), 'Watch');
-  assert.equal(wr.mapCategory('Accessories'), 'Accessories');
-  assert.equal(wr.mapCategory('AirPods'), 'Accessories');
-  assert.equal(wr.mapCategory('iPhone Case'), 'Accessories');
-  assert.equal(wr.mapCategory('Apple Watch Band'), 'Accessories');
-  assert.equal(wr.mapCategory('Huawei Phone'), null);
+test('ERP category text maps to the Apple categories; accessories win; other brands get a category of their own', () => {
+  const name = (v) => wr.mapCategory(v)?.name;
+  assert.equal(name('iPhone'), 'iPhone');
+  assert.equal(name('iPad'), 'iPad');
+  assert.equal(name('MacBook Pro'), 'Mac');
+  assert.equal(name('iMac'), 'Mac');
+  assert.equal(name('Apple Watch'), 'Watch');
+  assert.equal(name('Accessories'), 'Accessories');
+  assert.equal(name('AirPods'), 'Accessories');
+  assert.equal(name('iPhone Case'), 'Accessories');
+  assert.equal(name('Apple Watch Band'), 'Accessories');
+  assert.equal(name('Apple Accy'), 'Accessories', 'warroom abbreviates "Accessories"');
+  assert.deepEqual(wr.mapCategory('Apple Accy'), {
+    name: 'Accessories',
+    isAccessory: true,
+  });
+  // other brands are never folded into an Apple category, even when a keyword would match
+  assert.deepEqual(wr.mapCategory('HUAWEI Phone'), {
+    name: 'HUAWEI Phone',
+    isAccessory: false,
+  });
+  assert.deepEqual(wr.mapCategory('HUAWEI Accy'), {
+    name: 'HUAWEI Accy',
+    isAccessory: true,
+  });
+  assert.deepEqual(wr.mapCategory('Third Party Accy'), {
+    name: 'Third Party Accy',
+    isAccessory: true,
+  });
+  assert.deepEqual(wr.mapCategory('HUAWEI Watch'), {
+    name: 'HUAWEI Watch',
+    isAccessory: false,
+  });
+  assert.deepEqual(wr.mapCategory('  Something New  '), {
+    name: 'Something New',
+    isAccessory: false,
+  });
   assert.equal(wr.mapCategory(''), null);
+  assert.equal(wr.mapCategory('   '), null);
   assert.equal(wr.mapCategory(null), null);
 });
 
@@ -58,7 +85,7 @@ test('short name drops the "Apple <part>" prefix', () => {
   assert.equal(wr.shortName(null, 'P/A'), 'P/A');
 });
 
-test('catalog: one item per part, hierarchy from sub-categories, unmapped parts only counted', () => {
+test('catalog: one item per part, hierarchy from sub-categories, only a part without any category text is skipped', () => {
   const row = (partNo, o = {}) => ({
     branchCode: 'B',
     partNo,
@@ -80,26 +107,26 @@ test('catalog: one item per part, hierarchy from sub-categories, unmapped parts 
     row('B/A', { cat: 'Accessories', subcat: 'Case', color: '' }),
     row('C/A', { cat: 'Huawei Phone', subcat: 'iPhone 17 Pro' }),
     row('D/A', { cat: '', subcat: 'iPad Pro 11' }),
+    row('E/A', { cat: '', subcat: '' }),
   ]);
   assert.deepEqual(
     items.map((i) => [i.partNo, i.category, i.productName, i.modelName]),
     [
       ['A/A', 'iPhone', 'iPhone 17 Pro', 'iPhone 17 Pro'],
       ['B/A', 'Accessories', 'Case', 'Case'],
+      ['C/A', 'Huawei Phone', 'iPhone 17 Pro', 'iPhone 17 Pro'],
       ['D/A', 'iPad', 'iPad Pro 11', 'iPad Pro 11'],
     ],
   );
+  assert.equal(items[0].upc, 'u');
   assert.equal(items[0].skuName, 'thing 256GB Blue');
   assert.equal(items[0].storage, '256GB');
   assert.equal(items[1].color, null);
-  assert.equal(
-    skippedNoCategory,
-    1,
-    'an unrecognised category is not rescued by the sub-category',
-  );
+  assert.equal(skippedNoCategory, 1, 'only a part with no category text at all is skipped');
   assert.deepEqual(
     categories.find((c) => c.value === 'Huawei Phone'),
-    { value: 'Huawei Phone', mapped: null, parts: 1 },
+    { value: 'Huawei Phone', mapped: 'Huawei Phone', isAccessory: false, parts: 1 },
+    'another brand keeps its own category and is not rescued by its model-looking sub-category',
   );
 });
 
@@ -237,6 +264,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
   const prefix = `wr${randomUUID().slice(0, 6)}`;
   const part = (k) => `${prefix}-${k}/A`;
   const [P1, P2, P3, P4] = [part('IP'), part('AC'), part('HW'), part('HO')];
+  const HW_CAT = `${prefix} Huawei Phone`; // another brand: its own category, switched off until ADMIN opens it (D68)
   const B1 = `${prefix}-B1`,
     B2 = `${prefix}-B2`,
     BHO = `${prefix}-HO`;
@@ -328,7 +356,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
       cap: null,
       color: null,
     });
-    await insert(P3, B1, 'ready', 4, { cat: 'Huawei Phone', subcat: null });
+    await insert(P3, B1, 'ready', 4, { cat: HW_CAT, subcat: null });
     await insert(P4, BHO, 'ready', 9);
 
     const b1 = await db.branch.create({
@@ -451,12 +479,25 @@ test('warroom sync: shadow then on, availability, guards, against real databases
       assert.equal(
         s.catalog.wouldCreate,
         1,
-        'P2 only: P3 has no category, P4 exists only in a branch SES does not have',
+        'P2 only: P3 waits for its category to be opened, P4 exists only in a branch SES does not have',
       );
-      assert.equal(s.catalog.skippedNoCategory, 1);
-      assert.deepEqual(s.catalog.unmapped, [
-        { value: 'Huawei Phone', parts: 1 },
-      ]);
+      assert.equal(s.catalog.skippedNoCategory, 0);
+      assert.equal(s.catalog.waitingForCategory, 1, 'P3: its category is not switched on');
+      assert.equal(s.catalog.newCategories, 1);
+      assert.deepEqual(s.catalog.unmapped, []);
+      assert.deepEqual(
+        s.catalog.categories.find((c) => c.value === HW_CAT),
+        { value: HW_CAT, mapped: HW_CAT, isAccessory: false, parts: 1, status: 'new' },
+      );
+      assert.equal(
+        s.catalog.categories.find((c) => c.value === 'iPhone').status,
+        'active',
+      );
+      assert.equal(
+        await db.category.count({ where: { name: HW_CAT } }),
+        0,
+        'a dry run does not add the category',
+      );
       assert.deepEqual(s.branches.unknown, [{ code: BHO, rows: 1 }]);
       assert.equal(s.branches.matched, 2);
       assert.equal(s.stock.updatedRows, 2);
@@ -549,8 +590,12 @@ test('warroom sync: shadow then on, availability, guards, against real databases
         assert.equal(
           await db.productSku.count({ where: { sku: P3 } }),
           0,
-          'unmapped category is skipped',
+          'its category is switched off: no products yet',
         );
+        const hw = await db.category.findUnique({ where: { name: HW_CAT } });
+        assert.equal(hw.active, false, 'the new category starts switched off');
+        assert.equal(hw.erpManaged, true);
+        assert.equal(sku2.upc, `upc-${P2}`, 'the UPC is kept next to the part number');
         assert.equal(
           await db.productSku.count({ where: { sku: P4 } }),
           0,
@@ -622,6 +667,56 @@ test('warroom sync: shadow then on, availability, guards, against real databases
           where: { branchId_skuId: { branchId: b1.id, skuId: sku1.id } },
           data: { outOfStockAt: null },
         });
+      },
+    );
+
+    await t.test(
+      'opening the category creates its products on the next run; closing it hides them from staff (D68)',
+      async () => {
+        const hw = await db.category.findUnique({ where: { name: HW_CAT } });
+        const names = async (path, cookie) =>
+          (await request(path, 'GET', undefined, cookie)).data.map((c) => c.name);
+        assert.ok(
+          !(await names('/categories', staffCookie)).includes(HW_CAT),
+          'staff only read the active categories',
+        );
+        const all = (
+          await request('/categories?all=true', 'GET', undefined, adminCookie)
+        ).data;
+        assert.equal(all.find((c) => c.name === HW_CAT).productCount, 0);
+        assert.equal(
+          (
+            await request(`/categories/${hw.id}`, 'PUT', { active: true }, staffCookie)
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await request(`/categories/${hw.id}`, 'PUT', { active: true }, adminCookie)
+          ).status,
+          200,
+        );
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        assert.equal(res.data.summary.catalog.created, 1);
+        assert.equal(res.data.summary.catalog.waitingForCategory, 0);
+        const sku3 = await db.productSku.findUnique({
+          where: { sku: P3 },
+          include: { model: { include: { product: true } } },
+        });
+        created.skuIds.push(sku3.id);
+        assert.equal(sku3.model.product.category, HW_CAT);
+        assert.equal(sku3.upc, `upc-${P3}`);
+        assert.equal((await staffSku(P3)).stock, 4, 'staff see it while its category is on');
+        await request(`/categories/${hw.id}`, 'PUT', { active: false }, adminCookie);
+        assert.equal(await staffSku(P3), null, 'switched off again: staff no longer see it');
+        const admin = (
+          await request('/products?admin=true', 'GET', undefined, adminCookie)
+        ).data;
+        assert.ok(
+          admin.some((p) => p.category === HW_CAT),
+          'the back office still sees it',
+        );
       },
     );
 
@@ -1156,6 +1251,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
     await db.staffRole.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staff.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.branch.deleteMany({ where: { code: { startsWith: prefix } } });
+    await db.category.deleteMany({ where: { name: { startsWith: prefix } } });
     await db.erpSyncRun.deleteMany({ where: { kind: 'warroom-products' } });
     await stub
       .query('DROP TABLE IF EXISTS mart.stock_mv')

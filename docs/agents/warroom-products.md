@@ -35,19 +35,21 @@ so it can be somewhat older than the real pull; that errs on the safe side (see 
 | Mode | Stores ERP numbers | Creates/updates catalog | Staff screen | Manual stock edit |
 | --- | --- | --- | --- | --- |
 | `off` | no | no | manual stock | allowed |
-| `shadow` | yes, for SKUs SES already has | **no products** (dry run shows `wouldCreate`); new warroom categories are added to the SES list, switched off (D68) | manual stock (unchanged) | allowed |
+| `shadow` | yes, for SKUs SES already has | **no products** (dry run shows `wouldCreate`); new warroom categories are added to the SES list, switched off (D72) | manual stock (unchanged) | allowed |
 | `on` | yes | yes, **only for active categories** (Product → Model → SKU, `erpManaged`, with the UPC) | ERP availability | refused (409) for rows with ERP data |
 
 Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stock): status, dry run, run now, last runs and, after a dry run, the
 **unmapped category list** (the thing to read first).
 
-## Categories (D68)
+## Categories (D72)
 
 A category is a row of `Category` (Admin → หมวดหมู่สินค้า). The migration seeds iPhone, iPad, Mac, Watch, Accessories (active). The sync maps each warroom `product_cat` like this:
 
 - Apple words → the five categories ("Apple Accy" → Accessories; accessory words win over device words: "iPhone Case" is an accessory).
 - Anything else, and any other brand ("HUAWEI Phone", "Third Party Accy"), → a category **named exactly as warroom spells it**, added **switched off** (`erpManaged`, `isAccessory` guessed from "accy"/"accessor").
 - A part whose category is off is **not created** (`waitingForCategory` in the run summary) and staff see nothing of it. Open the category, then "ซิงก์ตอนนี้": its products are created on that run. A part with no category text at all is skipped (`skippedNoCategory`).
+- Batteries (a sub-category starting with "Battery") go to a `Battery` category, added switched off like any new category (D78).
+- The capacity is taken out of the product and model names ("iPhone 18 Pro Max 1TB" → "iPhone 18 Pro Max") so one model holds all its capacities (D78).
 - Only the SKU **part number** (`product_model`) identifies a part; `product_upc` is stored in `ProductSku.upc`.
 
 ## Catalog rules
@@ -56,7 +58,7 @@ A category is a row of `Category` (Admin → หมวดหมู่สิน�
 - Product = `product_subcat`, Model = `product_subsubcat` or the same name, SKU name = ERP product name without the "Apple <part>"
   prefix, colour and storage from warroom's parsed `color` / `capacity`. Only parts that some SES branch stocks are created.
 - Existing hand-made products/models are reused by (category, name) and never renamed; SKUs are matched by part number; only
-  `erpManaged` rows are updated; the sync never touches `active`. The sync never deletes anything (only the ADMIN clear action does, D69).
+  `erpManaged` rows are updated; the sync never touches `active`. The sync never deletes anything (only the ADMIN clear action does, D73).
 - In mode `on`, `erpManaged` product/model/SKU names, codes, colours, storage and category are read-only in the admin UI and API
   (409); `active` can still be switched.
 
@@ -71,9 +73,13 @@ A category is a row of `Category` (Admin → หมวดหมู่สิน�
   (`CREATE ROLE ses_reader LOGIN …; GRANT USAGE ON SCHEMA mart …; GRANT SELECT ON mart.stock_mv …`) and remember warroom re-creates
   `stock_mv` with `DROP … CASCADE` (its SQL re-grants only to `npi_reader`/`npi_writer`).
 
-## Starting from a clean slate (D69)
+## Re-filing
 
-Before the first real catalog, ADMIN can clear the old (test) catalog and queue history: Admin → ซิงก์ ERP → "ล้างสินค้าและประวัติคิวเดิม" → "นับสิ่งที่จะถูกลบ" (counts only) → type `ล้างข้อมูล` → "ลบถาวร". It removes every queue session, the customers, the queue counters and every product / model / SKU with branch stock; staff, branches, categories, payment methods, customer types and settings stay. Irreversible: back up the database first. The old demo catalog no longer re-creates itself.
+When the rules change (D78), the next `on` run moves ERP-made SKUs to the product / model / category the rules give today (`moved` in the summary, counted by a dry run) and removes the ERP-made models and products left empty. Hand-made records are never moved.
+
+## Starting from a clean slate (D73)
+
+Before the first real catalog, ADMIN can clear the old (test) catalog and queue history: Admin → ซิงก์ ERP → "ล้างสินค้าและประวัติคิวเดิม" → "นับสิ่งที่จะถูกลบ" (counts only) → type `ล้างข้อมูล` → "ลบถาวร". It removes every queue session, the customers, the queue counters and every product / model / SKU with branch stock; staff, branches, categories, payment methods, customer types and settings stay. Irreversible: back up the database first. A second button deletes only what is **not** from the ERP (hand-made SKUs, the hand-made products left empty, and the queues that used them; D78). The old demo catalog no longer re-creates itself.
 
 ## Switching on, step by step
 

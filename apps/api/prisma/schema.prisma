@@ -176,7 +176,7 @@ model DailyCounter {
 }
 
 /**
- * D68: the product categories, kept by ADMIN and created by the warroom sync (switched OFF until ADMIN opens them).
+ * D72: the product categories, kept by ADMIN and created by the warroom sync (switched OFF until ADMIN opens them).
  * `Product.category` stores the name. Staff only see products of an active category.
  */
 model Category {
@@ -193,7 +193,7 @@ model Category {
 
 model Product {
   id        String            @id @default(uuid()) @db.VarChar(36)
-  // D68: the name of a Category row (what warroom calls it, or one of the five Apple lines); a plain string so new
+  // D72: the name of a Category row (what warroom calls it, or one of the five Apple lines); a plain string so new
   // categories need no deploy. Names are never renamed, so this stays valid.
   category  String            @db.VarChar(100)
   name      String            @db.VarChar(191)
@@ -227,7 +227,7 @@ model ProductSku {
   name      String            @db.VarChar(191)
   color     String?           @db.VarChar(64)
   storage   String?           @db.VarChar(64)
-  // barcode (warroom product_upc) next to the part number kept in `sku` (D68)
+  // barcode (warroom product_upc) next to the part number kept in `sku` (D72)
   upc       String?           @db.VarChar(64)
   active    Boolean           @default(true)
   erpManaged Boolean          @default(false)

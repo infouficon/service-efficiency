@@ -227,7 +227,7 @@ export function movePaymentMethodApi(id: string, direction: 'up' | 'down'): Prom
   return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/move`, 'POST', { direction });
 }
 
-/** Product categories in display order (D68); `all` (ADMIN) includes the switched-off ones with their product counts. */
+/** Product categories in display order (D72); `all` (ADMIN) includes the switched-off ones with their product counts. */
 export function fetchCategoriesApi(all = false): Promise<Category[]> {
   return api<Category[]>(`/categories${all ? '?all=true' : ''}`);
 }

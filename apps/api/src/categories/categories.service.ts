@@ -13,7 +13,7 @@ const ORDER: Prisma.CategoryOrderByWithRelationInput[] = [
 ];
 
 /**
- * The product categories (D68), kept by ADMIN and added by the warroom sync (always switched off at first). Products store
+ * The product categories (D72), kept by ADMIN and added by the warroom sync (always switched off at first). Products store
  * the category NAME, so a category is switched on/off and never renamed or deleted. Staff only see products of an active
  * category; accessory-like categories are not offered as a main product.
  */

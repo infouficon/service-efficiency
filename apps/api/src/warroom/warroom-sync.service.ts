@@ -78,7 +78,7 @@ export interface WarroomRow {
 }
 export interface CatalogItem {
   partNo: string;
-  /** name of the SES category (D68): one of the Apple lines, or warroom's own category text */
+  /** name of the SES category (D72): one of the Apple lines, or warroom's own category text */
   category: string;
   isAccessory: boolean;
   productName: string;
@@ -88,7 +88,7 @@ export interface CatalogItem {
   storage: string | null;
   upc: string | null;
 }
-/** How a warroom category text is handled (D68): which SES category it goes to, and whether SES has it switched on. */
+/** How a warroom category text is handled (D72): which SES category it goes to, and whether SES has it switched on. */
 export interface CategoryTally {
   value: string;
   /** the SES category name; null only when warroom gave no category text at all */
@@ -112,9 +112,11 @@ export interface WarroomSummary {
     created: number;
     wouldCreate: number;
     updated: number;
+    /** ERP-made SKUs re-filed under another product / model / category after a rule change (D78) */
+    moved: number;
     /** parts with no category text in warroom at all */
     skippedNoCategory: number;
-    /** parts of a category ADMIN has not switched on yet (D68): created when the category is opened */
+    /** parts of a category ADMIN has not switched on yet (D72): created when the category is opened */
     waitingForCategory: number;
     /** categories added to the SES list by this run (switched off) */
     newCategories: number;
@@ -130,7 +132,7 @@ export interface WarroomSummary {
     transferUnits: number;
   };
 }
-/** What "clear the old catalog and queue history" removes (D68): shown first, then done only on a typed confirmation. */
+/** What "clear the old catalog and queue history" removes (D72): shown first, then done only on a typed confirmation. */
 export interface CatalogResetCounts {
   sessions: number;
   customers: number;
@@ -140,6 +142,8 @@ export interface CatalogResetCounts {
   inventoryRows: number;
 }
 export const RESET_CONFIRM = 'ล้างข้อมูล';
+/** `all` = everything (D73); `non-erp` = only what did not come from the ERP, plus the queues that used it (D78). */
+export type ResetScope = 'all' | 'non-erp';
 export type WarroomRunDto = Omit<ErpSyncRunDto, 'summary'> & {
   summary: WarroomSummary | null;
 };
@@ -153,13 +157,13 @@ export interface CategoryRule {
   isAccessory: boolean;
 }
 
-/** Brands SES does not sell yet (D68): never folded into an Apple category by a keyword. */
+/** Brands SES does not sell yet (D72): never folded into an Apple category by a keyword. */
 const OTHER_BRAND = /huawei|third[\s-]*party/;
 const APPLE_ACCESSORY =
   /accessor|^apple\s+accy\b|airpods|airtag|beats|homepod|apple\s*tv|apple\s*care|applecare|\bcase\b|cover|charger|cable|adapter|pencil|keyboard|mouse|trackpad|strap|\bband\b|protect|film|glass/;
 
 /**
- * ERP category text -> SES category (D68). The five Apple lines are recognised by words (accessory words win over device
+ * ERP category text -> SES category (D72). The five Apple lines are recognised by words (accessory words win over device
  * words: "iPhone Case" is an accessory; "Apple Accy" is Accessories). Anything else, and every other brand ("HUAWEI Phone",
  * "Third Party Accy"), becomes a category of its own named exactly as warroom spells it; the sync adds it switched OFF so
  * staff see nothing until ADMIN opens it. Only an empty text gives null.
@@ -179,6 +183,35 @@ export function mapCategory(
     if (/mac/.test(v)) return { name: 'Mac', isAccessory: false };
   }
   return { name: raw, isAccessory: /\baccy\b|accessor/.test(v) };
+}
+
+/** Warroom sells batteries ("Battery - iPhone 13") under a device category; they are a category of their own (D78). */
+const BATTERY = /^battery\b/i;
+export const BATTERY_CATEGORY: CategoryRule = {
+  name: 'Battery',
+  isAccessory: false,
+};
+
+/**
+ * The name without the capacity ("iPhone 18 Pro Max 1TB" -> "iPhone 18 Pro Max"), so every capacity of a model is ONE
+ * model and the capacity is picked on its own (D78). Only the part's own capacity is removed: other GB figures in a name
+ * (a Mac's memory) stay.
+ */
+export function withoutCapacity(
+  name: string | null,
+  capacity: string | null,
+): string | null {
+  const text = (name ?? '').trim();
+  const cap = (capacity ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*(GB|TB)$/i);
+  if (!text || !cap) return text || null;
+  const token = new RegExp(`(^|[\\s(-])${cap[1]}\\s*${cap[2]}(?=$|[\\s)\\-/])`, 'gi');
+  const stripped = text
+    .replace(token, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/[\s\-·/]+$/, '')
+    .replace(/\(\s*\)/g, '')
+    .trim();
+  return stripped || text;
 }
 
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -227,7 +260,11 @@ export function buildCatalog(rows: WarroomRow[]): {
     const name = first(rs, (r) => r.productName);
     // The sub-category is only a fallback for an EMPTY category: a category of another brand ("Huawei Phone") must not be
     // rescued by a model-looking sub-category.
-    const rule = clean(cat, 100) ? mapCategory(cat) : mapCategory(subcat);
+    let rule = clean(cat, 100) ? mapCategory(cat) : mapCategory(subcat);
+    // a battery is not an iPhone (D78); another brand's category is left alone
+    const batteryText = clean(subcat, 100) ?? clean(subsubcat, 100) ?? '';
+    if (rule && BATTERY.test(batteryText) && !OTHER_BRAND.test((cat ?? '').toLowerCase()))
+      rule = BATTERY_CATEGORY;
     const label = clean(cat, 100) ?? clean(subcat, 100) ?? '(ว่าง)';
     const key = `${label}\u0000${rule?.name ?? ''}`;
     const t = tally.get(key) ?? {
@@ -242,7 +279,9 @@ export function buildCatalog(rows: WarroomRow[]): {
       skippedNoCategory += 1;
       continue;
     }
-    const productName = clean(subcat, 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
+    const capacity = first(rs, (r) => r.capacity);
+    const productName =
+      clean(withoutCapacity(subcat, capacity), 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
     items.push({
       partNo,
       category: rule.name,
@@ -252,7 +291,7 @@ export function buildCatalog(rows: WarroomRow[]): {
         64,
       ),
       productName,
-      modelName: clean(subsubcat, 191) ?? productName,
+      modelName: clean(withoutCapacity(subsubcat, capacity), 191) ?? productName,
       skuName: shortName(name, partNo).slice(0, 191),
       color: clean(
         first(rs, (r) => r.color),
@@ -613,7 +652,7 @@ export class WarroomSyncService
     const parts = new Set(rows.map((r) => r.partNo));
     const { items, categories, skippedNoCategory } = buildCatalog(rows);
 
-    // The SES category list (D68): a category's products are only created while it is switched on; the ones warroom has and
+    // The SES category list (D72): a category's products are only created while it is switched on; the ones warroom has and
     // SES does not are added switched off. Names compare without regard to case, like the database.
     const registry = await this.prisma.category.findMany({
       select: { name: true, active: true },
@@ -657,6 +696,12 @@ export class WarroomSyncService
         color: true,
         storage: true,
         upc: true,
+        model: {
+          select: {
+            name: true,
+            product: { select: { name: true, category: true } },
+          },
+        },
       },
     });
     const skuByCode = new Map(skuRows.map((s) => [norm(s.sku), s]));
@@ -666,7 +711,7 @@ export class WarroomSyncService
     const notYet = items.filter(
       (i) => !skuByCode.has(norm(i.partNo)) && knownParts.has(i.partNo),
     );
-    // Only parts of a switched-on category are created; the rest wait until ADMIN opens their category (D68).
+    // Only parts of a switched-on category are created; the rest wait until ADMIN opens their category (D72).
     const missing = notYet.filter((i) => isOn(i.category));
 
     // Safety. A broken warroom is more likely than a fire sale; `force` lifts these for a snapshot that is right.
@@ -721,6 +766,7 @@ export class WarroomSyncService
         created: 0,
         wouldCreate: mode === 'on' && !options.dryRun ? 0 : missing.length,
         updated: 0,
+        moved: 0,
         skippedNoCategory,
         waitingForCategory: notYet.length - missing.length,
         newCategories: 0,
@@ -798,6 +844,17 @@ export class WarroomSyncService
           (i.upc !== null && (s.upc ?? null) !== i.upc))
       );
     });
+    // ERP-made SKUs filed under another product / model / category than the rules give today (a rule change, D78)
+    const wantMove = items.filter((i) => {
+      const s = skuByCode.get(norm(i.partNo));
+      return (
+        s?.erpManaged === true &&
+        (norm(s.model.product.category) !== norm(i.category) ||
+          s.model.product.name !== i.productName ||
+          s.model.name !== i.modelName)
+      );
+    });
+    summary.catalog.moved = 0;
     // New warroom categories join the SES list switched off (shadow or on), so ADMIN can open them later.
     const fresh = new Map<string, CatalogItem>();
     for (const item of items)
@@ -825,10 +882,17 @@ export class WarroomSyncService
     if (mode === 'on') {
       if (options.dryRun) {
         summary.catalog.updated = wantUpdate.length;
+        summary.catalog.moved = wantMove.length;
       } else {
-        const result = await this.upsertCatalog(missing, wantUpdate, skuByCode);
+        const result = await this.upsertCatalog(
+          missing,
+          wantUpdate,
+          skuByCode,
+          wantMove,
+        );
         summary.catalog.created = result.created;
         summary.catalog.updated = result.updated;
+        summary.catalog.moved = result.moved;
         summary.catalog.collisions = result.collisions;
       }
     }
@@ -910,7 +974,13 @@ export class WarroomSyncService
     create: CatalogItem[],
     update: CatalogItem[],
     skuByCode: Map<string, { id: string }>,
-  ): Promise<{ created: number; updated: number; collisions: number }> {
+    move: CatalogItem[] = [],
+  ): Promise<{
+    created: number;
+    updated: number;
+    moved: number;
+    collisions: number;
+  }> {
     const products = await this.prisma.product.findMany({
       select: { id: true, category: true, name: true },
     });
@@ -995,11 +1065,61 @@ export class WarroomSyncService
       });
       updated += 1;
     }
-    return { created, updated, collisions };
+    // Re-file ERP-made SKUs whose product / model / category changed: find or make the right product and model first.
+    let moved = 0;
+    for (const item of move) {
+      const sku = skuByCode.get(norm(item.partNo));
+      if (!sku) continue;
+      const pk = `${item.category}\u0000${item.productName}`;
+      let pid = productId.get(pk);
+      if (!pid) {
+        pid = (
+          await this.prisma.product.create({
+            data: {
+              category: item.category,
+              name: item.productName,
+              active: true,
+              erpManaged: true,
+            },
+          })
+        ).id;
+        productId.set(pk, pid);
+      }
+      const mk = `${pid}\u0000${item.modelName}`;
+      let mid = modelId.get(mk);
+      if (!mid) {
+        mid = (
+          await this.prisma.productModel.create({
+            data: {
+              productId: pid,
+              name: item.modelName,
+              active: true,
+              erpManaged: true,
+            },
+          })
+        ).id;
+        modelId.set(mk, mid);
+      }
+      await this.prisma.productSku.update({
+        where: { id: sku.id },
+        data: { modelId: mid },
+      });
+      moved += 1;
+    }
+    if (moved > 0) {
+      // what the move left empty and the ERP made goes (a session that still points at it keeps it)
+      await this.prisma.productModel.deleteMany({
+        where: { erpManaged: true, skus: { none: {} }, sessions: { none: {} } },
+      });
+      await this.prisma.product.deleteMany({
+        where: { erpManaged: true, models: { none: {} }, sessions: { none: {} } },
+      });
+    }
+    return { created, updated, moved, collisions };
   }
 
   /**
-   * ADMIN one-off (D68): starts from a clean slate before the real catalog comes from warroom. Removes every queue
+   * ADMIN one-off (D72): starts from a clean slate before the real catalog comes from warroom. Removes every queue
    * session (and what hangs on it), the customers, the queue counters, and every product / model / SKU with its branch
    * stock. Staff, branches, categories, payment methods, customer types and settings stay. A dry run only counts.
    * Irreversible, so a real run needs the typed confirmation and leaves a row in the run history.
@@ -1008,7 +1128,8 @@ export class WarroomSyncService
     actorStaffId: string,
     dryRun: boolean,
     confirm: string | undefined,
-  ): Promise<{ dryRun: boolean; counts: CatalogResetCounts }> {
+    scope: ResetScope = 'all',
+  ): Promise<{ dryRun: boolean; scope: ResetScope; counts: CatalogResetCounts }> {
     if (!dryRun && (confirm ?? '').trim() !== RESET_CONFIRM)
       throw new BadRequestException(`พิมพ์ "${RESET_CONFIRM}" เพื่อยืนยัน`);
     if (this.running)
@@ -1019,6 +1140,11 @@ export class WarroomSyncService
         throw new ConflictException(
           'มีรอบซิงก์ warroom ที่ยังไม่จบอยู่ (อาจรันอยู่ที่ container อื่น)',
         );
+      if (scope === 'non-erp') {
+        const counts = await this.resetNonErp(dryRun);
+        await this.logReset(actorStaffId, dryRun, scope, counts);
+        return { dryRun, scope, counts };
+      }
       const [sessions, customers, products, models, skus, inventoryRows] =
         await Promise.all([
           this.prisma.customerSession.count(),
@@ -1029,7 +1155,7 @@ export class WarroomSyncService
           this.prisma.branchInventory.count(),
         ]);
       const counts = { sessions, customers, products, models, skus, inventoryRows };
-      if (dryRun) return { dryRun, counts };
+      if (dryRun) return { dryRun, scope, counts };
       await this.prisma.$transaction(
         async (tx) => {
           // children first: sessions point at products, and a SKU at its model
@@ -1042,26 +1168,98 @@ export class WarroomSyncService
         },
         { timeout: 120_000, maxWait: 10_000 },
       );
-      const now = new Date();
-      await this.prisma.erpSyncRun.create({
-        data: {
-          kind: RESET_KIND,
-          slot: `reset-${now.toISOString()}-${Math.random().toString(16).slice(2, 6)}`,
-          trigger: 'manual',
-          actorStaffId,
-          startedAt: now,
-          finishedAt: now,
-          ok: true,
-          summary: counts as unknown as Prisma.InputJsonValue,
-        },
-      });
-      this.log.warn(
-        `catalog reset by ${actorStaffId}: ${JSON.stringify(counts)}`,
-      );
-      return { dryRun, counts };
+      await this.logReset(actorStaffId, dryRun, scope, counts);
+      return { dryRun, scope, counts };
     } finally {
       this.running = false;
     }
+  }
+
+  /** The run-history row of a real clear (who, what scope, how much). */
+  private async logReset(
+    actorStaffId: string,
+    dryRun: boolean,
+    scope: ResetScope,
+    counts: CatalogResetCounts,
+  ) {
+    if (dryRun) return;
+    const now = new Date();
+    await this.prisma.erpSyncRun.create({
+      data: {
+        kind: RESET_KIND,
+        slot: `reset-${now.toISOString()}-${Math.random().toString(16).slice(2, 6)}`,
+        trigger: 'manual',
+        actorStaffId,
+        startedAt: now,
+        finishedAt: now,
+        ok: true,
+        summary: { scope, ...counts } as unknown as Prisma.InputJsonValue,
+      },
+    });
+    this.log.warn(
+      `catalog reset (${scope}) by ${actorStaffId}: ${JSON.stringify(counts)}`,
+    );
+  }
+
+  /**
+   * D78: removes only what the ERP did not create: SKUs (with their branch stock) that are not `erpManaged`, the hand-made
+   * models and products that are left empty by that, and every queue session that used any of them (a session cannot keep a
+   * product that is gone). Customers, counters and everything from the ERP stay.
+   */
+  private async resetNonErp(dryRun: boolean): Promise<CatalogResetCounts> {
+    const skuIds = (
+      await this.prisma.productSku.findMany({
+        where: { erpManaged: false },
+        select: { id: true },
+      })
+    ).map((s) => s.id);
+    // a hand-made model/product is only removed when nothing the ERP made is left under it
+    const modelIds = (
+      await this.prisma.productModel.findMany({
+        where: { erpManaged: false, skus: { none: { erpManaged: true } } },
+        select: { id: true },
+      })
+    ).map((m) => m.id);
+    const productIds = (
+      await this.prisma.product.findMany({
+        where: {
+          erpManaged: false,
+          models: { every: { id: { in: modelIds } } },
+        },
+        select: { id: true },
+      })
+    ).map((p) => p.id);
+    const sessionWhere: Prisma.CustomerSessionWhereInput = {
+      OR: [
+        { items: { some: { skuId: { in: skuIds } } } },
+        { skuId: { in: skuIds } },
+        { modelId: { in: modelIds } },
+        { productId: { in: productIds } },
+      ],
+    };
+    const [sessions, inventoryRows] = await Promise.all([
+      this.prisma.customerSession.count({ where: sessionWhere }),
+      this.prisma.branchInventory.count({ where: { skuId: { in: skuIds } } }),
+    ]);
+    const counts = {
+      sessions,
+      customers: 0,
+      products: productIds.length,
+      models: modelIds.length,
+      skus: skuIds.length,
+      inventoryRows,
+    };
+    if (dryRun) return counts;
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.customerSession.deleteMany({ where: sessionWhere });
+        await tx.productSku.deleteMany({ where: { id: { in: skuIds } } });
+        await tx.productModel.deleteMany({ where: { id: { in: modelIds } } });
+        await tx.product.deleteMany({ where: { id: { in: productIds } } });
+      },
+      { timeout: 120_000, maxWait: 10_000 },
+    );
+    return counts;
   }
 
   async status(): Promise<{

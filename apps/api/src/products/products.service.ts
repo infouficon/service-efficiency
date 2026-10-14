@@ -392,7 +392,7 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  /** The names of the active categories (D68): staff only see products of these. */
+  /** The names of the active categories (D72): staff only see products of these. */
   private async activeCategoryNames(): Promise<string[]> {
     const rows = await this.prisma.category.findMany({
       where: { active: true },
@@ -401,7 +401,7 @@ export class ProductsService implements OnModuleInit {
     return rows.map((c) => c.name);
   }
 
-  /** The stored spelling of a category name; a product can only be put in a category that exists (D68). */
+  /** The stored spelling of a category name; a product can only be put in a category that exists (D72). */
   private async categoryName(name: string): Promise<string> {
     const found = await this.prisma.category.findUnique({ where: { name } });
     if (!found)

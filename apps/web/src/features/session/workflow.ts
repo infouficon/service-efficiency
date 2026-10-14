@@ -390,18 +390,50 @@ export function goodsToReturn(session: MockSession): boolean {
  */
 export function cashierRejectNotice(
   session: MockSession,
-): { reason: string; at: string } | undefined {
+): {
+  reason: string;
+  at: string;
+  wrongItems?: string[];
+  wrongItemIds?: string[];
+  wrongItemDetails?: Record<string, { reason: string; note?: string }>;
+} | undefined {
   if (session.state !== 'SEARCHING' || session.outcome) return undefined;
   const events = session.events ?? [];
-  const reject = [...events].reverse().find((e) => e.eventType === 'CASHIER_REJECTED');
+  const reject = [...events].reverse().find((e) => {
+    if (e.eventType !== 'CASHIER_REJECTED') return false;
+    const meta = e.metadata as { action?: string } | undefined;
+    return meta?.action !== 'REMOVE_DAMAGED';
+  });
   if (!reject) return undefined;
   const found = [...events].reverse().find((e) => e.eventType === 'STOCK_FOUND');
   if (found && new Date(found.createdAt) > new Date(reject.createdAt)) return undefined;
-  const meta = (reject.metadata ?? {}) as { reason?: string; otherReason?: string | null };
-  return {
+  const meta = (reject.metadata ?? {}) as {
+    reason?: string;
+    otherReason?: string | null;
+    wrongItems?: string[];
+    wrongItemIds?: string[];
+    wrongItemDetails?: Record<string, { reason: string; note?: string }>;
+  };
+  const out: {
+    reason: string;
+    at: string;
+    wrongItems?: string[];
+    wrongItemIds?: string[];
+    wrongItemDetails?: Record<string, { reason: string; note?: string }>;
+  } = {
     reason: [meta.reason, meta.otherReason].filter(Boolean).join(': '),
     at: reject.createdAt,
   };
+  if (Array.isArray(meta.wrongItems) && meta.wrongItems.length > 0) {
+    out.wrongItems = meta.wrongItems;
+  }
+  if (Array.isArray(meta.wrongItemIds) && meta.wrongItemIds.length > 0) {
+    out.wrongItemIds = meta.wrongItemIds;
+  }
+  if (meta.wrongItemDetails && typeof meta.wrongItemDetails === 'object') {
+    out.wrongItemDetails = meta.wrongItemDetails;
+  }
+  return out;
 }
 
 /** `H:MM:SS` (hours are not capped); empty when there is no duration. */
@@ -435,6 +467,88 @@ export function partialFulfillStock(
       ...session.timestamps,
       stock_found_at: displayTime,
     },
+  };
+}
+
+/**
+ * D75: When cashier removes damaged items from an order.
+ * If all items are removed, session outcome is set to CUSTOMER_CANCELLED with reason 'สินค้าชำรุด/มีตำหนิ'.
+ * Otherwise, items/accessories are filtered and a CASHIER_REJECTED event with action 'REMOVE_DAMAGED' is appended.
+ */
+export function removeDamagedItems(
+  session: MockSession,
+  itemIds: string[],
+  displayTime: string,
+  note?: string,
+): MockSession {
+  if (session.outcome) return session;
+
+  const removeSet = new Set(itemIds);
+  const remainingItems = session.selection.items.filter((item) => {
+    const id = item.id ?? item.product.id;
+    return !removeSet.has(id) && !removeSet.has(item.product.id);
+  });
+
+  const remainingAccessories: Record<string, string> = {};
+  for (const [name, qty] of Object.entries(session.selection.accessories)) {
+    if (!removeSet.has(name)) {
+      remainingAccessories[name] = String(qty);
+    }
+  }
+
+  const totalRemaining =
+    remainingItems.length + Object.keys(remainingAccessories).length;
+
+  if (totalRemaining === 0) {
+    return {
+      ...session,
+      outcome: 'CUSTOMER_CANCELLED',
+      reason: 'สินค้าชำรุด/มีตำหนิ',
+      otherReason: note?.trim() || undefined,
+      cancelledBy: session.staffId,
+      timestamps: {
+        ...session.timestamps,
+        cancelled_at: displayTime,
+      },
+      events: [
+        ...(session.events ?? []),
+        {
+          id: `ev-${Date.now()}`,
+          eventType: 'CUSTOMER_CANCELLED',
+          actorStaffId: session.staffId,
+          createdAt: displayTime,
+          metadata: {
+            reason: 'สินค้าชำรุด/มีตำหนิ',
+            otherReason: note?.trim() || undefined,
+            allRemoved: true,
+          },
+        },
+      ],
+    };
+  }
+
+  return {
+    ...session,
+    selection: {
+      ...session.selection,
+      items: remainingItems,
+      accessories: remainingAccessories,
+    },
+    events: [
+      ...(session.events ?? []),
+      {
+        id: `ev-${Date.now()}`,
+        eventType: 'CASHIER_REJECTED',
+        actorStaffId: session.staffId,
+        createdAt: displayTime,
+        metadata: {
+          action: 'REMOVE_DAMAGED',
+          reason: 'สินค้าชำรุด/มีตำหนิ',
+          otherReason: note?.trim() || undefined,
+          removedItemIds: itemIds,
+        },
+      },
+    ],
   };
 }
 

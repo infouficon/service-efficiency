@@ -1046,7 +1046,7 @@ export function SessionLogsWorkspace({
 
         {selectedSession ? (
           <Panel
-            title={`คิว ${selectedSession.queue}`}
+            title={`${selectedSession.queue}`}
             eyebrow={`สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''} · สถานะ: ${detailStatusLabel}`}
           >
             <div
@@ -1437,7 +1437,7 @@ export function SessionLogsWorkspace({
                   onClick={() => handleSelectRef(s.reference)}
                 >
                   <td>
-                    <span className="logs-table-ref">คิว {s.queue}</span>
+                    <span className="logs-table-ref">{s.queue}</span>
                   </td>
                   <td>
                     <span
@@ -1545,7 +1545,7 @@ export function SessionLogsWorkspace({
               onClick={() => handleSelectRef(s.reference)}
             >
               <div className="card-top">
-                <span className="card-ref">คิว {s.queue}</span>
+                <span className="card-ref">{s.queue}</span>
                 {renderStatusTag(s)}
               </div>
               <div className="mobile-log-product">

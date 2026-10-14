@@ -394,11 +394,11 @@ export function StaffWorkspace({
                   </strong>{' '}
                   {ps.queueNo != null ? (
                     <>
-                      คิว <strong>{ps.queue}</strong>
+                      <strong>{ps.queue}</strong>
                     </>
                   ) : (
                     <>
-                      ลูกค้า <strong>{ps.phone || ps.reference}</strong>
+                      <strong>{ps.phone || ps.reference}</strong>
                     </>
                   )}{' '}
                   ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
@@ -437,7 +437,7 @@ export function StaffWorkspace({
               >
                 <div className="card-top">
                   <span className="card-ref">
-                    {s.queueNo != null ? `คิว ${s.queue}` : `ลูกค้า ${s.phone || s.reference}`}
+                    {s.queueNo != null ? `${s.queue}` : `${s.phone || s.reference}`}
                   </span>
                   {s.stockPendingReview ? (
                     <span
@@ -499,8 +499,8 @@ export function StaffWorkspace({
                   </span>
                   <h2 className="queue-title">
                     {activeSession.queueNo != null
-                      ? `คิว ${activeSession.queue}`
-                      : `ลูกค้า ${activeSession.phone || activeSession.reference}`}
+                      ? `${activeSession.queue}`
+                      : `${activeSession.phone || activeSession.reference}`}
                   </h2>
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>

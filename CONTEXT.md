@@ -2,14 +2,14 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D71);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D75);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71 changes (2026-10-14).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73/D74/D75/D76/D77 changes (2026-10-14).
 
 ## 1. What the system is for
 
@@ -51,19 +51,19 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | Decision | Historical only (D68). Formerly customer choice after DEMO; now removed from operational workflow. Drop-offs during selection are handled via cancellation (`CUSTOMER_CANCELLED`). | `buy` step sets `decisionAt`; `POST /decision/not-buy` (historical) |
 | NOT_BUY result | Exactly: `ราคา`, `ยังไม่ตัดสินใจ`, `เปลี่ยนใจ`, `สินค้าไม่ตรงความต้องการ`, `ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ`, `อื่น ๆ` (+ required text). | `reason` / `otherReason`; lists in `apps/web/src/constants/options.ts` |
 | Customer / Phone | Customer master is **only** an ID and a 10-ASCII-digit phone, collected **at walk-in** (D56; supersedes requirements §6 "only after BUY", so NOT_BUY visits keep a phone too). | `Customer.phone` is `@unique` (schema:125), so the "uniqueness" part of OQ-09 is decided in code. The session also copies `phone`. |
-| Product Selection / Purchase data | The purchase being assembled: **main product** (Product → Model → SKU), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
+| Product Selection / Purchase data | The purchase being assembled: **main product** chosen via cascading dropdowns (Category → Model → Capacity → Color, D72), accessory options with quantity, Ontop, Points, Burn Points, Payments, phone. Editable until confirmation. | `PUT /sessions/:id/selection` |
 | Main Product / Session item | Any number per session (D61, supersedes D8): a SKU and a quantity ≥ 1, each SKU once. `deducted` = the units FOUND really took off the shelf (0 while "stock unlimited" is on); a cancel gives back exactly that. The old `productId/modelId/skuId` columns on the session are history only. | `SessionItem` (`items` on every session response); dropped by partial fulfilment or `CHANGE_ITEMS` |
 | LOB / Category | A `Category` row (D68), kept by ADMIN and added by the warroom sync (switched off until opened). The migration seeds `iPhone`, `iPad`, `Mac`, `Watch`, `Accessories`; `Product.category` stores the name. Other brands (HUAWEI …) get their own. | `Category`, `Product.category` (string) |
 | Ontop | Telco/partner add-on (`AIS`, `True`, `CATH`, `KTS`). Multi-select, no amount. | `SessionOntop.name` |
 | Points / Burn Point | Loyalty programs earned / redeemed (`MCard`, `The 1`, `UJOY`). Two separate lists. | `SessionPoint`, `SessionBurnPoint` |
 | Payment | Payment methods, multi-select, **no amounts**. The choices are the active rows of the back-office list `PaymentMethod` (D66; seeded `Cash`, `Transfer`, `SPayLater`, …; ADMIN adds, switches off, reorders, never renames); a session stores the name. | `SessionPayment.method`, `GET/POST/PUT /api/payment-methods` |
 | None | A UI-only "no selection" option. Never persisted: no selection = zero child rows. | filtered in `updateSelection` (`sessions.service.ts`) |
-| Stock Request / Stock queue | A confirmed session waiting for STOCK (`STOCK_REQUESTED`). Queues show **today's** sessions only (D47, UI-side). | |
+| Stock Request / Stock queue | A confirmed session waiting for STOCK (`STOCK_REQUESTED`, `SEARCHING`, `FOUND`). Queues show **today's** sessions only (D47, UI-side), and exclude sessions returned to Staff under stock review (D73). | |
 | SEARCHING / FOUND | STOCK pressed "searching" (sets `stockStartedAt`), then found the items (sets `stockFoundAt` and **deducts each item's quantity** from branch stock, D41, unless the D59 switch is on). | `search`, `found` steps |
 | OUT_OF_STOCK | STOCK cannot fulfil; terminal outcome. Sets that SKU's branch stock to 0 (D41). | `POST /out-of-stock` (`action:'cancel'`) |
-| Stock Review | D40: STOCK reports **missing items** (`report-missing`) without ending the session; main products are named by `missingItemIds` (D61), accessories by name. A JSON blob (`stockReview`) is stored, STAFF sees an alert and resolves with `ACCEPT_PARTIAL` / `CHANGE_ITEMS` / `CANCEL`. A MANAGER/ADMIN can **acknowledge** the alert (adds `acknowledgedAt/By`, no event). | `CustomerSession.stockReview` (Json) |
+| Stock Review | D40: STOCK reports **missing items** (`report-missing`) without ending the session; main products are named by `missingItemIds` (D61), accessories by name. A JSON blob (`stockReview`) is stored, STAFF sees an alert and resolves with `ACCEPT_PARTIAL` / `CHANGE_ITEMS` / `CANCEL`. A MANAGER/ADMIN can **acknowledge** the alert (adds `acknowledgedAt/By`, no event). While in review, the session is removed from the Stock queue (D73). | `CustomerSession.stockReview` (Json) |
 | Sent to Cashier | STOCK hands the goods to the cashier. No timestamp column; the event time is the record. | `send` step |
-| Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). Before the bill is open the cashier can send the order back to stock (`ส่งกลับ Stock`, D64). | `receive`, `scan`, `bill`, `complete` steps; `POST /cashier/reject` |
+| Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). Before the bill is open the cashier can send the order back to stock (`ส่งกลับ Stock`, D64) with wrong-item selection and auto-precheck for re-picking (D74). | `receive`, `scan`, `bill`, `complete` steps; `POST /cashier/reject` |
 | Cancellation | The customer leaves mid-flow, or changes their mind about the product. **Any role of the branch** can cancel at any stage (D63). Reasons: the fixed list incl. the four change reasons (D65) and `อื่น ๆ` (+ required text). Terminal, no undo (D18–20). Gives back exactly what FOUND took (D41, D59, D61). | `POST /cancel`; `cancelledAt`, `cancelledBy` |
 | Stock acknowledgement (D63) | After the stock request, a cancel is a notice for stock (banner on every page for STOCK users, list on the stock page) until a STOCK / branch MANAGER / ADMIN acknowledges ("คืนของเข้าชั้นแล้ว" when the goods had been picked, else "รับทราบ"). Stored on the session. | `stockAckAt` / `stockAckBy`, `POST /stock/acknowledge-cancel`, event `STOCK_ACKNOWLEDGED_CANCEL` |
 | Buy again / ซื้อใหม่ (D65) | After a cancel for a change reason: a NEW session with the old data and the **old queue number**, at product selection. Once per cancelled session. | `rebuyOfId` (`rebuyOf` / `rebuiltAs`), `POST /rebuy` |

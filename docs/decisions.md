@@ -1014,3 +1014,79 @@ Owner: "clear ของเก่าออกให้หมดเลย แล�
 1. **What it removes.** Every queue session (with items, accessories, payments, events …), the customers, the queue counters, and every product / model / SKU with its branch stock. Staff, branches, categories, payment methods, customer types and settings stay.
 2. **How.** Admin → ซิงก์ ERP → "ล้างสินค้าและประวัติคิวเดิม": a first click only counts (`POST /admin/warroom-sync/reset-catalog?dryRun=true`); the real run needs the typed word `ล้างข้อมูล` in the body. It is refused while a sync is running, runs in one transaction, and leaves a `catalog-reset` row (who, counts) in the run history table. Irreversible: take a database backup first. It is deliberately not a migration, so nobody gets it by deploying.
 3. **The demo catalog is removed.** `ProductsService` used to create a hard-coded demo catalog (fake SKUs, 5 units in every branch) whenever `Product` was empty, so a cleared catalog would have refilled itself at the next restart (H-17, the seed half). Nothing is seeded any more: the catalog comes from warroom or from ADMIN.
+
+## D74 — Cascading Dropdowns for Main Product Selection (2026-10-14)
+
+Owner instruction via `/grill-me`: "ตอนเลือก เพิ่มสินค้าหลัก ข้างใน ให้เป็นรูปแบบ dropdown เลือก ประเภทอุปกรณ์ รุ่น ความจุ สี". Supersedes the 4-step wizard tiles picker (D62).
+
+1. **4-Level Cascading Dropdowns Form:**
+   - In `SelectionEditor.tsx`, main product selection uses an inline form with four cascading `<select>` dropdowns:
+     1. **ประเภทอุปกรณ์ (Device Category)**: iPhone, iPad, Mac, Watch, Accessories.
+     2. **รุ่น (Model)**: Filtered models belonging to the selected category.
+     3. **ความจุ (Capacity / Storage)**: Storage options available for the selected model (e.g. 128GB, 256GB, 512GB, 1TB).
+     4. **สี (Color / SKU)**: Color options available for the selected model and storage.
+2. **Auto-Skip & Smart Pre-selection:**
+   - If a product model has no storage variations (e.g. AirPods, power adapters, cables, cases), the "ความจุ" dropdown is automatically skipped/hidden.
+   - If a model or storage selection has only a single option (or single SKU), it is automatically selected to minimize clicks.
+   - Changing an upstream dropdown resets downstream selections.
+3. **Stock Visibility & Prevention:**
+   - Stock availability is displayed directly inside the color dropdown `<option>` text (e.g. `Black Titanium (คงเหลือ 5 ชิ้น)` or `Desert Titanium (สินค้าหมด)`).
+   - An out-of-stock SKU option is disabled in the dropdown.
+   - A summary preview card renders the selected SKU code, specifications, and `StockBadge`. The "+ เพิ่มลงรายการ" button is disabled if the item is out of stock (unless unlimited stock mode D59 is active).
+4. **Post-Add Workflow:**
+   - Clicking "+ เพิ่มลงรายการ" adds the item to `value.items` using the existing stepper list (`addItem`).
+   - The dropdown form automatically collapses/closes, while retaining the "+ เพิ่มสินค้าหลัก" button to reopen and add more items at any time.
+   - When no main products are currently selected (`value.items.length === 0`), the dropdown form remains open by default.
+
+## D75 — Return to Staff on Missing Stock (2026-10-14)
+
+Owner instruction via `/grill-me`: "เมื่อ stock แจ้งสินค้าไม่ครบ/หมด (0/4) → ส่งเรื่องให้ Staff ให้คิวนั้นหายไปจาก stock เพราะ คิวนั้นได้กลับไปให้ staff แล้ว". Extends D40 (Stock Review).
+
+1. **Immediate Removal from Stock Queue:**
+   - In `StockWorkspace.tsx`, when Stock reports missing items (`reportStockMissingApi` / "แจ้งสินค้าไม่ครบ/หมด → ส่งเรื่องให้ Staff"), the session is immediately excluded from `stockQueue` (where `!s.stockPendingReview`).
+   - Applies to all returned cases (both 0 items found and partial items found), as responsibility for customer consultation has transitioned back to Staff.
+2. **Sidebar & Stats Counter Consistency:**
+   - The pending counter pills in Stock Workspace and the sidebar menu badge (`stockPendingCount` in `App.tsx`) exclude `stockPendingReview` sessions so stock staff only see actionable search tasks.
+3. **User Feedback:**
+   - Upon successfully reporting missing items, Stock Workspace displays a prominent success notice ("ส่งเรื่องให้ Staff เรียบร้อยแล้ว (คิว ... ถูกส่งกลับไปให้ Staff ดำเนินการต่อ)") and resets the selection/view to return to the active queue list.
+4. **Return Paths to Stock:**
+   - If Staff and the customer choose to proceed with remaining found items (`ACCEPT_PARTIAL`), the session advances to `FOUND` (with `stockReview` cleared) and reappears in the Stock Workspace "พบแล้ว" tab to be dispatched to Cashier.
+   - If Staff and the customer choose to change items (`CHANGE_ITEMS`), the session reopens at `PRODUCT_SELECTION` (confirmed=false); once Staff confirms the replacement selection, the session returns to Stock Workspace as a new `STOCK_REQUESTED` request.
+
+## D76 — Cashier Reject Item Selection & Stock Re-pick (2026-10-14)
+
+Owner instruction via `/grill-me`: "ส่งสินค้ากลับ Stock ให้สามารถเลือกได้ด้วยว่าหยิบชิ้นไหนผิด" and "ตรงด้านขวาของสินค้าที่แสดง แจ้งหยิบผิด ให้เป็น dropdown เลือกเหตุผลว่า หยิบสินค้าผิด สินค้าชำรุด/มีตำหนิ หรือ อื่น ๆ พร้อมกรอก ข้อความเพิ่มเติม (ระบุรายละเอียด) *". Extends D64 (Cashier Reject).
+
+1. **Per-Item Reason Selection at Cashier Reject:**
+   - In `CashierWorkspace.tsx` (`CashierRejectForm.tsx`), when Cashier sends an order back to stock ("ส่งสินค้ากลับ Stock"), the modal provides an itemized checklist of all items in the order (both main products and accessories).
+   - The global bottom radio group is removed. Instead, when an item is checked, a dropdown appears on the right side of that specific item with reasons: `หยิบสินค้าผิด` (default), `สินค้าชำรุด/มีตำหนิ`, and `อื่น ๆ`.
+   - If `อื่น ๆ` is chosen for an item, an inline text input `ข้อความเพิ่มเติม (ระบุรายละเอียด) *` expands directly underneath that item row with mandatory validation.
+   - Cashier must select at least one item before the submit button is enabled.
+   - `POST /api/sessions/:id/cashier/reject` accepts `reason` (auto-summarized distinct reasons), `wrongItems: string[]` (e.g. `[label] ([reason])`), `wrongItemIds: string[]`, and structured `wrongItemDetails: Record<string, { reason: string; note?: string }>`.
+   - The `CASHIER_REJECTED` event records all these details inside its event metadata.
+
+2. **Stock Visibility & Item-Specific Badges:**
+   - When a session is rejected back to Stock, the red notice banner in `StockWorkspace.tsx` displays the list of problematic items with reasons: `สินค้าที่แคชเชียร์แจ้งมีปัญหา: [รายการ]`.
+   - In the product details summary, accessories list, and interactive search checklist (`SEARCHING` state), each flagged item displays a badge reflecting its actual reason: `⚠️ หยิบสินค้าผิด`, `⚠️ สินค้าชำรุด/มีตำหนิ`, or `⚠️ อื่น ๆ: [note]`.
+
+3. **Stock Auto Pre-Check Behavior:**
+   - When viewing a rejected session in `SEARCHING` state, items that were NOT flagged with a problem are automatically pre-checked as "พบแล้ว".
+   - Only the problematic items remain unchecked, enabling Stock staff to quickly re-pick only the affected items and tick them off once found, without needing to re-verify the entire order.
+
+## D77 — Cashier Remove Damaged Items (2026-10-14)
+
+Owner instruction via `/grill-me`: "หากกรณี สินค้าชำรุด ให้ cashier สามารถเอาสินค้านั้นออกเพื่อดำเนินการต่อได้". Extends D64 and D74 (Cashier Reject).
+
+1. **Cashier Remove Damaged Action:**
+   - In `CashierWorkspace.tsx` (`CashierRejectForm.tsx`), when Cashier opens "ส่งสินค้ากลับ Stock" modal and selects items with reason `สินค้าชำรุด/มีตำหนิ`, a dedicated button **"ตัดชิ้นที่ชำรุดออกและดำเนินการต่อ"** is displayed alongside "ยืนยันส่งกลับ Stock".
+   - **Restriction:** "ตัดชิ้นที่ชำรุดออกและดำเนินการต่อ" is permitted only when **ALL** selected items are flagged as `สินค้าชำรุด/มีตำหนิ` (`allSelectedAreDamaged`). If any selected item is flagged as `หยิบสินค้าผิด` or `อื่น ๆ`, the order must be sent back to Stock for replacement re-picking.
+2. **Zero Remaining Items Handling:**
+   - If removing damaged item(s) leaves 0 items in the order, the system automatically transitions the session outcome to `CUSTOMER_CANCELLED` with reason `สินค้าชำรุด/มีตำหนิ` and records a `CUSTOMER_CANCELLED` event with metadata `{ allRemoved: true }`.
+   - The button text dynamically reflects this state ("ตัดชิ้นที่ชำรุดออก (ยกเลิกคิว)").
+3. **Inventory & Event Tracking:**
+   - When damaged main products are removed, deducted units are returned to `BranchInventory` shelf stock via `returnItemsToShelf`.
+   - When remaining items exist, the removed items (`SessionItem` / `SessionAccessory`) are deleted from the session, and a `CASHIER_REJECTED` event with `metadata: { action: 'REMOVE_DAMAGED', reason: 'สินค้าชำรุด/มีตำหนิ', removedItems, removedItemIds }` is appended.
+   - The session remains at the cashier stage (`CASHIER_RECEIVED` or `CASHIER_SCAN`), allowing the cashier to proceed immediately to billing with the intact items.
+   - `cashierRejectNotice` ignores events where `action === 'REMOVE_DAMAGED'`, preventing ghost reject notifications in Stock.
+4. **API Endpoint:**
+   - `POST /api/sessions/:id/cashier/remove-damaged` accepting `CashierRemoveDamagedDto` `{ itemIds: string[], note?: string }`.

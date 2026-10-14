@@ -431,7 +431,7 @@ export function SystemAuditLogs() {
                           }}
                         >
                           {item.sessionQueue
-                            ? `คิว ${item.sessionQueue}`
+                            ? `${item.sessionQueue}`
                             : item.sessionReference}
                         </span>
                       ) : (

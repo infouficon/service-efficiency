@@ -21,6 +21,7 @@ import {
   itemsText,
   getSessionMissingDescription,
   progressIndex,
+  removeDamagedItems,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 const fixture = () => ({
@@ -317,6 +318,36 @@ test('stock sees why the cashier sent an order back until it finds the goods aga
     'found again: the notice is over',
   );
   assert.equal(cashierRejectNotice({ ...fixture(), state: 'SEARCHING', events: [] }), undefined);
+
+  const sessionWithWrong = {
+    ...fixture(),
+    state: 'SEARCHING',
+    events: [
+      { eventType: 'STOCK_FOUND', createdAt: at(1), metadata: null },
+      {
+        eventType: 'CASHIER_REJECTED',
+        createdAt: at(3),
+        metadata: {
+          reason: 'หยิบสินค้าผิด',
+          otherReason: null,
+          wrongItems: ['iPhone 16 Pro 128GB (x1) (หยิบสินค้าผิด)'],
+          wrongItemIds: ['item-1'],
+          wrongItemDetails: {
+            'item-1': { reason: 'หยิบสินค้าผิด' },
+          },
+        },
+      },
+    ],
+  };
+  assert.deepEqual(cashierRejectNotice(sessionWithWrong), {
+    reason: 'หยิบสินค้าผิด',
+    at: at(3),
+    wrongItems: ['iPhone 16 Pro 128GB (x1) (หยิบสินค้าผิด)'],
+    wrongItemIds: ['item-1'],
+    wrongItemDetails: {
+      'item-1': { reason: 'หยิบสินค้าผิด' },
+    },
+  });
 });
 test('main products (F3): picking adds or raises, + / − step, below 1 removes', () => {
   const a = { id: 'sku-a', category: 'iPhone', product: 'iPhone 16', model: 'iPhone 16 128GB Black', sku: 'A' };
@@ -396,4 +427,52 @@ test('progressIndex maps to the 5 steps: phone, product, confirmation, stock, ca
   assert.equal(progressIndex(s), 4, 'cashier stage');
   s.state = 'COMPLETED';
   assert.equal(progressIndex(s), 4, 'completed');
+});
+
+test('removeDamagedItems removes damaged items and leaves remaining items (D75)', () => {
+  const s = {
+    ...fixture(),
+    state: 'CASHIER_RECEIVED',
+    selection: {
+      ...fixture().selection,
+      items: [
+        { id: 'item-1', product: { id: 'p1', model: 'iPhone 16' }, quantity: 1 },
+        { id: 'item-2', product: { id: 'p2', model: 'iPad Air' }, quantity: 1 },
+      ],
+      accessories: {
+        'Case A': '1',
+      },
+    },
+  };
+
+  const updated = removeDamagedItems(s, ['item-1'], '2026-10-14T10:00:00Z');
+  assert.equal(updated.outcome, undefined);
+  assert.equal(updated.selection.items.length, 1);
+  assert.equal(updated.selection.items[0].id, 'item-2');
+  assert.equal(updated.selection.accessories['Case A'], '1');
+  assert.equal(updated.events.length, 1);
+  assert.equal(updated.events[0].eventType, 'CASHIER_REJECTED');
+  assert.equal(updated.events[0].metadata.action, 'REMOVE_DAMAGED');
+  // Cashier reject notice should ignore REMOVE_DAMAGED even if state were SEARCHING
+  assert.equal(cashierRejectNotice({ ...updated, state: 'SEARCHING' }), undefined);
+});
+
+test('removeDamagedItems cancels session when all items are removed (D75)', () => {
+  const s = {
+    ...fixture(),
+    state: 'CASHIER_RECEIVED',
+    selection: {
+      ...fixture().selection,
+      items: [
+        { id: 'item-1', product: { id: 'p1', model: 'iPhone 16' }, quantity: 1 },
+      ],
+      accessories: {},
+    },
+  };
+
+  const updated = removeDamagedItems(s, ['item-1'], '2026-10-14T10:00:00Z', 'หน้าจอแตก');
+  assert.equal(updated.outcome, 'CUSTOMER_CANCELLED');
+  assert.equal(updated.reason, 'สินค้าชำรุด/มีตำหนิ');
+  assert.equal(updated.otherReason, 'หน้าจอแตก');
+  assert.equal(updated.timestamps.cancelled_at, '2026-10-14T10:00:00Z');
 });

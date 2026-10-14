@@ -367,10 +367,29 @@ export async function cashierRejectApi(
   id: string,
   reason: string,
   otherReason?: string,
+  wrongItems?: string[],
+  wrongItemIds?: string[],
+  wrongItemDetails?: Record<string, { reason: string; note?: string }>,
 ): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/reject`, 'POST', {
     reason,
     otherReason,
+    wrongItems,
+    wrongItemIds,
+    wrongItemDetails,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
+/** D75: cashier removes damaged items and proceeds with the rest of the order. */
+export async function cashierRemoveDamagedApi(
+  id: string,
+  itemIds: string[],
+  note?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/remove-damaged`, 'POST', {
+    itemIds,
+    note,
   });
   return mapApiSessionToMockSession(data);
 }

@@ -6,7 +6,6 @@ import {
   Watch,
   Box,
   ArrowRight,
-  ArrowLeft,
   Headphones,
   Plus,
   X,
@@ -167,12 +166,26 @@ function StockBadge({ sku }: { sku: CatalogSku }) {
   );
 }
 
-type WizardStep = 'category' | 'product' | 'model' | 'sku';
+function getSkuOptionLabel(s: CatalogSku): string {
+  if (s.color && s.name) {
+    if (s.name.toLowerCase().includes(s.color.toLowerCase())) {
+      return s.color;
+    }
+    return `${s.name} (${s.color})`;
+  }
+  return s.color || s.name || 'มาตรฐาน';
+}
+
+function getSkuStockText(s: CatalogSku): string {
+  if (isUnlimited(s)) return 'มีจำหน่าย';
+  if (isOutOfStock(s)) return 'สินค้าหมด';
+  if (typeof s.stock === 'number') return `คงเหลือ ${s.stock} ชิ้น`;
+  return 'พร้อมจำหน่าย';
+}
 
 /**
- * Choosing the main products (F2, F3): a step-by-step picker like the trade-in app (big tiles: category → product →
- * model → capacity / colour; a step with a single choice is skipped) that adds to a list, each product with a `−` / `+`
- * quantity. Several main products can be added.
+ * Choosing the main products (F2, F3, D72): cascading dropdowns (Category → Model → Capacity → Color)
+ * that adds to a list, each product with a `−` / `+` quantity stepper. Several main products can be added.
  */
 export function SelectionEditor({
   value,
@@ -191,10 +204,13 @@ export function SelectionEditor({
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
   const [open, setOpen] = useState(value.items.length === 0);
   // with nothing chosen the picker is always open
-  const wizardOpen = open || value.items.length === 0;
-  const [category, setCategory] = useState<string | null>(null);
-  const [productId, setProductId] = useState<string | null>(null);
-  const [modelId, setModelId] = useState<string | null>(null);
+  const formOpen = open || value.items.length === 0;
+
+  // Cascading dropdown states
+  const [category, setCategory] = useState<string>('');
+  const [modelKey, setModelKey] = useState<string>('');
+  const [storage, setStorage] = useState<string>('');
+  const [skuId, setSkuId] = useState<string>('');
 
   useEffect(() => {
     let active = true;
@@ -262,44 +278,149 @@ export function SelectionEditor({
       : !model
         ? 'model'
         : 'sku';
+  // Available models for selected category
+  const availableModels = useMemo(() => {
+    if (!catalog || !category) return [];
+    const list: {
+      key: string;
+      product: CatalogProduct;
+      model: CatalogModel;
+      displayName: string;
+    }[] = [];
+    for (const p of catalog) {
+      if (p.category !== category) continue;
+      for (const m of p.models) {
+        if (!m.skus || m.skus.length === 0) continue;
+        const displayName =
+          p.name === m.name || m.name.toLowerCase().includes(p.name.toLowerCase())
+            ? m.name
+            : `${p.name} - ${m.name}`;
+        list.push({
+          key: `${p.id}::${m.id}`,
+          product: p,
+          model: m,
+          displayName,
+        });
+      }
+    }
+    return list;
+  }, [catalog, category]);
 
-  const resetWizard = () => {
-    setCategory(null);
-    setProductId(null);
-    setModelId(null);
+  // Selected model object
+  const selectedModelObj = useMemo(() => {
+    return availableModels.find((m) => m.key === modelKey) ?? null;
+  }, [availableModels, modelKey]);
+
+  // Available storages for selected model
+  const availableStorages = useMemo(() => {
+    if (!selectedModelObj) return [];
+    const set = new Set<string>();
+    for (const s of selectedModelObj.model.skus) {
+      const st = s.storage?.trim();
+      if (st) set.add(st);
+    }
+    return Array.from(set);
+  }, [selectedModelObj]);
+
+  const hasStorage = availableStorages.length > 0;
+
+  // Candidate SKUs for selected model and storage
+  const candidateSkus = useMemo(() => {
+    if (!selectedModelObj) return [];
+    if (hasStorage && !storage) return [];
+    if (hasStorage) {
+      return selectedModelObj.model.skus.filter(
+        (s) => (s.storage?.trim() || '') === storage,
+      );
+    }
+    return selectedModelObj.model.skus;
+  }, [selectedModelObj, hasStorage, storage]);
+
+  // Resolved selected SKU
+  const selectedSku = useMemo(() => {
+    if (!selectedModelObj || !skuId) return null;
+    return selectedModelObj.model.skus.find((s) => s.id === skuId) ?? null;
+  }, [selectedModelObj, skuId]);
+
+  const handleResetForm = () => {
+    setCategory('');
+    setModelKey('');
+    setStorage('');
+    setSkuId('');
   };
-  // a step with a single choice is skipped: a product with one model goes straight to its SKUs,
-  // a category with one product goes straight to that product
-  const chooseProduct = (next: CatalogProduct) => {
-    setProductId(next.id);
-    setModelId(next.models.length === 1 ? next.models[0].id : null);
+
+  const handleCategoryChange = (cat: string) => {
+    setCategory(cat);
+    setModelKey('');
+    setStorage('');
+    setSkuId('');
   };
-  const chooseCategory = (next: string) => {
-    setCategory(next);
-    const inCategory = (catalog ?? []).filter((p) => p.category === next);
-    if (inCategory.length === 1) chooseProduct(inCategory[0]);
-    else {
-      setProductId(null);
-      setModelId(null);
+
+  const handleModelChange = (key: string) => {
+    setModelKey(key);
+    setStorage('');
+    setSkuId('');
+
+    if (!key) return;
+    const target = availableModels.find((m) => m.key === key);
+    if (!target) return;
+
+    const storages = Array.from(
+      new Set(
+        target.model.skus
+          .map((s) => s.storage?.trim())
+          .filter((st): st is string => Boolean(st)),
+      ),
+    );
+
+    if (storages.length === 0) {
+      if (target.model.skus.length === 1) {
+        setSkuId(target.model.skus[0].id);
+      }
+    } else if (storages.length === 1) {
+      setStorage(storages[0]);
+      const matchingSkus = target.model.skus.filter(
+        (s) => (s.storage?.trim() || '') === storages[0],
+      );
+      if (matchingSkus.length === 1) {
+        setSkuId(matchingSkus[0].id);
+      }
     }
   };
-  /** One step back (over the steps that were skipped); at the first step the wizard closes when something is already chosen. */
-  const back = () => {
-    if (step === 'sku' && (product?.models.length ?? 0) > 1) setModelId(null);
-    else if (step === 'sku' || step === 'model') {
-      setModelId(null);
-      if (products.length > 1) setProductId(null);
-      else resetWizard();
-    } else if (step === 'product') resetWizard();
-    else if (value.items.length > 0) setOpen(false);
+
+  const handleStorageChange = (newStorage: string) => {
+    setStorage(newStorage);
+    setSkuId('');
+
+    if (!selectedModelObj || !newStorage) return;
+    const matchingSkus = selectedModelObj.model.skus.filter(
+      (s) => (s.storage?.trim() || '') === newStorage,
+    );
+    if (matchingSkus.length === 1) {
+      setSkuId(matchingSkus[0].id);
+    }
   };
-  const pick = (sku: CatalogSku) => {
-    if (!product || !model) return;
+
+  const handleSkuChange = (newSkuId: string) => {
+    setSkuId(newSkuId);
+  };
+
+  const handleAddItem = () => {
+    if (!selectedModelObj || !selectedSku) return;
+    if (isOutOfStock(selectedSku)) return;
+
     onChange({
       ...value,
-      items: addItem(value.items, toProduct(product, model, sku)),
+      items: addItem(
+        value.items,
+        toProduct(
+          selectedModelObj.product,
+          selectedModelObj.model,
+          selectedSku,
+        ),
+      ),
     });
-    resetWizard();
+    handleResetForm();
     setOpen(false);
   };
 
@@ -314,13 +435,6 @@ export function SelectionEditor({
     isUnlimited(item.product) ||
     typeof item.product.stock !== 'number' ||
     item.quantity < item.product.stock;
-
-  const crumbs = [
-    { label: 'หมวดหมู่', done: Boolean(category) },
-    { label: 'รุ่น', done: Boolean(product) },
-    { label: 'โมเดลเครื่อง', done: Boolean(model) },
-  ];
-  const currentCrumb = crumbs.findIndex((c) => !c.done);
 
   return (
     <>
@@ -397,7 +511,7 @@ export function SelectionEditor({
             ))}
           </ul>
         )}
-        {!wizardOpen && (
+        {!formOpen && (
           <Button variant="secondary" onClick={() => setOpen(true)}>
             <span
               style={{
@@ -413,104 +527,211 @@ export function SelectionEditor({
         )}
       </fieldset>
 
-      {wizardOpen && (
-        <div className="wizard">
-          <ol className="wizard-crumbs">
-            {crumbs.map((crumb, index) => (
-              <li
-                key={crumb.label}
-                className={
-                  crumb.done ? 'done' : index === currentCrumb ? 'current' : ''
-                }
+      {formOpen && (
+        <div className="product-dropdown-form">
+          <div className="product-picker-header">
+            <h4>
+              <Plus size={16} />
+              เลือกสินค้าหลัก
+            </h4>
+            {value.items.length > 0 && (
+              <button
+                type="button"
+                className="close-picker-btn"
+                onClick={() => {
+                  handleResetForm();
+                  setOpen(false);
+                }}
+                aria-label="ปิดการเลือกสินค้า"
               >
-                {crumb.label}
-              </li>
-            ))}
-          </ol>
-          {(step !== 'category' || value.items.length > 0) && (
-            <button type="button" className="wizard-back" onClick={back}>
-              <ArrowLeft size={14} />{' '}
-              {step === 'category' ? 'ปิดการเลือกสินค้า' : 'ย้อนกลับ'}
-            </button>
-          )}
+                <X size={16} />
+              </button>
+            )}
+          </div>
 
           {catalog === null && !loadError && (
             <p className="muted">กำลังโหลดรายการสินค้า…</p>
           )}
 
-          {catalog !== null && step === 'category' && (
-            <div className="wizard-tiles">
-              {categoryTiles.map((item) => {
-                const count = catalog.filter((p) => p.category === item).length;
-                return (
-                  <button
-                    type="button"
-                    key={item}
-                    className="wizard-tile wizard-tile-category"
-                    disabled={count === 0}
-                    onClick={() => chooseCategory(item)}
+          {catalog !== null && (
+            <>
+              <div className="product-picker-dropdowns">
+                {/* 1. Device Category */}
+                <div className="picker-field">
+                  <label htmlFor="product-category-select">
+                    ประเภทอุปกรณ์ <span className="required">*</span>
+                  </label>
+                  <select
+                    id="product-category-select"
+                    value={category}
+                    onChange={(e) => handleCategoryChange(e.target.value)}
                   >
-                    {getCategoryIcon(item, 34)}
-                    <strong>{item}</strong>
-                    {count === 0 && <small>ไม่มีสินค้า</small>}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+                    <option value="">-- เลือกประเภทอุปกรณ์ --</option>
+                    {deviceCategories.map((cat) => {
+                      const count = catalog.filter(
+                        (p) => p.category === cat,
+                      ).length;
+                      return (
+                        <option key={cat} value={cat} disabled={count === 0}>
+                          {cat} {count === 0 ? '(ไม่มีสินค้า)' : ''}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
 
-          {step === 'product' && (
-            <div className="wizard-tiles">
-              {products.map((p) => (
-                <button
-                  type="button"
-                  key={p.id}
-                  className="wizard-tile"
-                  onClick={() => chooseProduct(p)}
-                >
-                  <strong>{p.name}</strong>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {step === 'model' && product && (
-            <div className="wizard-tiles">
-              {product.models.map((m) => (
-                <button
-                  type="button"
-                  key={m.id}
-                  className="wizard-tile"
-                  onClick={() => setModelId(m.id)}
-                >
-                  <strong>{m.name}</strong>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {step === 'sku' && model && (
-            <div className="wizard-tiles">
-              {model.skus.map((s) => {
-                const out = isOutOfStock(s);
-                return (
-                  <button
-                    type="button"
-                    key={s.id}
-                    className={`wizard-tile ${out ? 'out-of-stock' : ''}`}
-                    disabled={out}
-                    onClick={() => pick(s)}
+                {/* 2. Model */}
+                <div className="picker-field">
+                  <label htmlFor="product-model-select">
+                    รุ่น <span className="required">*</span>
+                  </label>
+                  <select
+                    id="product-model-select"
+                    value={modelKey}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                    disabled={!category || availableModels.length === 0}
                   >
-                    <strong>{s.name || model.name}</strong>
-                    <span className="wizard-tile-options">
-                      {[s.storage, s.color].filter(Boolean).join(' · ')}
-                    </span>
-                    <small>{s.sku}</small>
-                    <StockBadge sku={s} />
-                  </button>
-                );
-              })}
-            </div>
+                    <option value="">
+                      {!category
+                        ? '-- กรุณาเลือกประเภทอุปกรณ์ก่อน --'
+                        : availableModels.length === 0
+                          ? '-- ไม่มีรุ่นสินค้าในหมวดนี้ --'
+                          : '-- เลือกรุ่น --'}
+                    </option>
+                    {availableModels.map((m) => (
+                      <option key={m.key} value={m.key}>
+                        {m.displayName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Storage / Capacity (Auto-skipped if not applicable) */}
+                {hasStorage && (
+                  <div className="picker-field">
+                    <label htmlFor="product-storage-select">
+                      ความจุ <span className="required">*</span>
+                    </label>
+                    <select
+                      id="product-storage-select"
+                      value={storage}
+                      onChange={(e) => handleStorageChange(e.target.value)}
+                      disabled={!modelKey}
+                    >
+                      <option value="">
+                        {!modelKey
+                          ? '-- กรุณาเลือกรุ่นก่อน --'
+                          : '-- เลือกความจุ --'}
+                      </option>
+                      {availableStorages.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* 4. Color */}
+                <div className="picker-field">
+                  <label htmlFor="product-color-select">
+                    สี{' '}
+                    {candidateSkus.length > 0 && (
+                      <span className="required">*</span>
+                    )}
+                  </label>
+                  <select
+                    id="product-color-select"
+                    value={skuId}
+                    onChange={(e) => handleSkuChange(e.target.value)}
+                    disabled={!modelKey || (hasStorage && !storage)}
+                  >
+                    <option value="">
+                      {!modelKey
+                        ? '-- กรุณาเลือกรุ่นก่อน --'
+                        : hasStorage && !storage
+                          ? '-- กรุณาเลือกความจุก่อน --'
+                          : candidateSkus.length === 0
+                            ? '-- ไม่มีตัวเลือกสี --'
+                            : '-- เลือกสี --'}
+                    </option>
+                    {candidateSkus.map((s) => {
+                      const out = isOutOfStock(s);
+                      const optLabel = getSkuOptionLabel(s);
+                      const stockText = getSkuStockText(s);
+                      return (
+                        <option key={s.id} value={s.id} disabled={out}>
+                          {optLabel} ({stockText})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+
+              {/* Selected SKU summary preview */}
+              {selectedSku && selectedModelObj && (
+                <div className="picker-sku-summary">
+                  <div className="picker-sku-info">
+                    <div className="picker-sku-icon">
+                      {getCategoryIcon(selectedModelObj.product.category, 22)}
+                    </div>
+                    <div className="picker-sku-details">
+                      <div className="picker-sku-title">
+                        <strong>{selectedModelObj.model.name}</strong>
+                        <span className="picker-sku-specs">
+                          {[selectedSku.storage, selectedSku.color]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                      </div>
+                      <div className="picker-sku-meta">
+                        <span className="picker-sku-code">
+                          {selectedSku.sku}
+                        </span>
+                        <StockBadge sku={selectedSku} />
+                      </div>
+                    </div>
+                  </div>
+                  {isOutOfStock(selectedSku) && (
+                    <div className="picker-stock-warning">
+                      สินค้ารายการนี้หมดในสต็อก ไม่สามารถเพิ่มลงรายการได้
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Actions */}
+              <div className="picker-actions">
+                <Button
+                  variant="primary"
+                  disabled={!selectedSku || isOutOfStock(selectedSku)}
+                  onClick={handleAddItem}
+                >
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <Plus size={16} />
+                    เพิ่มลงรายการ
+                  </span>
+                </Button>
+                {value.items.length > 0 && (
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      handleResetForm();
+                      setOpen(false);
+                    }}
+                  >
+                    ยกเลิก
+                  </Button>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

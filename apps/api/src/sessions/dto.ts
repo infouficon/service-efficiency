@@ -5,6 +5,7 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -85,6 +86,20 @@ export class CashierRejectDto {
   @IsOptional()
   @IsString()
   otherReason?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  wrongItems?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  wrongItemIds?: string[];
+
+  @IsOptional()
+  @IsObject()
+  wrongItemDetails?: Record<string, { reason: string; note?: string }>;
 }
 
 export class OutOfStockDto {
@@ -205,4 +220,14 @@ export class ResolveStockReviewDto {
   @IsOptional()
   @IsString()
   otherReason?: string;
+}
+
+export class CashierRemoveDamagedDto {
+  @IsArray()
+  @IsString({ each: true })
+  itemIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

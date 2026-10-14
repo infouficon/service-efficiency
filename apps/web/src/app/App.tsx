@@ -196,6 +196,7 @@ export function App({
   const stockPendingCount = branchSessions.filter(
     (s) =>
       !s.outcome &&
+      !s.stockPendingReview &&
       isToday(s.timestamps.customer_walk_in_at) &&
       ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
   ).length;

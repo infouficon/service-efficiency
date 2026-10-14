@@ -13,6 +13,7 @@ import type {
   AdvanceStepDto,
   CancelSessionDto,
   CashierRejectDto,
+  CashierRemoveDamagedDto,
   CreateSessionDto,
   NotBuyDto,
   OutOfStockDto,
@@ -1113,7 +1114,114 @@ export class SessionsService {
               metadata: {
                 reason: dto.reason,
                 otherReason: dto.otherReason?.trim() || null,
+                wrongItems: dto.wrongItems ?? [],
+                wrongItemIds: dto.wrongItemIds ?? [],
+                wrongItemDetails: dto.wrongItemDetails ?? null,
                 fromState: session.state,
+              },
+            },
+          },
+        },
+        include: sessionInclude,
+      });
+    });
+  }
+
+  /**
+   * D75: Cashier removes damaged item(s) from an order and proceeds with remaining items.
+   * If all items in the order are removed, the session is cancelled with CUSTOMER_CANCELLED (reason: 'สินค้าชำรุด/มีตำหนิ').
+   */
+  async cashierRemoveDamaged(user: PublicAccount, id: string, dto: CashierRemoveDamagedDto) {
+    this.checkRole(user, 'CASHIER');
+    const session = await this.getById(user, id);
+
+    if (
+      session.outcome ||
+      !['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state)
+    ) {
+      throw new BadRequestException(
+        'Only an order that is with the cashier and not yet billed can have damaged items removed',
+      );
+    }
+    if (!Array.isArray(dto.itemIds) || dto.itemIds.length === 0) {
+      throw new BadRequestException('At least one item must be specified to remove');
+    }
+
+    const removedItemIds = new Set(dto.itemIds);
+    const removedMainItems = session.items.filter(
+      (item) => removedItemIds.has(item.id) || removedItemIds.has(item.skuId),
+    );
+    const removedAccessories = session.accessories.filter(
+      (acc) => removedItemIds.has(acc.id) || removedItemIds.has(acc.accessoryName),
+    );
+
+    const remainingMainCount = session.items.length - removedMainItems.length;
+    const remainingAccCount = session.accessories.length - removedAccessories.length;
+    const totalRemaining = remainingMainCount + remainingAccCount;
+
+    const now = new Date();
+    const removedNames = [
+      ...removedMainItems.map((i) => `${i.sku.name} (${i.sku.sku})`),
+      ...removedAccessories.map((a) => `${a.accessoryName} (x${a.quantity})`),
+    ];
+
+    return this.prisma.$transaction(async (tx) => {
+      // Return deducted units of the removed main items to shelf
+      await this.returnItemsToShelf(tx, session.branchId, removedMainItems);
+
+      // If all items are removed, cancel the session
+      if (totalRemaining <= 0) {
+        return tx.customerSession.update({
+          where: { id: session.id },
+          data: {
+            outcome: 'CUSTOMER_CANCELLED',
+            reason: 'สินค้าชำรุด/มีตำหนิ',
+            otherReason: dto.note?.trim() || null,
+            cancelledBy: user.staffId,
+            cancelledAt: now,
+            events: {
+              create: {
+                eventType: 'CUSTOMER_CANCELLED',
+                actorStaffId: user.staffId,
+                createdAt: now,
+                metadata: {
+                  reason: 'สินค้าชำรุด/มีตำหนิ',
+                  otherReason: dto.note?.trim() || null,
+                  removedItems: removedNames,
+                  allRemoved: true,
+                },
+              },
+            },
+          },
+          include: sessionInclude,
+        });
+      }
+
+      // Delete removed main product rows
+      for (const item of removedMainItems) {
+        await tx.sessionItem.delete({ where: { id: item.id } });
+      }
+
+      // Delete removed accessory rows
+      for (const acc of removedAccessories) {
+        await tx.sessionAccessory.delete({ where: { id: acc.id } });
+      }
+
+      // Record CASHIER_REJECTED event with action: REMOVE_DAMAGED
+      return tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          events: {
+            create: {
+              eventType: 'CASHIER_REJECTED',
+              actorStaffId: user.staffId,
+              createdAt: now,
+              metadata: {
+                action: 'REMOVE_DAMAGED',
+                reason: 'สินค้าชำรุด/มีตำหนิ',
+                otherReason: dto.note?.trim() || null,
+                removedItems: removedNames,
+                removedItemIds: dto.itemIds,
               },
             },
           },

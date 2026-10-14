@@ -4,7 +4,7 @@ import { cleanup, seedWorld, startApi } from './support.mjs';
 
 const APPLE = ['iPhone', 'iPad', 'Mac', 'Watch', 'Accessories'];
 
-test('product categories are a list ADMIN keeps; staff only see products of an active one (D68)', async (t) => {
+test('product categories are a list ADMIN keeps; staff only see products of an active one (D72)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) return;
   const { db, request } = ctx;

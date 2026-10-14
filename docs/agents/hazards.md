@@ -102,8 +102,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 - Coolify auto-deploys the `web` and `api` apps from `main` (webhook observed 2026-10-08). The API container's entrypoint (`apps/api/docker-entrypoint.sh`) runs `prisma migrate deploy` under `set -e` **before** it starts the server, so a failing migration means the API never starts. There is **no CI** (no `.github/`).
 - **Rule:** never push straight to `main`. Use a branch and a PR, run lint, build, `prisma validate` and tests locally, and keep migrations additive. See [recipes.md](recipes.md).
 
-### H-17: The product service back-fills data at boot and on every read · S2 · seed half **fixed in D69**
-- The demo catalog seed (hard-coded fake SKUs, 5 units per branch whenever `Product` was empty, production included) was removed in D69: a cleared catalog stays empty. What remains: `findByBranch()` calls `syncBranchInventory()` (a full Branch × SKU scan plus `createMany`) on every product list request (`:235-236`). Both catch and ignore all errors.
+### H-17: The product service back-fills data at boot and on every read · S2 · seed half **fixed in D73**
+- The demo catalog seed (hard-coded fake SKUs, 5 units per branch whenever `Product` was empty, production included) was removed in D73: a cleared catalog stays empty. What remains: `findByBranch()` calls `syncBranchInventory()` (a full Branch × SKU scan plus `createMany`) on every product list request (`:235-236`). Both catch and ignore all errors.
 - **Fix direction:** create the BranchInventory rows when a branch or SKU is created (D41 says "Defaults when a new SKU or Branch is created").
 
 ### H-18: Weak trail for stock review resolution and alert acknowledgment · S3 · confirmed
@@ -175,7 +175,7 @@ Still open:
 - Tests do not cover: concurrent `claim`, abandoned-run reclaim, `tick`/`dueSlot` wiring, branch rename/reopen/move, OData 5xx-then-success, timeout and `MAX_ROWS`, the MySQL object form of the JSON column (tests run MariaDB), and rollback of updates/leavers in a dry run.
 
 ### H-32: Known gaps in the warroom products/stock sync · S2/S3 · open
-- **Category and hierarchy rules** (the first real dry run happened 2026-10-14: 5,078 parts, 20,265 stock rows, 18 categories, 17 branches matched / 18 unknown; the unmapped ones led to D68). Still guesses: Product = `product_subcat`, Model = `product_subsubcat`, and the Apple keyword rules (`mapCategory`, Product = `product_subcat`, Model = `product_subsubcat`). Nothing real was ever read from the production warroom DB by the author (its host is internal to Coolify). Expect to adjust after reading the "unmapped" list.
+- **Category and hierarchy rules** (the first real dry run happened 2026-10-14: 5,078 parts, 20,265 stock rows, 18 categories, 17 branches matched / 18 unknown; the unmapped ones led to D72). Still guesses: Product = `product_subcat`, Model = `product_subsubcat`, and the Apple keyword rules (`mapCategory`, Product = `product_subcat`, Model = `product_subsubcat`). Nothing real was ever read from the production warroom DB by the author (its host is internal to Coolify). Expect to adjust after reading the "unmapped" list.
 - **Coupled to warroom internals**: `mart.stock_mv` columns `stock_type, snapshot_at, product_upc, product_name, product_model, product_cat, product_subcat, product_subsubcat, qty, branch_code` (+ optional `capacity`, `color`). A warroom change breaks SES at the next run (the run fails visibly, nothing is written). `npi_reader` can read all of `mart`; a dedicated role is advised.
 - **`erpAsOf` is the last time a stock row CHANGED, not the pull time**: warroom drops unchanged rows as duplicates (`ingestRows … ON CONFLICT DO NOTHING`), so `max(snapshot_at)` can be older than the real pull; the true pull time (`app.odata_sync`) is not readable by `npi_reader`. The error is on the safe side (a session completed between that time and the pull counts as held a little longer) and no new snapshot is processed when nothing changed.
 - **Freshness**: warroom pulls 5×/day, 12.5 h overnight; units sold in the shop (not through SES) between snapshots are invisible. The only correction SES applies is its own sessions (reservations) and D41 reports.
@@ -191,10 +191,12 @@ Still open:
 - The sync never deactivates or deletes: discontinued ERP products stay in SES with 0 stock.
 - Raw SQL upserts use `VALUES()` in `ON DUPLICATE KEY UPDATE` (works on MySQL 8.4 with a deprecation warning and on MariaDB).
 
-### H-33: Categories, UPC and "clear everything" (D68, D69) · S2/S3 · open
+### H-33: Categories, UPC and "clear everything" (D72, D73) · S2/S3 · open
 - **The back-office product list is not paginated.** `GET /products?admin=true` returns every product with the inventory of every branch. With the Apple categories (~800 SKUs × 17 branches) it is fine; opening "Third Party Accy" (4,107 parts) and the HUAWEI categories would make that response and the products screen heavy. Page or lazy-load before opening them.
 - **The clear action is irreversible and global** (`POST /admin/warroom-sync/reset-catalog`): sessions, customers, counters, catalog. It needs the typed confirmation and a database backup beforehand; there is no per-branch or per-date version.
 - **Category names are matched without regard to case** (database collation) but are stored as spelled the first time; warroom changing the spelling of a category does not rename the SES one, and two spellings that differ only in case are one category.
 - **A category the sync added stays in the list for ever** (switched off) even if warroom stops using it: categories are never deleted.
 - **`isAccessory` decides the picker, not the name**: a new accessory-like category flagged wrongly shows up as a main-product tile (or hides a device line). The sync guesses it from the words "accy"/"accessor" in warroom's name.
 - **UPC is informational**: it is not unique and not used to match parts (the part number stays the key, D52); a part whose UPC changes in warroom is updated only for SKUs the sync created.
+- **Capacity stripping (D78) depends on warroom's `capacity` field**: a part with an empty or odd capacity ("1 TB SSD") keeps the capacity in its model name and so stays a model of its own. A rule change moves SKUs between models: queues keep their SKU link, but the product/model names shown in history follow the new filing.
+- **Moving removes empty ERP-made models/products** unless an old session still points at them (they then stay empty and visible in the back office list).

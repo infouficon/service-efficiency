@@ -1090,3 +1090,13 @@ Owner instruction via `/grill-me`: "หากกรณี สินค้าช�
    - `cashierRejectNotice` ignores events where `action === 'REMOVE_DAMAGED'`, preventing ghost reject notifications in Stock.
 4. **API Endpoint:**
    - `POST /api/sessions/:id/cashier/remove-damaged` accepting `CashierRemoveDamagedDto` `{ itemIds: string[], note?: string }`.
+
+## D78 — Picker: icon tiles for the category; capacity is not part of the model; batteries are their own category; delete only non-ERP products (2026-10-14)
+
+Owner, after seeing the dropdown picker (D74) with real warroom data: "ทำไมไม่แยกรุ่นกับความจุ ... มันทำให้เยอะเกินไป", "แบตน่าจะต้องแยกหมวด", "ตอนแรกผมอยากให้เลือกสินค้าเป็น UI แบบก่อนที่เป็น icon หมวดหมู่ ใช้ได้เฉพาะ icon ห้ามใช้ emoji", "ลบสินค้าเก่าที่ไม่ได้เอามาจาก ERP". Amends D74 and D72.
+
+1. **Category = icon tiles, then dropdowns.** The first step of "เลือกสินค้าหลัก" is one tile per active, non-accessory category (icons from lucide-react, SVG, no emoji; Battery has its own icon). Model, capacity and colour stay dropdowns (D74). A category with no products is shown disabled.
+2. **Capacity is not part of the model.** Warroom's sub-category names carried the capacity ("iPhone 18 Pro Max 1TB"), which made one model per capacity and a long model list. The sync now removes the part's own capacity token from the product and model names, so every capacity of a model is one model and the capacity dropdown does its job. Only the part's own capacity is removed (a Mac's "16GB" memory stays).
+3. **Batteries are a category.** A part whose sub-category (or sub-sub-category) starts with "Battery" goes to the category `Battery`, not iPhone or Accessories (unless the warroom category is another brand's). The category is added switched off, like every new warroom category (D72): staff see it once ADMIN opens it.
+4. **Existing ERP products are re-filed by the sync.** An ERP-made SKU filed under another category / product / model than today's rules give (the old per-capacity models, batteries under iPhone) is moved to the right ones on the next run (`moved` in the run summary; a dry run counts it); the ERP-made models and products left empty are removed. Hand-made records are never touched.
+5. **"Delete only what is not from the ERP".** Admin → ซิงก์ ERP → "นับสินค้าที่ไม่ได้มาจาก ERP" (`POST /admin/warroom-sync/reset-catalog?scope=non-erp`): counts first, then the typed confirmation. It removes SKUs (with branch stock) that are not `erpManaged`, the hand-made models/products left empty by that, and every queue session that used any of them (a session cannot keep a product that is gone). ERP-made products, customers and the other queues stay. Irreversible: back up first.

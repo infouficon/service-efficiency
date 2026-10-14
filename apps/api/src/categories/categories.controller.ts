@@ -16,7 +16,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import { CategoriesService } from './categories.service';
 import { CategoryCreateDto, CategoryMoveDto, CategoryUpdateDto } from './dto';
 
-/** Product categories (D68): every signed-in user reads the active ones, only ADMIN keeps the list. */
+/** Product categories (D72): every signed-in user reads the active ones, only ADMIN keeps the list. */
 @Controller('categories')
 @UseGuards(OriginGuard)
 export class CategoriesController {

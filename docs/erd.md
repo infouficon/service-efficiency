@@ -93,7 +93,7 @@ Lists preserve source spelling/case. `None` is a UI no-selection option, exclude
 | Cancellation reason | `ลูกค้าเปลี่ยนใจ`, `รอนาน`, `อื่น ๆ`                                                                                                                                                                                                                           |
 | Stock status        | `SEARCHING`, `FOUND`, `SENT_TO_CASHIER`, `OUT_OF_STOCK`, `CUSTOMER_CANCELLED`                                                                                                                                                                                  |
 
-> **Product Category (D68, 2026-10-14):** the list is data (`Category`, kept by ADMIN and added by the warroom sync); the five above are the seeded, active ones. `Product.category` stores the name; `ProductSku.upc` holds the warroom barcode.
+> **Product Category (D72, 2026-10-14):** the list is data (`Category`, kept by ADMIN and added by the warroom sync); the five above are the seeded, active ones. `Product.category` stores the name; `ProductSku.upc` holds the warroom barcode.
 
 NOT_BUY `อื่น ๆ` requires additional text (`other_reason`, D17). This belongs to the decision result, distinct from cancellation `otherReason`. They must not be merged into an ambiguous shared reason field.
 

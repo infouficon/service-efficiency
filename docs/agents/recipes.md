@@ -34,7 +34,7 @@ npm run dev            # terminal 2, http://localhost:5173 (Vite proxies /api)
 ```
 
 Bootstrap only works on an **empty** Staff table; the first login forces a password change. No
-branch, staff or product is seeded (D69 removed the demo catalog): create them in the Admin UI, or
+branch, staff or product is seeded (D73 removed the demo catalog): create them in the Admin UI, or
 point the API at a warroom database (docs/agents/warroom-products.md). The five Apple categories
 come with the migration.
 

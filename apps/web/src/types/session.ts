@@ -85,7 +85,7 @@ export interface PaymentMethod {
   position: number;
 }
 
-/** A product category (D68), kept by ADMIN and added by the warroom sync. The name is what products store. */
+/** A product category (D72), kept by ADMIN and added by the warroom sync. The name is what products store. */
 export interface Category {
   id: string;
   name: string;

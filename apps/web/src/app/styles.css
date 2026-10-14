@@ -3558,6 +3558,17 @@ input[aria-invalid='true'] {
   font-size: 16px;
   color: var(--primary-dark);
 }
+.picker-category-tiles {
+  margin-bottom: 14px;
+}
+.picker-category-tiles .wizard-tile-category {
+  min-height: 96px;
+}
+.wizard-tile.selected {
+  border-color: var(--primary);
+  background: var(--primary-subtle);
+  box-shadow: 0 0 0 1px var(--primary);
+}
 .wizard-tile.out-of-stock {
   border-color: var(--border-danger);
 }

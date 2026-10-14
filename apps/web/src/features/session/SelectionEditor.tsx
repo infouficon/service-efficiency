@@ -7,6 +7,7 @@ import {
   Box,
   ArrowRight,
   Headphones,
+  BatteryCharging,
   Plus,
   X,
 } from 'lucide-react';
@@ -47,6 +48,8 @@ function getCategoryIcon(cat: string, size = 16) {
       return <Watch size={size} />;
     case 'Accessories':
       return <Headphones size={size} />;
+    case 'Battery':
+      return <BatteryCharging size={size} />;
     default:
       return <Box size={size} />;
   }
@@ -200,7 +203,7 @@ export function SelectionEditor({
   const [loadError, setLoadError] = useState('');
   // F6: the payment methods ADMIN keeps; the built-in list is the fallback when they cannot be loaded
   const [paymentNames, setPaymentNames] = useState<readonly string[]>(payments);
-  // D68: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
+  // D72: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
   const [open, setOpen] = useState(value.items.length === 0);
   // with nothing chosen the picker is always open
@@ -543,32 +546,28 @@ export function SelectionEditor({
 
           {catalog !== null && (
             <>
+              {/* 1. Device category: one icon tile each (D78). A category without products is shown but cannot be picked. */}
+              <div className="wizard-tiles picker-category-tiles" role="group" aria-label="ประเภทอุปกรณ์">
+                {categoryTiles.map((cat) => {
+                  const count = catalog.filter((p) => p.category === cat).length;
+                  return (
+                    <button
+                      type="button"
+                      key={cat}
+                      className={`wizard-tile wizard-tile-category${category === cat ? ' selected' : ''}`}
+                      aria-pressed={category === cat}
+                      disabled={count === 0}
+                      onClick={() => handleCategoryChange(cat)}
+                    >
+                      {getCategoryIcon(cat, 34)}
+                      <strong>{cat}</strong>
+                      {count === 0 && <small>ไม่มีสินค้า</small>}
+                    </button>
+                  );
+                })}
+              </div>
               <div className="product-picker-dropdowns">
-                {/* 1. Device Category */}
-                <div className="picker-field">
-                  <label htmlFor="product-category-select">
-                    ประเภทอุปกรณ์ <span className="required">*</span>
-                  </label>
-                  <select
-                    id="product-category-select"
-                    value={category}
-                    onChange={(e) => handleCategoryChange(e.target.value)}
-                  >
-                    <option value="">-- เลือกประเภทอุปกรณ์ --</option>
-                    {categoryTiles.map((cat) => {
-                      const count = catalog.filter(
-                        (p) => p.category === cat,
-                      ).length;
-                      return (
-                        <option key={cat} value={cat} disabled={count === 0}>
-                          {cat} {count === 0 ? '(ไม่มีสินค้า)' : ''}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-
-                {/* 2. Model */}
+                {/* 2. Model (capacity is not part of it, D78) */}
                 <div className="picker-field">
                   <label htmlFor="product-model-select">
                     รุ่น <span className="required">*</span>

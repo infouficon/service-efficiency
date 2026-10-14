@@ -228,6 +228,40 @@ export function memoryOf(...texts: (string | null | undefined)[]): string | null
 }
 
 /**
+ * The storage of a part (D80). Warroom's `capacity` column is the first GB/TB figure of a name, so on a Mac it is the RAM
+ * ("Ram 24 1TB" -> "24GB"). When a memory was read from the names, the storage is the first GB/TB figure that is not that
+ * memory; without a memory the `capacity` column is used as it is.
+ */
+export function storageOf(
+  texts: (string | null | undefined)[],
+  memory: string | null,
+  capacity: string | null,
+): string | null {
+  const cap = (capacity ?? '').trim() || null;
+  if (!memory) return cap;
+  for (const text of texts) {
+    for (const m of (text ?? '').matchAll(/(\d+(?:\.\d+)?)\s*(GB|TB)\b/gi)) {
+      const token = `${m[1]}${m[2].toUpperCase()}`;
+      if (token !== memory) return token;
+    }
+  }
+  return cap && cap.toUpperCase() !== memory ? cap : null;
+}
+
+/** The colour without the capacity warroom puts in front of it ("1TB SSD - Space Black" -> "Space Black"). */
+export function colorOf(color: string | null): string | null {
+  const text = (color ?? '').trim();
+  if (!text) return null;
+  const stripped = text
+    .replace(
+      /^(?:\d+(?:\.\d+)?\s*(?:GB|TB)(?:\s*(?:SSD|RAM|Memory|Storage))?[\s,/+]*)+[-–·:]\s*/i,
+      '',
+    )
+    .trim();
+  return stripped || text;
+}
+
+/**
  * A model name as staff should see it (D79): without the capacity (D78), without the memory ("Ram 16"), and without a
  * trailing keyboard-layout marker ("Eng", which stays in the SKU name), so one model carries all its RAM / capacity /
  * colour variants. Screen size and chip stay in the name ("MacBook Air M5 13.6").
@@ -330,12 +364,13 @@ export function buildCatalog(rows: WarroomRow[]): {
       skippedNoCategory += 1;
       continue;
     }
-    const capacity = first(rs, (r) => r.capacity);
-    const memory = memoryOf(
+    const nameTexts = [
       first(rs, (r) => r.subsubcat),
       first(rs, (r) => r.subcat),
       first(rs, (r) => r.productName),
-    );
+    ];
+    const memory = memoryOf(...nameTexts);
+    const capacity = storageOf(nameTexts, memory, first(rs, (r) => r.capacity));
     const productName =
       clean(modelNameOf(subcat, capacity), 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
     items.push({
@@ -351,13 +386,10 @@ export function buildCatalog(rows: WarroomRow[]): {
       memory,
       skuName: shortName(name, partNo).slice(0, 191),
       color: clean(
-        first(rs, (r) => r.color),
+        colorOf(first(rs, (r) => r.color)),
         64,
       ),
-      storage: clean(
-        first(rs, (r) => r.capacity),
-        64,
-      ),
+      storage: clean(capacity, 64),
     });
   }
   // names that differ only in case are one product / model (D79)

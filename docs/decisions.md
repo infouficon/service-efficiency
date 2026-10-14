@@ -1139,3 +1139,12 @@ Owner, after seeing the Mac list (one entry per RAM/capacity/keyboard combinatio
 5. **Pictures.** The category tiles show Icons8 pictures (iPhone, iPad, Mac, Watch, Battery, Accessories) bundled in `apps/web/src/assets/category-icons/` (downloaded once from the URLs the owner gave, no runtime hotlinking). Icons8's free licence needs a link back, so the picker shows "ไอคอนสินค้าโดย Icons8"; remove it only with a paid licence. Categories without a picture (other brands) get a plain line icon. The Accessories picture is a stand-in (fluency "airpods-pro"): the owner's wireless-charger link was cut off in the message; replace `accessories.png` with it.
 6. **Not changed:** non-product rows warroom files under Mac (for example "Connectivity Cards - MacBook Air (13-inch, 2017)", "Other - AC+ Incident") are still created as models; see H-33.
 
+## D80 — Mac storage and colour are read from the names, not from warroom's capacity/colour columns (2026-10-15)
+
+Owner, after D79 went live: a Mac showed "ความจุ: 24GB", the model "MacBook Pro M5 14.2 1TB" and the colour "1TB SSD - Space Black". Warroom's `capacity` column is the first GB/TB figure of a name, which on a Mac is the RAM ("Ram 24 1TB" -> "24GB"), and its `color` column can carry the storage in front ("1TB SSD - Space Black"). Amends D79.
+
+1. **Storage.** When a memory was read from the names (D79), the storage is the first GB/TB figure in the names that is not that memory ("Ram 24 1TB" -> `1TB`); with no storage in the names it is empty (never the RAM). Without a memory the `capacity` column is used as before (phones, iPads).
+2. **Colour.** A leading capacity / RAM / SSD part and its dash are removed ("1TB SSD - Space Black" -> "Space Black"; "16GB/512GB - Silver" -> "Silver"); a value that would become empty is kept.
+3. **Model name** is cleaned with the corrected storage, so "1TB" no longer stays in "MacBook Pro M5 14.2 1TB".
+4. **Existing rows** are corrected by the next sync run (SKU attributes are refreshed, and the SKUs are re-filed, D78). The picker's selected-product card now shows the category picture.
+

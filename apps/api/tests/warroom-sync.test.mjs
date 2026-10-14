@@ -145,6 +145,33 @@ test('Mac names: memory read from "Ram 16", model name without RAM, capacity and
   assert.equal(name('Connectivity Cards - MacBook Air (13-inch, 2017)', null), 'Connectivity Cards - MacBook Air (13-inch, 2017)');
 });
 
+test('Mac attributes: warroom\'s capacity is the RAM, so the storage is read from the names; the colour loses its capacity prefix (D80)', () => {
+  const texts = ['MacBook Pro M5 14.2 Ram 24 1TB', 'MacBook Pro', 'Apple MDE34TH/A MacBook Pro 24GB 1TB SSD Space Black'];
+  assert.equal(wr.storageOf(texts, '24GB', '24GB'), '1TB');
+  assert.equal(wr.storageOf(['Macbook Air M5 13.6 Ram 16 512GB'], '16GB', '16GB'), '512GB');
+  assert.equal(wr.storageOf(['Mac mini M4 Ram 16'], '16GB', '16GB'), null, 'no storage in the names: nothing, not the RAM');
+  assert.equal(wr.storageOf(['iPhone 17 256GB'], null, '256GB'), '256GB', 'no memory: the capacity column as it is');
+  assert.equal(wr.storageOf(['Mac Ram 16 512GB'], '16GB', '512GB'), '512GB');
+  assert.equal(wr.colorOf('1TB SSD - Space Black'), 'Space Black');
+  assert.equal(wr.colorOf('512GB SSD - Sky Blue'), 'Sky Blue');
+  assert.equal(wr.colorOf('16GB/512GB - Silver'), 'Silver');
+  assert.equal(wr.colorOf('Space Black'), 'Space Black');
+  assert.equal(wr.colorOf('Deep Blue'), 'Deep Blue');
+  assert.equal(wr.colorOf('1TB'), '1TB', 'never empty');
+  assert.equal(wr.colorOf(null), null);
+  assert.equal(wr.colorOf('  '), null);
+  const row = {
+    branchCode: 'B', partNo: 'MDE34TH/A', upc: 'u',
+    productName: texts[2], cat: 'Mac', subcat: 'MacBook Pro', subsubcat: texts[0],
+    capacity: '24GB', color: '1TB SSD - Space Black', ready: 1, transfer: 0, snapshotAt: new Date(),
+  };
+  const { items } = wr.buildCatalog([row]);
+  assert.equal(items[0].memory, '24GB');
+  assert.equal(items[0].storage, '1TB');
+  assert.equal(items[0].color, 'Space Black');
+  assert.equal(items[0].modelName, 'MacBook Pro M5 14.2', 'the 1TB is gone from the model name too');
+});
+
 test('catalog: Mac variants share one model, with RAM and capacity of their own; case spellings are one model (D79)', () => {
   const row = (partNo, subsub, cap, color, o = {}) => ({
     branchCode: 'B',

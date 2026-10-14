@@ -719,7 +719,7 @@ export function SelectionEditor({
                 <div className="picker-sku-summary">
                   <div className="picker-sku-info">
                     <div className="picker-sku-icon">
-                      {getCategoryIcon(selectedModelObj.product.category, 22)}
+                      <CategoryPicture cat={selectedModelObj.product.category} size={40} />
                     </div>
                     <div className="picker-sku-details">
                       <div className="picker-sku-title">

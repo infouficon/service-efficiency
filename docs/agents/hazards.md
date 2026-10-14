@@ -201,6 +201,6 @@ Still open:
 - **Capacity stripping (D78) depends on warroom's `capacity` field**: a part with an empty or odd capacity ("1 TB SSD") keeps the capacity in its model name and so stays a model of its own. A rule change moves SKUs between models: queues keep their SKU link, but the product/model names shown in history follow the new filing.
 - **Moving removes empty ERP-made models/products** unless an old session still points at them (they then stay empty and visible in the back office list).
 - **Mac memory and variants rely on name conventions (D79)**: "Ram 16" in the sub-category names and a trailing "Eng" marker. A name without them keeps RAM/layout inside the model name and is a model of its own. Non-product rows under Mac ("Connectivity Cards - …", "Other - AC+ Incident") still become models.
-- **Category pictures come from Icons8's free licence**: the credit link under the tiles is part of the licence; the Accessories picture is a stand-in.
+- **Category pictures come from Icons8**: the free licence asks for a visible link back; the owner had the on-screen credit removed (2026-10-15), so confirm the licence he holds covers it. The Accessories picture is a stand-in.
 - **Warroom's parsed `capacity` / `color` columns are unreliable for Macs (D80)**: capacity = RAM, colour may carry the storage. SES re-derives both from the names; a Mac whose names carry no "Ram N" keeps warroom's capacity as its storage, and its model name keeps the RAM/storage text.
 

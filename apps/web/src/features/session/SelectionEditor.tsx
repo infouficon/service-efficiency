@@ -63,7 +63,7 @@ function getCategoryIcon(cat: string, size = 16) {
   }
 }
 
-/** Product pictures of the category tiles (Icons8, see the credit under the tiles); a category without one gets a plain icon. */
+/** Product pictures of the category tiles (Icons8, see D79 for the licence); a category without one gets a plain icon. */
 const CATEGORY_PICTURES: Record<string, string> = {
   iPhone: iphoneIcon,
   iPad: ipadIcon,
@@ -588,12 +588,6 @@ export function SelectionEditor({
                   );
                 })}
               </div>
-              <p className="fine muted icon-credit">
-                ไอคอนสินค้าโดย{' '}
-                <a href="https://icons8.com" target="_blank" rel="noreferrer">
-                  Icons8
-                </a>
-              </p>
               <div className="product-picker-dropdowns">
                 {/* 2. Model (capacity is not part of it, D78) */}
                 <div className="picker-field">

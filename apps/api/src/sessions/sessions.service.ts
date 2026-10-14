@@ -394,17 +394,25 @@ export class SessionsService {
           customerId: customer.id,
           phone: dto.phone,
           ...queue,
-          state: 'WALK_IN',
+          state: 'PRODUCT_SELECTION',
           customerWalkInAt: now,
+          productSelectionStartAt: now,
           events: {
-            create: {
-              eventType: 'SESSION_CREATED',
-              actorStaffId: user.staffId,
-              createdAt: now,
-              metadata: {
-                queue: formatQueue(queue.queueLetter, queue.queueNo),
+            create: [
+              {
+                eventType: 'SESSION_CREATED',
+                actorStaffId: user.staffId,
+                createdAt: now,
+                metadata: {
+                  queue: formatQueue(queue.queueLetter, queue.queueNo),
+                },
               },
-            },
+              {
+                eventType: 'PRODUCT_SELECTION_STARTED',
+                actorStaffId: user.staffId,
+                createdAt: now,
+              },
+            ],
           },
         },
         include: sessionInclude,

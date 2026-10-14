@@ -69,11 +69,13 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
         assert.equal(res.data.customerType.letter, 'A');
         assert.equal(res.data.phone, '0999900001');
         assert.ok(res.data.customerId);
-        assert.equal(res.data.state, 'WALK_IN');
+        assert.equal(res.data.state, 'PRODUCT_SELECTION');
+        assert.ok(res.data.productSelectionStartAt);
         assert.match(res.data.reference, /^SES-\d{8}-\d{6}$/);
-        assert.equal(res.data.events.length, 1);
+        assert.equal(res.data.events.length, 2);
         assert.equal(res.data.events[0].eventType, 'SESSION_CREATED');
         assert.equal(res.data.events[0].metadata.queue, 'A001');
+        assert.equal(res.data.events[1].eventType, 'PRODUCT_SELECTION_STARTED');
         const customer = await db.customer.findUnique({
           where: { phone: '0999900001' },
         });

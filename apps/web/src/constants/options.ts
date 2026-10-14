@@ -67,13 +67,11 @@ export const rejectReasons = [
   'อื่น ๆ',
 ] as const;
 export const stages = [
-  'Walk-in',
-  'DEMO',
-  'Decision',
-  'Product',
-  'Confirmation',
-  'Stock',
-  'Cashier',
+  'กรอกเบอร์โทร',
+  'เลือกสินค้า',
+  'ตรวจสอบยืนยัน',
+  'ฝ่ายคลัง',
+  'แคชเชียร์',
 ] as const;
 export const cancellationStages = [
   'DEMO',

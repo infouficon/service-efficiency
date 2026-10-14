@@ -925,3 +925,21 @@ Owner: "QR แนบท้ายใบเสร็จ เพื่อกรอ�
 1. **Where it is set.** Admin → จัดการสาขา → "QR ลงทะเบียน" (ADMIN): an http(s) address up to 512 characters, with a live preview of the QR; empty clears it. `PUT /branches/:id/registration-url`. It also works on ERP-managed branches (the ERP does not own this field, D53).
 2. **On the receipt.** The QR is drawn in the browser from the branch's address (error correction M, quiet zone, black on white; the text is encoded as UTF-8). A branch without an address prints no QR, and the screen says so next to the print button.
 3. **The address pattern is the owner's / the U POS team's.** U POS's `/register` has no branch parameter today; a `?branch=<code>` would let it attribute the registration (to ask in the integration request, see D60). Until then any address can be set.
+
+## D68 — Direct to Product Selection on Walk-in, Demo and Buy/Not-Buy Removed (2026-10-14)
+
+Owner instruction via `/grill-me`: "หลังจากกรอกเบอร์โทรเรียบร้อย ให้เริ่มที่ step Product เลย ตัดส่วน demo และ BUY / NOT BUY ออกได้เลย ไม่เก็บข้อมูล timestemp ส่วนนี้แล้ว". Supersedes D10/D11 and the former DEMO/DECISION intermediate states for the walk-in service flow.
+
+1. **Direct to Product Selection.** Submitting the walk-in form (10-digit phone number and customer type, D56/D57) immediately creates the session in `PRODUCT_SELECTION` state (`customerWalkInAt = now()`, `productSelectionStartAt = now()`, events `SESSION_CREATED` and `PRODUCT_SELECTION_STARTED`). The Staff Workspace immediately opens the step-by-step product selection wizard (D62).
+2. **DEMO and BUY / NOT BUY Removed.** The `startDemo`, `endDemo`, and `buy` steps are completely removed from the operational workflow. Milestones `demoStartAt`, `demoEndAt`, and `decisionAt` are no longer recorded (remain null for new sessions). The database columns are retained as nullable so historical data remains intact.
+3. **Customer Drop-off / Not Buy.** If a customer decides not to purchase or walks away during selection, Staff uses the existing "ยกเลิกคำขอบริการ" (Cancel) button, selecting reason "ลูกค้าเปลี่ยนใจ" (outcome: `CUSTOMER_CANCELLED`). No separate NOT BUY button is provided.
+4. **Product Selection Duration.** Time spent on product selection begins at the moment the walk-in form is submitted (`productSelectionStartAt = customerWalkInAt`) and ends when staff confirms the purchase (`productSelectionConfirmedAt`).
+5. **Staff Workspace Progress Bar.** The progress stepper on the staff screen displays five clear steps:
+   - 1. กรอกเบอร์โทร (Completed upon walk-in submission)
+   - 2. เลือกสินค้า (Active during product selection)
+   - 3. ตรวจสอบยืนยัน (Active during order review)
+   - 4. ฝ่ายคลัง (Active while in stock queue and searching)
+   - 5. แคชเชียร์ (Active while at cashier until completion)
+6. **Phone Number Verification & Correction.** Staff can inspect and edit the customer's phone number on the "ตรวจสอบยืนยัน" (Review & Confirmation) screen before clicking "ยืนยันการสั่งซื้อ" to handle any typo made at the walk-in step.
+7. **CSV Export & Duration Reports.** The export columns for `Demo Start At`, `Demo End At`, `Decision At`, and duration steps `รอก่อนเริ่ม DEMO`, `DEMO`, `ตัดสินใจหลัง DEMO`, `เริ่มเลือกสินค้าหลังตัดสินใจ` are removed from the CSV export, showing only the active operational steps.
+

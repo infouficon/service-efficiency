@@ -978,5 +978,23 @@ Owner instruction via `/grill-me`: "ในส่วน ประเภทลู�
 7. **Buy Again (Rebuy) Invariant (F11):**
    - Retains the existing queue letter and number from the original session so the customer keeps their queue place.
 
+## D71 — Payment Methods Drag-and-Drop Reordering (2026-10-14)
+
+Owner instruction via `/grill-me`: "ช่องทางชำระเงิน ให้สามารถกดแล้วลากเพื่อเลื่อนจัดอันดับได้". Extends D66 (payment methods management).
+
+1. **Drag & Drop Handle:**
+   - In Admin → ช่องทางชำระเงิน (`PaymentMethodsPanel`), each row in the table contains a dedicated drag handle column with a `GripVertical` icon (`⠿`) at the left.
+   - Dragging is enabled specifically when interacting with the drag handle to prevent unintended row dragging when clicking action buttons or selecting text.
+   - Visual feedback during drag: dragged row displays reduced opacity (`0.35`), target insertion row displays clear drop highlight indicator (`#0abab5` border).
+2. **Auto-save on Drop:**
+   - When a row is dropped at a new position, the UI updates optimistically and immediately persists the new ordering to the backend via `PUT /api/payment-methods/reorder` with `{ ids: string[] }`.
+   - On success, displays a toast notification: "บันทึกลำดับช่องทางชำระเงินเรียบร้อย".
+   - If an error occurs, the order reverts to its previous state and an error toast is displayed.
+3. **Retention of Up / Down Buttons:**
+   - The single-step Up / Down arrow buttons (`↑` / `↓`) in the Actions column are retained alongside drag & drop for accessibility and touch/mobile devices.
+4. **Backend Atomic Reordering:**
+   - Endpoint `PUT /api/payment-methods/reorder` executes within a single transaction, validating all IDs and reassigning `position = 1..n`.
+
+
 
 

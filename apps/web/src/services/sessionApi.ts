@@ -226,6 +226,10 @@ export function movePaymentMethodApi(id: string, direction: 'up' | 'down'): Prom
   return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/move`, 'POST', { direction });
 }
 
+export function reorderPaymentMethodsApi(ids: string[]): Promise<PaymentMethod[]> {
+  return api<PaymentMethod[]>('/payment-methods/reorder', 'PUT', { ids });
+}
+
 /** Active customer types in letter order; `all` (ADMIN) includes the switched-off ones. */
 export function fetchCustomerTypesApi(all = false): Promise<CustomerType[]> {
   return api<CustomerType[]>(`/customer-types${all ? '?all=true' : ''}`);

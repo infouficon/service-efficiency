@@ -181,6 +181,46 @@ test('payment methods are a list ADMIN keeps; names are history, so never rename
         });
       }
     });
+
+    await t.test('PUT /payment-methods/reorder updates positions (D71)', async () => {
+      const all = () => list('admin', '?all=true').then((r) => r.data);
+      const before = await all();
+      const ids = before.map((m) => m.id);
+      const reversedIds = [...ids].reverse();
+
+      assert.equal(
+        (
+          await request(
+            '/payment-methods/reorder',
+            'PUT',
+            { ids: reversedIds },
+            cookies.staff,
+          )
+        ).status,
+        403,
+        'ADMIN only',
+      );
+
+      const reordered = await request(
+        '/payment-methods/reorder',
+        'PUT',
+        { ids: reversedIds },
+        cookies.admin,
+      );
+      assert.equal(reordered.status, 200);
+      assert.deepEqual(
+        reordered.data.map((m) => m.id),
+        reversedIds,
+      );
+
+      // restore original order
+      await request(
+        '/payment-methods/reorder',
+        'PUT',
+        { ids },
+        cookies.admin,
+      );
+    });
   } finally {
     await cleanup(ctx, world);
   }

@@ -87,4 +87,28 @@ export class PaymentsService {
       return tx.paymentMethod.findUniqueOrThrow({ where: { id } });
     });
   }
+
+  /** Reorders payment methods according to the given array of IDs and updates positions 1..n. */
+  async reorder(ids: string[]) {
+    return this.prisma.$transaction(async (tx) => {
+      const all = await tx.paymentMethod.findMany();
+      const allMap = new Map(all.map((m) => [m.id, m]));
+      for (const id of ids) {
+        if (!allMap.has(id)) {
+          throw new NotFoundException(`ไม่พบช่องทางชำระเงิน id: ${id}`);
+        }
+      }
+      for (const [index, id] of ids.entries()) {
+        const method = allMap.get(id);
+        const newPos = index + 1;
+        if (method && method.position !== newPos) {
+          await tx.paymentMethod.update({
+            where: { id },
+            data: { position: newPos },
+          });
+        }
+      }
+      return tx.paymentMethod.findMany({ orderBy: ORDER });
+    });
+  }
 }

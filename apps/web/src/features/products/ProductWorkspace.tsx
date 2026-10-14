@@ -50,7 +50,7 @@ export interface SkuItem {
   name: string;
   color?: string | null;
   storage?: string | null;
-  /** barcode from warroom (D68), next to the part number in `sku` */
+  /** barcode from warroom (D72), next to the part number in `sku` */
   upc?: string | null;
   active: boolean;
   /** Created and kept in sync from the ERP: only `active` can be changed here. */
@@ -68,7 +68,7 @@ export interface ModelItem {
 
 export interface ProductItem {
   id: string;
-  /** the name of a category (D68) */
+  /** the name of a category (D72) */
   category: string;
   name: string;
   active: boolean;
@@ -111,7 +111,7 @@ interface ProductWorkspaceProps {
   onSubViewChange?: (view: 'MAIN' | 'STOCK') => void;
 }
 
-/** `ALL`, or the name of a category (D68) */
+/** `ALL`, or the name of a category (D72) */
 type CategoryTab = string;
 
 export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWorkspaceProps) {
@@ -138,7 +138,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [categoryTab, setCategoryTab] = useState<CategoryTab>('ALL');
-  // D68: the categories ADMIN keeps (a manager reads the active ones); the five Apple lines until they load
+  // D72: the categories ADMIN keeps (a manager reads the active ones); the five Apple lines until they load
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
 

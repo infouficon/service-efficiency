@@ -11,7 +11,7 @@ import {
 import type { Category } from '../../types/session';
 
 /**
- * Back-office list of product categories (D68). The warroom sync adds the categories it finds (switched off), and new
+ * Back-office list of product categories (D72). The warroom sync adds the categories it finds (switched off), and new
  * ones can be added here without a deploy. Products store the name, so a category is switched on or off, never renamed
  * or deleted. Staff only see products of an active category; accessory-like categories are not offered as a main
  * product (accessories have their own step).

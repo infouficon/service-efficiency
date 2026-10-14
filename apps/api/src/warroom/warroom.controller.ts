@@ -60,18 +60,22 @@ export class WarroomController {
     );
   }
 
-  /** D68: counts (`dryRun=true`) or clears the old catalog and queue history; a real run needs `{ confirm }`. */
+  /** D72: counts (`dryRun=true`) or clears the old catalog and queue history; a real run needs `{ confirm }`. */
   @Post('reset-catalog')
   async resetCatalog(
     @Req() req: Request,
     @Query('dryRun') dryRun?: string,
+    @Query('scope') scope?: string,
     @Body() body?: { confirm?: string },
   ) {
     const user = await this.admin(req);
+    if (scope !== undefined && scope !== 'all' && scope !== 'non-erp')
+      throw new BadRequestException('scope ต้องเป็น all หรือ non-erp');
     return this.sync.resetCatalog(
       user.staffId,
       flag('dryRun', dryRun),
       typeof body?.confirm === 'string' ? body.confirm : undefined,
+      scope === 'non-erp' ? 'non-erp' : 'all',
     );
   }
 }

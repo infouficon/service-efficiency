@@ -9,7 +9,7 @@ import {
 } from 'class-validator';
 
 export class ProductCreateDto {
-  /** the name of a category (D68); the service checks that it exists */
+  /** the name of a category (D72); the service checks that it exists */
   @IsString()
   @MinLength(1)
   @MaxLength(100)

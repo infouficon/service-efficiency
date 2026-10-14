@@ -4,7 +4,7 @@ import { cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
 
 const RESET = '/admin/warroom-sync/reset-catalog';
 
-test('clearing the old catalog and queue history is counted first and needs a typed confirmation (D68)', async (t) => {
+test('clearing the old catalog and queue history is counted first and needs a typed confirmation (D72)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) return;
   const { db, request } = ctx;

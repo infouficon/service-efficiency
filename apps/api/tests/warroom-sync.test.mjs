@@ -73,6 +73,61 @@ test('ERP category text maps to the Apple categories; accessories win; other bra
   assert.equal(wr.mapCategory(null), null);
 });
 
+test('capacity is taken out of model names so one model has several capacities; only the part\'s own capacity goes (D78)', () => {
+  assert.equal(wr.withoutCapacity('iPhone 18 Pro Max 1TB', '1TB'), 'iPhone 18 Pro Max');
+  assert.equal(wr.withoutCapacity('iPhone 15 128GB', '128GB'), 'iPhone 15');
+  assert.equal(wr.withoutCapacity('iPhone 15 128 GB', '128GB'), 'iPhone 15');
+  assert.equal(wr.withoutCapacity('iPad Air 11" (M2) - 256GB', '256GB'), 'iPad Air 11" (M2)');
+  assert.equal(
+    wr.withoutCapacity('MacBook Air 13" 16GB 512GB', '512GB'),
+    'MacBook Air 13" 16GB',
+    'the memory stays',
+  );
+  assert.equal(wr.withoutCapacity('iPhone 15', '128GB'), 'iPhone 15');
+  assert.equal(wr.withoutCapacity('iPhone 15 1280GB', '128GB'), 'iPhone 15 1280GB', 'no partial numbers');
+  assert.equal(wr.withoutCapacity('iPhone 15 128GB', null), 'iPhone 15 128GB');
+  assert.equal(wr.withoutCapacity('128GB', '128GB'), '128GB', 'never an empty name');
+  assert.equal(wr.withoutCapacity(null, '128GB'), null);
+});
+
+test('catalog: capacities share one model; batteries become the Battery category even under a device category (D78)', () => {
+  const row = (partNo, o = {}) => ({
+    branchCode: 'B',
+    partNo,
+    upc: 'u',
+    productName: `Apple ${partNo} thing`,
+    cat: 'iPhone',
+    subcat: 'iPhone 18 Pro Max 1TB',
+    subsubcat: null,
+    capacity: '1TB',
+    color: 'Blue',
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+    ...o,
+  });
+  const { items, categories } = wr.buildCatalog([
+    row('A/A'),
+    row('B/A', { subcat: 'iPhone 18 Pro Max 512GB', capacity: '512GB' }),
+    row('C/A', { subcat: 'Battery - iPhone 13', capacity: null, color: null }),
+    row('D/A', { cat: 'Accessories', subcat: 'Battery Pack', capacity: null }),
+    row('E/A', { cat: 'HUAWEI Phone', subcat: 'Battery - HUAWEI P60', capacity: null }),
+    row('F/A', { cat: 'iPhone', subcat: 'iPhone 18', subsubcat: 'iPhone 18 256GB', capacity: '256GB' }),
+  ]);
+  const by = (p) => items.find((i) => i.partNo === p);
+  assert.equal(by('A/A').productName, 'iPhone 18 Pro Max');
+  assert.equal(by('B/A').productName, 'iPhone 18 Pro Max');
+  assert.equal(by('A/A').modelName, by('B/A').modelName, 'one model, two capacities');
+  assert.equal(by('A/A').storage, '1TB');
+  assert.equal(by('B/A').storage, '512GB');
+  assert.equal(by('F/A').modelName, 'iPhone 18');
+  assert.equal(by('C/A').category, 'Battery');
+  assert.equal(by('C/A').isAccessory, false);
+  assert.equal(by('D/A').category, 'Battery', 'a battery pack is a battery too');
+  assert.equal(by('E/A').category, 'HUAWEI Phone', 'another brand keeps its own category');
+  assert.ok(categories.some((c) => c.value === 'iPhone' && c.mapped === 'iPhone'));
+});
+
 test('short name drops the "Apple <part>" prefix', () => {
   assert.equal(
     wr.shortName('Apple MG8G4ZP/A iPhone 17 Pro 256GB Deep Blue', 'MG8G4ZP/A'),
@@ -264,7 +319,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
   const prefix = `wr${randomUUID().slice(0, 6)}`;
   const part = (k) => `${prefix}-${k}/A`;
   const [P1, P2, P3, P4] = [part('IP'), part('AC'), part('HW'), part('HO')];
-  const HW_CAT = `${prefix} Huawei Phone`; // another brand: its own category, switched off until ADMIN opens it (D68)
+  const HW_CAT = `${prefix} Huawei Phone`; // another brand: its own category, switched off until ADMIN opens it (D72)
   const B1 = `${prefix}-B1`,
     B2 = `${prefix}-B2`,
     BHO = `${prefix}-HO`;
@@ -671,7 +726,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
     );
 
     await t.test(
-      'opening the category creates its products on the next run; closing it hides them from staff (D68)',
+      'opening the category creates its products on the next run; closing it hides them from staff (D72)',
       async () => {
         const hw = await db.category.findUnique({ where: { name: HW_CAT } });
         const names = async (path, cookie) =>
@@ -1205,6 +1260,67 @@ test('warroom sync: shadow then on, availability, guards, against real databases
       },
     );
 
+    await t.test(
+      'ERP-made SKUs are re-filed when the rules change: capacities merge into one model, a battery leaves iPhone (D78)',
+      async () => {
+        process.env.WARROOM_STOCK_MODE = 'on';
+        const P5 = part('CAP');
+        const P6 = part('BAT');
+        const oldCat = `${prefix} Phone`;
+        await insert(P5, B1, 'ready', 2, { subcat: `${oldCat} 256GB`, cap: '256GB' });
+        await insert(P6, B1, 'ready', 2, { subcat: `Battery - ${prefix} 13`, cap: null, color: null });
+        // the old shape the sync used to create: capacity inside the model name, the battery under iPhone
+        const old = async (code, name, category) =>
+          db.product.create({
+            data: {
+              category,
+              name,
+              erpManaged: true,
+              models: {
+                create: {
+                  name,
+                  erpManaged: true,
+                  skus: { create: { sku: code, name: 'x', erpManaged: true } },
+                },
+              },
+            },
+            include: { models: { include: { skus: true } } },
+          });
+        const oldCap = await old(P5, `${oldCat} 256GB`, 'iPhone');
+        const oldBat = await old(P6, `Battery - ${prefix} 13`, 'iPhone');
+        created.skuIds.push(oldCap.models[0].skus[0].id, oldBat.models[0].skus[0].id);
+        const dry = await run('?dryRun=true');
+        assert.equal(dry.data.summary.catalog.moved, 2, 'a dry run only reports it');
+        assert.equal(
+          (await db.productSku.findUnique({ where: { sku: P5 }, include: { model: true } })).model.name,
+          `${oldCat} 256GB`,
+        );
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        assert.equal(res.data.summary.catalog.moved, 2);
+        const cap = await db.productSku.findUnique({
+          where: { sku: P5 },
+          include: { model: { include: { product: true } } },
+        });
+        assert.equal(cap.model.product.name, oldCat, 'capacity is gone from the product name');
+        assert.equal(cap.model.name, oldCat);
+        assert.equal(cap.model.product.category, 'iPhone');
+        assert.equal(await db.product.count({ where: { id: oldCap.id } }), 0, 'the emptied old product is removed');
+        const bat = await db.productSku.findUnique({
+          where: { sku: P6 },
+          include: { model: { include: { product: true } } },
+        });
+        assert.equal(bat.model.product.category, 'Battery');
+        assert.equal(await db.product.count({ where: { id: oldBat.id } }), 0);
+        const category = await db.category.findUnique({ where: { name: 'Battery' } });
+        assert.equal(category.active, false, 'Battery starts switched off');
+        assert.equal(await staffSku(P6), null, 'staff do not see batteries until the category is opened');
+        assert.ok(await staffSku(P5), 'the phone is still there for staff');
+        const again = await run();
+        assert.equal(again.data.summary.catalog.moved, 0, 'a second run has nothing to move');
+      },
+    );
+
     await t.test('mode off refuses manual runs', async () => {
       process.env.WARROOM_STOCK_MODE = 'off';
       assert.equal(
@@ -1252,6 +1368,7 @@ test('warroom sync: shadow then on, availability, guards, against real databases
     await db.staff.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.branch.deleteMany({ where: { code: { startsWith: prefix } } });
     await db.category.deleteMany({ where: { name: { startsWith: prefix } } });
+    await db.category.deleteMany({ where: { name: 'Battery', erpManaged: true } });
     await db.erpSyncRun.deleteMany({ where: { kind: 'warroom-products' } });
     await stub
       .query('DROP TABLE IF EXISTS mart.stock_mv')

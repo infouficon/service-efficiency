@@ -16,9 +16,11 @@ interface WarroomCatalogSummary {
   /** New items that exist in the snapshot but were not created because the mode is not `on` */
   wouldCreate: number;
   updated: number;
+  /** D78: ERP-made SKUs re-filed under another product / model / category (absent in older runs) */
+  moved?: number;
   /** parts warroom gave no category text for */
   skippedNoCategory: number;
-  /** D68: parts of a category ADMIN has not switched on yet; they are created once the category is opened (absent in older runs) */
+  /** D72: parts of a category ADMIN has not switched on yet; they are created once the category is opened (absent in older runs) */
   waitingForCategory?: number;
   /** categories this run added to the SES list, switched off (absent in older runs) */
   newCategories?: number;
@@ -39,7 +41,7 @@ interface CatalogResetCounts {
   skus: number;
   inventoryRows: number;
 }
-/** The word the API wants typed before it clears the old catalog and queue history (D68). */
+/** The word the API wants typed before it clears the old catalog and queue history (D72). */
 const RESET_CONFIRM = 'ล้างข้อมูล';
 const CATEGORY_STATUS: Record<string, string> = {
   active: 'เปิดอยู่',
@@ -154,7 +156,7 @@ function formatAge(iso: string, now: number): string {
 }
 
 const catalogText = (c: WarroomCatalogSummary) =>
-  `สร้าง ${c.created} · อัปเดต ${c.updated}${c.wouldCreate ? ` · รอสร้าง ${c.wouldCreate}` : ''}${c.waitingForCategory ? ` · รอเปิดหมวด ${c.waitingForCategory}` : ''}`;
+  `สร้าง ${c.created} · อัปเดต ${c.updated}${c.moved ? ` · ย้าย ${c.moved}` : ''}${c.wouldCreate ? ` · รอสร้าง ${c.wouldCreate}` : ''}${c.waitingForCategory ? ` · รอเปิดหมวด ${c.waitingForCategory}` : ''}`;
 
 const stockText = (s: WarroomStockSummary) =>
   `อัปเดต ${s.updatedRows} · ปรับเป็นศูนย์ ${s.zeroedRows}`;
@@ -319,6 +321,7 @@ function RunDetail({ run }: { run: WarroomRun }) {
           [run.dryRun ? 'จะสร้างใหม่' : 'สร้างใหม่', catalog.created],
           ['รอสร้างเมื่อเปิดโหมดใช้งาน', catalog.wouldCreate],
           [run.dryRun ? 'จะอัปเดต' : 'อัปเดต', catalog.updated],
+          [run.dryRun ? 'จะย้ายหมวด/รุ่น' : 'ย้ายหมวด/รุ่น', catalog.moved ?? 0],
           ['รอเปิดหมวด', catalog.waitingForCategory ?? 0],
           ['ข้าม (warroom ไม่ระบุหมวด)', catalog.skippedNoCategory],
         ]}
@@ -371,8 +374,10 @@ export function WarroomSyncPanel() {
   // The run this admin started: its outcome is announced once the polled status shows it finished.
   const startedRunId = useRef<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  // D68: "clear the old catalog and queue history": counted first, then done on a typed confirmation
+  // D72: "clear the old catalog and queue history": counted first, then done on a typed confirmation
   const [resetCounts, setResetCounts] = useState<CatalogResetCounts | null>(null);
+  // `all` = everything (D73); `non-erp` = only what the ERP did not create, with the queues that used it (D78)
+  const [resetScope, setResetScope] = useState<'all' | 'non-erp'>('all');
   const [resetTyped, setResetTyped] = useState('');
   const [resetBusy, setResetBusy] = useState(false);
 
@@ -449,14 +454,15 @@ export function WarroomSyncPanel() {
     }
   };
 
-  const countReset = async () => {
+  const countReset = async (scope: 'all' | 'non-erp') => {
     setResetBusy(true);
     try {
       const res = await api<{ counts: CatalogResetCounts }>(
-        '/admin/warroom-sync/reset-catalog?dryRun=true',
+        `/admin/warroom-sync/reset-catalog?dryRun=true&scope=${scope}`,
         'POST',
       );
       setResetTyped('');
+      setResetScope(scope);
       setResetCounts(res.counts);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'นับข้อมูลไม่สำเร็จ', 6000);
@@ -467,12 +473,17 @@ export function WarroomSyncPanel() {
   const doReset = async () => {
     setResetBusy(true);
     try {
-      await api('/admin/warroom-sync/reset-catalog', 'POST', {
+      await api(`/admin/warroom-sync/reset-catalog?scope=${resetScope}`, 'POST', {
         confirm: resetTyped.trim(),
       });
       setResetCounts(null);
       setResetTyped('');
-      toast.success('ล้างสินค้าและประวัติคิวเดิมเรียบร้อย', 6000);
+      toast.success(
+        resetScope === 'non-erp'
+          ? 'ลบสินค้าที่ไม่ได้มาจาก ERP เรียบร้อย'
+          : 'ล้างสินค้าและประวัติคิวเดิมเรียบร้อย',
+        6000,
+      );
       reload();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ล้างข้อมูลไม่สำเร็จ', 6000);
@@ -605,11 +616,16 @@ export function WarroomSyncPanel() {
           ลบ <strong>สินค้า รุ่น SKU และสต็อกสาขาทั้งหมด</strong> รวมถึง{' '}
           <strong>คิวทุกคิว (ประวัติ) ลูกค้า และเลขคิว</strong> เพื่อเริ่มใหม่ด้วยสินค้าจริงจาก warroom
           ส่วนพนักงาน สาขา หมวดหมู่ ช่องทางชำระเงิน และการตั้งค่าไม่ถูกลบ
-          ลบแล้วย้อนกลับไม่ได้ (ควรสำรองฐานข้อมูลก่อน) ระบบจะนับให้ดูก่อน
+          ลบแล้วย้อนกลับไม่ได้ (ควรสำรองฐานข้อมูลก่อน) ระบบจะนับให้ดูก่อน หรือเลือก
+          <strong> ลบเฉพาะสินค้าที่ไม่ได้มาจาก ERP</strong> (สินค้าจาก ERP ลูกค้า และเลขคิวอยู่ครบ
+          ลบเฉพาะคิวที่ใช้สินค้าเก่านั้น)
         </p>
         <div className="actions">
-          <Button variant="secondary" disabled={resetBusy || status?.running} onClick={() => void countReset()}>
-            นับสิ่งที่จะถูกลบ
+          <Button variant="secondary" disabled={resetBusy || status?.running} onClick={() => void countReset('non-erp')}>
+            นับสินค้าที่ไม่ได้มาจาก ERP
+          </Button>
+          <Button variant="secondary" disabled={resetBusy || status?.running} onClick={() => void countReset('all')}>
+            นับสิ่งที่จะถูกลบทั้งหมด
           </Button>
         </div>
       </Panel>
@@ -706,7 +722,11 @@ export function WarroomSyncPanel() {
 
       {resetCounts && (
         <Modal
-          title="ยืนยันการล้างสินค้าและประวัติคิวเดิม"
+          title={
+            resetScope === 'non-erp'
+              ? 'ยืนยันการลบสินค้าที่ไม่ได้มาจาก ERP'
+              : 'ยืนยันการล้างสินค้าและประวัติคิวเดิม'
+          }
           onClose={() => setResetCounts(null)}
           maxWidth="520px"
         >
@@ -716,12 +736,16 @@ export function WarroomSyncPanel() {
               <p style={{ marginTop: 0 }}>จะลบข้อมูลต่อไปนี้ถาวร:</p>
               <ul>
                 <li>คิว (ประวัติ session): <strong>{resetCounts.sessions.toLocaleString('th-TH')}</strong></li>
-                <li>ลูกค้า: <strong>{resetCounts.customers.toLocaleString('th-TH')}</strong></li>
+                {resetScope === 'all' && (
+                  <li>ลูกค้า: <strong>{resetCounts.customers.toLocaleString('th-TH')}</strong></li>
+                )}
                 <li>สินค้าหลัก: <strong>{resetCounts.products.toLocaleString('th-TH')}</strong> · รุ่น: <strong>{resetCounts.models.toLocaleString('th-TH')}</strong> · SKU: <strong>{resetCounts.skus.toLocaleString('th-TH')}</strong></li>
                 <li>แถวสต็อกสาขา: <strong>{resetCounts.inventoryRows.toLocaleString('th-TH')}</strong></li>
               </ul>
               <p className="fine">
-                หลังลบ ให้ตั้งโหมด warroom เป็น “ใช้งาน” แล้วกด “ซิงก์ตอนนี้” เพื่อนำสินค้าจริงเข้า
+                {resetScope === 'non-erp'
+                  ? 'สินค้าจาก ERP ลูกค้า และคิวที่ไม่เกี่ยวกับสินค้าเก่าจะไม่ถูกลบ'
+                  : 'หลังลบ ให้ตั้งโหมด warroom เป็น “ใช้งาน” แล้วกด “ซิงก์ตอนนี้” เพื่อนำสินค้าจริงเข้า'}
               </p>
             </div>
           </div>

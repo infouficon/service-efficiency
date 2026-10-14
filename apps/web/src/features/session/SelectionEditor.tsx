@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
+import iphoneIcon from '../../assets/category-icons/iphone.png';
+import ipadIcon from '../../assets/category-icons/ipad.png';
+import macIcon from '../../assets/category-icons/mac.png';
+import watchIcon from '../../assets/category-icons/watch.png';
+import accessoriesIcon from '../../assets/category-icons/accessories.png';
+import batteryIcon from '../../assets/category-icons/battery.png';
 import {
   Smartphone,
   Tablet,
@@ -22,10 +28,12 @@ import type { Category, Product, Selection } from '../../types/session';
 import { MultiSelect, Button, Notice } from '../../components/ui';
 import {
   addItem,
+  distinct,
   itemName,
   itemsText,
   quantitiesAreValid,
   quantityIsValid,
+  settleChoice,
   stepAccessory,
   stepItem,
   toggleAccessory,
@@ -55,6 +63,24 @@ function getCategoryIcon(cat: string, size = 16) {
   }
 }
 
+/** Product pictures of the category tiles (Icons8, see the credit under the tiles); a category without one gets a plain icon. */
+const CATEGORY_PICTURES: Record<string, string> = {
+  iPhone: iphoneIcon,
+  iPad: ipadIcon,
+  Mac: macIcon,
+  Watch: watchIcon,
+  Accessories: accessoriesIcon,
+  Battery: batteryIcon,
+};
+function CategoryPicture({ cat, size = 48 }: { cat: string; size?: number }) {
+  const src = CATEGORY_PICTURES[cat];
+  return src ? (
+    <img src={src} width={size} height={size} alt="" className="category-picture" />
+  ) : (
+    getCategoryIcon(cat, size * 0.7)
+  );
+}
+
 /** A SKU as the branch product list returns it (D41, D52, D59). */
 interface CatalogSku {
   id: string;
@@ -62,6 +88,8 @@ interface CatalogSku {
   name: string;
   color?: string | null;
   storage?: string | null;
+  /** memory (RAM) of a Mac, e.g. "16GB" (D79) */
+  memory?: string | null;
   stock?: number;
   stockSource?: 'unlimited' | 'erp' | 'manual';
   erpAsOf?: string | null;
@@ -212,6 +240,7 @@ export function SelectionEditor({
   // Cascading dropdown states
   const [category, setCategory] = useState<string>('');
   const [modelKey, setModelKey] = useState<string>('');
+  const [memory, setMemory] = useState<string>('');
   const [storage, setStorage] = useState<string>('');
   const [skuId, setSkuId] = useState<string>('');
 
@@ -302,30 +331,35 @@ export function SelectionEditor({
     return availableModels.find((m) => m.key === modelKey) ?? null;
   }, [availableModels, modelKey]);
 
-  // Available storages for selected model
-  const availableStorages = useMemo(() => {
-    if (!selectedModelObj) return [];
-    const set = new Set<string>();
-    for (const s of selectedModelObj.model.skus) {
-      const st = s.storage?.trim();
-      if (st) set.add(st);
-    }
-    return Array.from(set);
-  }, [selectedModelObj]);
-
+  // The choices of the SKUs of the selected model, in the order the dropdowns come (D79): memory, capacity, colour
+  const modelSkus = selectedModelObj?.model.skus ?? [];
+  const availableMemories = useMemo(
+    () => distinct(modelSkus.map((s) => s.memory)),
+    [modelSkus],
+  );
+  const hasMemory = availableMemories.length > 0;
+  const memorySkus = useMemo(
+    () =>
+      hasMemory
+        ? modelSkus.filter((s) => (s.memory?.trim() || '') === memory)
+        : modelSkus,
+    [modelSkus, hasMemory, memory],
+  );
+  const availableStorages = useMemo(
+    () => distinct(memorySkus.map((s) => s.storage)),
+    [memorySkus],
+  );
   const hasStorage = availableStorages.length > 0;
 
-  // Candidate SKUs for selected model and storage
+  // Candidate SKUs for the selected memory and capacity
   const candidateSkus = useMemo(() => {
     if (!selectedModelObj) return [];
+    if (hasMemory && !memory) return [];
     if (hasStorage && !storage) return [];
-    if (hasStorage) {
-      return selectedModelObj.model.skus.filter(
-        (s) => (s.storage?.trim() || '') === storage,
-      );
-    }
-    return selectedModelObj.model.skus;
-  }, [selectedModelObj, hasStorage, storage]);
+    return hasStorage
+      ? memorySkus.filter((s) => (s.storage?.trim() || '') === storage)
+      : memorySkus;
+  }, [selectedModelObj, hasMemory, memory, hasStorage, storage, memorySkus]);
 
   // Resolved selected SKU
   const selectedSku = useMemo(() => {
@@ -333,9 +367,20 @@ export function SelectionEditor({
     return selectedModelObj.model.skus.find((s) => s.id === skuId) ?? null;
   }, [selectedModelObj, skuId]);
 
+  // Two colours of one model can have the same label (a keyboard layout only in the part): the part number tells them apart
+  const optionLabels = useMemo(() => {
+    const labels = candidateSkus.map(getSkuOptionLabel);
+    return candidateSkus.map((s, i) =>
+      labels.filter((l) => l === labels[i]).length > 1
+        ? `${labels[i]} · ${s.sku}`
+        : labels[i],
+    );
+  }, [candidateSkus]);
+
   const handleResetForm = () => {
     setCategory('');
     setModelKey('');
+    setMemory('');
     setStorage('');
     setSkuId('');
   };
@@ -343,54 +388,28 @@ export function SelectionEditor({
   const handleCategoryChange = (cat: string) => {
     setCategory(cat);
     setModelKey('');
+    setMemory('');
     setStorage('');
     setSkuId('');
+  };
+
+  const applyChoice = (skus: CatalogSku[], mem: string, st: string) => {
+    const next = settleChoice(skus, mem, st);
+    setMemory(next.memory);
+    setStorage(next.storage);
+    setSkuId(next.skuId);
   };
 
   const handleModelChange = (key: string) => {
     setModelKey(key);
-    setStorage('');
-    setSkuId('');
-
-    if (!key) return;
     const target = availableModels.find((m) => m.key === key);
-    if (!target) return;
-
-    const storages = Array.from(
-      new Set(
-        target.model.skus
-          .map((s) => s.storage?.trim())
-          .filter((st): st is string => Boolean(st)),
-      ),
-    );
-
-    if (storages.length === 0) {
-      if (target.model.skus.length === 1) {
-        setSkuId(target.model.skus[0].id);
-      }
-    } else if (storages.length === 1) {
-      setStorage(storages[0]);
-      const matchingSkus = target.model.skus.filter(
-        (s) => (s.storage?.trim() || '') === storages[0],
-      );
-      if (matchingSkus.length === 1) {
-        setSkuId(matchingSkus[0].id);
-      }
-    }
+    applyChoice(target?.model.skus ?? [], '', '');
   };
 
-  const handleStorageChange = (newStorage: string) => {
-    setStorage(newStorage);
-    setSkuId('');
+  const handleMemoryChange = (newMemory: string) => applyChoice(modelSkus, newMemory, '');
 
-    if (!selectedModelObj || !newStorage) return;
-    const matchingSkus = selectedModelObj.model.skus.filter(
-      (s) => (s.storage?.trim() || '') === newStorage,
-    );
-    if (matchingSkus.length === 1) {
-      setSkuId(matchingSkus[0].id);
-    }
-  };
+  const handleStorageChange = (newStorage: string) =>
+    applyChoice(modelSkus, memory, newStorage);
 
   const handleSkuChange = (newSkuId: string) => {
     setSkuId(newSkuId);
@@ -559,13 +578,19 @@ export function SelectionEditor({
                       disabled={count === 0}
                       onClick={() => handleCategoryChange(cat)}
                     >
-                      {getCategoryIcon(cat, 34)}
+                      <CategoryPicture cat={cat} size={52} />
                       <strong>{cat}</strong>
                       {count === 0 && <small>ไม่มีสินค้า</small>}
                     </button>
                   );
                 })}
               </div>
+              <p className="fine muted icon-credit">
+                ไอคอนสินค้าโดย{' '}
+                <a href="https://icons8.com" target="_blank" rel="noreferrer">
+                  Icons8
+                </a>
+              </p>
               <div className="product-picker-dropdowns">
                 {/* 2. Model (capacity is not part of it, D78) */}
                 <div className="picker-field">
@@ -593,7 +618,31 @@ export function SelectionEditor({
                   </select>
                 </div>
 
-                {/* 3. Storage / Capacity (Auto-skipped if not applicable) */}
+                {/* 3. Memory (RAM, Macs only; skipped when the model has none) */}
+                {hasMemory && (
+                  <div className="picker-field">
+                    <label htmlFor="product-memory-select">
+                      RAM <span className="required">*</span>
+                    </label>
+                    <select
+                      id="product-memory-select"
+                      value={memory}
+                      onChange={(e) => handleMemoryChange(e.target.value)}
+                      disabled={!modelKey}
+                    >
+                      <option value="">
+                        {!modelKey ? '-- กรุณาเลือกรุ่นก่อน --' : '-- เลือก RAM --'}
+                      </option>
+                      {availableMemories.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* 4. Storage / Capacity (skipped if not applicable) */}
                 {hasStorage && (
                   <div className="picker-field">
                     <label htmlFor="product-storage-select">
@@ -603,12 +652,14 @@ export function SelectionEditor({
                       id="product-storage-select"
                       value={storage}
                       onChange={(e) => handleStorageChange(e.target.value)}
-                      disabled={!modelKey}
+                      disabled={!modelKey || (hasMemory && !memory)}
                     >
                       <option value="">
                         {!modelKey
                           ? '-- กรุณาเลือกรุ่นก่อน --'
-                          : '-- เลือกความจุ --'}
+                          : hasMemory && !memory
+                            ? '-- กรุณาเลือก RAM ก่อน --'
+                            : '-- เลือกความจุ --'}
                       </option>
                       {availableStorages.map((st) => (
                         <option key={st} value={st}>
@@ -619,7 +670,7 @@ export function SelectionEditor({
                   </div>
                 )}
 
-                {/* 4. Color */}
+                {/* 5. Colour */}
                 <div className="picker-field">
                   <label htmlFor="product-color-select">
                     สี{' '}
@@ -631,20 +682,24 @@ export function SelectionEditor({
                     id="product-color-select"
                     value={skuId}
                     onChange={(e) => handleSkuChange(e.target.value)}
-                    disabled={!modelKey || (hasStorage && !storage)}
+                    disabled={
+                      !modelKey || (hasMemory && !memory) || (hasStorage && !storage)
+                    }
                   >
                     <option value="">
                       {!modelKey
                         ? '-- กรุณาเลือกรุ่นก่อน --'
-                        : hasStorage && !storage
-                          ? '-- กรุณาเลือกความจุก่อน --'
+                        : hasMemory && !memory
+                          ? '-- กรุณาเลือก RAM ก่อน --'
+                          : hasStorage && !storage
+                            ? '-- กรุณาเลือกความจุก่อน --'
                           : candidateSkus.length === 0
                             ? '-- ไม่มีตัวเลือกสี --'
                             : '-- เลือกสี --'}
                     </option>
-                    {candidateSkus.map((s) => {
+                    {candidateSkus.map((s, i) => {
                       const out = isOutOfStock(s);
-                      const optLabel = getSkuOptionLabel(s);
+                      const optLabel = optionLabels[i];
                       const stockText = getSkuStockText(s);
                       return (
                         <option key={s.id} value={s.id} disabled={out}>
@@ -667,7 +722,7 @@ export function SelectionEditor({
                       <div className="picker-sku-title">
                         <strong>{selectedModelObj.model.name}</strong>
                         <span className="picker-sku-specs">
-                          {[selectedSku.storage, selectedSku.color]
+                          {[selectedSku.memory, selectedSku.storage, selectedSku.color]
                             .filter(Boolean)
                             .join(' · ')}
                         </span>

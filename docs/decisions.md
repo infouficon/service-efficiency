@@ -1127,3 +1127,15 @@ Owner instruction via `/grill-me`: "Cashier และ Staff สามารถ �
    - Once Stock picks the new item and clicks "พบสินค้าครบแล้ว" (`found`) -> "ส่งต่อให้แคชเชียร์" (`send`), the order progresses back through the standard cashier receiving flow.
 5. **API Endpoint:**
    - `POST /api/sessions/:id/change-item` accepting `ChangeSessionItemDto` `{ oldItemId: string, newSkuId: string, reason: string, note?: string }`.
+
+## D79 — Macs: model = name + chip + screen; RAM and capacity are their own steps; product pictures on the category tiles (2026-10-15)
+
+Owner, after seeing the Mac list (one entry per RAM/capacity/keyboard combination, "Macbook Air M5 13.6 Ram 16 512GB", "MACBOOK AIR … Eng"): "macbook ก็ไม่แยกความจุ ... ขนาดจอ + storage + ram แยกตามความเหมาะสม", and "icon มันดูไม่สวย สามารถหา icon จาก apple ได้ไหม" with Icons8 pictures for iPhone, MacBook, Watch, iPad and accessories. Amends D78.
+
+1. **Model name keeps what a customer thinks of as the model**: product line, chip and screen size ("MacBook Air M5 13.6", "MacBook Pro M5 Pro 14.2", "Mac mini M4"). The sync removes the RAM ("Ram 16" / "Ram 16GB" / "16GB RAM"), the capacity (D78) and a trailing keyboard-layout marker ("Eng", which stays in the SKU name) from the model name, and treats names that differ only in case as one model (mixed case beats ALL CAPS).
+2. **RAM is a SKU attribute.** `ProductSku.memory` (additive nullable column) is parsed from the names (`product_subsubcat`, then `product_subcat`, then the product name) by the sync; the staff catalog API returns it; the back office shows it next to capacity and colour.
+3. **Picker order:** category tile → model → **RAM** (only when the model has more than one memory, or any) → capacity → colour. A step with a single choice is filled in and a step the model does not have is skipped. When two colours of a model would read the same (a keyboard layout only in the part), the part number is appended to the option.
+4. **Existing Mac products are re-filed by the next sync** (D78 item 4): they move to the merged models, the emptied ones go.
+5. **Pictures.** The category tiles show Icons8 pictures (iPhone, iPad, Mac, Watch, Battery, Accessories) bundled in `apps/web/src/assets/category-icons/` (downloaded once from the URLs the owner gave, no runtime hotlinking). Icons8's free licence needs a link back, so the picker shows "ไอคอนสินค้าโดย Icons8"; remove it only with a paid licence. Categories without a picture (other brands) get a plain line icon. The Accessories picture is a stand-in (fluency "airpods-pro"): the owner's wireless-charger link was cut off in the message; replace `accessories.png` with it.
+6. **Not changed:** non-product rows warroom files under Mac (for example "Connectivity Cards - MacBook Air (13-inch, 2017)", "Other - AC+ Incident") are still created as models; see H-33.
+

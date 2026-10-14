@@ -49,6 +49,7 @@ A category is a row of `Category` (Admin → หมวดหมู่สิน�
 - Anything else, and any other brand ("HUAWEI Phone", "Third Party Accy"), → a category **named exactly as warroom spells it**, added **switched off** (`erpManaged`, `isAccessory` guessed from "accy"/"accessor").
 - A part whose category is off is **not created** (`waitingForCategory` in the run summary) and staff see nothing of it. Open the category, then "ซิงก์ตอนนี้": its products are created on that run. A part with no category text at all is skipped (`skippedNoCategory`).
 - Batteries (a sub-category starting with "Battery") go to a `Battery` category, added switched off like any new category (D78).
+- The memory ("Ram 16") is read into `ProductSku.memory` and, with a trailing "Eng" marker, removed from the model name; names that differ only in case are one model (D79).
 - The capacity is taken out of the product and model names ("iPhone 18 Pro Max 1TB" → "iPhone 18 Pro Max") so one model holds all its capacities (D78).
 - Only the SKU **part number** (`product_model`) identifies a part; `product_upc` is stored in `ProductSku.upc`.
 

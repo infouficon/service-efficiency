@@ -232,6 +232,7 @@ export class ProductsService implements OnModuleInit {
                 name: s.name,
                 color: s.color,
                 storage: s.storage,
+                memory: s.memory,
                 active: s.active,
                 erpManaged: s.erpManaged,
                 stock: available ?? inv?.stock ?? 0,

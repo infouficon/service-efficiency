@@ -3559,7 +3559,18 @@ input[aria-invalid='true'] {
   color: var(--primary-dark);
 }
 .picker-category-tiles {
-  margin-bottom: 14px;
+  margin-bottom: 6px;
+}
+.category-picture {
+  display: block;
+  object-fit: contain;
+}
+.icon-credit {
+  margin: 0 0 12px;
+  text-align: right;
+}
+.icon-credit a {
+  color: inherit;
 }
 .picker-category-tiles .wizard-tile-category {
   min-height: 96px;

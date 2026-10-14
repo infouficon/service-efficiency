@@ -925,3 +925,23 @@ Owner: "QR แนบท้ายใบเสร็จ เพื่อกรอ�
 1. **Where it is set.** Admin → จัดการสาขา → "QR ลงทะเบียน" (ADMIN): an http(s) address up to 512 characters, with a live preview of the QR; empty clears it. `PUT /branches/:id/registration-url`. It also works on ERP-managed branches (the ERP does not own this field, D53).
 2. **On the receipt.** The QR is drawn in the browser from the branch's address (error correction M, quiet zone, black on white; the text is encoded as UTF-8). A branch without an address prints no QR, and the screen says so next to the print button.
 3. **The address pattern is the owner's / the U POS team's.** U POS's `/register` has no branch parameter today; a `?branch=<code>` would let it attribute the registration (to ask in the integration request, see D60). Until then any address can be set.
+
+## D68 — Product categories are data; other brands get a category of their own, switched off (2026-10-14)
+
+Owner, after the first warroom dry run (5,078 parts, 18 warroom categories, 7 of them "not mapped"): "ทำไมสินค้ายังไม่เข้าระบบ … สร้างหมวดหมู่เพิ่มได้หากไม่มีรองรับ อย่างเช่น Apple Accy คือหมวดของ Accessories ระบบ SES ตอนนี้เปิดเฉพาะ Apple ยังไม่เอาสินค้าจาก HUAWEI แต่อนาคตอาจจะมีก็ได้ … SKU เอาตาม warroom เลย".
+
+1. **Why nothing came in.** Two reasons, neither a bug: mode `shadow` never creates products (D52), and `mapCategory` did not know "Apple Accy" (577), "Third Party Accy" (4,107) or the five "HUAWEI …" categories (129), so 4,813 of the 5,078 parts were skipped.
+2. **Categories become data.** `Category` (name unique and never renamed, `active`, `position`, `isAccessory`, `erpManaged`). The migration seeds the five Apple categories (iPhone, iPad, Mac, Watch, Accessories) and turns `Product.category` from the `ProductCategory` enum into a plain string holding the name (supersedes the enum of D46). ADMIN keeps the list in Admin → หมวดหมู่สินค้า: add, switch on/off, move, flag accessory-like. A product can only be put in a category that exists.
+3. **Mapping.** Apple words still map to the five categories, and "Apple Accy" now maps to Accessories. Anything else, and every other brand ("HUAWEI …", "Third Party Accy"), becomes a category named exactly as warroom spells it. The sync adds it **switched off** (in `shadow` and `on`, not in a dry run).
+4. **Only active categories get products.** A part whose category is off is counted as `waitingForCategory` and not created; staff only see products of an active category. When ADMIN opens a category, the next sync run ("ซิงก์ตอนนี้") creates its products. Stock numbers are only stored for SKUs that exist (or are about to be created).
+5. **Picker.** The main-product tiles are the active categories that are not accessory-like (accessories keep their own step, D48); the four device lines are the fallback when the list cannot be loaded.
+6. **SKU = warroom part number** (`product_model`, unchanged since D52). The UPC (`product_upc`) is kept next to it in `ProductSku.upc` (filled by the sync, searchable in the back office).
+7. **Not decided.** Whether staff should pick an accessory SKU (Apple Accy, 577 SKUs) the way they pick a main product: today accessories are the fixed list with quantities (OQ-16).
+
+## D69 — "Clear the old catalog and queue history" is an ADMIN action, and the demo catalog is gone (2026-10-14)
+
+Owner: "clear ของเก่าออกให้หมดเลย แล้วใช้ตามในนี้" and, asked what to do with products old queues point at: "ลบทุกอย่างรวมประวัติคิว".
+
+1. **What it removes.** Every queue session (with items, accessories, payments, events …), the customers, the queue counters, and every product / model / SKU with its branch stock. Staff, branches, categories, payment methods, customer types and settings stay.
+2. **How.** Admin → ซิงก์ ERP → "ล้างสินค้าและประวัติคิวเดิม": a first click only counts (`POST /admin/warroom-sync/reset-catalog?dryRun=true`); the real run needs the typed word `ล้างข้อมูล` in the body. It is refused while a sync is running, runs in one transaction, and leaves a `catalog-reset` row (who, counts) in the run history table. Irreversible: take a database backup first. It is deliberately not a migration, so nobody gets it by deploying.
+3. **The demo catalog is removed.** `ProductsService` used to create a hard-coded demo catalog (fake SKUs, 5 units in every branch) whenever `Product` was empty, so a cleared catalog would have refilled itself at the next restart (H-17, the seed half). Nothing is seeded any more: the catalog comes from warroom or from ADMIN.

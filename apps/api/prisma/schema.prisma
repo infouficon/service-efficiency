@@ -36,14 +36,6 @@ enum Outcome {
   CUSTOMER_CANCELLED
 }
 
-enum ProductCategory {
-  iPhone
-  iPad
-  Mac
-  Watch
-  Accessories
-}
-
 enum EventType {
   SESSION_CREATED
   DEMO_STARTED
@@ -176,15 +168,35 @@ model DailyCounter {
   @@id([scope, day])
 }
 
+/**
+ * D68: the product categories, kept by ADMIN and created by the warroom sync (switched OFF until ADMIN opens them).
+ * `Product.category` stores the name. Staff only see products of an active category.
+ */
+model Category {
+  id         String   @id @default(uuid()) @db.VarChar(36)
+  name       String   @unique @db.VarChar(100)
+  active     Boolean  @default(true)
+  position   Int      @default(0)
+  // accessory-like (warroom "Apple Accy", "Third Party Accy"): not offered as a main product in the picker
+  isAccessory Boolean @default(false)
+  // created by the warroom sync (not by hand or the migration)
+  erpManaged Boolean  @default(false)
+  createdAt  DateTime @default(now()) @db.DateTime(3)
+}
+
 model Product {
   id        String            @id @default(uuid()) @db.VarChar(36)
-  category  ProductCategory
+  // D68: the name of a Category row (what warroom calls it, or one of the five Apple lines); a plain string so new
+  // categories need no deploy. Names are never renamed, so this stays valid.
+  category  String            @db.VarChar(100)
   name      String            @db.VarChar(191)
   active    Boolean           @default(true)
   // created and kept in sync from the warroom database (D52); names are then read-only in SES
   erpManaged Boolean          @default(false)
   models    ProductModel[]
   sessions  CustomerSession[]
+
+  @@index([category])
 }
 
 model ProductModel {
@@ -208,6 +220,8 @@ model ProductSku {
   name      String            @db.VarChar(191)
   color     String?           @db.VarChar(64)
   storage   String?           @db.VarChar(64)
+  // barcode (warroom product_upc) next to the part number kept in `sku` (D68)
+  upc       String?           @db.VarChar(64)
   active    Boolean           @default(true)
   erpManaged Boolean          @default(false)
   sessions  CustomerSession[]

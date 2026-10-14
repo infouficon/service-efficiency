@@ -67,3 +67,7 @@ Names of the three extra payment methods. **Handled by D66 (2026-10-13):** the p
 ## OQ-15 — Registration URL printed as a QR on the receipt (F10)
 
 One QR per branch at the bottom of the receipt for the customer to register. Which URL does each branch encode (U POS `/register` has no branch parameter today; it would need `?branch=<code>`)? **Handled by D67 (2026-10-13):** a per-branch URL field that ADMIN fills in (Admin → จัดการสาขา → QR ลงทะเบียน), so no code change is needed once the address is known.
+
+## OQ-16 — Should staff pick accessory SKUs, not only the fixed accessory list? (D68)
+
+With D68 the warroom accessory categories ("Apple Accy", 577 SKUs) become real SKUs with branch stock, but the staff picker still offers accessories only as the fixed list (`Apple Pencil`, `Case`, …) with a quantity (D48): an accessory SKU is visible and countable in the back office, not selectable on a customer session. Does the business want per-SKU accessory selling (reserve and decrement stock per accessory), and which accessory categories?

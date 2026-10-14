@@ -103,8 +103,8 @@ Controller: `apps/api/src/products/products.controller.ts`. Service: `products.s
 | `POST /products/:id/models`, `PUT /products/models/:modelId` (:138, :149) | ADMIN | the same cascade from the model down |
 | `POST /products/models/:modelId/skus`, `PUT /products/skus/:skuId` (:160, :171) | ADMIN | the same cascade from the SKU to its inventory rows |
 
-`ProductsService.onModuleInit()` (`:9-12`) **seeds a demo catalog when the Product table is
-empty** (production included), then back-fills BranchInventory rows. Both swallow errors.
+`ProductsService.onModuleInit()` back-fills BranchInventory rows (the demo catalog it used to
+seed when the Product table was empty was removed in D69). Errors are swallowed.
 
 ## 4. Account endpoints (`apps/api/src/accounts/accounts.controller.ts`)
 

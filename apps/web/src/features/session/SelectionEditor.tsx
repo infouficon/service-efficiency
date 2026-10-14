@@ -18,7 +18,7 @@ import {
   payments,
   points,
 } from '../../constants/options';
-import type { Product, Selection } from '../../types/session';
+import type { Category, Product, Selection } from '../../types/session';
 import { MultiSelect, Button, Notice } from '../../components/ui';
 import {
   addItem,
@@ -31,6 +31,7 @@ import {
   toggleAccessory,
 } from './workflow';
 import {
+  fetchCategoriesApi,
   fetchPaymentMethodsApi,
   fetchProductsApi,
 } from '../../services/sessionApi';
@@ -186,6 +187,8 @@ export function SelectionEditor({
   const [loadError, setLoadError] = useState('');
   // F6: the payment methods ADMIN keeps; the built-in list is the fallback when they cannot be loaded
   const [paymentNames, setPaymentNames] = useState<readonly string[]>(payments);
+  // D68: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
+  const [categoryList, setCategoryList] = useState<Category[] | null>(null);
   const [open, setOpen] = useState(value.items.length === 0);
   // with nothing chosen the picker is always open
   const wizardOpen = open || value.items.length === 0;
@@ -212,6 +215,20 @@ export function SelectionEditor({
 
   useEffect(() => {
     let active = true;
+    fetchCategoriesApi()
+      .then((list) => {
+        if (active) setCategoryList(list);
+      })
+      .catch(() => {
+        // keep the built-in device lines
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     fetchPaymentMethodsApi()
       .then((list) => {
         if (active && list.length > 0) setPaymentNames(list.map((m) => m.name));
@@ -224,6 +241,14 @@ export function SelectionEditor({
     };
   }, []);
 
+  // the main-product tiles: every active category that is not accessory-like (accessories have their own step below)
+  const categoryTiles = useMemo<readonly string[]>(
+    () =>
+      categoryList
+        ? categoryList.filter((c) => !c.isAccessory).map((c) => c.name)
+        : deviceCategories,
+    [categoryList],
+  );
   const products = useMemo(
     () => (catalog ?? []).filter((p) => p.category === category),
     [catalog, category],
@@ -415,7 +440,7 @@ export function SelectionEditor({
 
           {catalog !== null && step === 'category' && (
             <div className="wizard-tiles">
-              {deviceCategories.map((item) => {
+              {categoryTiles.map((item) => {
                 const count = catalog.filter((p) => p.category === item).length;
                 return (
                   <button

@@ -1,7 +1,5 @@
-import { ProductCategory } from '@prisma/client';
 import {
   IsBoolean,
-  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -11,8 +9,11 @@ import {
 } from 'class-validator';
 
 export class ProductCreateDto {
-  @IsEnum(ProductCategory)
-  category!: ProductCategory;
+  /** the name of a category (D68); the service checks that it exists */
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  category!: string;
 
   @IsString()
   @MinLength(1)
@@ -22,8 +23,10 @@ export class ProductCreateDto {
 
 export class ProductUpdateDto {
   @IsOptional()
-  @IsEnum(ProductCategory)
-  category?: ProductCategory;
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  category?: string;
 
   @IsOptional()
   @IsString()

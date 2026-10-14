@@ -146,6 +146,9 @@ export async function cleanup(ctx, world) {
     await db.product.deleteMany({
       where: { name: { startsWith: world.prefix } },
     });
+    await db.category.deleteMany({
+      where: { name: { startsWith: world.prefix } },
+    });
     await db.setting.deleteMany({ where: { name: 'stockUnlimited' } });
     await db.paymentMethod.deleteMany({
       where: { name: { startsWith: world.prefix } },

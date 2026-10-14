@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   ForbiddenException,
   Get,
@@ -56,6 +57,21 @@ export class WarroomController {
       flag('dryRun', dryRun),
       flag('force', force),
       flag('wait', wait),
+    );
+  }
+
+  /** D68: counts (`dryRun=true`) or clears the old catalog and queue history; a real run needs `{ confirm }`. */
+  @Post('reset-catalog')
+  async resetCatalog(
+    @Req() req: Request,
+    @Query('dryRun') dryRun?: string,
+    @Body() body?: { confirm?: string },
+  ) {
+    const user = await this.admin(req);
+    return this.sync.resetCatalog(
+      user.staffId,
+      flag('dryRun', dryRun),
+      typeof body?.confirm === 'string' ? body.confirm : undefined,
     );
   }
 }

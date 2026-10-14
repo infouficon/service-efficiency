@@ -372,6 +372,8 @@ Corrections must be made before confirmation.
 
 ### 15. Product Master
 
+> **Extended by D68 (2026-10-14):** the categories are now a list ADMIN keeps and the warroom sync adds to (other brands get their own, switched off). The five below are the ones the migration seeds.
+
 Product categories are:
 
 iPhone
@@ -884,6 +886,8 @@ The server decides the timestamp.
 
 The initial system will use local mock/master data for Product / Model /
 SKU.
+
+> **Extended by D68 (2026-10-14):** see the note in §15; the five below are the seeded, active ones.
 
 The confirmed Product Categories are:
 

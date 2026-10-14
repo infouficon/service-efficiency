@@ -128,6 +128,57 @@ test('catalog: capacities share one model; batteries become the Battery category
   assert.ok(categories.some((c) => c.value === 'iPhone' && c.mapped === 'iPhone'));
 });
 
+test('Mac names: memory read from "Ram 16", model name without RAM, capacity and layout marker (D79)', () => {
+  assert.equal(wr.memoryOf('MacBook Air M5 13.6 Ram 16 512GB'), '16GB');
+  assert.equal(wr.memoryOf('MacBook Pro M5 Pro 14.2 Ram 24 1TB'), '24GB');
+  assert.equal(wr.memoryOf('x', 'MacBook Neo A18 Pro Ram 8 256GB Eng'), '8GB', 'first text that has one');
+  assert.equal(wr.memoryOf('Mac mini 16GB RAM'), '16GB');
+  assert.equal(wr.memoryOf('iPhone 18 Pro Max 1TB'), null);
+  assert.equal(wr.memoryOf(null, undefined), null);
+  const name = (n, cap) => wr.modelNameOf(n, cap);
+  assert.equal(name('Macbook Air M5 13.6 Ram 16 512GB', '512GB'), 'Macbook Air M5 13.6');
+  assert.equal(name('MACBOOK AIR M5 13.6 Ram 16 512GB Eng', '512GB'), 'MACBOOK AIR M5 13.6');
+  assert.equal(name('MacBook Pro M5 Pro 14.2 Ram 24 1TB', '1TB'), 'MacBook Pro M5 Pro 14.2');
+  assert.equal(name('MacBook Neo A18 Pro Ram 8 256GB', '256GB'), 'MacBook Neo A18 Pro');
+  assert.equal(name('Mac mini M4', null), 'Mac mini M4');
+  assert.equal(name('iMac 24 M4 (CTO)', null), 'iMac 24 M4 (CTO)');
+  assert.equal(name('Connectivity Cards - MacBook Air (13-inch, 2017)', null), 'Connectivity Cards - MacBook Air (13-inch, 2017)');
+});
+
+test('catalog: Mac variants share one model, with RAM and capacity of their own; case spellings are one model (D79)', () => {
+  const row = (partNo, subsub, cap, color, o = {}) => ({
+    branchCode: 'B',
+    partNo,
+    upc: 'u',
+    productName: `Apple ${partNo} ${subsub} ${color}`,
+    cat: 'Mac',
+    subcat: 'MacBook Air',
+    subsubcat: subsub,
+    capacity: cap,
+    color,
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+    ...o,
+  });
+  const { items } = wr.buildCatalog([
+    row('A/A', 'Macbook Air M5 13.6 Ram 16 512GB', '512GB', 'Sky Blue'),
+    row('B/A', 'Macbook Air M5 13.6 Ram 16 1TB', '1TB', 'Sky Blue'),
+    row('C/A', 'Macbook Air M5 13.6 Ram 24 1TB', '1TB', 'Midnight'),
+    row('D/A', 'MACBOOK AIR M5 13.6 Ram 16 512GB Eng', '512GB', 'Sky Blue'),
+    row('E/A', 'Macbook Air M5 15.3 Ram 16 512GB', '512GB', 'Silver'),
+  ]);
+  const by = (p) => items.find((i) => i.partNo === p);
+  const models = new Set(items.map((i) => i.modelName));
+  assert.deepEqual([...models].sort(), ['Macbook Air M5 13.6', 'Macbook Air M5 15.3']);
+  assert.equal(by('A/A').memory, '16GB');
+  assert.equal(by('C/A').memory, '24GB');
+  assert.equal(by('B/A').storage, '1TB');
+  assert.equal(by('D/A').modelName, 'Macbook Air M5 13.6', 'the all-caps spelling joins the mixed-case one');
+  assert.equal(by('D/A').memory, '16GB');
+  assert.match(by('D/A').skuName, /Eng/, 'the layout marker stays in the SKU name');
+});
+
 test('short name drops the "Apple <part>" prefix', () => {
   assert.equal(
     wr.shortName('Apple MG8G4ZP/A iPhone 17 Pro 256GB Deep Blue', 'MG8G4ZP/A'),

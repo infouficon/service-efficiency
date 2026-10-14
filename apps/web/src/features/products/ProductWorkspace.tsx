@@ -50,6 +50,8 @@ export interface SkuItem {
   name: string;
   color?: string | null;
   storage?: string | null;
+  /** RAM of a Mac (D79) */
+  memory?: string | null;
   /** barcode from warroom (D72), next to the part number in `sku` */
   upc?: string | null;
   active: boolean;
@@ -901,7 +903,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                             {product.name} · {model.name}
                           </div>
                           <div className="fine muted">
-                            {sku.name} {[sku.storage, sku.color].filter(Boolean).join(' · ')}
+                            {sku.name} {[sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ')}
                           </div>
                         </td>
                         <td>

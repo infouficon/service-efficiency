@@ -15,6 +15,7 @@ import {
   visitDuration,
   cashierRejectNotice,
   addItem,
+  settleChoice,
   stepItem,
   itemName,
   itemLabel,
@@ -535,4 +536,32 @@ test('itemChangeNotice extracts item change details and clears after STOCK_FOUND
     ],
   };
   assert.equal(itemChangeNotice(foundSession), undefined);
+});
+
+test('settleChoice: memory, then capacity, then the SKU; single choices fill in, missing steps are skipped (D79)', () => {
+  const sku = (id, memory, storage) => ({ id, memory, storage });
+  const mac = [
+    sku('a', '16GB', '512GB'),
+    sku('b', '16GB', '1TB'),
+    sku('c', '24GB', '1TB'),
+    sku('d', '24GB', '1TB'),
+  ];
+  assert.deepEqual(settleChoice(mac, '', ''), { memory: '', storage: '', skuId: '' });
+  assert.deepEqual(settleChoice(mac, '16GB', ''), { memory: '16GB', storage: '', skuId: '' });
+  assert.deepEqual(settleChoice(mac, '16GB', '512GB'), { memory: '16GB', storage: '512GB', skuId: 'a' });
+  assert.deepEqual(
+    settleChoice(mac, '24GB', ''),
+    { memory: '24GB', storage: '1TB', skuId: '' },
+    'one capacity for that memory is filled in; two colours are still to pick',
+  );
+  assert.deepEqual(settleChoice(mac, '24GB', '1TB'), { memory: '24GB', storage: '1TB', skuId: '' });
+  // no memory at all (phones): capacity first
+  const phone = [sku('p', null, '256GB'), sku('q', null, '1TB')];
+  assert.deepEqual(settleChoice(phone, '', ''), { memory: '', storage: '', skuId: '' });
+  assert.deepEqual(settleChoice(phone, '', '1TB'), { memory: '', storage: '1TB', skuId: 'q' });
+  // neither (AirPods): the only SKU is chosen at once
+  assert.deepEqual(settleChoice([sku('x')], '', ''), { memory: '', storage: '', skuId: 'x' });
+  assert.deepEqual(settleChoice([sku('x'), sku('y')], '', ''), { memory: '', storage: '', skuId: '' });
+  // one memory only: skipped
+  assert.deepEqual(settleChoice([sku('m', '8GB', '256GB')], '', ''), { memory: '8GB', storage: '256GB', skuId: 'm' });
 });

@@ -86,6 +86,8 @@ export interface CatalogItem {
   skuName: string;
   color: string | null;
   storage: string | null;
+  /** RAM parsed from the names ("Ram 16" -> "16GB"), D79 */
+  memory: string | null;
   upc: string | null;
 }
 /** How a warroom category text is handled (D72): which SES category it goes to, and whether SES has it switched on. */
@@ -214,6 +216,55 @@ export function withoutCapacity(
   return stripped || text;
 }
 
+/** Memory (RAM) written in a name: "Ram 16", "Ram 16GB", "16GB RAM" -> "16GB". */
+export function memoryOf(...texts: (string | null | undefined)[]): string | null {
+  for (const text of texts) {
+    const m =
+      (text ?? '').match(/\bram\s*(\d+)\s*(?:gb)?\b/i) ??
+      (text ?? '').match(/\b(\d+)\s*gb\s*ram\b/i);
+    if (m) return `${m[1]}GB`;
+  }
+  return null;
+}
+
+/**
+ * A model name as staff should see it (D79): without the capacity (D78), without the memory ("Ram 16"), and without a
+ * trailing keyboard-layout marker ("Eng", which stays in the SKU name), so one model carries all its RAM / capacity /
+ * colour variants. Screen size and chip stay in the name ("MacBook Air M5 13.6").
+ */
+export function modelNameOf(name: string | null, capacity: string | null): string | null {
+  const base = withoutCapacity(name, capacity);
+  if (!base) return base;
+  const cleaned = base
+    .replace(/\s*\bram\s*\d+\s*(?:gb)?\b\s*/gi, ' ')
+    .replace(/\s*\b\d+\s*gb\s*ram\b\s*/gi, ' ')
+    .replace(/\s+(?:eng|english)\s*$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/[\s\-·/]+$/, '')
+    .trim();
+  return cleaned || base;
+}
+
+/** The spelling to use for names that differ only in case ("MACBOOK AIR" / "Macbook Air"): mixed case wins, then the commonest. */
+function canonicalSpellings(names: string[]): Map<string, string> {
+  const byKey = new Map<string, Map<string, number>>();
+  for (const n of names) {
+    const key = n.toLowerCase();
+    const spellings = byKey.get(key) ?? new Map<string, number>();
+    spellings.set(n, (spellings.get(n) ?? 0) + 1);
+    byKey.set(key, spellings);
+  }
+  const out = new Map<string, string>();
+  for (const [key, spellings] of byKey) {
+    const best = [...spellings.entries()].sort((a, b) => {
+      const mixed = (x: string) => (x !== x.toUpperCase() && x !== x.toLowerCase() ? 1 : 0);
+      return mixed(b[0]) - mixed(a[0]) || b[1] - a[1] || a[0].localeCompare(b[0]);
+    })[0][0];
+    out.set(key, best);
+  }
+  return out;
+}
+
 const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 
 /** "Apple MG8G4ZP/A iPhone 17 256GB White" -> "iPhone 17 256GB White" (same rule as warroom's short_name). */
@@ -280,8 +331,13 @@ export function buildCatalog(rows: WarroomRow[]): {
       continue;
     }
     const capacity = first(rs, (r) => r.capacity);
+    const memory = memoryOf(
+      first(rs, (r) => r.subsubcat),
+      first(rs, (r) => r.subcat),
+      first(rs, (r) => r.productName),
+    );
     const productName =
-      clean(withoutCapacity(subcat, capacity), 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
+      clean(modelNameOf(subcat, capacity), 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
     items.push({
       partNo,
       category: rule.name,
@@ -291,7 +347,8 @@ export function buildCatalog(rows: WarroomRow[]): {
         64,
       ),
       productName,
-      modelName: clean(withoutCapacity(subsubcat, capacity), 191) ?? productName,
+      modelName: clean(modelNameOf(subsubcat, capacity), 191) ?? productName,
+      memory,
       skuName: shortName(name, partNo).slice(0, 191),
       color: clean(
         first(rs, (r) => r.color),
@@ -302,6 +359,13 @@ export function buildCatalog(rows: WarroomRow[]): {
         64,
       ),
     });
+  }
+  // names that differ only in case are one product / model (D79)
+  const productSpelling = canonicalSpellings(items.map((i) => i.productName));
+  const modelSpelling = canonicalSpellings(items.map((i) => i.modelName));
+  for (const item of items) {
+    item.productName = productSpelling.get(item.productName.toLowerCase()) ?? item.productName;
+    item.modelName = modelSpelling.get(item.modelName.toLowerCase()) ?? item.modelName;
   }
   return {
     items,
@@ -695,6 +759,7 @@ export class WarroomSyncService
         name: true,
         color: true,
         storage: true,
+        memory: true,
         upc: true,
         model: {
           select: {
@@ -841,6 +906,7 @@ export class WarroomSyncService
         (s.name !== i.skuName ||
           (s.color ?? null) !== i.color ||
           (s.storage ?? null) !== i.storage ||
+          (s.memory ?? null) !== i.memory ||
           (i.upc !== null && (s.upc ?? null) !== i.upc))
       );
     });
@@ -1034,6 +1100,7 @@ export class WarroomSyncService
             name: item.skuName,
             color: item.color,
             storage: item.storage,
+            memory: item.memory,
             upc: item.upc,
             active: true,
             erpManaged: true,
@@ -1060,6 +1127,7 @@ export class WarroomSyncService
           name: item.skuName,
           color: item.color,
           storage: item.storage,
+          memory: item.memory,
           ...(item.upc !== null ? { upc: item.upc } : {}),
         },
       });

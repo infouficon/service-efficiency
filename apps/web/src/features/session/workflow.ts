@@ -681,4 +681,45 @@ export function getSessionMissingDescription(session: {
   return 'สินค้าไม่ระบุ';
 }
 
+/** The fields of a SKU the memory / capacity / colour dropdowns look at (D79). */
+export interface ChoiceSku {
+  id: string;
+  memory?: string | null;
+  storage?: string | null;
+}
+
+export const distinct = (values: (string | null | undefined)[]): string[] =>
+  [...new Set(values.map((v) => v?.trim() ?? '').filter(Boolean))];
+
+/**
+ * What the dropdowns settle on (D79): memory, then capacity, then the SKU. A step with a single choice is filled in, and a
+ * step that does not exist for the model (AirPods have no capacity) is skipped; the SKU is only set once it is the one left.
+ */
+export function settleChoice(
+  skus: ChoiceSku[],
+  memory: string,
+  storage: string,
+): { memory: string; storage: string; skuId: string } {
+  const memories = distinct(skus.map((s) => s.memory));
+  let mem = memory;
+  if (memories.length > 0 && !mem && memories.length === 1) mem = memories[0];
+  if (memories.length > 0 && !mem) return { memory: '', storage: '', skuId: '' };
+  const byMemory =
+    memories.length > 0
+      ? skus.filter((s) => (s.memory?.trim() || '') === mem)
+      : skus;
+  const storages = distinct(byMemory.map((s) => s.storage));
+  let st = storage;
+  if (storages.length > 0 && !st && storages.length === 1) st = storages[0];
+  if (storages.length > 0 && !st) return { memory: mem, storage: '', skuId: '' };
+  const candidates =
+    storages.length > 0
+      ? byMemory.filter((s) => (s.storage?.trim() || '') === st)
+      : byMemory;
+  return {
+    memory: mem,
+    storage: st,
+    skuId: candidates.length === 1 ? candidates[0].id : '',
+  };
+}
 

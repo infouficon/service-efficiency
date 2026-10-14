@@ -200,3 +200,6 @@ Still open:
 - **UPC is informational**: it is not unique and not used to match parts (the part number stays the key, D52); a part whose UPC changes in warroom is updated only for SKUs the sync created.
 - **Capacity stripping (D78) depends on warroom's `capacity` field**: a part with an empty or odd capacity ("1 TB SSD") keeps the capacity in its model name and so stays a model of its own. A rule change moves SKUs between models: queues keep their SKU link, but the product/model names shown in history follow the new filing.
 - **Moving removes empty ERP-made models/products** unless an old session still points at them (they then stay empty and visible in the back office list).
+- **Mac memory and variants rely on name conventions (D79)**: "Ram 16" in the sub-category names and a trailing "Eng" marker. A name without them keeps RAM/layout inside the model name and is a model of its own. Non-product rows under Mac ("Connectivity Cards - …", "Other - AC+ Incident") still become models.
+- **Category pictures come from Icons8's free licence**: the credit link under the tiles is part of the licence; the Accessories picture is a stand-in.
+

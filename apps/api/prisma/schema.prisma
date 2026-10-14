@@ -227,6 +227,8 @@ model ProductSku {
   name      String            @db.VarChar(191)
   color     String?           @db.VarChar(64)
   storage   String?           @db.VarChar(64)
+  // memory (RAM) of a Mac, e.g. "16GB"; parsed from the warroom names by the sync (D79)
+  memory    String?           @db.VarChar(32)
   // barcode (warroom product_upc) next to the part number kept in `sku` (D72)
   upc       String?           @db.VarChar(64)
   active    Boolean           @default(true)

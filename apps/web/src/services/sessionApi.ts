@@ -360,6 +360,19 @@ export async function cashierRejectApi(
   return mapApiSessionToMockSession(data);
 }
 
+/** D75: cashier removes damaged items and proceeds with the rest of the order. */
+export async function cashierRemoveDamagedApi(
+  id: string,
+  itemIds: string[],
+  note?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/remove-damaged`, 'POST', {
+    itemIds,
+    note,
+  });
+  return mapApiSessionToMockSession(data);
+}
+
 /** F12: stock confirms it has seen a cancel (and brought the goods back). */
 export async function acknowledgeStockCancelApi(id: string): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/acknowledge-cancel`, 'POST');

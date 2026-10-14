@@ -1053,6 +1053,25 @@ Owner instruction via `/grill-me`: "ส่งสินค้ากลับ Stoc
    - When viewing a rejected session in `SEARCHING` state, items that were NOT flagged with a problem are automatically pre-checked as "พบแล้ว".
    - Only the problematic items remain unchecked, enabling Stock staff to quickly re-pick only the affected items and tick them off once found, without needing to re-verify the entire order.
 
+## D75 — Cashier Remove Damaged Items (2026-10-14)
+
+Owner instruction via `/grill-me`: "หากกรณี สินค้าชำรุด ให้ cashier สามารถเอาสินค้านั้นออกเพื่อดำเนินการต่อได้". Extends D64 and D74 (Cashier Reject).
+
+1. **Cashier Remove Damaged Action:**
+   - In `CashierWorkspace.tsx` (`CashierRejectForm.tsx`), when Cashier opens "ส่งสินค้ากลับ Stock" modal and selects items with reason `สินค้าชำรุด/มีตำหนิ`, a dedicated button **"ตัดชิ้นที่ชำรุดออกและดำเนินการต่อ"** is displayed alongside "ยืนยันส่งกลับ Stock".
+   - **Restriction:** "ตัดชิ้นที่ชำรุดออกและดำเนินการต่อ" is permitted only when **ALL** selected items are flagged as `สินค้าชำรุด/มีตำหนิ` (`allSelectedAreDamaged`). If any selected item is flagged as `หยิบสินค้าผิด` or `อื่น ๆ`, the order must be sent back to Stock for replacement re-picking.
+2. **Zero Remaining Items Handling:**
+   - If removing damaged item(s) leaves 0 items in the order, the system automatically transitions the session outcome to `CUSTOMER_CANCELLED` with reason `สินค้าชำรุด/มีตำหนิ` and records a `CUSTOMER_CANCELLED` event with metadata `{ allRemoved: true }`.
+   - The button text dynamically reflects this state ("ตัดชิ้นที่ชำรุดออก (ยกเลิกคิว)").
+3. **Inventory & Event Tracking:**
+   - When damaged main products are removed, deducted units are returned to `BranchInventory` shelf stock via `returnItemsToShelf`.
+   - When remaining items exist, the removed items (`SessionItem` / `SessionAccessory`) are deleted from the session, and a `CASHIER_REJECTED` event with `metadata: { action: 'REMOVE_DAMAGED', reason: 'สินค้าชำรุด/มีตำหนิ', removedItems, removedItemIds }` is appended.
+   - The session remains at the cashier stage (`CASHIER_RECEIVED` or `CASHIER_SCAN`), allowing the cashier to proceed immediately to billing with the intact items.
+   - `cashierRejectNotice` ignores events where `action === 'REMOVE_DAMAGED'`, preventing ghost reject notifications in Stock.
+4. **API Endpoint:**
+   - `POST /api/sessions/:id/cashier/remove-damaged` accepting `CashierRemoveDamagedDto` `{ itemIds: string[], note?: string }`.
+
+
 
 
 

@@ -29,8 +29,9 @@ import {
   advanceStepApi,
   cancelSessionApi,
   cashierRejectApi,
+  cashierRemoveDamagedApi,
 } from '../../services/sessionApi';
-import { advance, isToday, itemsText } from '../session/workflow';
+import { advance, isToday, itemsText, removeDamagedItems } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
 
@@ -130,6 +131,37 @@ export function CashierWorkspace({
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'ส่งกลับ Stock ไม่สำเร็จ');
       setRejectingSession(null);
+    }
+  };
+
+  /** D75: cashier removes damaged items and proceeds with remaining items. */
+  const handleRemoveDamaged = async (itemIds: string[], note?: string) => {
+    if (!rejectingSession) return;
+    setError('');
+    if (rejectingSession.id) {
+      try {
+        const updated = await cashierRemoveDamagedApi(
+          rejectingSession.id,
+          itemIds,
+          note,
+        );
+        onUpdateSession(updated);
+        setRejectingSession(null);
+        if (updated.outcome) {
+          setSelectedRef(null);
+        }
+        return;
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'ตัดสินค้าชำรุดไม่สำเร็จ');
+        setRejectingSession(null);
+        return;
+      }
+    }
+    const updated = removeDamagedItems(rejectingSession, itemIds, previewTime(), note);
+    onUpdateSession(updated);
+    setRejectingSession(null);
+    if (updated.outcome) {
+      setSelectedRef(null);
     }
   };
 
@@ -254,6 +286,7 @@ export function CashierWorkspace({
             session={rejectingSession}
             onBack={() => setRejectingSession(null)}
             onSubmit={handleReject}
+            onRemoveDamaged={handleRemoveDamaged}
           />
         </Panel>
       ) : cancellingSession ? (
@@ -342,7 +375,7 @@ export function CashierWorkspace({
                     }}
                   >
                     <div className="card-top">
-                      <span className="card-ref">คิว {s.queue}</span>
+                      <span className="card-ref">{s.queue}</span>
                       <span
                         className={`status-tag status-${s.state.toLowerCase()}`}
                       >
@@ -391,7 +424,7 @@ export function CashierWorkspace({
                       <div className="eyebrow">
                         CASHIER TRANSACTION · {selectedSession.branchName || `สาขา ${user.branch}`}
                       </div>
-                      <h2 className="cashier-ref-title">คิว {selectedSession.queue}</h2>
+                      <h2 className="cashier-ref-title">{selectedSession.queue}</h2>
                     </div>
                     <span
                       className={`status-tag status-${selectedSession.state.toLowerCase()} cashier-status-badge`}

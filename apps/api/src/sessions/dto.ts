@@ -221,3 +221,13 @@ export class ResolveStockReviewDto {
   @IsString()
   otherReason?: string;
 }
+
+export class CashierRemoveDamagedDto {
+  @IsArray()
+  @IsString({ each: true })
+  itemIds!: string[];
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+}

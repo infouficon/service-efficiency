@@ -21,6 +21,7 @@ import {
   itemsText,
   getSessionMissingDescription,
   progressIndex,
+  removeDamagedItems,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 const fixture = () => ({
@@ -426,4 +427,52 @@ test('progressIndex maps to the 5 steps: phone, product, confirmation, stock, ca
   assert.equal(progressIndex(s), 4, 'cashier stage');
   s.state = 'COMPLETED';
   assert.equal(progressIndex(s), 4, 'completed');
+});
+
+test('removeDamagedItems removes damaged items and leaves remaining items (D75)', () => {
+  const s = {
+    ...fixture(),
+    state: 'CASHIER_RECEIVED',
+    selection: {
+      ...fixture().selection,
+      items: [
+        { id: 'item-1', product: { id: 'p1', model: 'iPhone 16' }, quantity: 1 },
+        { id: 'item-2', product: { id: 'p2', model: 'iPad Air' }, quantity: 1 },
+      ],
+      accessories: {
+        'Case A': '1',
+      },
+    },
+  };
+
+  const updated = removeDamagedItems(s, ['item-1'], '2026-10-14T10:00:00Z');
+  assert.equal(updated.outcome, undefined);
+  assert.equal(updated.selection.items.length, 1);
+  assert.equal(updated.selection.items[0].id, 'item-2');
+  assert.equal(updated.selection.accessories['Case A'], '1');
+  assert.equal(updated.events.length, 1);
+  assert.equal(updated.events[0].eventType, 'CASHIER_REJECTED');
+  assert.equal(updated.events[0].metadata.action, 'REMOVE_DAMAGED');
+  // Cashier reject notice should ignore REMOVE_DAMAGED even if state were SEARCHING
+  assert.equal(cashierRejectNotice({ ...updated, state: 'SEARCHING' }), undefined);
+});
+
+test('removeDamagedItems cancels session when all items are removed (D75)', () => {
+  const s = {
+    ...fixture(),
+    state: 'CASHIER_RECEIVED',
+    selection: {
+      ...fixture().selection,
+      items: [
+        { id: 'item-1', product: { id: 'p1', model: 'iPhone 16' }, quantity: 1 },
+      ],
+      accessories: {},
+    },
+  };
+
+  const updated = removeDamagedItems(s, ['item-1'], '2026-10-14T10:00:00Z', 'หน้าจอแตก');
+  assert.equal(updated.outcome, 'CUSTOMER_CANCELLED');
+  assert.equal(updated.reason, 'สินค้าชำรุด/มีตำหนิ');
+  assert.equal(updated.otherReason, 'หน้าจอแตก');
+  assert.equal(updated.timestamps.cancelled_at, '2026-10-14T10:00:00Z');
 });

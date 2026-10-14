@@ -2,14 +2,14 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D74);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D75);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73/D74 changes (2026-10-14).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73/D74/D75 changes (2026-10-14).
 
 ## 1. What the system is for
 

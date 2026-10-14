@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { ReasonForm } from '../session/ReasonForm';
+import { CashierRejectForm } from './CashierRejectForm';
 import { cancelReasons, rejectReasons } from '../../constants/options';
 import { Summary } from '../session/Summary';
 import { ReceiptPrint } from '../session/Receipt';
@@ -105,11 +106,24 @@ export function CashierWorkspace({
   };
 
   /** F13: the order goes back to the stock stage; the units FOUND took return to the shelf and stock sees why. */
-  const handleReject = async (reason: string, text: string) => {
+  const handleReject = async (
+    reason: string,
+    text: string,
+    wrongItems?: string[],
+    wrongItemIds?: string[],
+    wrongItemDetails?: Record<string, { reason: string; note?: string }>,
+  ) => {
     if (!rejectingSession?.id) return;
     setError('');
     try {
-      const updated = await cashierRejectApi(rejectingSession.id, reason, text || undefined);
+      const updated = await cashierRejectApi(
+        rejectingSession.id,
+        reason,
+        text || undefined,
+        wrongItems,
+        wrongItemIds,
+        wrongItemDetails,
+      );
       onUpdateSession(updated);
       setRejectingSession(null);
       setSelectedRef(null);
@@ -231,14 +245,13 @@ export function CashierWorkspace({
 
       {rejectingSession ? (
         <Panel title="ส่งสินค้ากลับ Stock" eyebrow="CASHIER → STOCK">
-          <p>
+          <p style={{ margin: '0 0 16px', color: '#4b5563' }}>
             ส่งคิว <strong>{rejectingSession.queue}</strong> (
             {itemsText(rejectingSession.selection.items)}) กลับให้ Stock
-            ค้นหาและหยิบใหม่ — Stock จะเห็นเหตุผลที่ส่งกลับ
+            ค้นหาและหยิบใหม่ — Stock จะเห็นเหตุผลและรายการสินค้าที่เลือก
           </p>
-          <ReasonForm
-            options={rejectReasons}
-            label="ยืนยันส่งกลับ Stock"
+          <CashierRejectForm
+            session={rejectingSession}
             onBack={() => setRejectingSession(null)}
             onSubmit={handleReject}
           />

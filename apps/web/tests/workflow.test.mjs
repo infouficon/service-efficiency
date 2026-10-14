@@ -317,6 +317,36 @@ test('stock sees why the cashier sent an order back until it finds the goods aga
     'found again: the notice is over',
   );
   assert.equal(cashierRejectNotice({ ...fixture(), state: 'SEARCHING', events: [] }), undefined);
+
+  const sessionWithWrong = {
+    ...fixture(),
+    state: 'SEARCHING',
+    events: [
+      { eventType: 'STOCK_FOUND', createdAt: at(1), metadata: null },
+      {
+        eventType: 'CASHIER_REJECTED',
+        createdAt: at(3),
+        metadata: {
+          reason: 'หยิบสินค้าผิด',
+          otherReason: null,
+          wrongItems: ['iPhone 16 Pro 128GB (x1) (หยิบสินค้าผิด)'],
+          wrongItemIds: ['item-1'],
+          wrongItemDetails: {
+            'item-1': { reason: 'หยิบสินค้าผิด' },
+          },
+        },
+      },
+    ],
+  };
+  assert.deepEqual(cashierRejectNotice(sessionWithWrong), {
+    reason: 'หยิบสินค้าผิด',
+    at: at(3),
+    wrongItems: ['iPhone 16 Pro 128GB (x1) (หยิบสินค้าผิด)'],
+    wrongItemIds: ['item-1'],
+    wrongItemDetails: {
+      'item-1': { reason: 'หยิบสินค้าผิด' },
+    },
+  });
 });
 test('main products (F3): picking adds or raises, + / − step, below 1 removes', () => {
   const a = { id: 'sku-a', category: 'iPhone', product: 'iPhone 16', model: 'iPhone 16 128GB Black', sku: 'A' };

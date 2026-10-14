@@ -390,18 +390,46 @@ export function goodsToReturn(session: MockSession): boolean {
  */
 export function cashierRejectNotice(
   session: MockSession,
-): { reason: string; at: string } | undefined {
+): {
+  reason: string;
+  at: string;
+  wrongItems?: string[];
+  wrongItemIds?: string[];
+  wrongItemDetails?: Record<string, { reason: string; note?: string }>;
+} | undefined {
   if (session.state !== 'SEARCHING' || session.outcome) return undefined;
   const events = session.events ?? [];
   const reject = [...events].reverse().find((e) => e.eventType === 'CASHIER_REJECTED');
   if (!reject) return undefined;
   const found = [...events].reverse().find((e) => e.eventType === 'STOCK_FOUND');
   if (found && new Date(found.createdAt) > new Date(reject.createdAt)) return undefined;
-  const meta = (reject.metadata ?? {}) as { reason?: string; otherReason?: string | null };
-  return {
+  const meta = (reject.metadata ?? {}) as {
+    reason?: string;
+    otherReason?: string | null;
+    wrongItems?: string[];
+    wrongItemIds?: string[];
+    wrongItemDetails?: Record<string, { reason: string; note?: string }>;
+  };
+  const out: {
+    reason: string;
+    at: string;
+    wrongItems?: string[];
+    wrongItemIds?: string[];
+    wrongItemDetails?: Record<string, { reason: string; note?: string }>;
+  } = {
     reason: [meta.reason, meta.otherReason].filter(Boolean).join(': '),
     at: reject.createdAt,
   };
+  if (Array.isArray(meta.wrongItems) && meta.wrongItems.length > 0) {
+    out.wrongItems = meta.wrongItems;
+  }
+  if (Array.isArray(meta.wrongItemIds) && meta.wrongItemIds.length > 0) {
+    out.wrongItemIds = meta.wrongItemIds;
+  }
+  if (meta.wrongItemDetails && typeof meta.wrongItemDetails === 'object') {
+    out.wrongItemDetails = meta.wrongItemDetails;
+  }
+  return out;
 }
 
 /** `H:MM:SS` (hours are not capped); empty when there is no duration. */

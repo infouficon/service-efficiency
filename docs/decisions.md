@@ -1033,6 +1033,28 @@ Owner instruction via `/grill-me`: "เมื่อ stock แจ้งสิน�
    - If Staff and the customer choose to proceed with remaining found items (`ACCEPT_PARTIAL`), the session advances to `FOUND` (with `stockReview` cleared) and reappears in the Stock Workspace "พบแล้ว" tab to be dispatched to Cashier.
    - If Staff and the customer choose to change items (`CHANGE_ITEMS`), the session reopens at `PRODUCT_SELECTION` (confirmed=false); once Staff confirms the replacement selection, the session returns to Stock Workspace as a new `STOCK_REQUESTED` request.
 
+## D74 — Cashier Reject Item Selection & Stock Re-pick (2026-10-14)
+
+Owner instruction via `/grill-me`: "ส่งสินค้ากลับ Stock ให้สามารถเลือกได้ด้วยว่าหยิบชิ้นไหนผิด" and "ตรงด้านขวาของสินค้าที่แสดง แจ้งหยิบผิด ให้เป็น dropdown เลือกเหตุผลว่า หยิบสินค้าผิด สินค้าชำรุด/มีตำหนิ หรือ อื่น ๆ พร้อมกรอก ข้อความเพิ่มเติม (ระบุรายละเอียด) *". Extends D64 (Cashier Reject).
+
+1. **Per-Item Reason Selection at Cashier Reject:**
+   - In `CashierWorkspace.tsx` (`CashierRejectForm.tsx`), when Cashier sends an order back to stock ("ส่งสินค้ากลับ Stock"), the modal provides an itemized checklist of all items in the order (both main products and accessories).
+   - The global bottom radio group is removed. Instead, when an item is checked, a dropdown appears on the right side of that specific item with reasons: `หยิบสินค้าผิด` (default), `สินค้าชำรุด/มีตำหนิ`, and `อื่น ๆ`.
+   - If `อื่น ๆ` is chosen for an item, an inline text input `ข้อความเพิ่มเติม (ระบุรายละเอียด) *` expands directly underneath that item row with mandatory validation.
+   - Cashier must select at least one item before the submit button is enabled.
+   - `POST /api/sessions/:id/cashier/reject` accepts `reason` (auto-summarized distinct reasons), `wrongItems: string[]` (e.g. `[label] ([reason])`), `wrongItemIds: string[]`, and structured `wrongItemDetails: Record<string, { reason: string; note?: string }>`.
+   - The `CASHIER_REJECTED` event records all these details inside its event metadata.
+
+2. **Stock Visibility & Item-Specific Badges:**
+   - When a session is rejected back to Stock, the red notice banner in `StockWorkspace.tsx` displays the list of problematic items with reasons: `สินค้าที่แคชเชียร์แจ้งมีปัญหา: [รายการ]`.
+   - In the product details summary, accessories list, and interactive search checklist (`SEARCHING` state), each flagged item displays a badge reflecting its actual reason: `⚠️ หยิบสินค้าผิด`, `⚠️ สินค้าชำรุด/มีตำหนิ`, or `⚠️ อื่น ๆ: [note]`.
+
+3. **Stock Auto Pre-Check Behavior:**
+   - When viewing a rejected session in `SEARCHING` state, items that were NOT flagged with a problem are automatically pre-checked as "พบแล้ว".
+   - Only the problematic items remain unchecked, enabling Stock staff to quickly re-pick only the affected items and tick them off once found, without needing to re-verify the entire order.
+
+
+
 
 
 

@@ -346,10 +346,16 @@ export async function cashierRejectApi(
   id: string,
   reason: string,
   otherReason?: string,
+  wrongItems?: string[],
+  wrongItemIds?: string[],
+  wrongItemDetails?: Record<string, { reason: string; note?: string }>,
 ): Promise<MockSession> {
   const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/reject`, 'POST', {
     reason,
     otherReason,
+    wrongItems,
+    wrongItemIds,
+    wrongItemDetails,
   });
   return mapApiSessionToMockSession(data);
 }

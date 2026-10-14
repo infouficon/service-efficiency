@@ -1113,6 +1113,9 @@ export class SessionsService {
               metadata: {
                 reason: dto.reason,
                 otherReason: dto.otherReason?.trim() || null,
+                wrongItems: dto.wrongItems ?? [],
+                wrongItemIds: dto.wrongItemIds ?? [],
+                wrongItemDetails: dto.wrongItemDetails ?? null,
                 fromState: session.state,
               },
             },

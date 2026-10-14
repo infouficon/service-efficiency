@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Package,
   Search,
@@ -36,6 +36,30 @@ import {
 } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
+
+function getWrongItemBadgeText(
+  reject: ReturnType<typeof cashierRejectNotice>,
+  itemId: string,
+  itemText?: string,
+): string | null {
+  if (!reject) return null;
+  const isIdWrong = Boolean(reject.wrongItemIds?.includes(itemId));
+  const isNameWrong = Boolean(
+    itemText &&
+      (reject.wrongItems?.includes(itemText) ||
+        reject.wrongItems?.some((w) => w.startsWith(itemText))),
+  );
+  if (!isIdWrong && !isNameWrong) return null;
+
+  const detail = reject.wrongItemDetails?.[itemId];
+  if (detail) {
+    if (detail.reason === 'อื่น ๆ' && detail.note) {
+      return `⚠️ อื่น ๆ: ${detail.note}`;
+    }
+    return `⚠️ ${detail.reason}`;
+  }
+  return '⚠️ แคชเชียร์แจ้งมีปัญหา';
+}
 
 interface StockWorkspaceProps {
   user: MockUser;
@@ -99,6 +123,61 @@ export function StockWorkspace({
     (mobileShowDetail ? null : filteredQueue[0]) ||
     null;
 
+  const lastRejectTimestamp =
+    [...(selectedSession?.events ?? [])].reverse().find(
+      (e) => e.eventType === 'CASHIER_REJECTED',
+    )?.createdAt ?? null;
+
+  useEffect(() => {
+    if (!selectedSession) {
+      setFoundSelection([]);
+      setStockNote('');
+      return;
+    }
+    if (selectedSession.stockPendingReview) {
+      setStockNote(selectedSession.stockPendingReview.stockNote || '');
+    } else {
+      setStockNote('');
+    }
+
+    const reject = cashierRejectNotice(selectedSession);
+    if (reject && (reject.wrongItemIds?.length || reject.wrongItems?.length)) {
+      const wrongIds = new Set(reject.wrongItemIds ?? []);
+      const wrongNames = new Set(reject.wrongItems ?? []);
+      const preSelected: string[] = [];
+
+      for (const item of selectedSession.selection.items) {
+        const itemId = item.id ?? item.product.id;
+        const label = itemLabel(item);
+        const isWrong =
+          wrongIds.has(itemId) ||
+          wrongNames.has(label) ||
+          [...wrongNames].some((w) => w.startsWith(label));
+        if (!isWrong) {
+          preSelected.push(itemId);
+        }
+      }
+
+      Object.entries(selectedSession.selection.accessories).forEach(
+        ([name, qty]) => {
+          const label = `${name} (x${qty})`;
+          const isWrong =
+            wrongIds.has(name) ||
+            wrongNames.has(label) ||
+            wrongNames.has(name) ||
+            [...wrongNames].some((w) => w.startsWith(label) || w.startsWith(name));
+          if (!isWrong) {
+            preSelected.push(name);
+          }
+        },
+      );
+
+      setFoundSelection(preSelected);
+    } else {
+      setFoundSelection([]);
+    }
+  }, [selectedSession?.id, selectedSession?.state, lastRejectTimestamp]);
+
   // F12: every cancel after the stock request that stock has not acknowledged, whatever day it was (not only today)
   const cancelledAlertSessions = sessions.filter(
     (s) =>
@@ -111,13 +190,6 @@ export function StockWorkspace({
     setMobileShowDetail(true);
     setError('');
     setSuccessMessage('');
-    const target = stockQueue.find((s) => s.reference === reference);
-    if (target?.stockPendingReview) {
-      setStockNote(target.stockPendingReview.stockNote || '');
-    } else {
-      setStockNote('');
-      setFoundSelection([]);
-    }
   };
 
   const handleAction = async (
@@ -503,14 +575,44 @@ export function StockWorkspace({
                       </div>
                     </Notice>
                   )}
-                  {cashierRejectNotice(selectedSession) && (
-                    <Notice error>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
-                        <AlertTriangle size={16} />
-                        Cashier ส่งกลับ: {cashierRejectNotice(selectedSession)?.reason} — ค้นหา/หยิบสินค้าใหม่ให้ถูกต้อง
-                      </span>
-                    </Notice>
-                  )}
+                  {cashierRejectNotice(selectedSession) && (() => {
+                    const reject = cashierRejectNotice(selectedSession);
+                    const wrongList =
+                      reject?.wrongItems && reject.wrongItems.length > 0
+                        ? reject.wrongItems
+                        : null;
+                    return (
+                      <Notice error>
+                        <div
+                          style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '4px',
+                          }}
+                        >
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            <AlertTriangle size={16} />
+                            Cashier ส่งกลับ: {reject?.reason} — ค้นหา/หยิบสินค้าใหม่ให้ถูกต้อง
+                          </span>
+                          {wrongList && (
+                            <div style={{ fontSize: '13px', marginTop: '2px' }}>
+                              <strong>สินค้าที่แคชเชียร์แจ้งมีปัญหา:</strong>{' '}
+                              <span style={{ color: '#b91c1c', fontWeight: 600 }}>
+                                {wrongList.join(', ')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </Notice>
+                    );
+                  })()}
                   {!selectedSession.stockPendingReview && selectedSession.state === 'STOCK_REQUESTED' && (
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -542,20 +644,60 @@ export function StockWorkspace({
                     <Package size={18} color="#0abab5" />
                     <h3 style={{ margin: 0 }}>สินค้าที่ต้องเบิก</h3>
                   </div>
-                  {selectedSession.selection.items.map((item) => (
-                    <div className="product-highlight-box" key={item.id ?? item.product.id}>
-                      <div className="product-title">
-                        {itemName(item)}{' '}
-                        <span className="qty-badge">× {item.quantity}</span>
+                  {selectedSession.selection.items.map((item) => {
+                    const itemId = item.id ?? item.product.id;
+                    const reject = cashierRejectNotice(selectedSession);
+                    const wrongBadge = getWrongItemBadgeText(
+                      reject,
+                      itemId,
+                      itemLabel(item),
+                    );
+                    const isWrong = Boolean(wrongBadge);
+                    return (
+                      <div
+                        className="product-highlight-box"
+                        key={item.id ?? item.product.id}
+                        style={
+                          isWrong
+                            ? {
+                                borderColor: '#ef4444',
+                                backgroundColor: '#fff5f5',
+                              }
+                            : undefined
+                        }
+                      >
+                        <div className="product-title">
+                          {itemName(item)}{' '}
+                          <span className="qty-badge">× {item.quantity}</span>
+                          {wrongBadge && (
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                backgroundColor: '#fef2f2',
+                                color: '#b91c1c',
+                                border: '1px solid #fecaca',
+                                borderRadius: '4px',
+                                padding: '2px 6px',
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                marginLeft: '8px',
+                              }}
+                            >
+                              {wrongBadge}
+                            </span>
+                          )}
+                        </div>
+                        <div className="product-sku">
+                          SKU: <strong>{item.product.sku}</strong>
+                        </div>
+                        <div className="product-cat">
+                          หมวดหมู่: {item.product.category}
+                        </div>
                       </div>
-                      <div className="product-sku">
-                        SKU: <strong>{item.product.sku}</strong>
-                      </div>
-                      <div className="product-cat">
-                        หมวดหมู่: {item.product.category}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {Object.keys(selectedSession.selection.accessories).length >
                     0 && (
@@ -564,12 +706,42 @@ export function StockWorkspace({
                       <ul>
                         {Object.entries(
                           selectedSession.selection.accessories,
-                        ).map(([name, qty]) => (
-                          <li key={name}>
-                            <strong>{name}</strong> — จำนวน:{' '}
-                            <span className="qty-badge">{qty}</span> ชิ้น
-                          </li>
-                        ))}
+                        ).map(([name, qty]) => {
+                          const accLabel = `${name} (x${qty})`;
+                          const reject = cashierRejectNotice(selectedSession);
+                          const wrongBadge =
+                            getWrongItemBadgeText(reject, name, accLabel) ||
+                            getWrongItemBadgeText(reject, name, name);
+                          const isWrong = Boolean(wrongBadge);
+                          return (
+                            <li
+                              key={name}
+                              style={isWrong ? { color: '#b91c1c' } : undefined}
+                            >
+                              <strong>{name}</strong> — จำนวน:{' '}
+                              <span className="qty-badge">{qty}</span> ชิ้น
+                              {wrongBadge && (
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    backgroundColor: '#fef2f2',
+                                    color: '#b91c1c',
+                                    border: '1px solid #fecaca',
+                                    borderRadius: '4px',
+                                    padding: '2px 6px',
+                                    fontSize: '11px',
+                                    fontWeight: 600,
+                                    marginLeft: '8px',
+                                  }}
+                                >
+                                  {wrongBadge}
+                                </span>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   )}
@@ -625,12 +797,27 @@ export function StockWorkspace({
                             {items.map((item) => {
                               const itemId = item.id ?? item.product.id;
                               const isFound = foundSelection.includes(itemId);
+                              const reject = cashierRejectNotice(selectedSession);
+                              const wrongBadge = getWrongItemBadgeText(
+                                reject,
+                                itemId,
+                                itemLabel(item),
+                              );
+                              const isWrong = Boolean(wrongBadge);
                               return (
                                 <div
                                   key={itemId}
                                   className={`accessory-item ${
                                     isFound ? '' : 'out-of-stock-item'
                                   }`}
+                                  style={
+                                    isWrong && !isFound
+                                      ? {
+                                          borderColor: '#ef4444',
+                                          backgroundColor: '#fff5f5',
+                                        }
+                                      : undefined
+                                  }
                                 >
                                   <label
                                     style={{
@@ -656,6 +843,24 @@ export function StockWorkspace({
                                       <strong>สินค้าหลัก:</strong> {itemName(item)} (
                                       {item.product.sku}) จำนวน {item.quantity} ชิ้น
                                     </span>
+                                    {wrongBadge && (
+                                      <span
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          backgroundColor: '#fef2f2',
+                                          color: '#b91c1c',
+                                          border: '1px solid #fecaca',
+                                          borderRadius: '4px',
+                                          padding: '2px 6px',
+                                          fontSize: '11px',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {wrongBadge}
+                                      </span>
+                                    )}
                                     {isFound ? (
                                       <span
                                         className="status-tag status-found"
@@ -679,12 +884,26 @@ export function StockWorkspace({
                             {Object.entries(selectedSession.selection.accessories).map(
                               ([name, qty]) => {
                                 const isFound = foundSelection.includes(name);
+                                const accLabel = `${name} (x${qty})`;
+                                const reject = cashierRejectNotice(selectedSession);
+                                const wrongBadge =
+                                  getWrongItemBadgeText(reject, name, accLabel) ||
+                                  getWrongItemBadgeText(reject, name, name);
+                                const isWrong = Boolean(wrongBadge);
                                 return (
                                   <div
                                     key={name}
                                     className={`accessory-item ${
                                       isFound ? '' : 'out-of-stock-item'
                                     }`}
+                                    style={
+                                      isWrong && !isFound
+                                        ? {
+                                            borderColor: '#ef4444',
+                                            backgroundColor: '#fff5f5',
+                                          }
+                                        : undefined
+                                    }
                                   >
                                     <label
                                       style={{
@@ -710,6 +929,24 @@ export function StockWorkspace({
                                         <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน:{' '}
                                         {qty} ชิ้น)
                                       </span>
+                                      {wrongBadge && (
+                                        <span
+                                          style={{
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            backgroundColor: '#fef2f2',
+                                            color: '#b91c1c',
+                                            border: '1px solid #fecaca',
+                                            borderRadius: '4px',
+                                            padding: '2px 6px',
+                                            fontSize: '11px',
+                                            fontWeight: 600,
+                                          }}
+                                        >
+                                          {wrongBadge}
+                                        </span>
+                                      )}
                                       {isFound ? (
                                         <span
                                           className="status-tag status-found"

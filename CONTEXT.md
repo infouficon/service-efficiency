@@ -2,14 +2,14 @@
 
 The shared vocabulary and domain model for this repo. Read it before a grilling, design or
 refactor session, and keep it current: when a term is sharpened or an entity changes, update
-this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D73);
+this file in the same change. Decisions live in [docs/decisions.md](docs/decisions.md) (D1–D74);
 unresolved items live in [docs/open-questions.md](docs/open-questions.md) (OQ-xx).
 
 > **Status labels in this file.** **[built]** = verified in code (file:line cited).
 > **[documented]** = stated in docs/decisions but not, or not fully, enforced by the code.
 > **[OPEN]** = no decision yet. If code and docs disagree, the entry says so and points to
 > [docs/agents/hazards.md](docs/agents/hazards.md).
-> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73 changes (2026-10-14).
+> Last verified against `main` @ `ecd82e0` plus the D56/D57/D68/D69/D70/D71/D72/D73/D74 changes (2026-10-14).
 
 ## 1. What the system is for
 
@@ -63,7 +63,7 @@ service-efficiency analysis (the KPI formulas are not defined yet, OQ-11). Produ
 | OUT_OF_STOCK | STOCK cannot fulfil; terminal outcome. Sets that SKU's branch stock to 0 (D41). | `POST /out-of-stock` (`action:'cancel'`) |
 | Stock Review | D40: STOCK reports **missing items** (`report-missing`) without ending the session; main products are named by `missingItemIds` (D61), accessories by name. A JSON blob (`stockReview`) is stored, STAFF sees an alert and resolves with `ACCEPT_PARTIAL` / `CHANGE_ITEMS` / `CANCEL`. A MANAGER/ADMIN can **acknowledge** the alert (adds `acknowledgedAt/By`, no event). While in review, the session is removed from the Stock queue (D73). | `CustomerSession.stockReview` (Json) |
 | Sent to Cashier | STOCK hands the goods to the cashier. No timestamp column; the event time is the record. | `send` step |
-| Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). Before the bill is open the cashier can send the order back to stock (`ส่งกลับ Stock`, D64). | `receive`, `scan`, `bill`, `complete` steps; `POST /cashier/reject` |
+| Cashier steps | `รับสินค้า` receive → `Scan` → `เปิดบิล` open bill → separate **COMPLETED** action. No invoice or bill numbers, no FileMaker (D26). Before the bill is open the cashier can send the order back to stock (`ส่งกลับ Stock`, D64) with wrong-item selection and auto-precheck for re-picking (D74). | `receive`, `scan`, `bill`, `complete` steps; `POST /cashier/reject` |
 | Cancellation | The customer leaves mid-flow, or changes their mind about the product. **Any role of the branch** can cancel at any stage (D63). Reasons: the fixed list incl. the four change reasons (D65) and `อื่น ๆ` (+ required text). Terminal, no undo (D18–20). Gives back exactly what FOUND took (D41, D59, D61). | `POST /cancel`; `cancelledAt`, `cancelledBy` |
 | Stock acknowledgement (D63) | After the stock request, a cancel is a notice for stock (banner on every page for STOCK users, list on the stock page) until a STOCK / branch MANAGER / ADMIN acknowledges ("คืนของเข้าชั้นแล้ว" when the goods had been picked, else "รับทราบ"). Stored on the session. | `stockAckAt` / `stockAckBy`, `POST /stock/acknowledge-cancel`, event `STOCK_ACKNOWLEDGED_CANCEL` |
 | Buy again / ซื้อใหม่ (D65) | After a cancel for a change reason: a NEW session with the old data and the **old queue number**, at product selection. Once per cancelled session. | `rebuyOfId` (`rebuyOf` / `rebuiltAs`), `POST /rebuy` |

@@ -17,7 +17,7 @@ export const accessories = [
   'iProtect',
   'Software',
 ] as const;
-export const ontop = ['AIS', 'True', 'CATH', 'KTS'] as const;
+export const ontop = ['AIS', 'True', 'CATH', 'U Trade'] as const;
 export const points = ['MCard', 'The 1', 'UJOY'] as const;
 export const payments = [
   'Cash',

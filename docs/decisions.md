@@ -317,7 +317,7 @@ Ontop
 AIS
 True
 CATH
-KTS
+U Trade
 None
 Points / Burn Point
 MCard

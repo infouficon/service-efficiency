@@ -127,7 +127,7 @@ export async function cleanup(ctx, world) {
     });
     await db.dailyCounter.deleteMany({
       where: {
-        OR: branchIds.map((id) => ({ scope: { startsWith: `queue:${id}:` } })),
+        OR: branchIds.map((id) => ({ scope: { startsWith: `queue:${id}` } })),
       },
     });
     // catalog rows a test made (named after the prefix); sessions are gone, so nothing references them any more

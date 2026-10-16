@@ -20,6 +20,46 @@ test('queue label and Bangkok day helpers', () => {
   assert.equal(bangkokDay(new Date('2026-12-31T17:00:00Z')), '2027-01-01');
 });
 
+test('QueueService.allocate shares one running number per branch and Bangkok day across customer types (D83)', async () => {
+  const counters = new Map();
+  const types = new Map([
+    ['type-a', { id: 'type-a', letter: 'A', active: true }],
+    ['type-b', { id: 'type-b', letter: 'B', active: true }],
+  ]);
+  const tx = {
+    customerType: {
+      findUnique: async ({ where: { id } }) => types.get(id) ?? null,
+      findFirst: async () => types.get('type-a'),
+    },
+  };
+  const svc = new QueueService({});
+  svc.nextNumber = async (_tx, scope, day) => {
+    const key = `${scope}|${day}`;
+    const next = (counters.get(key) ?? 0) + 1;
+    counters.set(key, next);
+    return next;
+  };
+
+  const day1 = new Date('2026-10-16T03:00:00Z');
+  const q1 = await svc.allocate(tx, 'branch-1', 'type-a', day1);
+  assert.equal(formatQueue(q1.queueLetter, q1.queueNo), 'A001');
+
+  const q2 = await svc.allocate(tx, 'branch-1', 'type-b', day1);
+  assert.equal(formatQueue(q2.queueLetter, q2.queueNo), 'B002');
+
+  const q3 = await svc.allocate(tx, 'branch-1', 'type-a', day1);
+  assert.equal(formatQueue(q3.queueLetter, q3.queueNo), 'A003');
+
+  // Another branch starts at 001 on the same day
+  const qBranch2 = await svc.allocate(tx, 'branch-2', 'type-b', day1);
+  assert.equal(formatQueue(qBranch2.queueLetter, qBranch2.queueNo), 'B001');
+
+  // Next Bangkok day resets branch-1 back to 001
+  const day2 = new Date('2026-10-16T17:00:00Z');
+  const qNextDay = await svc.allocate(tx, 'branch-1', 'type-b', day2);
+  assert.equal(formatQueue(qNextDay.queueLetter, qNextDay.queueNo), 'B001');
+});
+
 test('walk-in starts at the phone number and takes a queue number (D56, D57)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) return;
@@ -120,23 +160,27 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
     );
 
     await t.test(
-      'the day rolls over at midnight in Bangkok, not in the server zone',
+      'the day rolls over at midnight in Bangkok, and A/B share one running number per branch (D83)',
       async () => {
         const queue = ctx.get(QueueService);
-        const take = (iso) =>
+        const take = (iso, type = typeA) =>
           db.$transaction((tx) =>
-            queue.allocate(tx, branches.a.id, typeA.id, new Date(iso)),
+            queue.allocate(tx, branches.a.id, type.id, new Date(iso)),
           );
-        assert.equal((await take('2026-03-01T16:59:58Z')).queueNo, 1);
-        assert.equal((await take('2026-03-01T16:59:59Z')).queueNo, 2);
+        const first = await take('2026-03-01T16:59:58Z', typeA);
+        assert.equal(first.queueLetter, 'A');
+        assert.equal(first.queueNo, 1);
+        const second = await take('2026-03-01T16:59:59Z', typeB);
+        assert.equal(second.queueLetter, 'B');
+        assert.equal(second.queueNo, 2);
         assert.equal(
-          (await take('2026-03-01T17:00:00Z')).queueNo,
+          (await take('2026-03-01T17:00:00Z', typeB)).queueNo,
           1,
           '00:00 in Bangkok',
         );
-        assert.equal((await take('2026-03-02T05:00:00Z')).queueNo, 2);
+        assert.equal((await take('2026-03-02T05:00:00Z', typeA)).queueNo, 2);
         assert.equal(
-          (await take('2026-03-01T16:59:59Z')).queueNo,
+          (await take('2026-03-01T16:59:59Z', typeA)).queueNo,
           3,
           'an earlier day keeps counting on its own row',
         );

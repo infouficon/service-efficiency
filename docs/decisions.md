@@ -1168,3 +1168,13 @@ Owner instruction via `/grill-me`: "หากลูกค้า เปลี่�
    - When an item is changed by **Staff** (`changedByRole === 'STAFF'`) in any state (`STOCK_REQUESTED`, `SEARCHING`, or `FOUND`), no items or accessories are pre-checked in Stock's checklist (`foundSelection` starts empty `[]`).
    - Pre-checking unchanged items in the checklist applies **only** when the order is sent back from **Cashier** (`itemChange.changedByRole === 'CASHIER'` or `cashierRejectNotice`).
 
+## D83 — Queue numbers run sequentially per branch and Bangkok day across all customer types (2026-10-16)
+
+Owner instruction via `/grill-me`: "ตัวเลขคิวที่รันให้รันไปเลยโดยใส่ A B เพื่อแบ่งประเภทลูกค้าเท่านั้น โดยที่ตัวเลขรันไปเรื่อยๆ". Amends D57 and D70.
+
+1. **Shared Running Counter per Branch & Day:**
+   - `QueueService.allocate` increments a single `DailyCounter` scope per branch and Bangkok day (`queue:<branchId>`), rather than a separate counter per customer type letter (`queue:<branchId>:<letter>`).
+   - Customer type letters (`A`, `B`, …) act strictly as prefixes indicating the customer type while the numeric sequence continues across types within the same branch and day (e.g. `A001` → `B002` → `A003`).
+2. **Daily Rollover:**
+   - The counter still resets to `001` at midnight (`00:00` Asia/Bangkok) for each branch.
+

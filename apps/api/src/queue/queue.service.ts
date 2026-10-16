@@ -52,7 +52,8 @@ export class QueueService {
   }
 
   /**
-   * The queue number for a new walk-in of `branchId`: one running number per branch, per type letter, per Bangkok day.
+   * The queue number for a session of `branchId`: one running number per branch, per Bangkok day (D83),
+   * prefixed with the customer type's letter (e.g. A001 -> B002 -> A003).
    * Without a `customerTypeId` the active type with the lowest letter is used.
    */
   async allocate(
@@ -71,7 +72,7 @@ export class QueueService {
       throw new BadRequestException('ไม่พบประเภทลูกค้าที่เปิดใช้งาน');
     const queueNo = await this.nextNumber(
       tx,
-      `queue:${branchId}:${type.letter}`,
+      `queue:${branchId}`,
       bangkokDay(now),
     );
     return {

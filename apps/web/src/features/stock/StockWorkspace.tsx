@@ -150,8 +150,8 @@ export function StockWorkspace({
     const itemChange = itemChangeNotice(selectedSession);
     const reject = cashierRejectNotice(selectedSession);
 
-    if (itemChange) {
-      // D78: Pre-select items that were not changed so Stock only needs to find the newly replaced item
+    if (itemChange && itemChange.fromState !== 'STOCK_REQUESTED') {
+      // D78/D82: Pre-select items that were not changed only when Stock had already started searching/picking
       const preSelected: string[] = [];
       for (const item of selectedSession.selection.items) {
         const itemId = item.id ?? item.product.id;

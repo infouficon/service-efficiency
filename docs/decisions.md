@@ -1156,3 +1156,14 @@ Owner, after D80 was merged: the Mac still showed "ความจุ 24GB" and 
 2. **Rule for contributors:** raise it whenever `mapCategory`, `buildCatalog` or the helpers they use (`modelNameOf`, `storageOf`, `colorOf`, `memoryOf`, `withoutCapacity`) change what a catalog item looks like.
 3. Needs mode `on` (in `shadow` nothing is written to the catalog) and the usual guards still apply; an ADMIN can still run it by hand.
 
+## D82 — Changing an item while in STOCK_REQUESTED keeps the session in STOCK_REQUESTED (2026-10-16)
+
+Owner instruction via `/grill-me`: "หากลูกค้า เปลี่ยนสินค้า (รุ่น/สี/ความจุ) ในขณะที่ยังอยู่ใน status STOCK_REQUESTED เมื่อกดเปลี่ยนแล้ว ให้ยังคงอยู่ใน status เดิมไม่ใช่เปลี่ยนไปเป็น status SEARCHING". Amends D79 (Staff and Cashier Item Change).
+
+1. **Preserve `STOCK_REQUESTED` when Stock has not started searching:**
+   - When `POST /api/sessions/:id/change-item` is called while the session is in `STOCK_REQUESTED` (`stockStartedAt` is null), the session state remains `STOCK_REQUESTED` instead of moving to `SEARCHING`.
+   - When called from `SEARCHING`, `FOUND`, `CASHIER_RECEIVED`, or `CASHIER_SCAN`, the session still transitions to `SEARCHING` and clears `stockFoundAt`, `cashierReceivedAt`, and `cashierScanAt` as before.
+2. **Stock Notification & Checklist Pre-selection:**
+   - Stock still sees the `เปลี่ยนสินค้า` badge and notification banner (`itemChangeNotice`) for changes made in `STOCK_REQUESTED`.
+   - However, when Stock later presses "เริ่มค้นหาสินค้า" (`STOCK_REQUESTED` → `SEARCHING`), other items and accessories in the order are **not** pre-checked in the checklist (`fromState === 'STOCK_REQUESTED'`), because Stock had not begun picking any item yet. Pre-checking unchanged items applies only when the change occurred after Stock had already started (`fromState !== 'STOCK_REQUESTED'`).
+

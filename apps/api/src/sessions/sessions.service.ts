@@ -1238,7 +1238,8 @@ export class SessionsService {
    * - STAFF (or ADMIN): STOCK_REQUESTED, SEARCHING, FOUND
    * - CASHIER (or ADMIN): CASHIER_RECEIVED, CASHIER_SCAN (before bill is opened)
    * The old item is replaced with the new SKU. If the session had already reached FOUND or later,
-   * previously deducted shelf stock is returned. The session transitions back to SEARCHING for Stock to pick the new item.
+   * previously deducted shelf stock is returned. If the session is in STOCK_REQUESTED, it stays in
+   * STOCK_REQUESTED (D82); otherwise it transitions back to SEARCHING for Stock to pick the new item.
    */
   async changeItem(user: PublicAccount, id: string, dto: ChangeSessionItemDto) {
     const session = await this.getById(user, id);
@@ -1305,6 +1306,8 @@ export class SessionsService {
     const now = new Date();
     const oldProductName = `${oldItem.sku.model.product.name} ${oldItem.sku.model.name} ${[oldItem.sku.storage, oldItem.sku.color].filter(Boolean).join(' ')}`.trim();
     const newProductName = `${newSku.model.product.name} ${newSku.model.name} ${[newSku.storage, newSku.color].filter(Boolean).join(' ')}`.trim();
+    const nextState: WorkflowState =
+      session.state === 'STOCK_REQUESTED' ? 'STOCK_REQUESTED' : 'SEARCHING';
 
     return this.prisma.$transaction(async (tx) => {
       // If the old item had been picked (FOUND or cashier states), return shelf stock
@@ -1321,11 +1324,11 @@ export class SessionsService {
         },
       });
 
-      // Reset session to SEARCHING for Stock to pick the new item
+      // Keep STOCK_REQUESTED if not started searching yet (D82); otherwise reset to SEARCHING for Stock to pick the new item
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
-          state: 'SEARCHING',
+          state: nextState,
           stockFoundAt: null,
           cashierReceivedAt: null,
           cashierScanAt: null,

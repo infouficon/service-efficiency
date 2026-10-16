@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { cleanup, seedWorld, startApi } from './support.mjs';
 
 const { availableUnits } = await import('../dist/products/products.service.js');
+const { SessionsService } = await import('../dist/sessions/sessions.service.js');
 
 test('availability counts the quantity of every promised item (F3)', () => {
   const inv = {
@@ -34,6 +35,125 @@ test('availability counts the quantity of every promised item (F3)', () => {
       map([{ branchId: 'b', skuId: 's', completedAt: null }]),
     ),
     4,
+  );
+});
+
+test('changeItem keeps STOCK_REQUESTED when in STOCK_REQUESTED, and resets to SEARCHING when in FOUND or later (D82)', async () => {
+  const makeFixture = (initialState) => {
+    let updatedSessionData = null;
+    let updatedItemData = null;
+    let returnedShelfStock = 0;
+
+    const sessionRow = {
+      id: 'sess-1',
+      reference: 'SES-20261016-000001',
+      branchId: 'branch-1',
+      state: initialState,
+      outcome: null,
+      items: [
+        {
+          id: 'item-1',
+          skuId: 'sku-old',
+          quantity: 1,
+          deducted: initialState === 'FOUND' ? 1 : 0,
+          sku: {
+            id: 'sku-old',
+            sku: 'IPHONE-16-128-BLK',
+            storage: '128GB',
+            color: 'Black',
+            model: {
+              name: 'iPhone 16',
+              product: { name: 'iPhone' },
+            },
+          },
+        },
+      ],
+    };
+
+    const newSkuRow = {
+      id: 'sku-new',
+      sku: 'IPHONE-16-256-WHT',
+      storage: '256GB',
+      color: 'White',
+      active: true,
+      model: {
+        name: 'iPhone 16',
+        product: { name: 'iPhone' },
+      },
+    };
+
+    const tx = {
+      branchInventory: {
+        updateMany: async ({ data }) => {
+          returnedShelfStock += data.stock?.increment ?? 0;
+        },
+      },
+      sessionItem: {
+        update: async ({ data }) => {
+          updatedItemData = data;
+        },
+      },
+      customerSession: {
+        update: async ({ data }) => {
+          updatedSessionData = data;
+          return { ...sessionRow, ...data };
+        },
+      },
+    };
+
+    const prisma = {
+      customerSession: {
+        findFirst: async () => sessionRow,
+      },
+      productSku: {
+        findFirst: async () => newSkuRow,
+      },
+      $transaction: async (fn) => fn(tx),
+    };
+
+    const svc = new SessionsService(prisma, {}, {});
+    return {
+      svc,
+      getUpdatedSessionData: () => updatedSessionData,
+      getUpdatedItemData: () => updatedItemData,
+      getReturnedShelfStock: () => returnedShelfStock,
+    };
+  };
+
+  const staffUser = {
+    staffId: 'staff-1',
+    branchId: 'branch-1',
+    roles: ['STAFF'],
+  };
+
+  // Case 1: In STOCK_REQUESTED -> stays STOCK_REQUESTED
+  const reqCase = makeFixture('STOCK_REQUESTED');
+  await reqCase.svc.changeItem(staffUser, 'sess-1', {
+    oldItemId: 'item-1',
+    newSkuId: 'sku-new',
+    reason: 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
+  });
+  assert.equal(reqCase.getUpdatedSessionData().state, 'STOCK_REQUESTED');
+  assert.equal(reqCase.getUpdatedItemData().skuId, 'sku-new');
+  assert.equal(reqCase.getReturnedShelfStock(), 0);
+  assert.equal(
+    reqCase.getUpdatedSessionData().events.create.metadata.fromState,
+    'STOCK_REQUESTED',
+  );
+
+  // Case 2: In FOUND -> transitions to SEARCHING and returns deducted stock
+  const foundCase = makeFixture('FOUND');
+  await foundCase.svc.changeItem(staffUser, 'sess-1', {
+    oldItemId: 'item-1',
+    newSkuId: 'sku-new',
+    reason: 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
+  });
+  assert.equal(foundCase.getUpdatedSessionData().state, 'SEARCHING');
+  assert.equal(foundCase.getUpdatedItemData().skuId, 'sku-new');
+  assert.equal(foundCase.getReturnedShelfStock(), 1);
+  assert.equal(
+    foundCase.getUpdatedSessionData().events.create.metadata.fromState,
+    'FOUND',
   );
 });
 
@@ -479,6 +599,83 @@ test('a session holds several main products with quantities (D40 flow, F3)', asy
         assert.equal(res.data.outcome, 'OUT_OF_STOCK');
         assert.equal(await stockOf(skuA), 0);
         assert.equal(await stockOf(skuB), 0);
+        for (const sku of [skuA, skuB])
+          await db.branchInventory.update({
+            where: {
+              branchId_skuId: { branchId: branches.a.id, skuId: sku.id },
+            },
+            data: { stock: 5, outOfStockAt: null },
+          });
+      },
+    );
+
+    await t.test(
+      'changing an item in STOCK_REQUESTED keeps the state at STOCK_REQUESTED; changing in FOUND returns stock and moves to SEARCHING (D82)',
+      async () => {
+        await setUnlimited(false);
+        const id = await confirmed([{ skuId: skuA.id, quantity: 1 }]);
+        const before = await get(id);
+        assert.equal(before.state, 'STOCK_REQUESTED');
+
+        const changedInRequested = await request(
+          `/sessions/${id}/change-item`,
+          'POST',
+          {
+            oldItemId: before.items[0].id,
+            newSkuId: skuB.id,
+            reason: 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
+            note: 'เปลี่ยนสี',
+          },
+          cookies.staff,
+        );
+        assert.equal(
+          changedInRequested.status,
+          201,
+          JSON.stringify(changedInRequested.data),
+        );
+        assert.equal(
+          changedInRequested.data.state,
+          'STOCK_REQUESTED',
+          'remains in STOCK_REQUESTED when Stock has not started searching yet',
+        );
+        assert.equal(changedInRequested.data.stockStartedAt, null);
+        assert.equal(changedInRequested.data.items[0].skuId, skuB.id);
+        const ev1 = changedInRequested.data.events.at(-1);
+        assert.equal(ev1.eventType, 'ITEM_CHANGED');
+        assert.equal(ev1.metadata.fromState, 'STOCK_REQUESTED');
+
+        // Stock can now start searching normally from STOCK_REQUESTED
+        const searching = await step(id, 'search', 'stock');
+        assert.equal(searching.status, 201, JSON.stringify(searching.data));
+        assert.equal(searching.data.state, 'SEARCHING');
+        assert.notEqual(searching.data.stockStartedAt, null);
+
+        // Stock finds the item (deducts skuB)
+        const found = await step(id, 'found', 'stock');
+        assert.equal(found.status, 201, JSON.stringify(found.data));
+        assert.equal(found.data.state, 'FOUND');
+        assert.equal(await stockOf(skuB), 4);
+
+        // Changing item in FOUND returns skuB to shelf and transitions back to SEARCHING
+        const changedInFound = await request(
+          `/sessions/${id}/change-item`,
+          'POST',
+          {
+            oldItemId: found.data.items[0].id,
+            newSkuId: skuA.id,
+            reason: 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
+          },
+          cookies.staff,
+        );
+        assert.equal(
+          changedInFound.status,
+          201,
+          JSON.stringify(changedInFound.data),
+        );
+        assert.equal(changedInFound.data.state, 'SEARCHING');
+        assert.equal(changedInFound.data.stockFoundAt, null);
+        assert.equal(await stockOf(skuB), 5, 'returned to shelf');
+        assert.equal(changedInFound.data.items[0].skuId, skuA.id);
       },
     );
   } finally {

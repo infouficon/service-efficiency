@@ -536,6 +536,36 @@ test('itemChangeNotice extracts item change details and clears after STOCK_FOUND
     ],
   };
   assert.equal(itemChangeNotice(foundSession), undefined);
+
+  // D82: When changed while still in STOCK_REQUESTED, session stays in STOCK_REQUESTED and notice is active with hadPickedOldItem = false
+  const requestedSession = {
+    ...fixture(),
+    state: 'STOCK_REQUESTED',
+    events: [
+      {
+        id: 'ev-req-1',
+        eventType: 'ITEM_CHANGED',
+        actorStaffId: 'staff-1',
+        createdAt: '2026-10-16T09:00:00Z',
+        metadata: {
+          oldItemId: 'item-1',
+          oldSkuId: 'sku-1',
+          oldSku: 'IPHONE-16-128',
+          oldName: 'iPhone 16 128GB Black',
+          newSkuId: 'sku-2',
+          newSku: 'IPHONE-16-256',
+          newName: 'iPhone 16 256GB White',
+          reason: 'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
+          changedByRole: 'STAFF',
+          fromState: 'STOCK_REQUESTED',
+        },
+      },
+    ],
+  };
+  const reqNotice = itemChangeNotice(requestedSession);
+  assert.ok(reqNotice);
+  assert.equal(reqNotice.fromState, 'STOCK_REQUESTED');
+  assert.equal(reqNotice.hadPickedOldItem, false);
 });
 
 test('settleChoice: memory, then capacity, then the SKU; single choices fill in, missing steps are skipped (D79)', () => {

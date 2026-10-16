@@ -1165,5 +1165,6 @@ Owner instruction via `/grill-me`: "หากลูกค้า เปลี่�
    - When called from `SEARCHING`, `FOUND`, `CASHIER_RECEIVED`, or `CASHIER_SCAN`, the session still transitions to `SEARCHING` and clears `stockFoundAt`, `cashierReceivedAt`, and `cashierScanAt` as before.
 2. **Stock Notification & Checklist Pre-selection:**
    - Stock still sees the `เปลี่ยนสินค้า` badge and notification banner (`itemChangeNotice`) for changes made in `STOCK_REQUESTED`.
-   - However, when Stock later presses "เริ่มค้นหาสินค้า" (`STOCK_REQUESTED` → `SEARCHING`), other items and accessories in the order are **not** pre-checked in the checklist (`fromState === 'STOCK_REQUESTED'`), because Stock had not begun picking any item yet. Pre-checking unchanged items applies only when the change occurred after Stock had already started (`fromState !== 'STOCK_REQUESTED'`).
+   - When an item is changed by **Staff** (`changedByRole === 'STAFF'`) in any state (`STOCK_REQUESTED`, `SEARCHING`, or `FOUND`), no items or accessories are pre-checked in Stock's checklist (`foundSelection` starts empty `[]`).
+   - Pre-checking unchanged items in the checklist applies **only** when the order is sent back from **Cashier** (`itemChange.changedByRole === 'CASHIER'` or `cashierRejectNotice`).
 

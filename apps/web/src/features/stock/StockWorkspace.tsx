@@ -150,22 +150,26 @@ export function StockWorkspace({
     const itemChange = itemChangeNotice(selectedSession);
     const reject = cashierRejectNotice(selectedSession);
 
-    if (itemChange && itemChange.fromState !== 'STOCK_REQUESTED') {
-      // D78/D82: Pre-select items that were not changed only when Stock had already started searching/picking
-      const preSelected: string[] = [];
-      for (const item of selectedSession.selection.items) {
-        const itemId = item.id ?? item.product.id;
-        const isNewItem =
-          item.product.id === itemChange.newSkuId ||
-          item.product.sku === itemChange.newSku;
-        if (!isNewItem) {
-          preSelected.push(itemId);
+    if (itemChange) {
+      if (itemChange.changedByRole === 'CASHIER') {
+        // D78/D82: Pre-select items that were not changed only when the change comes from Cashier
+        const preSelected: string[] = [];
+        for (const item of selectedSession.selection.items) {
+          const itemId = item.id ?? item.product.id;
+          const isNewItem =
+            item.product.id === itemChange.newSkuId ||
+            item.product.sku === itemChange.newSku;
+          if (!isNewItem) {
+            preSelected.push(itemId);
+          }
         }
+        Object.entries(selectedSession.selection.accessories).forEach(([name]) => {
+          preSelected.push(name);
+        });
+        setFoundSelection(preSelected);
+      } else {
+        setFoundSelection([]);
       }
-      Object.entries(selectedSession.selection.accessories).forEach(([name]) => {
-        preSelected.push(name);
-      });
-      setFoundSelection(preSelected);
     } else if (reject && (reject.wrongItemIds?.length || reject.wrongItems?.length)) {
       const wrongIds = new Set(reject.wrongItemIds ?? []);
       const wrongNames = new Set(reject.wrongItems ?? []);

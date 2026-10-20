@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Ticket,
   Wallet,
+  BookOpen,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -494,6 +495,15 @@ export function App({
                       >
                         <Layers size={14} /> <span>หมวดหมู่สินค้า</span>
                       </button>
+
+                      <a
+                        className="nav-subitem"
+                        href="/api/docs"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <BookOpen size={14} /> <span>เอกสาร API</span>
+                      </a>
                     </>
                   )}
                 </div>

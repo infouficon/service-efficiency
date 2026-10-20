@@ -48,6 +48,7 @@ service-efficiency/                 npm workspaces monorepo (Node ≥22.12, npm 
 | `src/warroom/warroom.controller.ts`, `warroom.module.ts` | 80 | `GET /admin/warroom-sync/status`, `POST /admin/warroom-sync/run`, `POST /admin/warroom-sync/reset-catalog` (`?dryRun=true` counts; a real run needs `{confirm: "ล้างข้อมูล"}`, D73) (ADMIN, `OriginGuard`) |
 | `src/erp/erp.controller.ts`, `erp.module.ts` | 45 | `GET /admin/erp-sync/status`, `POST /admin/erp-sync/run` (ADMIN, `OriginGuard`) |
 | `src/products/products.controller.ts` | 182 | catalog + branch inventory routes; `assertAdmin` / `assertManagerOrAdmin` |
+| `src/docs/api-docs.ts` | 130 | **API documentation pages** (D84): `/api/docs` (all endpoints, ADMIN only, read-only) and `/api/pos-docs` (U POS contract, public); OpenAPI from `@nestjs/swagger` (CLI plugin in `nest-cli.json` introspects `*dto.ts` + comments) |
 | `src/categories/categories.service.ts`, `categories.controller.ts`, `dto.ts`, `categories.module.ts` | 230 | **product categories** (D72): `GET /categories` (everyone: active; ADMIN `?all=true` with product counts), add / switch on-off / flag accessory / move (ADMIN, `OriginGuard`); names are never renamed |
 | `src/products/products.service.ts` | 500 | inventory sync (H-17), branch-filtered catalog (active categories only, D72), category check on create/update, cascade deactivation (D42); no demo seed (D73) |
 | `src/products/dto.ts` | 118 | catalog DTOs |

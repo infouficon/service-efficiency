@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { setupApiDocs } from './docs/api-docs';
 
 export async function createApplication() {
   const app = await NestFactory.create(AppModule);
@@ -21,6 +22,7 @@ export async function createApplication() {
       transform: true,
     }),
   );
+  setupApiDocs(app);
   app.enableShutdownHooks();
   return app;
 }

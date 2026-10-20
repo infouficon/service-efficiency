@@ -20,6 +20,9 @@ cashier completes the sale in SES (one click) · or no click in SES at all, a la
 
 ## 2. The contract (SES side, built)
 
+Live documentation (OpenAPI, public, "Try it out" with the key): **`https://ses.uficon.com/api/pos-docs`** (D84). The JSON is at `/api/pos-docs-json`.
+
+
 Base: `https://ses.uficon.com/api` · server to server · `Authorization: Bearer <POS_API_KEY>` · JSON · no cookies, no CSRF header.
 Without the key configured (or shorter than 32 characters) the routes answer **404**; a wrong key is **401**. Responses are `Cache-Control: no-store`.
 

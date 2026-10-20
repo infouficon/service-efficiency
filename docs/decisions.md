@@ -1178,3 +1178,12 @@ Owner instruction via `/grill-me`: "ตัวเลขคิวที่รั�
 2. **Daily Rollover:**
    - The counter still resets to `001` at midnight (`00:00` Asia/Bangkok) for each branch.
 
+## D84 — API documentation pages generated from the code (2026-10-20)
+
+Owner: "แล้วหน้าสำหรับ doc ละครับ list api". Until now the API contract lived in markdown (docs/agents/pos-integration.md) and the code.
+
+1. **`/api/docs`** (+ `/api/docs-json`): every endpoint (Swagger UI / OpenAPI 3, `@nestjs/swagger`), grouped by controller, with the DTO schemas and the JSDoc of the handlers. **ADMIN session required** (401 without a cookie, 403 for other roles; the assets are behind the same gate), read-only (no "Try it out"). Admin → จัดการระบบ → "เอกสาร API" opens it in a new tab.
+2. **`/api/pos-docs`** (+ `/api/pos-docs-json`): only the U POS integration (D60), **public** so the U POS team can read it without a login; the endpoints are useless without the bearer key. "Try it out" works once the key is entered. Examples and every status code (400/401/404/409) are documented.
+3. Generated from the code (CLI plugin introspects `*dto.ts` and comments), so it follows the code. New endpoints appear by themselves; a response shape is only shown when a handler declares one (`@ApiOkResponse`), as for the POS routes.
+4. Not documented there: `/health`, the docs themselves. The docs are served by the API process; no separate site to deploy.
+

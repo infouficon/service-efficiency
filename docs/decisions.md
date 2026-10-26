@@ -1187,3 +1187,5 @@ Owner: "แล้วหน้าสำหรับ doc ละครับ list a
 3. Generated from the code (CLI plugin introspects `*dto.ts` and comments), so it follows the code. New endpoints appear by themselves; a response shape is only shown when a handler declares one (`@ApiOkResponse`), as for the POS routes.
 4. Not documented there: `/health`, the docs themselves. The docs are served by the API process; no separate site to deploy.
 
+Fix 2026-10-26: the first deploy of D84 showed a blank page at `/api/docs`. The web container's nginx had `location /api/` (plain prefix), and a regex location for static files (`.js`, `.css`, `.png` …) beats a plain prefix, so the Swagger UI's own files under `/api/docs/` were looked up in the SPA's web root and failed. The proxy is now `location ^~ /api/` (needs a redeploy of the **web** app) and a test guards it. Any future API route that serves files under `/api/` depends on this.
+

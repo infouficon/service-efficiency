@@ -21,8 +21,9 @@ server {
         return 200 "healthy\n";
     }
 
-    # Proxy API requests to backend
-    location /api/ {
+    # Proxy API requests to backend. `^~` matters: without it the static-assets regex below wins for every /api/**.js|css|png
+    # and the API's own files (the Swagger UI of /api/docs, D84) would be looked up in the web root and 404.
+    location ^~ /api/ {
         proxy_pass ${API_URL};
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;

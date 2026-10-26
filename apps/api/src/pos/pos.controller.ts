@@ -38,7 +38,11 @@ export class PosKeyGuard implements CanActivate {
     const http = context.switchToHttp();
     http.getResponse<Response>().setHeader('Cache-Control', 'no-store');
     const key = (this.config.get<string>('POS_API_KEY') ?? '').trim();
-    if (key.length < 32) throw new NotFoundException();
+    // 404 on purpose (the door does not exist until a key is set); the message says why, so "404" is not read as "order not found"
+    if (key.length < 32)
+      throw new NotFoundException(
+        'POS integration is off: POS_API_KEY is not set (or is shorter than 32 characters) on the SES server',
+      );
     const header = http.getRequest<Request>().headers.authorization ?? '';
     const given = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
     const digest = (value: string) =>

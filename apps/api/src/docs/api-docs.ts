@@ -12,7 +12,7 @@ import { PosModule } from '../pos/pos.module';
  * API documentation pages (D84), generated from the code (OpenAPI via @nestjs/swagger), so they cannot drift from it:
  *
  * - `/api/docs` (+ `/api/docs-json`): EVERY endpoint, for the team. ADMIN login required (the page is served by the API
- *   itself, so the session cookie of ses.uficon.com is what gets you in); read-only (no "Try it out").
+ *   itself, so the session cookie of ses.uficon.com is what gets you in). "Try it out" works for GET requests only.
  * - `/api/pos-docs` (+ `/api/pos-docs-json`): only the U POS integration (D60), public like any contract: the endpoints
  *   are useless without the bearer key. "Try it out" works there once the key is entered.
  */
@@ -43,7 +43,7 @@ export function setupApiDocs(app: INestApplication) {
       .setVersion('1')
       .setDescription(
         [
-          'ทุก endpoint ของ SES (สร้างจากโค้ด) — เฉพาะ ADMIN ที่เห็นหน้านี้',
+          'ทุก endpoint ของ SES (สร้างจากโค้ด) — เฉพาะ ADMIN ที่เห็นหน้านี้ · กด "Try it out" ได้เฉพาะ GET (อ่านข้อมูลจริงด้วย session ที่ล็อกอินอยู่ ไม่ต้องกรอกช่อง Authorize) · ส่วน POST/PUT ลองไม่ได้จากหน้านี้',
           '',
           '- ยืนยันตัวตนด้วย cookie `se_session` (ได้จาก `POST /api/auth/login`)',
           '- คำขอที่เปลี่ยนข้อมูล (POST/PUT/PATCH/DELETE) ต้องส่ง `Origin` ที่อยู่ใน `CORS_ORIGINS` และ header `X-Requested-With: ServiceEfficiency`',
@@ -60,7 +60,9 @@ export function setupApiDocs(app: INestApplication) {
     useGlobalPrefix: true,
     customSiteTitle: 'SES API',
     swaggerOptions: {
-      supportedSubmitMethods: [],
+      // "Try it out" for GET only: reads real data with the session cookie the browser already has; nothing that changes
+      // data can be fired from here (writes also need the X-Requested-With header, which the page does not send)
+      supportedSubmitMethods: ['get'],
       docExpansion: 'none',
       tagsSorter: 'alpha',
       filter: true,

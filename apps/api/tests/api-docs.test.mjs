@@ -49,6 +49,8 @@ test('API docs: all endpoints for ADMIN only; the U POS contract is public (D84)
       const ok = await fetch(`${base}/api/docs`, { headers: { Cookie: cookies.admin } });
       assert.equal(ok.status, 200);
       assert.match(await ok.text(), /swagger/i);
+      const init = await (await fetch(`${base}/api/docs/swagger-ui-init.js`, { headers: { Cookie: cookies.admin } })).text();
+      assert.match(init, /"supportedSubmitMethods":\s*\[\s*"get"\s*\]/, 'Try it out is GET-only on the full docs');
       const asset = await fetch(`${base}/api/docs/swagger-ui-bundle.js`);
       assert.equal(asset.status, 401, 'the assets are behind the same gate');
     });

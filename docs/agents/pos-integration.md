@@ -24,7 +24,7 @@ Live documentation (OpenAPI, public, "Try it out" with the key): **`https://ses.
 
 
 Base: `https://ses.uficon.com/api` · server to server · `Authorization: Bearer <POS_API_KEY>` · JSON · no cookies, no CSRF header.
-Without the key configured (or shorter than 32 characters) the routes answer **404**; a wrong key is **401**. Responses are `Cache-Control: no-store`.
+Without the key configured (or shorter than 32 characters) the routes answer **404** with the message `POS integration is off: POS_API_KEY is not set …` (an unknown branch is also 404 but says `Unknown branch`); a wrong key is **401**. Responses are `Cache-Control: no-store`.
 
 ### `GET /integrations/pos/orders?branch=<branch_code>[&queue=<A012>]`
 The orders of that branch (ERP `branch_code`) that have reached the cashier and have no bill yet: states `SENT_TO_CASHIER`,

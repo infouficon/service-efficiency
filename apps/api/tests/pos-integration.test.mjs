@@ -82,11 +82,12 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
       'closed without a key; the key is checked on every call',
       async () => {
         delete process.env.POS_API_KEY;
-        assert.equal(
-          (await call(`/integrations/pos/orders?branch=${branches.a.code}`))
-            .status,
-          404,
-          'not configured: the door does not exist',
+        const off = await call(`/integrations/pos/orders?branch=${branches.a.code}`);
+        assert.equal(off.status, 404, 'not configured: the door does not exist');
+        assert.match(
+          JSON.stringify(off.data),
+          /POS_API_KEY is not set/,
+          'the 404 says why, so it is not read as "order not found"',
         );
         process.env.POS_API_KEY = KEY;
         assert.equal(

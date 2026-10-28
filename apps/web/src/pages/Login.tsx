@@ -1,11 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { LogIn, MessageSquare } from 'lucide-react';
+import { KeyRound, LogIn, MessageSquare } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import { useToast } from '../components/Toast';
 import { api } from '../services/api';
 import type { Account } from '../types/accounts';
 
 const RESEND_SECONDS = 60;
+const MODE_KEY = 'ses-login-mode';
+/** The last way this browser signed in with (OTP or password), so a person with a password account is not asked for a code each time. */
+const savedMode = (): 'otp' | 'password' => {
+  try {
+    return localStorage.getItem(MODE_KEY) === 'password' ? 'password' : 'otp';
+  } catch {
+    return 'otp';
+  }
+};
 
 /**
  * Sign-in. Once the server has SMS configured (`GET /auth/config` -> `otp`) staff sign in with a 6-digit code sent to the
@@ -15,7 +24,7 @@ const RESEND_SECONDS = 60;
 export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
   const toast = useToast();
   const [otpAvailable, setOtpAvailable] = useState<boolean | null>(null);
-  const [usePassword, setUsePassword] = useState(false);
+  const [usePassword, setUsePassword] = useState(() => savedMode() === 'password');
   const [staffId, setStaffId] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -46,6 +55,17 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
   }, [wait]);
 
   const otpMode = otpAvailable === true && !usePassword;
+  const chooseMode = (password: boolean) => {
+    setUsePassword(password);
+    setError('');
+    setCodeSent(false);
+    setCode('');
+    try {
+      localStorage.setItem(MODE_KEY, password ? 'password' : 'otp');
+    } catch {
+      // private mode: the choice just is not remembered
+    }
+  };
   const fail = (err: unknown, fallback: string) => {
     const msg = err instanceof Error ? err.message : fallback;
     setError(msg);
@@ -91,6 +111,16 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
       <section className="login-form">
         <h2>เข้าสู่ระบบ</h2>
         {otpAvailable === null && <Notice>กำลังโหลด…</Notice>}
+        {otpAvailable === true && (
+          <div className="category-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '12px' }}>
+            <button type="button" className={`tab-btn ${!usePassword ? 'active' : ''}`} onClick={() => chooseMode(false)}>
+              <MessageSquare size={14} /> OTP ทาง SMS
+            </button>
+            <button type="button" className={`tab-btn ${usePassword ? 'active' : ''}`} onClick={() => chooseMode(true)}>
+              <KeyRound size={14} /> รหัสผ่าน
+            </button>
+          </div>
+        )}
         {otpMode && (
           <form
             onSubmit={async (e) => {
@@ -130,6 +160,7 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
                 <Notice>
                   ส่งรหัส 6 หลักไปที่เบอร์มือถือที่ลงทะเบียนไว้ใน ERP แล้ว (ใช้ได้ 5 นาที)
                   ถ้าไม่ได้รับภายใน 1 นาที ให้ขอรหัสใหม่ หรือแจ้ง ADMIN ว่าเบอร์ของคุณใน ERP ยังไม่ถูกต้อง
+                  บัญชีที่สร้างเองใน SES (ไม่ได้มาจาก ERP) เข้าด้วยแท็บ “รหัสผ่าน” ได้
                 </Notice>
                 <label>
                   รหัส OTP
@@ -227,18 +258,9 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
             </Button>
           </form>
         )}
-        {otpAvailable === true && (
+        {otpAvailable === true && usePassword && (
           <p className="fine" style={{ marginTop: '12px' }}>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                setUsePassword((v) => !v);
-                setError('');
-              }}
-            >
-              {usePassword ? '← กลับไปเข้าด้วยรหัส OTP' : 'เข้าด้วยรหัสผ่าน (ADMIN / บัญชีที่สร้างเองใน SES)'}
-            </button>
+            ใช้ได้กับบัญชีที่สร้างเองใน SES เช่น ADMIN พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยแท็บ “OTP ทาง SMS”
           </p>
         )}
       </section>

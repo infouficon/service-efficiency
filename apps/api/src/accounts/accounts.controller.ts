@@ -17,11 +17,16 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { AccountsService } from './accounts.service';
+import { OtpService } from './otp.service';
+import { SESSION_MS } from './password';
 import {
   BranchDto,
   BranchRegistrationDto,
   ChangePasswordDto,
   LoginDto,
+  OtpRequestDto,
+  OtpVerifyDto,
+  SmsTestDto,
   ResetPasswordDto,
   StaffCreateDto,
   StaffUpdateDto,
@@ -59,15 +64,22 @@ export class OriginGuard implements CanActivate {
 export class AccountsController {
   constructor(
     private readonly accounts: AccountsService,
+    private readonly otp: OtpService,
     private readonly config: ConfigService,
   ) {}
+  private async admin(request: Request) {
+    const user = await this.accounts.authenticate(request);
+    if (!user.roles.includes('ADMIN')) throw new ForbiddenException('Access restricted to ADMIN');
+    return user;
+  }
   private cookie(response: Response, value: string, clear = false) {
     response.cookie(cookieName, value, {
       httpOnly: true,
       secure: this.config.get('NODE_ENV') === 'production',
       sameSite: 'lax',
       path: '/',
-      ...(clear ? { maxAge: 0 } : {}),
+      // D85: the cookie lives as long as the session (12 h), so closing the browser does not log the shift out
+      maxAge: clear ? 0 : SESSION_MS,
     });
     response.setHeader('Cache-Control', 'no-store');
   }
@@ -80,6 +92,43 @@ export class AccountsController {
     this.cookie(response, result.token);
     return result.user;
   }
+  /** Which sign-in the login page offers: SMS OTP once ThaiBulkSMS is configured (D85), else the password. Public. */
+  @Get('auth/config')
+  authConfig(@Res({ passthrough: true }) response: Response) {
+    response.setHeader('Cache-Control', 'no-store');
+    return { otp: this.accounts.otpEnabled() };
+  }
+
+  /** Sends a login code to the phone on the account. Always answers `{ ok: true }` (nothing tells whether the account exists). */
+  @Post('auth/otp/request')
+  requestOtp(@Body() body: OtpRequestDto) {
+    return this.otp.request(body.staffId);
+  }
+
+  @Post('auth/otp/verify')
+  async verifyOtp(
+    @Body() body: OtpVerifyDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.otp.verify(body.staffId, body.code);
+    this.cookie(response, result.token);
+    return result.user;
+  }
+
+  /** ADMIN: how the SMS side is set up and the latest login codes with their delivery status. */
+  @Get('admin/otp')
+  async otpStatus(@Req() request: Request) {
+    await this.admin(request);
+    return this.otp.status();
+  }
+
+  /** ADMIN: one test SMS (costs a credit). */
+  @Post('admin/otp/test-sms')
+  async testSms(@Req() request: Request, @Body() body: SmsTestDto) {
+    await this.admin(request);
+    return this.otp.sendTest(body.phone);
+  }
+
   @Get('auth/me')
   me(@Req() request: Request, @Res({ passthrough: true }) response: Response) {
     response.setHeader('Cache-Control', 'no-store');

@@ -115,6 +115,52 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
   );
 });
 
+test('SMS OTP mode: the ERP password is not required, the tel becomes the phone, a missing one is a warning (D85)', () => {
+  const branches = [{ erpBranchId: 1, code: 'A1', name: 'A1', phone: '', active: true }];
+  const row = (id, o = {}) => ({
+    staff_id: id,
+    'user name': String(id),
+    status: 'active',
+    branch_id: 1,
+    position: 'Sale Representative',
+    name_first_th: 'ก',
+    name_last_th: 'ข',
+    tel: '081-234-5678',
+    ...o,
+  });
+  const out = erp.parsePeople(
+    [
+      row(1),
+      row(2, { tel: '+66 89 123 4567' }),
+      row(3, { tel: '' }),
+      row(4, { tel: '021234567' }),
+      row(5, { tel: null }),
+      row(6, { 'user password': 'x'.repeat(200) }),
+    ],
+    branches,
+    new Set(),
+    false,
+  );
+  assert.deepEqual(
+    out.people.map((p) => [p.staffId, p.phone, p.password]),
+    [
+      ['1', '0812345678', ''],
+      ['2', '0891234567', ''],
+      ['3', null, ''],
+      ['4', null, ''],
+      ['5', null, ''],
+      ['6', '0812345678', ''],
+    ],
+    'everybody is imported, with or without a password; only a Thai mobile number counts',
+  );
+  assert.deepEqual(out.warnings.map((w) => w.staffId), ['3', '4', '5']);
+  assert.deepEqual(out.skipped, []);
+  // password mode still needs the password and still reads the tel
+  const old = erp.parsePeople([row(7, { 'user password': 'pw' }), row(8)], branches);
+  assert.deepEqual(old.people.map((p) => [p.staffId, p.phone]), [['7', '0812345678']]);
+  assert.deepEqual(old.skipped.map((x) => x.staffId), ['8']);
+});
+
 test('schedule: due slot inside the catch-up window, next run, Bangkok time', () => {
   const times = erp.parseTimes('10:00');
   assert.deepEqual(times, [600]);
@@ -242,6 +288,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
     staff_id: n(k),
     'user name': sid(k),
     'user password': `erp-pw-${k}-x`,
+    tel: `08${String(20000000 + k).slice(-8)}`,
     status: 'active',
     branch_id: bidA,
     position: 'Sale Representative',
@@ -927,6 +974,48 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         );
         assert.equal(await svc.claim(slot, 'schedule', false, null), null);
         await db.erpSyncRun.deleteMany({ where: { slot } });
+      },
+    );
+
+    await t.test(
+      'with SMS OTP on (ThaiBulkSMS configured) the import stops reading ERP passwords and ERP accounts keep only the OTP marker (D85)',
+      async () => {
+        const phoneOf = async (k) => (await staffRow(k))?.phone;
+        // the phone from the ERP tel was stored by the earlier (password-mode) runs
+        assert.equal(await phoneOf(1), `08${String(20000001).slice(-8)}`);
+        erpState.requests.length = 0;
+        process.env.THAIBULKSMS_API_KEY = 'k';
+        process.env.THAIBULKSMS_API_SECRET = 's';
+        try {
+          erpState.staff.push(es(50, { 'user password': '', tel: '' }));
+          const res = await run();
+          assert.equal(res.data.ok, true, res.data.error);
+          const staffCall = erpState.requests.find((r) => r.url.includes('/staff'));
+          assert.ok(staffCall, 'the staff table was read');
+          assert.ok(!/user%20password/i.test(staffCall.url), 'no password field is requested');
+          assert.match(staffCall.url, /[,=]tel[,&]/, 'the tel is');
+          const one = await staffRow(1);
+          assert.equal(one.passwordHash, 'otp:only', 'the stored ERP password copy is gone');
+          const fifty = await staffRow(50);
+          assert.ok(fifty, 'a person without any ERP password still gets an account');
+          assert.equal(fifty.phone, null);
+          assert.ok(
+            res.data.summary.staff.warnings.some((w) => w.staffId === sid(50)),
+            'and a warning that OTP login cannot reach them',
+          );
+          assert.equal((await login(sid(1), 'erp-new-1')).status, 401, 'password login is closed for ERP accounts');
+          // a second run changes nothing
+          const again = await run();
+          assert.equal(again.data.summary.staff.passwordChanged, 0);
+        } finally {
+          delete process.env.THAIBULKSMS_API_KEY;
+          delete process.env.THAIBULKSMS_API_SECRET;
+        }
+        // back to password mode: the next import re-creates the password copies, so nobody stays locked out
+        const back = await run();
+        assert.equal(back.data.ok, true, back.data.error);
+        assert.notEqual((await staffRow(1)).passwordHash, 'otp:only');
+        assert.equal((await login(sid(1), 'erp-new-1')).status, 201);
       },
     );
   } finally {

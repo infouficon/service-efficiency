@@ -1,5 +1,8 @@
 import { randomBytes, scrypt, timingSafeEqual, createHash } from 'node:crypto';
-export const IDLE_MS = 8 * 60 * 60 * 1000;
+/** D85: a login session lasts 12 hours from the login, whatever the activity (one working day). */
+export const SESSION_MS = 12 * 60 * 60 * 1000;
+/** The stored "password" of an ERP account while SMS OTP login is on: not a hash, so no password ever verifies against it. */
+export const OTP_ONLY_HASH = 'otp:only';
 export const LOCK_MS = 15 * 60 * 1000;
 const derive = (password: string, salt: string): Promise<Buffer> =>
   new Promise((resolve, reject) => {

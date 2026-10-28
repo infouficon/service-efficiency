@@ -19,6 +19,7 @@ import {
   Ticket,
   Wallet,
   BookOpen,
+  MessageSquare,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -494,6 +495,17 @@ export function App({
                         }}
                       >
                         <Layers size={14} /> <span>หมวดหมู่สินค้า</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'otp' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('otp');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <MessageSquare size={14} /> <span>เข้าสู่ระบบด้วย OTP</span>
                       </button>
 
                       <a

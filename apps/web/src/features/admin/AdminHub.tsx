@@ -25,7 +25,8 @@ import { CustomerTypesPanel } from './CustomerTypesPanel';
 import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { CategoriesPanel } from './CategoriesPanel';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments` and `categories`. */
+import { OtpPanel } from './OtpPanel';
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories` and `otp`. */
 export type AdminSubView =
   | 'users'
   | 'branches'
@@ -33,7 +34,8 @@ export type AdminSubView =
   | 'erp'
   | 'queue'
   | 'payments'
-  | 'categories';
+  | 'categories'
+  | 'otp';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -45,6 +47,11 @@ interface StaffDraft {
   active: boolean;
   password: string;
   erpManaged: boolean;
+  /** a new number typed for the login OTP; empty = leave the stored one alone (D85) */
+  phone: string;
+  /** the stored number, masked, shown as the placeholder */
+  currentPhone: string | null;
+  clearPhone: boolean;
 }
 const blankStaff = (): StaffDraft => ({
   staffId: '',
@@ -55,6 +62,9 @@ const blankStaff = (): StaffDraft => ({
   active: true,
   password: '',
   erpManaged: false,
+  phone: '',
+  currentPhone: null,
+  clearPhone: false,
 });
 export function AdminHub({
   user,
@@ -163,7 +173,9 @@ export function AdminHub({
                     ? 'ช่องทางชำระเงิน (Payment Methods)'
                     : subTab === 'categories'
                       ? 'หมวดหมู่สินค้า (Categories)'
-                      : 'จัดการผู้ใช้ (Staff Members)'}
+                      : subTab === 'otp'
+                        ? 'เข้าสู่ระบบด้วย OTP (SMS)'
+                        : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -184,6 +196,8 @@ export function AdminHub({
         <PaymentMethodsPanel />
       ) : admin && subTab === 'categories' ? (
         <CategoriesPanel />
+      ) : admin && subTab === 'otp' ? (
+        <OtpPanel />
       ) : (
         <>
           {error && (
@@ -235,6 +249,7 @@ export function AdminHub({
                           <th>Staff ID</th>
                           <th>Name</th>
                           <th>Branch</th>
+                          <th>เบอร์ (OTP)</th>
                           <th>Roles</th>
                           <th>Status</th>
                           <th>Actions</th>
@@ -262,6 +277,15 @@ export function AdminHub({
                                 '—'}
                             </td>
                             <td>{s.branch}</td>
+                            <td>
+                              {s.phone ? (
+                                <span className="fine">{s.phone}</span>
+                              ) : (
+                                <span className="status-tag status-outcome" title="ไม่มีเบอร์ จึงเข้าระบบด้วย OTP ไม่ได้">
+                                  ไม่มีเบอร์
+                                </span>
+                              )}
+                            </td>
                             <td>{s.roles.join(', ')}</td>
                             <td>
                               <span
@@ -293,6 +317,9 @@ export function AdminHub({
                                         active: s.active,
                                         password: '',
                                         erpManaged: Boolean(s.erpManaged),
+                                        phone: '',
+                                        currentPhone: s.phone ?? null,
+                                        clearPhone: false,
                                       });
                                     }}
                                   >
@@ -471,6 +498,12 @@ export function AdminHub({
                   ? null
                   : draft.branchId,
                 active: draft.active,
+                // D85: omit = unchanged, a number = set, null = clear; an ERP account's number is the ERP's
+                ...(!draft.erpManaged && draft.phone.trim()
+                  ? { phone: draft.phone.trim() }
+                  : !draft.erpManaged && draft.clearPhone
+                    ? { phone: null }
+                    : {}),
                 ...(!editing
                   ? { staffId: draft.staffId, password: draft.password }
                   : {}),
@@ -528,6 +561,39 @@ export function AdminHub({
                 />
               </label>
             </div>
+            <label>
+              เบอร์มือถือสำหรับรับรหัส OTP
+              <input
+                inputMode="tel"
+                maxLength={10}
+                pattern="0[689][0-9]{8}"
+                title="เบอร์มือถือ 10 หลัก เช่น 0812345678"
+                disabled={draft.erpManaged || draft.clearPhone}
+                placeholder={
+                  draft.erpManaged
+                    ? `${draft.currentPhone ?? 'ไม่มีเบอร์ใน ERP'} (มาจาก ERP ฟิลด์ tel)`
+                    : draft.currentPhone
+                      ? `ตอนนี้ ${draft.currentPhone} · เว้นว่าง = ไม่เปลี่ยน`
+                      : 'เช่น 0812345678'
+                }
+                value={draft.phone}
+                onChange={(e) =>
+                  setDraft({ ...draft, phone: e.target.value.replace(/\D/g, '') })
+                }
+              />
+            </label>
+            {!draft.erpManaged && draft.currentPhone && (
+              <label className="warroom-force">
+                <input
+                  type="checkbox"
+                  checked={draft.clearPhone}
+                  onChange={(e) =>
+                    setDraft({ ...draft, clearPhone: e.target.checked, phone: '' })
+                  }
+                />
+                <span>ลบเบอร์นี้ออก</span>
+              </label>
+            )}
             {!editing && (
               <label>
                 รหัสผ่านชั่วคราว

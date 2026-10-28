@@ -86,6 +86,8 @@ model Staff {
   failedAttempts     Int               @default(0)
   lockedUntil        DateTime?         @db.DateTime(3)
   // ERP staff_id when the account is created and kept in sync by the ERP import (D54); null for hand-made accounts
+  // 10-digit Thai mobile (0812345678): where the login OTP goes. From the ERP `tel` for ERP accounts (D85), set by ADMIN otherwise
+  phone              String?           @db.VarChar(20)
   erpStaffId         Int?              @unique
   erpSyncedAt        DateTime?         @db.DateTime(3)
   roles              StaffRole[]
@@ -112,9 +114,34 @@ model LoginSession {
   staffId    String   @db.VarChar(64)
   staff      Staff    @relation(fields: [staffId], references: [staffId], onDelete: Cascade)
   lastSeenAt DateTime @db.DateTime(3)
+  // D85: a session lasts SESSION_MS (12 h) from here, whatever the activity
+  createdAt  DateTime @default(now()) @db.DateTime(3)
 
   @@index([staffId])
   @@index([lastSeenAt])
+}
+
+/**
+ * D85: one SMS login code. Only a hash of the code is kept; the phone number is not kept at all (last 4 digits for the admin
+ * log). `smsStatus`: pending -> sent | failed, then delivered | undelivered | reported when the ThaiBulkSMS webhook calls back.
+ */
+model LoginOtp {
+  id           String    @id @db.VarChar(36)
+  staffId      String    @db.VarChar(64)
+  codeHash     String    @db.Char(64)
+  phoneLast4   String    @db.VarChar(4)
+  createdAt    DateTime  @default(now()) @db.DateTime(3)
+  expiresAt    DateTime  @db.DateTime(3)
+  attempts     Int       @default(0)
+  consumedAt   DateTime? @db.DateTime(3)
+  smsStatus    String    @default("pending") @db.VarChar(32)
+  smsMessageId String?   @db.VarChar(64)
+  smsError     String?   @db.VarChar(255)
+  smsReport    Json?
+
+  @@index([staffId, createdAt])
+  @@index([smsMessageId])
+  @@index([createdAt])
 }
 
 // Technical mutex: serializes security-sensitive updates, including last-admin checks.

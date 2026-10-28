@@ -248,3 +248,8 @@ no data is changed, logins keep working with the last data; SES has no e-mail se
 - That `staff` is the same table as `SalesRept`/`HR`; whether the ERP account rights stay the same for a dedicated SES account.
 - The `/api/freshness` payload and `mart.data_version` columns (only seen in docs / code).
 - That `sql/73_stock_partner_header_status.sql` is what is deployed (the repo has 73 sql files; prod may be behind).
+
+### 3.5 Staff phone for the SMS OTP login (D85, probed read-only 2026-10-28)
+
+`staff.tel` is the person's mobile number: 670 of 718 rows have a valid Thai mobile, 39 empty, 5 landline-like, 4 other. For the 92 active iStudio/U-Store staff: 84 valid, 6 empty, 2 other format; 0 numbers shared by two people. `staff.sms` is an on/off flag (`off` for 91 of 92), not a number; `email` is filled for 80 of 92; `line_user_id` and `line_otp` exist (unused). The import selects `tel` (and, when SMS OTP is on, no longer selects `user password`). Warroom does not hold staff phones.
+

@@ -30,7 +30,7 @@
 
 Start at [docs/agents/README.md](docs/agents/README.md). Domain language and invariants are in
 [CONTEXT.md](CONTEXT.md); keep it updated when a term or entity changes. Architectural decisions go in
-[docs/adr/](docs/adr/README.md); business decisions go in `docs/decisions.md` (next free number: D85).
+[docs/adr/](docs/adr/README.md); business decisions go in `docs/decisions.md` (next free number: D86).
 
 Source of truth when documents disagree: the code, then `docs/decisions.md` (newer D-numbers win),
 then the rest of `docs/`. Known gaps are listed in [docs/agents/hazards.md](docs/agents/hazards.md); do not

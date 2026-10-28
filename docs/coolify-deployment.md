@@ -84,6 +84,18 @@
 
 ไม่ตั้ง `WARROOM_DATABASE_URL` = ปิดทั้งหมด รายละเอียดและขั้นตอนเปิดใช้: `docs/agents/warroom-products.md`
 
+#### Environment ของการเข้าสู่ระบบด้วย OTP ทาง SMS (D85)
+
+| ตัวแปร | ความหมาย |
+| --- | --- |
+| `THAIBULKSMS_API_KEY`, `THAIBULKSMS_API_SECRET` | API key / secret จาก ThaiBulkSMS (ตั้งค่า → API Key) ตั้งเป็น **Sensitive** ตั้งครบทั้งสองตัวเมื่อไหร่ ระบบสลับไปเข้าสู่ระบบด้วย OTP ทันที (พนักงานที่ซิงก์จาก ERP เข้าด้วยรหัสผ่านไม่ได้อีก) ยังไม่ตั้ง = รหัสผ่านแบบเดิม |
+| `THAIBULKSMS_SENDER` | ชื่อผู้ส่ง (sender) ที่ลงทะเบียนกับ ThaiBulkSMS ว่าง = ค่าเริ่มต้นของเขา |
+| `THAIBULKSMS_WEBHOOK_TOKEN` | ความลับท้าย URL ของ webhook ยาวอย่างน้อย 16 ตัวอักษร (`openssl rand -hex 16`) ตั้งเป็น **Sensitive** ใส่ URL `https://<โดเมน>/api/webhooks/thaibulksms/<ค่านี้>` ในหน้าสร้าง API Key ของ ThaiBulkSMS (method POST) ไม่ตั้ง = webhook ปิด (OTP ใช้ได้ปกติ แค่ไม่เห็นผลส่งถึงเครื่อง) |
+| `OTP_SMS_DAILY_LIMIT` | เพดานจำนวน SMS OTP ทั้งระบบใน 24 ชม. (ค่าเริ่มต้น 1000) กันค่า SMS บานปลาย |
+| `THAIBULKSMS_API_URL` | ใช้เฉพาะทดสอบ (ค่าเริ่มต้น `https://api-v2.thaibulksms.com/sms`) |
+
+ขั้นตอนเปิดใช้: (1) deploy (2) ตั้ง env ข้างบน แล้ว Restart api (3) Admin → "เข้าสู่ระบบด้วย OTP" กด "ส่ง SMS ทดสอบ" ไปที่เบอร์ตัวเองก่อน (4) กด "ซิงก์ตอนนี้" ที่ ซิงก์ ERP เพื่อให้เบอร์ `tel` และตัวทำเครื่องหมายแทนรหัสผ่าน ERP เข้าฐาน (5) ลองเข้าด้วย OTP ด้วย Staff ID ตัวเอง ก่อนบอกพนักงาน เบอร์ของบัญชีที่ซิงก์จาก ERP มาจากฟิลด์ `tel` ใน ERP ใครไม่มีเบอร์ต้องแก้ที่ ERP ย้อนกลับ: ลบ `THAIBULKSMS_API_KEY` / `THAIBULKSMS_API_SECRET` แล้ว Restart (ซิงก์ ERP รอบถัดไปคืนรหัสผ่านให้บัญชี ERP)
+
 #### Environment ของการเชื่อม U POS (D60, F17)
 
 | ตัวแปร | ความหมาย |

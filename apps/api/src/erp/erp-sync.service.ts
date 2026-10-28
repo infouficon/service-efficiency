@@ -12,7 +12,8 @@ import {
   ERP_MANAGED_ROLES,
   AccountsService,
 } from '../accounts/accounts.service';
-import { hashPassword, verifyPassword } from '../accounts/password';
+import { hashPassword, OTP_ONLY_HASH, verifyPassword } from '../accounts/password';
+import { normalizeThaiMobile } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -82,6 +83,8 @@ export interface ErpPerson {
   erpBranchId: number;
   roles: RoleCode[];
   password: string;
+  /** ERP `tel` as 10 digits, or null when it is empty / not a Thai mobile (D85) */
+  phone: string | null;
 }
 export interface BranchNote {
   code: string;
@@ -236,6 +239,8 @@ export function parsePeople(
   rows: unknown[],
   branches: ErpBranch[],
   dropped: Set<number> = new Set(),
+  /** false while SMS OTP login is on (D85): the ERP password is neither read nor required */
+  requirePassword = true,
 ): {
   people: ErpPerson[];
   skipped: StaffNote[];
@@ -282,14 +287,14 @@ export function parsePeople(
       });
       continue;
     }
-    const password = text(row['user password']);
+    const password = requirePassword ? text(row['user password']) : '';
     // From here on the person is employed and in scope: an unusable row never deactivates the account.
     retain.add(erpStaffId);
-    if (!password.trim()) {
+    if (requirePassword && !password.trim()) {
       skipped.push({ staffId, reason: 'ไม่มีรหัสผ่าน (user password) ใน ERP' });
       continue;
     }
-    if (password.length > 128) {
+    if (requirePassword && password.length > 128) {
       skipped.push({ staffId, reason: 'รหัสผ่านใน ERP ยาวเกิน 128 ตัวอักษร' });
       continue;
     }
@@ -307,6 +312,12 @@ export function parsePeople(
         staffId,
         reason: `user name ใน ERP (${userName}) ไม่ตรงกับ staff_id ใช้ staff_id เป็นรหัสเข้าระบบ`,
       });
+    const phone = normalizeThaiMobile(row.tel);
+    if (!requirePassword && !phone)
+      warnings.push({
+        staffId,
+        reason: 'ไม่มีเบอร์มือถือที่ใช้ได้ใน ERP (tel) จึงเข้าระบบด้วย OTP ไม่ได้ จนกว่า ERP จะแก้',
+      });
     candidates.push({
       erpStaffId,
       staffId,
@@ -315,6 +326,7 @@ export function parsePeople(
       erpBranchId,
       roles,
       password,
+      phone,
     });
   }
   const seen = new Map<number, number>();
@@ -391,8 +403,9 @@ export function nextRunAt(now: Date, times: number[]): string | null {
 const BRANCH_QUERY = `$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status&$top=${MAX_ROWS}`;
 // No `$filter`: filtering on `status` can force FileMaker to evaluate the whole table, and a filtered query was
 // followed by an OData hang on 2026-10-12. The narrow `$select` alone took 0.3 s for all 713 rows; filter here instead.
-const STAFF_QUERY =
-  '$select=staff_id,%22user%20name%22,%22user%20password%22,status,branch_id,position,name_first_th,name_last_th' +
+/** The staff fields the import needs. With SMS OTP login on (D85) the plaintext ERP password is not even requested. */
+const staffQuery = (otp: boolean) =>
+  `$select=staff_id,%22user%20name%22,${otp ? '' : '%22user%20password%22,'}status,branch_id,position,name_first_th,name_last_th,tel` +
   `&$top=${MAX_ROWS}`;
 // eslint-disable-next-line no-control-regex
 const RAW_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
@@ -700,7 +713,8 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
   ): Promise<ErpSyncSummary> {
     // One request at a time: FileMaker queues requests and the shops sell on the same server.
     const branchRows = await odataRows(cfg, 'branch', BRANCH_QUERY);
-    const staffRows = await odataRows(cfg, 'staff', STAFF_QUERY);
+    const otp = this.accounts.otpEnabled();
+    const staffRows = await odataRows(cfg, 'staff', staffQuery(otp));
     if (branchRows.length >= MAX_ROWS || staffRows.length >= MAX_ROWS)
       throw new Error(
         `ERP ส่งข้อมูลถึงเพดาน ${MAX_ROWS} แถว อาจถูกตัด จึงยกเลิกการซิงก์`,
@@ -712,7 +726,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       throw new Error(
         'ไม่พบสาขากลุ่ม iStudio/U-Store ใน ERP จึงยกเลิกการซิงก์',
       );
-    const parsed = parsePeople(staffRows, scope, dropped);
+    const parsed = parsePeople(staffRows, scope, dropped, !otp);
     const plan: Plan = {
       branches: scope,
       branchNotes: notes,
@@ -729,6 +743,11 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     );
     await mapPool(plan.people, HASH_CONCURRENCY, async (person) => {
       const current = stored.get(person.erpStaffId);
+      if (otp) {
+        // D85: ERP accounts sign in by OTP; the stored copy of the ERP password is replaced by a marker nothing verifies against
+        plan.hashes.set(person.erpStaffId, current === OTP_ONLY_HASH ? null : OTP_ONLY_HASH);
+        return;
+      }
       if (
         current !== undefined &&
         (await verifyPassword(person.password, current))
@@ -920,6 +939,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
               firstName: person.firstName,
               lastName: person.lastName,
               passwordHash: plan.hashes.get(person.erpStaffId) ?? '',
+              phone: person.phone,
               branchId: sb.id,
               active: true,
               mustChangePassword: false,
@@ -954,6 +974,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       if (match.firstName !== person.firstName)
         data.firstName = person.firstName;
       if (match.lastName !== person.lastName) data.lastName = person.lastName;
+      if (match.phone !== person.phone) data.phone = person.phone;
       if (match.branchId !== sb.id) data.branch = { connect: { id: sb.id } };
       if (!match.active) {
         data.active = true;

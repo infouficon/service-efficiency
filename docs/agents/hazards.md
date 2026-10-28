@@ -204,3 +204,13 @@ Still open:
 - **Category pictures come from Icons8**: the free licence asks for a visible link back; the owner had the on-screen credit removed (2026-10-15), so confirm the licence he holds covers it. The Accessories picture is a stand-in.
 - **Warroom's parsed `capacity` / `color` columns are unreliable for Macs (D80)**: capacity = RAM, colour may carry the storage. SES re-derives both from the names; a Mac whose names carry no "Ram N" keeps warroom's capacity as its storage, and its model name keeps the RAM/storage text.
 
+### H-34: SMS OTP login (D85) · S2 · open
+- **Everyone depends on one SMS provider and on a phone number in the ERP.** If ThaiBulkSMS or its credit is down nobody except hand-made accounts (ADMIN) can sign in; the fallback is to remove the key (password login returns after the next ERP import) or to give a person a hand-made account. Watch the credit.
+- **Staff without a usable `tel` in the ERP cannot sign in** (6 of 92 on 2026-10-28, plus any new joiner); the import lists them in its warnings. A wrong number sends the code to someone else: SES cannot know.
+- **SMS cost / abuse.** Staff ids are numeric and guessable, so anybody can ask for a code for a colleague; limits: 1 a minute, 5 an hour, 10 a day per person, `OTP_SMS_DAILY_LIMIT` for the system. There is no per-IP limit (behind Cloudflare → Caddy → Traefik the API sees the proxy address, see the DAPP notes).
+- **The code is only a 6-digit secret for 5 minutes**: 5 tries per code and 25 codes' worth of tries a day per person keep guessing below 1 in 10,000 a day; SIM-swap or a shared phone defeats it.
+- **The webhook payload format is unverified** (not in the ThaiBulkSMS API v2 document): the receiver is tolerant and only informational. Cloudflare may block ThaiBulkSMS's servers (a plain curl got 403): check with a real delivery report before relying on the delivery column.
+- **The delivery status says nothing about the login**: a code can show "sent" and never arrive.
+- **Session = 12 hours from login** with no idle timeout: a shared counter PC stays signed in for the whole shift unless somebody logs out. A deactivated account loses access at the next request (the session is refused when `active` is false), not after 12 hours.
+- **In OTP mode the stored ERP password copies are replaced by a marker.** If the ERP import is down while OTP is switched off, ERP accounts have no password until the next successful import.
+

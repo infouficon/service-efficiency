@@ -27,7 +27,7 @@ export async function api<T>(
   }
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    if (response.status === 401 && path !== '/auth/login')
+    if (response.status === 401 && path !== '/auth/login' && !path.startsWith('/auth/otp/'))
       window.dispatchEvent(new Event('auth-expired'));
     const message = data?.message;
     throw new ApiError(

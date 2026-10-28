@@ -12,7 +12,7 @@ if (database.pathname !== '/service_efficiency_test') {
 }
 const { createApplication } = await import('../dist/bootstrap.js');
 const { PrismaService } = await import('../dist/prisma/prisma.service.js');
-const { hashPassword, tokenHash, IDLE_MS } =
+const { hashPassword, tokenHash, SESSION_MS } =
   await import('../dist/accounts/password.js');
 
 test('real MySQL account, authorization and session lifecycle', async (t) => {
@@ -351,7 +351,7 @@ test('real MySQL account, authorization and session lifecycle', async (t) => {
       },
     );
     await t.test(
-      'multiple devices; logout current device; server idle expiry',
+      'multiple devices; logout current device; a session lasts 12 hours from login, whatever the activity (D85)',
       async () => {
         const second = (await login('staff', changed)).cookie;
         assert.equal(
@@ -367,13 +367,25 @@ test('real MySQL account, authorization and session lifecycle', async (t) => {
           200,
         );
         const third = (await login('staff', changed)).cookie;
+        const thirdHash = tokenHash(third.split('=')[1]);
+        // idle for 11 hours: still in (no idle timeout any more), it is the 12 hours since login that count
         await db.loginSession.update({
-          where: { tokenHash: tokenHash(third.split('=')[1]) },
-          data: { lastSeenAt: new Date(Date.now() - IDLE_MS - 1) },
+          where: { tokenHash: thirdHash },
+          data: { lastSeenAt: new Date(Date.now() - 11 * 3600_000), createdAt: new Date(Date.now() - SESSION_MS + 60_000) },
+        });
+        assert.equal(
+          (await request('/auth/me', 'GET', undefined, third)).status,
+          200,
+          'inside the 12 hours',
+        );
+        await db.loginSession.update({
+          where: { tokenHash: thirdHash },
+          data: { createdAt: new Date(Date.now() - SESSION_MS - 1), lastSeenAt: new Date() },
         });
         assert.equal(
           (await request('/auth/me', 'GET', undefined, third)).status,
           401,
+          'past the 12 hours, even if used a second ago',
         );
         assert.equal(
           (await request('/auth/me', 'GET', undefined, staff)).status,

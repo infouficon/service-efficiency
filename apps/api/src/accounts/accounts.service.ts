@@ -12,11 +12,12 @@ import { PrismaService } from '../prisma/prisma.service';
 import { formatQueue } from '../queue/queue.service';
 import {
   hashPassword,
-  IDLE_MS,
   LOCK_MS,
+  SESSION_MS,
   tokenHash,
   verifyPassword,
 } from './password';
+import { SmsService } from '../sms/sms.service';
 import { BranchDto, StaffCreateDto, StaffUpdateDto } from './dto';
 const include = { roles: true, branch: true } satisfies Prisma.StaffInclude;
 export type Account = Prisma.StaffGetPayload<{ include: typeof include }>;
@@ -46,11 +47,39 @@ export function publicAccount(account: Account) {
     active: account.active,
     mustChangePassword: account.mustChangePassword,
     erpManaged: account.erpStaffId !== null,
+    /** the number the login OTP goes to, masked ("08X-XXX-1234"); null = none, so no OTP login (D85) */
+    phone: maskPhone(account.phone),
   };
+}
+/** "0812345678" -> "08X-XXX-5678": enough for a person to recognise their own number, not to use it. */
+export function maskPhone(phone: string | null): string | null {
+  return phone && phone.length >= 10
+    ? `${phone.slice(0, 2)}X-XXX-${phone.slice(-4)}`
+    : null;
 }
 @Injectable()
 export class AccountsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sms: SmsService,
+  ) {}
+
+  /** Login switches to SMS OTP once ThaiBulkSMS is configured (D85); until then everything works as before. */
+  otpEnabled(): boolean {
+    return this.sms.configured();
+  }
+
+  /** Starts a login session (12 h, D85) and sweeps the expired ones. Runs inside the caller's transaction. */
+  async createSession(tx: Tx, staffId: string): Promise<string> {
+    const token = randomBytes(32).toString('hex');
+    await tx.loginSession.deleteMany({
+      where: { createdAt: { lte: new Date(Date.now() - SESSION_MS) } },
+    });
+    await tx.loginSession.create({
+      data: { tokenHash: tokenHash(token), staffId, lastSeenAt: new Date() },
+    });
+    return token;
+  }
 
   async authenticate(tokenOrRequest: string | { headers?: { cookie?: string } } | undefined): Promise<PublicAccount> {
     const token = typeof tokenOrRequest === 'string'
@@ -105,7 +134,7 @@ export class AccountsService {
     });
     if (
       !session ||
-      Date.now() - session.lastSeenAt.getTime() >= IDLE_MS ||
+      Date.now() - session.createdAt.getTime() >= SESSION_MS ||
       !session.staff.active ||
       (session.staff.branch && !session.staff.branch.active)
     )
@@ -135,6 +164,11 @@ export class AccountsService {
         (account.lockedUntil && account.lockedUntil > new Date())
       )
         return null;
+      // With SMS OTP on, ERP accounts sign in by OTP only: their ERP password is not accepted (nor even kept, D85).
+      if (this.otpEnabled() && account.erpStaffId !== null) {
+        await hashPassword(password);
+        return null;
+      }
       if (!(await verifyPassword(password, account.passwordHash))) {
         const failures = account.lockedUntil ? 1 : account.failedAttempts + 1;
         await tx.staff.update({
@@ -150,18 +184,14 @@ export class AccountsService {
         where: { staffId },
         data: { failedAttempts: 0, lockedUntil: null },
       });
-      const token = randomBytes(32).toString('hex');
-      await tx.loginSession.deleteMany({
-        where: { lastSeenAt: { lte: new Date(Date.now() - IDLE_MS) } },
-      });
-      await tx.loginSession.create({
-        data: { tokenHash: tokenHash(token), staffId, lastSeenAt: new Date() },
-      });
+      const token = await this.createSession(tx, staffId);
       return { token, user: publicAccount(account) };
     });
     if (!result)
       throw new UnauthorizedException(
-        'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน',
+        this.otpEnabled()
+          ? 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน (พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยรหัส OTP ทาง SMS)'
+          : 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน',
       );
     return result;
   }
@@ -280,6 +310,7 @@ export class AccountsService {
             firstName: data.firstName ?? '',
             lastName: data.lastName ?? '',
             passwordHash: await hashPassword(data.password),
+            phone: data.phone ?? null,
             branchId: data.branchId,
             active: data.active,
             roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
@@ -340,10 +371,14 @@ export class AccountsService {
             'ต้องเหลือ ADMIN ที่ใช้งานอย่างน้อยหนึ่งบัญชี',
           );
       }
+      // D85: the phone of an ERP account is the ERP's (`tel`); only hand-made accounts take one by hand
+      if (data.phone !== undefined && target.erpStaffId !== null && data.phone !== target.phone)
+        throw new ConflictException('เบอร์โทรของบัญชีที่ซิงก์จาก ERP แก้ที่ ERP (ฟิลด์ tel) เท่านั้น');
       await tx.staffRole.deleteMany({ where: { staffId } });
       const updated = await tx.staff.update({
         where: { staffId },
         data: {
+          ...(data.phone !== undefined ? { phone: data.phone } : {}),
           firstName: data.firstName !== undefined ? data.firstName : target.firstName,
           lastName: data.lastName !== undefined ? data.lastName : target.lastName,
           active: data.active,

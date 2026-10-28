@@ -999,6 +999,12 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           const fifty = await staffRow(50);
           assert.ok(fifty, 'a person without any ERP password still gets an account');
           assert.equal(fifty.phone, null);
+          assert.ok(res.data.summary.staff.phones.withPhone >= 1, 'people with a tel are counted');
+          assert.ok(res.data.summary.staff.phones.without >= 1, 'and the one without');
+          assert.equal(
+            res.data.summary.staff.phones.withPhone + res.data.summary.staff.phones.without,
+            res.data.summary.staff.eligible,
+          );
           assert.ok(
             res.data.summary.staff.warnings.some((w) => w.staffId === sid(50)),
             'and a warning that OTP login cannot reach them',

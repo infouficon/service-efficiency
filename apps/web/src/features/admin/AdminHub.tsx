@@ -81,6 +81,7 @@ export function AdminHub({
   const toast = useToast();
   const admin = user.roles.includes('ADMIN');
   const [staff, setStaff] = useState<Account[]>([]);
+  const erpMissingPhone = staff.filter((s) => s.erpManaged && s.active && !s.phone).length;
   const [branches, setBranches] = useState<ManagedBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -94,6 +95,28 @@ export function AdminHub({
   // F10: the address the receipt QR of a branch opens (set for ERP-managed branches too)
   const [qrBranch, setQrBranch] = useState<ManagedBranch | null>(null);
   const [qrUrl, setQrUrl] = useState('');
+  // D85: the last real ERP import, to explain why ERP accounts may still have no phone (their number comes from the ERP at sync time)
+  const [erpLast, setErpLast] = useState<{
+    startedAt: string;
+    ok: boolean | null;
+    error: string | null;
+  } | null | undefined>(undefined);
+  useEffect(() => {
+    if (!admin) return;
+    let active = true;
+    api<{ lastRuns: { startedAt: string; dryRun: boolean; ok: boolean | null; error: string | null }[] }>(
+      '/admin/erp-sync/status',
+    )
+      .then((status) => {
+        if (active) setErpLast(status.lastRuns.find((r) => !r.dryRun) ?? null);
+      })
+      .catch(() => {
+        if (active) setErpLast(undefined);
+      });
+    return () => {
+      active = false;
+    };
+  }, [admin]);
   const [resetId, setResetId] = useState<string | null>(null);
   const [temporary, setTemporary] = useState('');
   const load = useCallback(async () => {
@@ -245,6 +268,18 @@ export function AdminHub({
                     {/* D86: the whole staff list as an Excel file, and back. ADMIN only (it holds phone numbers). */}
                     {admin && <StaffSheetTools onImported={load} />}
                   </div>
+                  {admin && erpMissingPhone > 0 && (
+                    <Notice>
+                      บัญชีที่ซิงก์จาก ERP <strong>{erpMissingPhone}</strong> บัญชียังไม่มีเบอร์ (เข้าด้วย OTP ไม่ได้)
+                      เบอร์มาจากฟิลด์ <code>tel</code> ใน ERP และเข้าฐานตอนซิงก์เท่านั้น ·{' '}
+                      {erpLast === undefined
+                        ? 'ดูผลได้ที่เมนู ซิงก์ ERP'
+                        : erpLast === null
+                          ? 'ยังไม่เคยซิงก์ ERP'
+                          : `ซิงก์จริงล่าสุด ${new Date(erpLast.startedAt).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} ผล: ${erpLast.ok === null ? 'กำลังรัน' : erpLast.ok ? 'สำเร็จ' : `ล้มเหลว (${erpLast.error ?? 'ไม่ทราบสาเหตุ'})`}`}
+                      {' '}· ไปที่เมนู ซิงก์ ERP แล้วกด “ซิงก์ตอนนี้”
+                    </Notice>
+                  )}
                   <div className="table-responsive">
                     <table className="admin-table">
                       <thead>

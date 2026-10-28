@@ -26,6 +26,7 @@ import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { CategoriesPanel } from './CategoriesPanel';
 import { OtpPanel } from './OtpPanel';
+import { StaffSheetTools } from './StaffSheetTools';
 /** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories` and `otp`. */
 export type AdminSubView =
   | 'users'
@@ -241,6 +242,8 @@ export function AdminHub({
                         เพิ่ม Staff
                       </span>
                     </Button>
+                    {/* D86: the whole staff list as an Excel file, and back. ADMIN only (it holds phone numbers). */}
+                    {admin && <StaffSheetTools onImported={load} />}
                   </div>
                   <div className="table-responsive">
                     <table className="admin-table">

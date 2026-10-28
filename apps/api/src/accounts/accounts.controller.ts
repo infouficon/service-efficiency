@@ -29,6 +29,7 @@ import {
   SmsTestDto,
   ResetPasswordDto,
   StaffCreateDto,
+  StaffImportDto,
   StaffUpdateDto,
 } from './dto';
 const cookieName = 'se_session';
@@ -159,6 +160,17 @@ export class AccountsController {
   }
   @Get('staff') listStaff(@Req() request: Request) {
     return this.accounts.listStaff(token(request));
+  }
+  /** ADMIN: every account with everything stored about it (never the password hash), for the Excel export (D86). */
+  @Get('staff/export') exportStaff(@Req() request: Request) {
+    return this.accounts.exportStaff(token(request));
+  }
+  /** ADMIN: creates / updates accounts from spreadsheet rows. `dryRun: true` only reports; any error writes nothing (D86). */
+  @Post('staff/import') importStaff(
+    @Req() request: Request,
+    @Body() body: StaffImportDto,
+  ) {
+    return this.accounts.importStaff(token(request), body.rows, body.dryRun ?? false);
   }
   @Post('staff') createStaff(
     @Req() request: Request,

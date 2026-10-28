@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -19,6 +21,15 @@ import {
 } from './password';
 import { SmsService } from '../sms/sms.service';
 import { BranchDto, StaffCreateDto, StaffUpdateDto } from './dto';
+import {
+  bangkokText,
+  cellText,
+  parseActiveCell,
+  parsePhoneCell,
+  parseRolesCell,
+  STAFF_IMPORT_MAX_ROWS,
+  STAFF_SHEET_COLUMNS,
+} from './staff-sheet';
 const include = { roles: true, branch: true } satisfies Prisma.StaffInclude;
 export type Account = Prisma.StaffGetPayload<{ include: typeof include }>;
 export type PublicAccount = ReturnType<typeof publicAccount>;
@@ -57,8 +68,30 @@ export function maskPhone(phone: string | null): string | null {
     ? `${phone.slice(0, 2)}X-XXX-${phone.slice(-4)}`
     : null;
 }
+/** One row of the staff import report. `row` is the spreadsheet row (the header is row 1). */
+export interface StaffImportRow {
+  row: number;
+  staffId: string;
+  action: 'create' | 'update' | 'unchanged' | 'error';
+  changes: string[];
+  message?: string;
+}
+export interface StaffImportReport {
+  dryRun: boolean;
+  /** false for a dry run and for any file with an error: nothing was written (the file is all or nothing) */
+  applied: boolean;
+  summary: { created: number; updated: number; unchanged: number; errors: number };
+  rows: StaffImportRow[];
+}
+class StaffImportRollback extends Error {
+  constructor(readonly report: StaffImportReport) {
+    super('staff import rolled back');
+  }
+}
+
 @Injectable()
 export class AccountsService {
+  private readonly log = new Logger('Accounts');
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
@@ -78,6 +111,7 @@ export class AccountsService {
     await tx.loginSession.create({
       data: { tokenHash: tokenHash(token), staffId, lastSeenAt: new Date() },
     });
+    await tx.staff.update({ where: { staffId }, data: { lastLoginAt: new Date() } });
     return token;
   }
 
@@ -301,24 +335,34 @@ export class AccountsService {
   createStaff(token: string | undefined, data: StaffCreateDto) {
     return this.transaction(async (tx) => {
       const actor = await this.actor(tx, token);
-      this.assertManagement(actor, data);
-      await this.validateAssignment(tx, data);
-      return publicAccount(
-        await tx.staff.create({
-          data: {
-            staffId: data.staffId,
-            firstName: data.firstName ?? '',
-            lastName: data.lastName ?? '',
-            passwordHash: await hashPassword(data.password),
-            phone: data.phone ?? null,
-            branchId: data.branchId,
-            active: data.active,
-            roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
-          },
-          include,
-        }),
-      );
+      return this.createStaffIn(tx, actor, data, true);
     });
+  }
+  /** `mustChange` false for an account that has no known password (made by the spreadsheet import, signs in by OTP). */
+  private async createStaffIn(
+    tx: Tx,
+    actor: Account,
+    data: StaffCreateDto,
+    mustChange: boolean,
+  ) {
+    this.assertManagement(actor, data);
+    await this.validateAssignment(tx, data);
+    return publicAccount(
+      await tx.staff.create({
+        data: {
+          staffId: data.staffId,
+          firstName: data.firstName ?? '',
+          lastName: data.lastName ?? '',
+          passwordHash: await hashPassword(data.password),
+          mustChangePassword: mustChange,
+          phone: data.phone ?? null,
+          branchId: data.branchId,
+          active: data.active,
+          roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
+        },
+        include,
+      }),
+    );
   }
   updateStaff(
     token: string | undefined,
@@ -329,69 +373,276 @@ export class AccountsService {
       const actor = await this.actor(tx, token);
       const target = await tx.staff.findUnique({ where: { staffId }, include });
       if (!target) throw new BadRequestException('ไม่พบบัญชี');
-      this.assertManagement(actor, data, target);
-      await this.validateAssignment(tx, data);
-      if (target.erpStaffId !== null) {
-        // ADMIN must not depend on data HR can edit in the ERP (it controls the account's password and active flag).
-        if (
-          data.roles.includes('ADMIN') &&
-          !target.roles.some((r) => r.roleCode === 'ADMIN')
-        )
-          throw new ConflictException(
-            'ห้ามตั้ง ADMIN ให้บัญชีที่ซิงก์จาก ERP (ตั้ง MANAGER ได้)',
-          );
-        // The daily ERP import owns these fields (D54); only ADMIN/MANAGER roles can still be set by hand.
-        const managed = (roles: RoleCode[]) =>
-          roles.filter((r) => ERP_MANAGED_ROLES.includes(r)).sort().join();
-        if (
-          (data.firstName !== undefined && data.firstName !== target.firstName) ||
-          (data.lastName !== undefined && data.lastName !== target.lastName) ||
-          data.branchId !== target.branchId ||
-          data.active !== target.active ||
-          managed(data.roles) !== managed(target.roles.map((r) => r.roleCode))
-        )
-          throw new ConflictException(
-            'บัญชีนี้ซิงก์จาก ERP: แก้ชื่อ สาขา สถานะ และสิทธิ์ STAFF/STOCK/CASHIER ได้ที่ ERP เท่านั้น (ตั้ง ADMIN/MANAGER ได้ใน SES)',
-          );
-      }
-      if (
-        target.active &&
-        target.roles.some((r) => r.roleCode === 'ADMIN') &&
-        (!data.active || !data.roles.includes('ADMIN'))
-      ) {
-        const others = await tx.staff.count({
-          where: {
-            staffId: { not: staffId },
-            active: true,
-            roles: { some: { roleCode: 'ADMIN' } },
-          },
-        });
-        if (!others)
-          throw new ConflictException(
-            'ต้องเหลือ ADMIN ที่ใช้งานอย่างน้อยหนึ่งบัญชี',
-          );
-      }
-      // D85: the phone of an ERP account is the ERP's (`tel`); only hand-made accounts take one by hand
-      if (data.phone !== undefined && target.erpStaffId !== null && data.phone !== target.phone)
-        throw new ConflictException('เบอร์โทรของบัญชีที่ซิงก์จาก ERP แก้ที่ ERP (ฟิลด์ tel) เท่านั้น');
-      await tx.staffRole.deleteMany({ where: { staffId } });
-      const updated = await tx.staff.update({
-        where: { staffId },
-        data: {
-          ...(data.phone !== undefined ? { phone: data.phone } : {}),
-          firstName: data.firstName !== undefined ? data.firstName : target.firstName,
-          lastName: data.lastName !== undefined ? data.lastName : target.lastName,
-          active: data.active,
-          branchId: data.branchId,
-          roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
-        },
-        include,
-      });
-      if (!data.active)
-        await tx.loginSession.deleteMany({ where: { staffId } });
-      return publicAccount(updated);
+      return this.updateStaffIn(tx, actor, target, data);
     });
   }
+  private async updateStaffIn(
+    tx: Tx,
+    actor: Account,
+    target: Account,
+    data: StaffUpdateDto,
+  ) {
+    const staffId = target.staffId;
+    this.assertManagement(actor, data, target);
+    await this.validateAssignment(tx, data);
+    if (target.erpStaffId !== null) {
+      // ADMIN must not depend on data HR can edit in the ERP (it controls the account's password and active flag).
+      if (
+        data.roles.includes('ADMIN') &&
+        !target.roles.some((r) => r.roleCode === 'ADMIN')
+      )
+        throw new ConflictException(
+          'ห้ามตั้ง ADMIN ให้บัญชีที่ซิงก์จาก ERP (ตั้ง MANAGER ได้)',
+        );
+      // The daily ERP import owns these fields (D54); only ADMIN/MANAGER roles can still be set by hand.
+      const managed = (roles: RoleCode[]) =>
+        roles.filter((r) => ERP_MANAGED_ROLES.includes(r)).sort().join();
+      if (
+        (data.firstName !== undefined && data.firstName !== target.firstName) ||
+        (data.lastName !== undefined && data.lastName !== target.lastName) ||
+        data.branchId !== target.branchId ||
+        data.active !== target.active ||
+        managed(data.roles) !== managed(target.roles.map((r) => r.roleCode))
+      )
+        throw new ConflictException(
+          'บัญชีนี้ซิงก์จาก ERP: แก้ชื่อ สาขา สถานะ และสิทธิ์ STAFF/STOCK/CASHIER ได้ที่ ERP เท่านั้น (ตั้ง ADMIN/MANAGER ได้ใน SES)',
+        );
+    }
+    if (
+      target.active &&
+      target.roles.some((r) => r.roleCode === 'ADMIN') &&
+      (!data.active || !data.roles.includes('ADMIN'))
+    ) {
+      const others = await tx.staff.count({
+        where: {
+          staffId: { not: staffId },
+          active: true,
+          roles: { some: { roleCode: 'ADMIN' } },
+        },
+      });
+      if (!others)
+        throw new ConflictException(
+          'ต้องเหลือ ADMIN ที่ใช้งานอย่างน้อยหนึ่งบัญชี',
+        );
+    }
+    // D85: the phone of an ERP account is the ERP's (`tel`); only hand-made accounts take one by hand
+    if (data.phone !== undefined && target.erpStaffId !== null && data.phone !== target.phone)
+      throw new ConflictException('เบอร์โทรของบัญชีที่ซิงก์จาก ERP แก้ที่ ERP (ฟิลด์ tel) เท่านั้น');
+    await tx.staffRole.deleteMany({ where: { staffId } });
+    const updated = await tx.staff.update({
+      where: { staffId },
+      data: {
+        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+        firstName: data.firstName !== undefined ? data.firstName : target.firstName,
+        lastName: data.lastName !== undefined ? data.lastName : target.lastName,
+        active: data.active,
+        branchId: data.branchId,
+        roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
+      },
+      include,
+    });
+    if (!data.active)
+      await tx.loginSession.deleteMany({ where: { staffId } });
+    return publicAccount(updated);
+  }
+  /** ADMIN: every account with everything stored about it (never the password hash), for the Excel export (D86). */
+  exportStaff(token: string | undefined) {
+    return this.transaction(async (tx) => {
+      const actor = await this.actor(tx, token);
+      if (!actor.roles.some((r) => r.roleCode === 'ADMIN')) throw new ForbiddenException();
+      const [staff, sessions, otps] = await Promise.all([
+        tx.staff.findMany({ include, orderBy: { staffId: 'asc' } }),
+        tx.loginSession.groupBy({
+          by: ['staffId'],
+          where: { createdAt: { gt: new Date(Date.now() - SESSION_MS) } },
+          _count: { _all: true },
+        }),
+        tx.loginOtp.findMany({
+          orderBy: { createdAt: 'desc' },
+          distinct: ['staffId'],
+          select: { staffId: true, createdAt: true, smsStatus: true },
+        }),
+      ]);
+      const sessionsOf = new Map(sessions.map((s) => [s.staffId, s._count._all]));
+      const otpOf = new Map(otps.map((o) => [o.staffId, o]));
+      return {
+        generatedAt: bangkokText(new Date()),
+        columns: STAFF_SHEET_COLUMNS,
+        rows: staff.map((s) => {
+          const otp = otpOf.get(s.staffId);
+          return {
+            staffId: s.staffId,
+            firstName: s.firstName,
+            lastName: s.lastName,
+            branchCode: s.branch?.code ?? '',
+            branchName: s.branch?.name ?? '',
+            roles: s.roles.map((r) => r.roleCode).sort().join(','),
+            active: s.active,
+            phone: s.phone ?? '',
+            phoneSource: s.phone ? (s.erpStaffId !== null ? 'ERP (tel)' : 'กรอกเอง') : '',
+            source: s.erpStaffId !== null ? 'ERP' : 'สร้างเอง',
+            erpStaffId: s.erpStaffId ?? '',
+            erpSyncedAt: bangkokText(s.erpSyncedAt),
+            createdAt: bangkokText(s.createdAt),
+            updatedAt: bangkokText(s.updatedAt),
+            lastLoginAt: bangkokText(s.lastLoginAt),
+            activeSessions: sessionsOf.get(s.staffId) ?? 0,
+            lastOtpAt: bangkokText(otp?.createdAt),
+            lastOtpStatus: otp?.smsStatus ?? '',
+            mustChangePassword: s.mustChangePassword,
+            failedAttempts: s.failedAttempts,
+            lockedUntil: bangkokText(s.lockedUntil),
+          };
+        }),
+      };
+    });
+  }
+
+  /**
+   * ADMIN: creates and updates accounts from the rows of the staff spreadsheet (D86). The same rules as the staff form apply to
+   * every row (ERP accounts keep their ERP-owned fields, the last ADMIN stays, a branch is needed for non-ADMIN roles). The
+   * file is all or nothing: any error, and every dry run, rolls the whole thing back and returns the report.
+   * Empty cell = leave as is; phone `-` = clear. A new account gets a random password nobody knows: it signs in by SMS OTP
+   * (needs a phone) or after an ADMIN's Reset.
+   */
+  async importStaff(
+    token: string | undefined,
+    rows: Record<string, unknown>[],
+    dryRun: boolean,
+  ): Promise<StaffImportReport> {
+    if (rows.length > STAFF_IMPORT_MAX_ROWS)
+      throw new BadRequestException(`นำเข้าได้ไม่เกิน ${STAFF_IMPORT_MAX_ROWS} แถวต่อครั้ง`);
+    let actorId = '';
+    try {
+      const done = await this.transaction(async (tx) => {
+        const actor = await this.actor(tx, token);
+        if (!actor.roles.some((r) => r.roleCode === 'ADMIN')) throw new ForbiddenException();
+        actorId = actor.staffId;
+        const report: StaffImportReport = {
+          dryRun,
+          applied: false,
+          summary: { created: 0, updated: 0, unchanged: 0, errors: 0 },
+          rows: [],
+        };
+        const seen = new Set<string>();
+        for (const [index, raw] of rows.entries()) {
+          if (!raw || typeof raw !== 'object' || Object.values(raw).every((v) => cellText(v) === undefined)) continue;
+          const line: StaffImportRow = { row: index + 2, staffId: cellText(raw.staffId) ?? '', action: 'error', changes: [] };
+          try {
+            await this.importRow(tx, actor, raw, line, seen);
+          } catch (error) {
+            line.action = 'error';
+            line.changes = [];
+            line.message =
+              error instanceof HttpException
+                ? error.message
+                : 'บันทึกแถวนี้ไม่ได้ (ข้อมูลอาจชนกับบัญชีอื่น)';
+            if (!(error instanceof HttpException)) this.log.error(`staff import row ${line.row}: ${String(error).slice(0, 200)}`);
+          }
+          report.rows.push(line);
+          if (line.action === 'create') report.summary.created += 1;
+          else if (line.action === 'update') report.summary.updated += 1;
+          else if (line.action === 'unchanged') report.summary.unchanged += 1;
+          else report.summary.errors += 1;
+        }
+        if (dryRun || report.summary.errors > 0) throw new StaffImportRollback(report);
+        report.applied = true;
+        return report;
+      });
+      this.log.warn(
+        `staff import by ${actorId}: ${done.summary.created} created, ${done.summary.updated} updated, ${done.summary.unchanged} unchanged`,
+      );
+      return done;
+    } catch (error) {
+      if (error instanceof StaffImportRollback) return error.report;
+      throw error;
+    }
+  }
+
+  private async importRow(
+    tx: Tx,
+    actor: Account,
+    raw: Record<string, unknown>,
+    line: StaffImportRow,
+    seen: Set<string>,
+  ) {
+    const bad = (column: string, why: string) => new BadRequestException(`คอลัมน์ ${column}: ${why}`);
+    const staffId = cellText(raw.staffId);
+    if (!staffId) throw bad('staffId', 'ว่าง');
+    if (staffId.length > 64) throw bad('staffId', 'ยาวเกิน 64 ตัวอักษร');
+    if (seen.has(staffId.toLowerCase())) throw bad('staffId', 'ซ้ำกับแถวก่อนหน้าในไฟล์');
+    seen.add(staffId.toLowerCase());
+    const firstName = cellText(raw.firstName);
+    const lastName = cellText(raw.lastName);
+    if ((firstName?.length ?? 0) > 100) throw bad('firstName', 'ยาวเกิน 100 ตัวอักษร');
+    if ((lastName?.length ?? 0) > 100) throw bad('lastName', 'ยาวเกิน 100 ตัวอักษร');
+    const roles = parseRolesCell(raw.roles);
+    if (roles === null) throw bad('roles', 'ใช้ได้เฉพาะ ADMIN, MANAGER, STAFF, STOCK, CASHIER คั่นด้วย ,');
+    const active = parseActiveCell(raw.active);
+    if (active === null) throw bad('active', 'ใช้ TRUE หรือ FALSE');
+    const phone = parsePhoneCell(raw.phone);
+    if (phone.kind === 'bad') throw bad('phone', 'ไม่ใช่เบอร์มือถือไทย (เช่น 0812345678)');
+    const branchCode = cellText(raw.branchCode);
+    let branchId: string | null | undefined;
+    if (branchCode !== undefined) {
+      const matches = await tx.branch.findMany({ where: { code: branchCode }, select: { id: true } });
+      if (!matches.length) throw bad('branchCode', `ไม่พบสาขา "${branchCode}"`);
+      if (matches.length > 1) throw bad('branchCode', `รหัสสาขา "${branchCode}" ซ้ำกันหลายสาขา ใช้ไฟล์นี้ไม่ได้`);
+      branchId = matches[0].id;
+    }
+    const target = await tx.staff.findUnique({ where: { staffId }, include });
+    const wantPhone = phone.kind === 'set' ? phone.phone : phone.kind === 'clear' ? null : undefined;
+
+    if (!target) {
+      if (!roles) throw bad('roles', 'ว่าง (บัญชีใหม่ต้องระบุบทบาท)');
+      const adminOnly = roles.every((r) => r === 'ADMIN');
+      await this.createStaffIn(
+        tx,
+        actor,
+        {
+          staffId,
+          password: randomBytes(24).toString('base64url'),
+          firstName,
+          lastName,
+          roles,
+          branchId: adminOnly ? null : (branchId ?? null),
+          active: active ?? true,
+          phone: wantPhone ?? null,
+        },
+        false,
+      );
+      line.action = 'create';
+      line.changes = ['staffId', ...(firstName ? ['firstName'] : []), ...(lastName ? ['lastName'] : []), 'roles', ...(branchId ? ['branchCode'] : []), ...(wantPhone ? ['phone'] : [])];
+      return;
+    }
+
+    const currentRoles = target.roles.map((r) => r.roleCode);
+    const nextRoles = roles ?? currentRoles;
+    const adminOnly = nextRoles.every((r) => r === 'ADMIN');
+    const next = {
+      firstName: firstName ?? target.firstName,
+      lastName: lastName ?? target.lastName,
+      roles: nextRoles,
+      branchId: adminOnly ? null : (branchId ?? target.branchId),
+      active: active ?? target.active,
+      ...(wantPhone !== undefined && wantPhone !== target.phone ? { phone: wantPhone } : {}),
+    };
+    const changes: string[] = [];
+    if (next.firstName !== target.firstName) changes.push('firstName');
+    if (next.lastName !== target.lastName) changes.push('lastName');
+    if (next.branchId !== target.branchId) changes.push('branchCode');
+    if ([...next.roles].sort().join() !== [...currentRoles].sort().join()) changes.push('roles');
+    if (next.active !== target.active) changes.push('active');
+    if ('phone' in next) changes.push('phone');
+    if (!changes.length) {
+      line.action = 'unchanged';
+      return;
+    }
+    await this.updateStaffIn(tx, actor, target, next);
+    line.action = 'update';
+    line.changes = changes;
+  }
+
   resetPassword(token: string | undefined, staffId: string, password: string) {
     return this.transaction(async (tx) => {
       const actor = await this.actor(tx, token);

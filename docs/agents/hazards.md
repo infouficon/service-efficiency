@@ -221,3 +221,9 @@ Still open:
 - **createdAt / updatedAt of existing accounts are the migration time**, and `updatedAt` only moves when SES writes the row (the ERP import does; a raw SQL edit does not).
 - **A staff id that looks like a number loses its leading zeros if the file is saved by Excel as a number column** ("0099" → 99) and would then be read as a new account: keep the staffId column as text (the export writes it as text).
 
+### H-36: Extra ERP people (D87) · S3 · open
+- **The staff lookup reads the whole ERP `staff` table** (narrow fields, ~0.3 s, cached a minute) every time an ADMIN searches after the cache expired; with the ERP's history of slow or hanging requests (H-31) do not script it.
+- **A picked person is trusted as the ERP describes them**: whoever HR makes "active" with a `tel` can sign in by OTP as that SES account with the roles picked here (STAFF / STOCK / CASHIER). Check the staff_id before picking (the lookup shows name, branch group and position).
+- **Removing a pick deactivates the account only at the next import**, not at once; deactivate it on the staff page if it must stop now (an ERP account's active flag is the ERP's, so the next import may re-evaluate it).
+- **ADMIN/MANAGER stay hand-managed**: a developer with ADMIN needs a separate hand-made account, which is not tied to the ERP's data.
+

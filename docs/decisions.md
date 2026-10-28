@@ -1214,3 +1214,13 @@ Owner: "จัดการผู้ใช้ (Staff Members) หน้านี�
 
 Addendum to D85 (2026-10-28): the ERP panel now shows, per run, how many eligible people have a usable mobile number (`มีเบอร์ (OTP)` / `ไม่มีเบอร์`) and lists the people without one (the run's warnings, which the panel did not show before). The staff page shows a banner while ERP accounts have no phone: how many, and the last real ERP import with its result, so it is visible why the numbers are missing (they only arrive when the import runs).
 
+## D87 — Pick extra people from the ERP by hand (2026-10-29)
+
+Owner: "ทำให้เลือกคนเฉพาะได้ไหมครับ เช่นผมเป็น dev อยากเพิ่มเข้า list ของ erp account ด้วย". The daily import (D54) only brings in active staff of the iStudio / U-Store branches whose position has a role, so a developer or a head-office colleague never became an ERP account.
+
+1. **Where.** Admin → ซิงก์ ERP → "เพิ่มพนักงานจาก ERP เป็นรายคน": search the ERP by name or staff_id (`GET /admin/erp-sync/staff-search?q=`, 2 characters at least), pick a person, give them roles (**STAFF / STOCK / CASHIER** only) and an active SES branch. Stored in `ErpExtraStaff` (`PUT|GET /admin/erp-sync/extras`, `DELETE /admin/erp-sync/extras/:erpStaffId`).
+2. **What the import does with them.** They skip the branch-scope and position rules and get exactly the roles and branch picked; everything else is as for any ERP account: the ERP is the source of the name, the `tel` (OTP phone) and the active flag (a person who is not "active" in the ERP is not imported, and an existing account is deactivated like any leaver), and in password mode the ERP password is still needed. The account is created by the next import (press "ซิงก์ตอนนี้" or wait for 10:00; a dry run shows the effect). Changing roles or branch is picked up the same way.
+3. **Taking someone away** deactivates the account at the next import (nothing is deleted), as for an ERP leaver.
+4. **ADMIN and MANAGER cannot be picked** (D54): ADMIN access must not depend on data HR can edit in the ERP, and with SMS OTP (D85) the phone in the ERP `tel` is what opens the account. A developer who needs ADMIN keeps or makes a hand-made account (with a phone, it signs in by OTP too); MANAGER can be added by hand on the staff page after the account exists.
+5. **The lookup** asks the ERP for one narrow set of fields (staff_id, status, branch_group, position, first and last name; no password, no phone, no id numbers), at most once a minute (kept in memory), and lists only active people who are not yet an SES account or already picked. A staff_id that appears twice in the ERP is shown but cannot be picked (the import skips duplicates). A hand-made SES account with the same id refuses the pick (409): the import never touches hand-made accounts.
+

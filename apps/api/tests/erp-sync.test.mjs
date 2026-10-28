@@ -161,6 +161,47 @@ test('SMS OTP mode: the ERP password is not required, the tel becomes the phone,
   assert.deepEqual(old.skipped.map((x) => x.staffId), ['8']);
 });
 
+test('extra people picked by hand skip the branch-scope and position rules; they still need to be active in the ERP (D87)', () => {
+  const branches = [{ erpBranchId: 1, code: 'A1', name: 'A1', phone: '', active: true }];
+  const row = (id, o = {}) => ({
+    staff_id: id,
+    'user name': String(id),
+    'user password': `pw${id}`,
+    status: 'active',
+    branch_id: 99, // not an imported branch
+    branch_group: 'HO',
+    position: 'Developer', // no SES role for it
+    name_first_th: 'ก',
+    name_last_th: 'ข',
+    tel: '081-234-5678',
+    ...o,
+  });
+  const rows = [row(70), row(71, { status: 'resign' }), row(72, { 'user password': '' }), row(73, { branch_id: 1, position: 'Cashier' })];
+  const none = erp.parsePeople(rows, branches);
+  assert.deepEqual(none.people.map((p) => p.staffId), ['73'], 'without extras only the in-scope person comes in');
+  const extras = new Map([
+    [70, { roles: ['STAFF', 'STOCK'], branchId: 'sesbranch' }],
+    [71, { roles: ['STAFF'], branchId: 'sesbranch' }],
+    [72, { roles: ['STAFF'], branchId: 'sesbranch' }],
+    [73, { roles: ['STOCK'], branchId: 'other' }],
+  ]);
+  const out = erp.parsePeople(rows, branches, new Set(), true, extras);
+  const by = (id) => out.people.find((p) => p.staffId === id);
+  assert.deepEqual(by('70').roles, ['STAFF', 'STOCK']);
+  assert.equal(by('70').sesBranchId, 'sesbranch');
+  assert.equal(by('70').phone, '0812345678');
+  assert.equal(by('71'), undefined, 'resigned in the ERP: not imported, not retained (the account is deactivated)');
+  assert.equal(out.retain.has(71), false);
+  assert.equal(by('72'), undefined, 'password mode: no ERP password, skipped but kept');
+  assert.ok(out.retain.has(72));
+  assert.ok(out.skipped.some((x) => x.staffId === '72'));
+  assert.deepEqual(by('73').roles, ['STOCK'], 'the hand-picked roles beat the position rule');
+  assert.equal(by('73').sesBranchId, 'other');
+  // OTP mode: no password needed
+  const otp = erp.parsePeople(rows, branches, new Set(), false, extras);
+  assert.ok(otp.people.some((p) => p.staffId === '72'));
+});
+
 test('schedule: due slot inside the catch-up window, next run, Bangkok time', () => {
   const times = erp.parseTimes('10:00');
   assert.deepEqual(times, [600]);
@@ -978,6 +1019,76 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
     );
 
     await t.test(
+      'extra people: search the ERP, pick one with roles and a branch, the import brings them in, taking them away deactivates (D87)',
+      async () => {
+        const devNo = n(55);
+        const dev = es(55, { branch_id: 999_000_001, branch_group: 'HO', position: 'Developer', 'user password': 'dev-pw-55', name_first_th: 'ดีเวลลอปเปอร์', name_last_th: `ทดสอบ${prefix.slice(-4)}` });
+        erpState.staff.push(dev);
+        const A = await db.branch.findFirst({ where: { erpBranchId: bidA } });
+        const extra = (body, cookie = adminCookie) => request('/admin/erp-sync/extras', 'PUT', body, cookie);
+        // search: ADMIN only, 2 characters at least, no secrets asked for, active and not yet imported only
+        assert.equal((await request('/admin/erp-sync/staff-search?q=ดีเวล', 'GET', undefined, '')).status, 401);
+        assert.deepEqual((await request('/admin/erp-sync/staff-search?q=ด', 'GET', undefined, adminCookie)).data, []);
+        erpState.requests.length = 0;
+        const found = await request(`/admin/erp-sync/staff-search?q=${encodeURIComponent('ดีเวล')}`, 'GET', undefined, adminCookie);
+        assert.equal(found.status, 200, JSON.stringify(found.data));
+        assert.equal(found.data.length, 1);
+        assert.deepEqual(found.data[0], { erpStaffId: devNo, name: `ดีเวลลอปเปอร์ ทดสอบ${prefix.slice(-4)}`, branchGroup: 'HO', position: 'Developer', duplicate: false });
+        const call = erpState.requests.find((r) => r.url.includes('/staff'));
+        assert.ok(call && !/password|tel|email/i.test(call.url), 'the lookup asks for no password and no phone');
+        const byId = await request(`/admin/erp-sync/staff-search?q=${String(devNo).slice(0, 6)}`, 'GET', undefined, adminCookie);
+        assert.ok(byId.data.some((r) => r.erpStaffId === devNo), 'by the start of the staff_id too');
+        // validation
+        assert.equal((await extra({ erpStaffId: devNo, roles: ['ADMIN'], branchId: A.id })).status, 400, 'ADMIN is not an ERP-managed role');
+        assert.equal((await extra({ erpStaffId: devNo, roles: ['MANAGER'], branchId: A.id })).status, 400);
+        assert.equal((await extra({ erpStaffId: devNo, roles: [], branchId: A.id })).status, 400);
+        assert.equal((await extra({ erpStaffId: devNo, roles: ['STAFF'], branchId: 'no-such-branch' })).status, 400);
+        assert.equal((await extra({ erpStaffId: devNo, roles: ['STAFF', 'STAFF'], branchId: A.id })).status, 400, 'a role twice');
+        assert.equal((await extra({ erpStaffId: 0, roles: ['STAFF'], branchId: A.id })).status, 400);
+        const handMade = await db.staff.create({ data: { staffId: sid(56), passwordHash: 'x', mustChangePassword: false } });
+        assert.equal((await extra({ erpStaffId: n(56), roles: ['STAFF'], branchId: A.id })).status, 409, 'a hand-made account with that id is never touched');
+        await db.staff.delete({ where: { staffId: handMade.staffId } });
+        const put = await extra({ erpStaffId: devNo, roles: ['STAFF', 'CASHIER'], branchId: A.id, note: 'dev' });
+        assert.equal(put.status, 200, JSON.stringify(put.data));
+        assert.equal((await request('/admin/erp-sync/extras', 'GET', undefined, '')).status, 401);
+        const list = (await request('/admin/erp-sync/extras', 'GET', undefined, adminCookie)).data;
+        assert.equal(list.length, 1);
+        assert.equal(list[0].account, null, 'no account until the import runs');
+        assert.deepEqual(list[0].roles, ['STAFF', 'CASHIER']);
+        // picked people no longer show in the search
+        assert.equal((await request(`/admin/erp-sync/staff-search?q=${encodeURIComponent('ดีเวล')}`, 'GET', undefined, adminCookie)).data.length, 0);
+        // a dry run shows the effect, a real run creates the account
+        const dry = await run('?dryRun=true');
+        assert.ok(dry.data.summary.staff.changes.some((c) => c.staffId === sid(55) && c.action === 'create'));
+        assert.equal(await staffRow(55), null);
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        const acc = await staffRow(55);
+        assert.ok(acc, 'the account exists');
+        assert.equal(acc.erpStaffId, devNo);
+        assert.equal(acc.branchId, A.id);
+        assert.deepEqual(acc.roles.map((r) => r.roleCode).sort(), ['CASHIER', 'STAFF']);
+        assert.equal(acc.phone, `08${String(20000055).slice(-8)}`, 'the phone comes from the ERP tel like everyone');
+        assert.equal((await login(sid(55), 'dev-pw-55')).status, 201, 'password mode: the ERP password works');
+        const after = (await request('/admin/erp-sync/extras', 'GET', undefined, adminCookie)).data;
+        assert.equal(after[0].account.staffId, sid(55));
+        assert.equal(after[0].account.active, true);
+        // changing the roles is picked up by the next run
+        await extra({ erpStaffId: devNo, roles: ['STOCK'], branchId: A.id });
+        await run();
+        assert.deepEqual((await staffRow(55)).roles.map((r) => r.roleCode), ['STOCK']);
+        // taking the person away deactivates the account at the next run (a leaver), nothing is deleted
+        assert.equal((await request(`/admin/erp-sync/extras/${devNo}`, 'DELETE', undefined, adminCookie)).status, 200);
+        assert.equal((await request(`/admin/erp-sync/extras/${devNo}`, 'DELETE', undefined, adminCookie)).status, 400, 'already gone');
+        const gone = await run();
+        assert.equal(gone.data.ok, true, gone.data.error);
+        assert.equal((await staffRow(55)).active, false);
+        erpState.staff.splice(erpState.staff.indexOf(dev), 1);
+        await db.erpExtraStaff.deleteMany({ where: { erpStaffId: devNo } });
+      },
+    );
+
+    await t.test(
       'with SMS OTP on (ThaiBulkSMS configured) the import stops reading ERP passwords and ERP accounts keep only the OTP marker (D85)',
       async () => {
         const phoneOf = async (k) => (await staffRow(k))?.phone;
@@ -1026,6 +1137,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
     );
   } finally {
     const ids = [...staffIds(), adminId, outsiderId, manualId];
+    await db.erpExtraStaff.deleteMany({ where: { erpStaffId: { in: Array.from({ length: 60 }, (_, k) => n(k)) } } });
     await db.loginSession.deleteMany({ where: { staffId: { in: ids } } });
     await db.staffRole.deleteMany({ where: { staffId: { in: ids } } });
     await db.staff.deleteMany({ where: { staffId: { in: ids } } });

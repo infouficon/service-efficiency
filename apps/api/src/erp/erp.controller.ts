@@ -1,9 +1,14 @@
 import {
   BadRequestException,
+  Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
+  Param,
+  ParseIntPipe,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -11,6 +16,7 @@ import {
 import type { Request } from 'express';
 import { OriginGuard } from '../accounts/accounts.controller';
 import { AccountsService } from '../accounts/accounts.service';
+import { ErpExtraDto } from './dto';
 import { ErpSyncService } from './erp-sync.service';
 
 /** ADMIN-only control of the daily ERP import (D53/D54). Same Origin/CSRF guard as the account routes. */
@@ -60,5 +66,31 @@ export class ErpController {
       flag('force', force),
       flag('wait', wait),
     );
+  }
+
+  /** D87: people picked by hand for the import (outside its usual scope), with the account each has so far. */
+  @Get('extras')
+  async extras(@Req() req: Request) {
+    await this.admin(req);
+    return this.sync.listExtras();
+  }
+
+  @Put('extras')
+  async addExtra(@Req() req: Request, @Body() dto: ErpExtraDto) {
+    const user = await this.admin(req);
+    return this.sync.addExtra(user.staffId, dto);
+  }
+
+  @Delete('extras/:erpStaffId')
+  async removeExtra(@Req() req: Request, @Param('erpStaffId', ParseIntPipe) erpStaffId: number) {
+    const user = await this.admin(req);
+    return this.sync.removeExtra(user.staffId, erpStaffId);
+  }
+
+  /** D87: look people up in the ERP by name or staff_id (min 2 characters) to pick them. */
+  @Get('staff-search')
+  async search(@Req() req: Request, @Query('q') q?: string) {
+    await this.admin(req);
+    return this.sync.searchErpStaff(q ?? '');
   }
 }

@@ -74,6 +74,20 @@ model Branch {
   inventory BranchInventory[]
 }
 
+/**
+ * D87: people the ERP import brings in although they are outside its usual scope (not in an iStudio / U-Store branch, or a position
+ * SES maps to no role): picked by ADMIN by their ERP staff_id, with the roles (STAFF / STOCK / CASHIER) and the SES branch to give them.
+ * Taking a row away deactivates the account at the next import, like any ERP leaver.
+ */
+model ErpExtraStaff {
+  erpStaffId Int      @id
+  roles      String   @db.VarChar(64)
+  branchId   String   @db.VarChar(36)
+  note       String?  @db.VarChar(191)
+  createdBy  String   @db.VarChar(64)
+  createdAt  DateTime @default(now()) @db.DateTime(3)
+}
+
 model Staff {
   staffId            String            @id @db.VarChar(64)
   firstName          String            @default("") @db.VarChar(100)

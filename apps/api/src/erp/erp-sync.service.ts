@@ -81,6 +81,8 @@ export interface ErpPerson {
   firstName: string;
   lastName: string;
   erpBranchId: number;
+  /** D87: an ADMIN-picked extra person: the SES branch to use (erpBranchId is 0 and meaningless) */
+  sesBranchId?: string;
   roles: RoleCode[];
   password: string;
   /** ERP `tel` as 10 digits, or null when it is empty / not a Thai mobile (D85) */
@@ -243,6 +245,8 @@ export function parsePeople(
   dropped: Set<number> = new Set(),
   /** false while SMS OTP login is on (D85): the ERP password is neither read nor required */
   requirePassword = true,
+  /** D87: ERP staff_id -> roles and SES branch for the people an ADMIN picked by hand; they skip the branch-scope and position rules */
+  extras: Map<number, { roles: RoleCode[]; branchId: string }> = new Map(),
 ): {
   people: ErpPerson[];
   skipped: StaffNote[];
@@ -259,6 +263,36 @@ export function parsePeople(
   for (const raw of rows) {
     const row = asRow(raw);
     if (!row || text(row.status).trim().toLowerCase() !== 'active') continue;
+    const extraId = integer(row.staff_id);
+    const extra = extraId !== null ? extras.get(extraId) : undefined;
+    if (extra && extraId !== null) {
+      // D87: picked by hand: any branch group, any position; only the ERP's "active" and a usable id still count
+      const staffId = String(extraId);
+      retain.add(extraId);
+      const password = requirePassword ? text(row['user password']) : '';
+      if (requirePassword && (!password.trim() || password.length > 128)) {
+        skipped.push({ staffId, reason: 'ไม่มีรหัสผ่าน (user password) ใน ERP หรือยาวเกิน 128 ตัวอักษร' });
+        continue;
+      }
+      const phone = normalizeThaiMobile(row.tel);
+      if (!requirePassword && !phone)
+        warnings.push({
+          staffId,
+          reason: 'ไม่มีเบอร์มือถือที่ใช้ได้ใน ERP (tel) จึงเข้าระบบด้วย OTP ไม่ได้ จนกว่า ERP จะแก้',
+        });
+      candidates.push({
+        erpStaffId: extraId,
+        staffId,
+        firstName: text(row.name_first_th).trim().slice(0, 100),
+        lastName: text(row.name_last_th).trim().slice(0, 100),
+        erpBranchId: 0,
+        sesBranchId: extra.branchId,
+        roles: extra.roles,
+        password,
+        phone,
+      });
+      continue;
+    }
     const erpBranchId = integer(row.branch_id);
     const branch = erpBranchId === null ? undefined : byId.get(erpBranchId);
     if (!branch || erpBranchId === null) {
@@ -728,7 +762,8 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       throw new Error(
         'ไม่พบสาขากลุ่ม iStudio/U-Store ใน ERP จึงยกเลิกการซิงก์',
       );
-    const parsed = parsePeople(staffRows, scope, dropped, !otp);
+    const extras = await this.extraMap();
+    const parsed = parsePeople(staffRows, scope, dropped, !otp, extras);
     const plan: Plan = {
       branches: scope,
       branchNotes: notes,
@@ -920,8 +955,15 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
           'ตรวจข้อมูลใน ERP แล้วสั่งรันซ้ำแบบ force ถ้าถูกต้อง',
       );
 
+    const sesBranchById = new Map(sesBranches.map((b) => [b.id, { id: b.id, active: b.active }]));
     for (const person of people) {
-      const sb = branchOf.get(person.erpBranchId);
+      // D87: an extra person has the SES branch picked by hand (it must still be active), the others come from the ERP branch
+      const sb = person.sesBranchId
+        ? (() => {
+            const found = sesBranchById.get(person.sesBranchId);
+            return found?.active ? found : undefined;
+          })()
+        : branchOf.get(person.erpBranchId);
       const match = managedByErp.get(person.erpStaffId);
       if (!sb) {
         summary.staff.skipped.push({
@@ -1080,6 +1122,147 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     summary.staff.changes = summary.staff.changes.slice(0, SKIP_LIMIT);
     summary.branches.notes = summary.branches.notes.slice(0, SKIP_LIMIT);
     return summary;
+  }
+
+  // ---------------------------------------------------------------------------
+  // D87: extra people picked by hand
+  // ---------------------------------------------------------------------------
+  /** The extras as the importer wants them: ERP staff_id -> roles and SES branch. */
+  private async extraMap(): Promise<Map<number, { roles: RoleCode[]; branchId: string }>> {
+    const rows = await this.prisma.erpExtraStaff.findMany();
+    return new Map(
+      rows.map((r) => [
+        r.erpStaffId,
+        {
+          roles: r.roles.split(',').filter((x): x is RoleCode => ERP_MANAGED_ROLES.includes(x as RoleCode)),
+          branchId: r.branchId,
+        },
+      ]),
+    );
+  }
+
+  /** The picked people, with what SES has made of them so far (no account yet = the next import creates it). */
+  async listExtras() {
+    const rows = await this.prisma.erpExtraStaff.findMany({ orderBy: { createdAt: 'asc' } });
+    const [accounts, branches] = await Promise.all([
+      this.prisma.staff.findMany({
+        where: { erpStaffId: { in: rows.map((r) => r.erpStaffId) } },
+        select: { erpStaffId: true, staffId: true, firstName: true, lastName: true, active: true, phone: true },
+      }),
+      this.prisma.branch.findMany({ where: { id: { in: rows.map((r) => r.branchId) } }, select: { id: true, code: true, name: true, active: true } }),
+    ]);
+    const accountOf = new Map(accounts.map((a) => [a.erpStaffId as number, a]));
+    const branchOf = new Map(branches.map((b) => [b.id, b]));
+    return rows.map((r) => {
+      const a = accountOf.get(r.erpStaffId);
+      const b = branchOf.get(r.branchId);
+      return {
+        erpStaffId: r.erpStaffId,
+        roles: r.roles.split(','),
+        branchId: r.branchId,
+        branch: b ? `${b.name} (${b.code})` : '(ไม่พบสาขา)',
+        branchActive: b?.active ?? false,
+        note: r.note,
+        createdBy: r.createdBy,
+        createdAt: r.createdAt,
+        account: a
+          ? {
+              staffId: a.staffId,
+              name: [a.firstName, a.lastName].filter(Boolean).join(' '),
+              active: a.active,
+              hasPhone: Boolean(a.phone),
+            }
+          : null,
+      };
+    });
+  }
+
+  async addExtra(
+    actorStaffId: string,
+    data: { erpStaffId: number; roles: RoleCode[]; branchId: string; note?: string },
+  ) {
+    const roles = [...new Set(data.roles)].filter((r) => ERP_MANAGED_ROLES.includes(r));
+    if (!roles.length || roles.length !== new Set(data.roles).size)
+      throw new BadRequestException('เลือกบทบาทได้เฉพาะ STAFF, STOCK, CASHIER (ADMIN / MANAGER ตั้งเองใน SES หลังบัญชีถูกสร้าง)');
+    const branch = await this.prisma.branch.findUnique({ where: { id: data.branchId } });
+    if (!branch || !branch.active) throw new BadRequestException('ต้องเลือกสาขาที่ใช้งานอยู่');
+    const taken = await this.prisma.staff.findFirst({
+      where: { staffId: String(data.erpStaffId), erpStaffId: null },
+      select: { staffId: true },
+    });
+    if (taken)
+      throw new ConflictException(`รหัส ${data.erpStaffId} เป็นบัญชีที่สร้างเองใน SES อยู่แล้ว (ซิงก์ไม่แตะบัญชีที่สร้างเอง)`);
+    const row = await this.prisma.erpExtraStaff.upsert({
+      where: { erpStaffId: data.erpStaffId },
+      create: {
+        erpStaffId: data.erpStaffId,
+        roles: roles.join(','),
+        branchId: branch.id,
+        note: data.note?.trim() || null,
+        createdBy: actorStaffId,
+      },
+      update: { roles: roles.join(','), branchId: branch.id, note: data.note?.trim() || null },
+    });
+    this.log.warn(`ERP extra staff ${row.erpStaffId} (${row.roles}) set by ${actorStaffId}`);
+    return row;
+  }
+
+  async removeExtra(actorStaffId: string, erpStaffId: number) {
+    const found = await this.prisma.erpExtraStaff.findUnique({ where: { erpStaffId } });
+    if (!found) throw new BadRequestException('ไม่พบรายการนี้');
+    await this.prisma.erpExtraStaff.delete({ where: { erpStaffId } });
+    this.log.warn(`ERP extra staff ${erpStaffId} removed by ${actorStaffId}`);
+    return { ok: true };
+  }
+
+  private directory: { at: number; rows: { erpStaffId: number; name: string; branchGroup: string; position: string; duplicate: boolean }[] } | null = null;
+
+  /**
+   * Looks people up in the ERP staff table by name or staff_id, to pick them for the extras. One narrow request (id, name,
+   * branch group, position, status: no password, no personal data beyond the name), kept for a minute so typing does not call the
+   * ERP at every key. Only active people who are not already imported or picked; 20 at most.
+   */
+  async searchErpStaff(query: string) {
+    const cfg = this.erpConfig();
+    if (!cfg) throw new BadRequestException('ยังไม่ได้ตั้งค่าการเชื่อมต่อ ERP');
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    if (!this.directory || Date.now() - this.directory.at > 60_000) {
+      const raw = await odataRows(
+        cfg,
+        'staff',
+        `$select=staff_id,status,branch_group,position,name_first_th,name_last_th&$top=${MAX_ROWS}`,
+        30_000,
+      );
+      const seen = new Map<number, number>();
+      const rows = raw.flatMap((r) => {
+        const row = asRow(r);
+        const id = row ? integer(row.staff_id) : null;
+        if (!row || id === null || id < 1 || text(row.status).trim().toLowerCase() !== 'active') return [];
+        seen.set(id, (seen.get(id) ?? 0) + 1);
+        return [
+          {
+            erpStaffId: id,
+            name: `${text(row.name_first_th).trim()} ${text(row.name_last_th).trim()}`.trim(),
+            branchGroup: text(row.branch_group).trim(),
+            position: text(row.position).trim(),
+            duplicate: false,
+          },
+        ];
+      });
+      for (const r of rows) r.duplicate = (seen.get(r.erpStaffId) ?? 0) > 1;
+      this.directory = { at: Date.now(), rows };
+    }
+    const [imported, picked] = await Promise.all([
+      this.prisma.staff.findMany({ where: { erpStaffId: { not: null } }, select: { erpStaffId: true } }),
+      this.prisma.erpExtraStaff.findMany({ select: { erpStaffId: true } }),
+    ]);
+    const skip = new Set([...imported.map((s) => s.erpStaffId as number), ...picked.map((p) => p.erpStaffId)]);
+    const digits = /^\d+$/.test(q);
+    return this.directory.rows
+      .filter((r) => !skip.has(r.erpStaffId))
+      .filter((r) => (digits ? String(r.erpStaffId).startsWith(q) : r.name.toLowerCase().includes(q)))
+      .slice(0, 20);
   }
 
   async status(): Promise<{

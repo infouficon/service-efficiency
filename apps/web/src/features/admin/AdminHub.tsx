@@ -26,6 +26,7 @@ import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { CategoriesPanel } from './CategoriesPanel';
 import { OtpPanel } from './OtpPanel';
+import { ErpExtrasPanel } from './ErpExtrasPanel';
 import { StaffSheetTools } from './StaffSheetTools';
 /** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories` and `otp`. */
 export type AdminSubView =
@@ -212,6 +213,7 @@ export function AdminHub({
         <>
           <StockUnlimitedPanel />
           <ErpSyncPanel />
+          <ErpExtrasPanel />
           <WarroomSyncPanel />
         </>
       ) : admin && subTab === 'queue' ? (

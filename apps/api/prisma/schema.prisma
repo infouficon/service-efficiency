@@ -89,6 +89,10 @@ model Staff {
   // 10-digit Thai mobile (0812345678): where the login OTP goes. From the ERP `tel` for ERP accounts (D85), set by ADMIN otherwise
   phone              String?           @db.VarChar(20)
   erpStaffId         Int?              @unique
+  // D86: when the row was made / last changed here (rows older than the migration carry the migration time), and the last sign-in
+  createdAt          DateTime          @default(now()) @db.DateTime(3)
+  updatedAt          DateTime          @default(now()) @updatedAt @db.DateTime(3)
+  lastLoginAt        DateTime?         @db.DateTime(3)
   erpSyncedAt        DateTime?         @db.DateTime(3)
   roles              StaffRole[]
   sessions           LoginSession[]

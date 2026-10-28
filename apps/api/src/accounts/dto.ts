@@ -1,9 +1,11 @@
 import {
+  ArrayMaxSize,
   ArrayNotEmpty,
   ArrayUnique,
   IsArray,
   IsBoolean,
   IsIn,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -73,6 +75,17 @@ export class BranchDto {
   @IsBoolean() active!: boolean;
 }
 
+/** D86: the rows of the staff spreadsheet, as the browser read them (header = column key). */
+export class StaffImportDto {
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @IsObject({ each: true })
+  rows!: Record<string, unknown>[];
+
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
+}
 export class OtpRequestDto {
   @IsString() @MinLength(1) @MaxLength(64) staffId!: string;
 }

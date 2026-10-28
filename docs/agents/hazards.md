@@ -214,3 +214,10 @@ Still open:
 - **Session = 12 hours from login** with no idle timeout: a shared counter PC stays signed in for the whole shift unless somebody logs out. A deactivated account loses access at the next request (the session is refused when `active` is false), not after 12 hours.
 - **In OTP mode the stored ERP password copies are replaced by a marker.** If the ERP import is down while OTP is switched off, ERP accounts have no password until the next successful import.
 
+### H-35: Staff spreadsheet (D86) · S3 · open
+- **The export is a file of personal data** (full phone numbers, names, ERP ids) in whoever's Downloads folder; only ADMIN can make it. Nothing logs who exported (the import logs one line).
+- **A bulk import can change many accounts at once** (roles, branch, active, phone). It shows a preview and is all or nothing, but there is no undo and no per-account change history (H-18): export before a big import to keep the "before".
+- **Accounts created by the import have a random password nobody knows**: without SMS OTP configured (or without a phone) they cannot sign in until an ADMIN presses Reset.
+- **createdAt / updatedAt of existing accounts are the migration time**, and `updatedAt` only moves when SES writes the row (the ERP import does; a raw SQL edit does not).
+- **A staff id that looks like a number loses its leading zeros if the file is saved by Excel as a number column** ("0099" → 99) and would then be read as a new account: keep the staffId column as text (the export writes it as text).
+

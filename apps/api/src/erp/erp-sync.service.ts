@@ -117,6 +117,8 @@ export interface ErpSyncSummary {
     reactivated: number;
     deactivated: number;
     unchanged: number;
+    /** D85: how many of the eligible people have a usable mobile number in the ERP `tel` (OTP can reach them) */
+    phones: { withPhone: number; without: number };
     skipped: StaffNote[];
     warnings: StaffNote[];
     /** who was touched and how (capped, no secrets): lets a watched dry run show the effect */
@@ -800,6 +802,10 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
         reactivated: 0,
         deactivated: 0,
         unchanged: 0,
+        phones: {
+          withPhone: plan.people.filter((p) => p.phone).length,
+          without: plan.people.filter((p) => !p.phone).length,
+        },
         skipped: [...plan.skipped],
         warnings: [...plan.warnings],
         changes: [],

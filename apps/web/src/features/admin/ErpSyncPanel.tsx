@@ -25,7 +25,11 @@ interface ErpStaffSummary {
   reactivated: number;
   deactivated: number;
   unchanged: number;
+  /** how many eligible people have a usable mobile number in the ERP tel (D85); absent in runs before it */
+  phones?: { withPhone: number; without: number };
   skipped: { staffId: string; reason: string }[];
+  /** people the import kept but cannot reach by OTP (no usable tel) */
+  warnings?: { staffId: string; reason: string }[];
 }
 interface ErpSyncRun {
   id: string;
@@ -190,6 +194,12 @@ function RunDetail({ run }: { run: ErpSyncRun }) {
               ['เปิดใช้อีกครั้ง', summary.staff.reactivated],
               ['ปิดใช้งาน', summary.staff.deactivated],
               ['ไม่เปลี่ยน', summary.staff.unchanged],
+              ...(summary.staff.phones
+                ? ([
+                    ['มีเบอร์ (OTP)', summary.staff.phones.withPhone],
+                    ['ไม่มีเบอร์', summary.staff.phones.without],
+                  ] as [string, number][])
+                : []),
             ]}
           />
           <IssueList
@@ -198,6 +208,14 @@ function RunDetail({ run }: { run: ErpSyncRun }) {
             rows={(summary.branches.notes ?? []).map((n) => ({
               id: n.code,
               reason: n.reason,
+            }))}
+          />
+          <IssueList
+            title="คำเตือนพนักงาน (เช่น ไม่มีเบอร์ใน ERP จึงเข้าด้วย OTP ไม่ได้)"
+            idHeader="Staff ID"
+            rows={(summary.staff.warnings ?? []).map((s) => ({
+              id: s.staffId,
+              reason: s.reason,
             }))}
           />
           <IssueList

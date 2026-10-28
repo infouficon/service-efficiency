@@ -90,7 +90,7 @@
 | --- | --- |
 | `THAIBULKSMS_API_KEY`, `THAIBULKSMS_API_SECRET` | API key / secret จาก ThaiBulkSMS (ตั้งค่า → API Key) ตั้งเป็น **Sensitive** ตั้งครบทั้งสองตัวเมื่อไหร่ ระบบสลับไปเข้าสู่ระบบด้วย OTP ทันที (พนักงานที่ซิงก์จาก ERP เข้าด้วยรหัสผ่านไม่ได้อีก) ยังไม่ตั้ง = รหัสผ่านแบบเดิม |
 | `THAIBULKSMS_SENDER` | ชื่อผู้ส่ง (sender) ที่ลงทะเบียนกับ ThaiBulkSMS ว่าง = ค่าเริ่มต้นของเขา |
-| `THAIBULKSMS_WEBHOOK_TOKEN` | ความลับท้าย URL ของ webhook ยาวอย่างน้อย 16 ตัวอักษร (`openssl rand -hex 16`) ตั้งเป็น **Sensitive** ใส่ URL `https://<โดเมน>/api/webhooks/thaibulksms/<ค่านี้>` ในหน้าสร้าง API Key ของ ThaiBulkSMS (method POST) ไม่ตั้ง = webhook ปิด (OTP ใช้ได้ปกติ แค่ไม่เห็นผลส่งถึงเครื่อง) |
+| `THAIBULKSMS_WEBHOOK_TOKEN` | ความลับท้าย URL ของ webhook ยาวอย่างน้อย 16 ตัวอักษร (`openssl rand -hex 16`) ตั้งเป็น **Sensitive** ใส่ URL `https://<โดเมน>/api/webhooks/thaibulksms/<ค่านี้>` ในหน้าสร้าง API Key ของ ThaiBulkSMS (method GET หรือ POST ก็ได้ ระบบรับ GET/POST/PUT ทั้งหมด; ThaiBulkSMS ให้เลือกได้แค่ GET ในฟอร์ม) ไม่ตั้ง = webhook ปิด (OTP ใช้ได้ปกติ แค่ไม่เห็นผลส่งถึงเครื่อง) |
 | `OTP_SMS_DAILY_LIMIT` | เพดานจำนวน SMS OTP ทั้งระบบใน 24 ชม. (ค่าเริ่มต้น 1000) กันค่า SMS บานปลาย |
 | `THAIBULKSMS_API_URL` | ใช้เฉพาะทดสอบ (ค่าเริ่มต้น `https://api-v2.thaibulksms.com/sms`) |
 

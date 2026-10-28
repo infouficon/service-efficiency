@@ -119,7 +119,7 @@ export function OtpPanel() {
               </Notice>
             )}
             <p className="fine">
-              Webhook URL ให้ ThaiBulkSMS: <code>{origin}/api/webhooks/thaibulksms/&lt;THAIBULKSMS_WEBHOOK_TOKEN&gt;</code> (method POST)
+              Webhook URL ให้ ThaiBulkSMS: <code>{origin}/api/webhooks/thaibulksms/&lt;THAIBULKSMS_WEBHOOK_TOKEN&gt;</code> (method เลือก GET หรือ POST ก็ได้ ระบบรับทั้งสองแบบ)
             </p>
             {status.activeWithoutPhone > 0 && (
               <p className="fine">

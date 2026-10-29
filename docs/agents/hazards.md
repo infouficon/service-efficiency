@@ -227,3 +227,12 @@ Still open:
 - **Removing a pick deactivates the account only at the next import**, not at once; deactivate it on the staff page if it must stop now (an ERP account's active flag is the ERP's, so the next import may re-evaluate it).
 - **ADMIN/MANAGER stay hand-managed**: a developer with ADMIN needs a separate hand-made account, which is not tied to the ERP's data.
 
+### H-37: Orders to FileMaker (D88) · S2 · open
+- **FileMaker is production and the FileMaker team writes scripts on what arrives**: a change to the message shape (renamed field, new event) breaks their scripts. The shape is documented in `docs/agents/fmp-outbound.md`; add fields rather than rename.
+- **At-least-once.** A timeout after FileMaker created the record sends it again: duplicates unless FileMaker dedupes by `outboxId`.
+- **FileMaker tokens linger** (about 15 minutes idle). SES logs out after every round, and a crash between login and logout leaves one.
+- **Only the first event is sent**: a cancel or a cashier reject after "sent to cashier" is not told to FileMaker, so FileMaker can hold an order SES has cancelled.
+- **No serial numbers**; the 2 sample records made in FMP on 2026-10-29 carry invented ones.
+- **Credentials**: `FMP_PASSWORD` is only in Coolify; the account's password was pasted in a chat on 2026-10-29 and should be rotated by the FileMaker team after the test.
+- **The outbox grows** (one row per message with its body); nothing deletes old `sent` rows yet.
+

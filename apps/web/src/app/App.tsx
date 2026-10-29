@@ -20,6 +20,7 @@ import {
   Wallet,
   BookOpen,
   MessageSquare,
+  Send,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -506,6 +507,17 @@ export function App({
                         }}
                       >
                         <MessageSquare size={14} /> <span>เข้าสู่ระบบด้วย OTP</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'fmp' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('fmp');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Send size={14} /> <span>ส่งไป FileMaker</span>
                       </button>
 
                       <a

@@ -1,0 +1,57 @@
+# SES -> FileMaker: the orders SES sends (D88)
+
+What SES sends to the FileMaker `UFService` database, when, and how it behaves when FileMaker is slow or down. Decision: D88
+in `docs/decisions.md`. Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
+
+## Contract (what the FileMaker team receives)
+
+One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest/databases/UFService/layouts/ses/records`), the field
+`ses_body` holding a JSON text:
+
+```json
+{
+  "source": "SES",
+  "event": "SENT_TO_CASHIER",
+  "outboxId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "queuedAt": "2026-10-29T10:31:31.123Z",
+  "branch": { "code": "ISTUDIO-01", "name": "iStudio Central" },
+  "reference": "SES-20261029-000042",
+  "queue": "A012",
+  "state": "SENT_TO_CASHIER",
+  "customerPhone": "0812345678",
+  "staffId": "1004",
+  "confirmedAt": "2026-10-29T10:20:03.411Z",
+  "items": [{ "partNo": "MG8G4ZP/A", "name": "iPhone 17 Pro 256GB Deep Blue", "quantity": 2 }],
+  "accessories": [{ "name": "Case", "quantity": 1 }],
+  "payments": ["Cash", "Transfer"],
+  "ontop": ["AIS"],
+  "points": ["MCard"],
+  "burnPoints": [],
+  "posBillNo": null
+}
+```
+
+- Everything from `reference` down is **the same view the U POS door serves** (`GET /api/integrations/pos/orders`), produced by one function.
+- `reference` is the key (`SES-YYYYMMDD-NNNNNN`); `queue` is what staff call the customer by. Report the bill back with
+  `POST /api/integrations/pos/bills {reference, billNo, openedAt}` (docs/agents/pos-integration.md).
+- `outboxId` is unique per message: **dedupe on it** (delivery is at-least-once). `event`: `SENT_TO_CASHIER` (the order reached the
+  cashier) or `RESEND` (an ADMIN sent an existing order again).
+- **No serial numbers and no prices**: SES has neither (stock is by part number; no price is stored, D58). `partNo` is the Apple part
+  number (the key warroom uses). `customerPhone` is personal data.
+- Times are ISO 8601 UTC. If the FileMaker team asks for `script` + `script.param`, SES sends
+  `{"source":"SES","reference":"…","event":"…","outboxId":"…"}` as the param once `FMP_SCRIPT` is set.
+
+## Behaviour
+
+| Situation | What SES does |
+| --- | --- |
+| Not configured (`FMP_*` unset) | queues and sends nothing |
+| FileMaker up | the worker (every 10 s) logs in once, creates one record per message, logs out |
+| FileMaker down / error | retries after 1, 2, 5, 10, 20, 30, 60 min (8 attempts), then `failed`; Admin → "ส่งไป FileMaker" → "ส่งซ้ำ" |
+| Token dropped mid-round | logs in again once |
+| Script error from FileMaker | recorded, the message counts as sent (the record exists) |
+| Two containers | a message is claimed before it is sent, so one sends it |
+
+## Open
+Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet; serial numbers need a STOCK
+step in SES (not built).

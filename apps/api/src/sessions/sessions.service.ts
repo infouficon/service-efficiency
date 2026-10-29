@@ -8,6 +8,8 @@ import {
 import type { PublicAccount } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
+import { orderView } from './order-view';
+import { FmpService } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
@@ -164,6 +166,7 @@ export class SessionsService {
     private readonly prisma: PrismaService,
     private readonly queue: QueueService,
     private readonly settings: SettingsService,
+    private readonly fmp: FmpService,
   ) {}
 
   /**
@@ -451,28 +454,7 @@ export class SessionsService {
     return {
       branch: { code: branch.code, name: branch.name },
       orders: sessions
-        .map((s) => ({
-          reference: s.reference,
-          queue: s.queueNo === null ? s.reference : formatQueue(s.queueLetter, s.queueNo),
-          state: s.state,
-          customerPhone: s.phone,
-          staffId: s.staffId,
-          confirmedAt: s.productSelectionConfirmedAt,
-          items: s.items.map((i) => ({
-            partNo: i.sku.sku,
-            name: i.sku.name,
-            quantity: i.quantity,
-          })),
-          accessories: s.accessories.map((a) => ({
-            name: a.accessoryName,
-            quantity: a.quantity,
-          })),
-          payments: s.payments.map((p) => p.method),
-          ontop: s.ontop.map((o) => o.name),
-          points: s.points.map((p) => p.name),
-          burnPoints: s.burnPoints.map((b) => b.name),
-          posBillNo: s.posBillNo,
-        }))
+        .map((s) => orderView(s))
         .filter((order) => !wanted || order.queue === wanted),
     };
   }
@@ -595,6 +577,9 @@ export class SessionsService {
         },
         include: sessionInclude,
       });
+
+      // D88: the order is now at the cashier: tell FileMaker (queued in this transaction, sent by the worker)
+      if (dto.action === 'send') await this.fmp.enqueue(tx, updated, 'SENT_TO_CASHIER');
 
       return updated;
     });

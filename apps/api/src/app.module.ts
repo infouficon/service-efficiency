@@ -2,6 +2,7 @@ import { AccountsModule } from './accounts/accounts.module';
 import { ErpModule } from './erp/erp.module';
 import { WarroomModule } from './warroom/warroom.module';
 import { CategoriesModule } from './categories/categories.module';
+import { FmpModule } from './fmp/fmp.module';
 import { SmsModule } from './sms/sms.module';
 import { PaymentsModule } from './payments/payments.module';
 import { PosModule } from './pos/pos.module';
@@ -22,6 +23,7 @@ import { HealthController } from './health.controller';
     ProductsModule,
     CategoriesModule,
     SmsModule,
+    FmpModule,
     PaymentsModule,
     PosModule,
     QueueModule,

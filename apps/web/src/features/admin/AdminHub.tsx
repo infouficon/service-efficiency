@@ -26,9 +26,10 @@ import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { CategoriesPanel } from './CategoriesPanel';
 import { OtpPanel } from './OtpPanel';
+import { FmpPanel } from './FmpPanel';
 import { ErpExtrasPanel } from './ErpExtrasPanel';
 import { StaffSheetTools } from './StaffSheetTools';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories` and `otp`. */
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories`, `otp` and `fmp`. */
 export type AdminSubView =
   | 'users'
   | 'branches'
@@ -37,7 +38,8 @@ export type AdminSubView =
   | 'queue'
   | 'payments'
   | 'categories'
-  | 'otp';
+  | 'otp'
+  | 'fmp';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -200,7 +202,9 @@ export function AdminHub({
                       ? 'หมวดหมู่สินค้า (Categories)'
                       : subTab === 'otp'
                         ? 'เข้าสู่ระบบด้วย OTP (SMS)'
-                        : 'จัดการผู้ใช้ (Staff Members)'}
+                        : subTab === 'fmp'
+                          ? 'ส่งออเดอร์ไป FileMaker (FMP)'
+                          : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -224,6 +228,8 @@ export function AdminHub({
         <CategoriesPanel />
       ) : admin && subTab === 'otp' ? (
         <OtpPanel />
+      ) : admin && subTab === 'fmp' ? (
+        <FmpPanel />
       ) : (
         <>
           {error && (

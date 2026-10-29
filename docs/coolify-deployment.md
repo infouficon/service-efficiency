@@ -84,6 +84,19 @@
 
 ไม่ตั้ง `WARROOM_DATABASE_URL` = ปิดทั้งหมด รายละเอียดและขั้นตอนเปิดใช้: `docs/agents/warroom-products.md`
 
+#### Environment ของการส่งออเดอร์ไป FileMaker (D88)
+
+| ตัวแปร | ความหมาย |
+| --- | --- |
+| `FMP_HOST` | เซิร์ฟเวอร์ FileMaker เช่น `https://pos.uficon.net` (ไม่ต้องมี path) |
+| `FMP_DATABASE` | ชื่อฐานข้อมูล เช่น `UFService` |
+| `FMP_USER`, `FMP_PASSWORD` | บัญชี Data API ที่ทีม FMP ให้ (ตั้ง `FMP_PASSWORD` เป็น **Sensitive** ห้ามใส่ใน git/แชต) |
+| `FMP_LAYOUT`, `FMP_FIELD` | ค่าเริ่มต้น `ses` และ `ses_body` |
+| `FMP_SCRIPT` | ชื่อสคริปต์ที่ให้ FMP เรียกต่อหลังสร้าง record ว่าง = สร้าง record เฉย ๆ |
+| `FMP_WORKER_INTERVAL_SECONDS` | ความถี่ของตัวส่ง (ค่าเริ่มต้น 10; 0 = ปิดตัวส่งอัตโนมัติ) |
+
+ตั้ง 4 ตัวแรกครบ + Restart = เริ่มส่ง (ออเดอร์ที่ถึงแคชเชียร์หลังจากนั้น) ไม่ตั้ง = ไม่ส่งและไม่เก็บอะไร ดูผลที่ Admin → "ส่งไป FileMaker" รูปแบบข้อมูลและกติกา: `docs/agents/fmp-outbound.md`
+
 #### Environment ของการเข้าสู่ระบบด้วย OTP ทาง SMS (D85)
 
 | ตัวแปร | ความหมาย |

@@ -88,6 +88,32 @@ model ErpExtraStaff {
   createdAt  DateTime @default(now()) @db.DateTime(3)
 }
 
+/**
+ * D88: orders SES sends to FileMaker (the `ses` layout of the UFService database), one row per message, written in the same
+ * transaction as the change that makes it (so none is lost) and sent by a worker with retries. At-least-once: FileMaker
+ * dedupes by `outboxId` (also inside the payload). `payload` is exactly what goes into the `ses_body` field.
+ */
+model FmpOutbox {
+  id            String    @id @db.VarChar(36)
+  sessionId     String    @db.VarChar(36)
+  reference     String    @db.VarChar(32)
+  event         String    @db.VarChar(32)
+  payload       String    @db.MediumText
+  status        String    @default("pending") @db.VarChar(16)
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @db.DateTime(3)
+  lockedAt      DateTime? @db.DateTime(3)
+  fmpRecordId   String?   @db.VarChar(32)
+  scriptResult  String?   @db.VarChar(255)
+  lastError     String?   @db.VarChar(255)
+  createdAt     DateTime  @default(now()) @db.DateTime(3)
+  sentAt        DateTime? @db.DateTime(3)
+
+  @@index([status, nextAttemptAt])
+  @@index([reference])
+  @@index([createdAt])
+}
+
 model Staff {
   staffId            String            @id @db.VarChar(64)
   firstName          String            @default("") @db.VarChar(100)

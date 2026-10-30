@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import { cleanup, seedWorld, startApi } from './support.mjs';
+
+const { FMP_PAYMENT_TYPES } = await import('../dist/payments/payments.service.js');
+const { orderView } = await import('../dist/sessions/order-view.js');
 
 const SEEDED = [
   'Cash',
@@ -180,6 +184,98 @@ test('payment methods are a list ADMIN keeps; names are history, so never rename
           data: { active: true },
         });
       }
+    });
+
+    await t.test(
+      'each method is filed under an FMP payment type; ADMIN sets it, the migration pre-fills four (D89)',
+      async () => {
+        const all = () => list('admin', '?all=true').then((r) => r.data);
+        const byName = async (name) => (await all()).find((m) => m.name === name);
+        const setType = (id, body, who = 'admin') =>
+          request(`/payment-methods/${id}/fmp-type`, 'PUT', body, cookies[who]);
+
+        assert.deepEqual(
+          Object.fromEntries(
+            (await all())
+              .filter((m) => SEEDED.includes(m.name))
+              .map((m) => [m.name, m.fmpType]),
+          ),
+          {
+            Cash: 'เงินสด',
+            Transfer: 'โอนเงิน',
+            SPayLater: null,
+            TrueMoney: null,
+            'Full Credit Card': 'บัตรเครดิต',
+            '0% Credit Card': 'บัตรเงินผ่อน',
+            PayNext: null,
+            UFund: null,
+            Ulite: null,
+            Thisshop: null,
+            Kashjoy: null,
+          },
+        );
+        assert.equal((await list('staff')).data[0].fmpType, 'เงินสด', 'staff read it too');
+
+        const wallet = await byName(`${prefix} Wallet`);
+        assert.equal(wallet.fmpType, null, 'a new method has no type yet');
+        assert.equal((await setType(wallet.id, { fmpType: 'บัตรเงินผ่อน' }, 'staff')).status, 403);
+        for (const bad of [{}, { fmpType: 'cash' }, { fmpType: '' }, { fmpType: 5 }, { fmpType: 'บัตรเงินผ่อน', extra: 1 }])
+          assert.equal((await setType(wallet.id, bad)).status, 400, JSON.stringify(bad));
+        assert.equal((await setType('no-such-id', { fmpType: 'เงินสด' })).status, 404);
+
+        const set = await setType(wallet.id, { fmpType: 'U-Joy' });
+        assert.equal(set.status, 200, JSON.stringify(set.data));
+        assert.equal(set.data.fmpType, 'U-Joy');
+        assert.equal((await byName(`${prefix} Wallet`)).fmpType, 'U-Joy');
+        assert.equal((await setType(wallet.id, { fmpType: null })).data.fmpType, null, 'null clears it');
+
+        const add = (body) => request('/payment-methods', 'POST', body, cookies.admin);
+        const typed = await add({ name: `${prefix} Deposit`, fmpType: 'ใช้มัดจำ' });
+        assert.equal(typed.status, 201, JSON.stringify(typed.data));
+        assert.equal(typed.data.fmpType, 'ใช้มัดจำ');
+        assert.equal((await add({ name: `${prefix} Bad`, fmpType: 'nope' })).status, 400);
+        assert.equal((await byName(`${prefix} Bad`)), undefined, 'a rejected create leaves nothing behind');
+      },
+    );
+
+    await t.test('orderView says each payment type once, in order; no type or an unknown name is "อื่นๆ" (D89)', () => {
+      const types = new Map([
+        ['cash', 'เงินสด'],
+        ['0% credit card', 'บัตรเงินผ่อน'],
+        ['paynext', 'บัตรเงินผ่อน'],
+        ['spaylater', null],
+      ]);
+      const view = (methods) =>
+        orderView(
+          {
+            reference: 'SES-X',
+            queueLetter: 'A',
+            queueNo: 1,
+            state: 'SENT_TO_CASHIER',
+            phone: null,
+            staffId: 's',
+            productSelectionConfirmedAt: null,
+            items: [],
+            accessories: [],
+            payments: methods.map((method) => ({ method })),
+            ontop: [],
+            points: [],
+            burnPoints: [],
+            posBillNo: null,
+          },
+          types,
+        );
+      assert.deepEqual(view(['PayNext', 'Cash', '0% Credit Card']).paymentTypes, ['บัตรเงินผ่อน', 'เงินสด'], 'two instalment methods, one type; case does not matter');
+      assert.deepEqual(view(['SPayLater', 'Gone', 'Cash']).paymentTypes, ['อื่นๆ', 'เงินสด'], 'no type and unknown name are both "อื่นๆ", once');
+      assert.deepEqual(view(['PayNext']).payments, ['PayNext'], '`payments` stays the method names as picked');
+      assert.deepEqual(view([]).paymentTypes, []);
+    });
+
+    await t.test('the web app lists the same FMP payment types as the API, in the same order (D89)', () => {
+      const source = readFileSync(new URL('../../web/src/constants/options.ts', import.meta.url), 'utf8');
+      const block = /export const fmpPaymentTypes = \[([\s\S]*?)\] as const;/.exec(source)?.[1] ?? '';
+      const web = [...block.matchAll(/'([^']+)'/g)].map((m) => m[1]);
+      assert.deepEqual(web, [...FMP_PAYMENT_TYPES]);
     });
 
     await t.test('PUT /payment-methods/reorder updates positions (D71)', async () => {

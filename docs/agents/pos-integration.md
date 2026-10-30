@@ -44,6 +44,7 @@ The orders of that branch (ERP `branch_code`) that have reached the cashier and 
       "items": [{ "partNo": "MG8G4ZP/A", "name": "iPhone 16 Pro 256GB Desert Titanium", "quantity": 2 }],
       "accessories": [{ "name": "Case", "quantity": 1 }],
       "payments": ["Cash", "Transfer"],
+      "paymentTypes": ["เงินสด", "โอนเงิน"],
       "ontop": ["AIS"],
       "points": ["MCard"],
       "burnPoints": [],
@@ -54,7 +55,7 @@ The orders of that branch (ERP `branch_code`) that have reached the cashier and 
 ```
 - `reference` is the key to report back with; `queue` is what staff call the customer by (not unique across days).
 - `items[].partNo` is the Apple part number (SES `ProductSku.sku`, the same key warroom uses); accessories are free names (SES has no SKU for them);
-  payments / Ontop / points are names. **No prices anywhere**: SES stores none (D58/D26).
+  payments / Ontop / points are names; `paymentTypes` files the payments under the FileMaker payment types (D89, see fmp-outbound.md). **No prices anywhere**: SES stores none (D58/D26).
 - `customerPhone` (10 digits) lets U POS find or create the customer. It is personal data: the key is the only protection, keep it secret.
 
 ### `POST /integrations/pos/bills`

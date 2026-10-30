@@ -7,6 +7,25 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
+/**
+ * The payment types FileMaker knows (D89), in the FMP team's own words. A payment method (what staff pick in SES, e.g.
+ * "PayNext") is filed under one of them so the FMP push can say `paymentTypes: ["บัตรเงินผ่อน"]` next to `payments`.
+ * The web app lists the same strings (`fmpPaymentTypes` in `constants/options.ts`); a test keeps the two in step.
+ */
+export const FMP_PAYMENT_TYPES = [
+  'เงินสด',
+  'โอนเงิน',
+  'บัตรเครดิต',
+  'บัตรเงินผ่อน',
+  'ใช้มัดจำ',
+  'Trade In',
+  'U-Joy',
+  'Partner Mall',
+  'อื่นๆ',
+] as const;
+/** What FileMaker is told for a method that has no type yet (or whose name SES no longer lists). */
+export const FMP_PAYMENT_TYPE_FALLBACK = 'อื่นๆ';
+
 const ORDER: Prisma.PaymentMethodOrderByWithRelationInput[] = [
   { position: 'asc' },
   { createdAt: 'asc' },
@@ -29,13 +48,13 @@ export class PaymentsService {
     });
   }
 
-  async create(name: string) {
+  async create(name: string, fmpType: string | null = null) {
     const last = await this.prisma.paymentMethod.aggregate({
       _max: { position: true },
     });
     try {
       return await this.prisma.paymentMethod.create({
-        data: { name, position: (last._max.position ?? 0) + 1 },
+        data: { name, fmpType, position: (last._max.position ?? 0) + 1 },
       });
     } catch (err) {
       // the name is unique, and the database compares without regard to case
@@ -46,6 +65,18 @@ export class PaymentsService {
         throw new ConflictException(`มีช่องทางชำระเงิน "${name}" อยู่แล้ว`);
       throw err;
     }
+  }
+
+  /** Files a method under one of the FMP payment types; `null` clears it (the push then says "อื่นๆ"). */
+  async setFmpType(id: string, fmpType: string | null) {
+    const method = await this.prisma.paymentMethod.findUnique({
+      where: { id },
+    });
+    if (!method) throw new NotFoundException('ไม่พบช่องทางชำระเงิน');
+    return this.prisma.paymentMethod.update({
+      where: { id },
+      data: { fmpType },
+    });
   }
 
   async setActive(id: string, active: boolean) {

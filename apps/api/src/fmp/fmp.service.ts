@@ -3,11 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
-import { orderView, type OrderViewSource } from '../sessions/order-view';
+import { loadPaymentTypes, orderView, type OrderViewSource } from '../sessions/order-view';
 
 /** What `enqueue` needs of a session: the order view plus its branch. */
 export type FmpSession = OrderViewSource & { id: string; branch: { code: string; name: string } };
-type Outbox = Pick<PrismaService, 'fmpOutbox'> | Prisma.TransactionClient;
+type Outbox = Pick<PrismaService, 'fmpOutbox' | 'paymentMethod'> | Prisma.TransactionClient;
 
 /** Minutes to wait before attempt 2, 3, … (attempt 1 is at once); after the last one the message is `failed` until an ADMIN retries it. */
 const BACKOFF_MINUTES = [1, 2, 5, 10, 20, 30, 60];
@@ -100,13 +100,14 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   async enqueue(db: Outbox, session: FmpSession, event: string): Promise<string | null> {
     if (!this.configured()) return null;
     const id = randomUUID();
+    const paymentTypes = await loadPaymentTypes(db);
     const payload = JSON.stringify({
       source: 'SES',
       event,
       outboxId: id,
       queuedAt: new Date().toISOString(),
       branch: { code: session.branch.code, name: session.branch.name },
-      ...orderView(session),
+      ...orderView(session, paymentTypes),
     });
     await db.fmpOutbox.create({
       data: { id, sessionId: session.id, reference: session.reference, event, payload },

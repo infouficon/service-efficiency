@@ -15,6 +15,7 @@ import { OriginGuard } from '../accounts/accounts.controller';
 import { AccountsService } from '../accounts/accounts.service';
 import {
   PaymentMethodCreateDto,
+  PaymentMethodFmpTypeDto,
   PaymentMethodMoveDto,
   PaymentMethodReorderDto,
   PaymentMethodUpdateDto,
@@ -47,13 +48,24 @@ export class PaymentsController {
   @Post()
   async create(@Req() req: Request, @Body() dto: PaymentMethodCreateDto) {
     await this.admin(req);
-    return this.payments.create(dto.name);
+    return this.payments.create(dto.name, dto.fmpType ?? null);
   }
 
   @Put('reorder')
   async reorder(@Req() req: Request, @Body() dto: PaymentMethodReorderDto) {
     await this.admin(req);
     return this.payments.reorder(dto.ids);
+  }
+
+  /** D89: files a method under an FMP payment type (`{ "fmpType": null }` clears it). */
+  @Put(':id/fmp-type')
+  async setFmpType(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: PaymentMethodFmpTypeDto,
+  ) {
+    await this.admin(req);
+    return this.payments.setFmpType(id, dto.fmpType ?? null);
   }
 
   @Put(':id')

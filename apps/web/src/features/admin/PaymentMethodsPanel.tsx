@@ -8,7 +8,9 @@ import {
   movePaymentMethodApi,
   reorderPaymentMethodsApi,
   setPaymentMethodActiveApi,
+  setPaymentMethodFmpTypeApi,
 } from '../../services/sessionApi';
+import { fmpPaymentTypes } from '../../constants/options';
 import type { PaymentMethod } from '../../types/session';
 
 /**
@@ -22,6 +24,7 @@ export function PaymentMethodsPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [name, setName] = useState('');
+  const [newFmpType, setNewFmpType] = useState('');
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [canDrag, setCanDrag] = useState(false);
@@ -107,13 +110,19 @@ export function PaymentMethodsPanel() {
           สามารถคลิกค้างที่ไอคอน ⠿ เพื่อลากจัดลำดับ หรือใช้ปุ่มลูกศร
           ลำดับในตารางคือลำดับที่พนักงานเห็น
         </p>
+        <p className="muted" style={{ marginTop: 0 }}>
+          “ประเภทใน FileMaker” คือประเภทที่ทีม FileMaker ใช้ในใบขาย
+          ระบบจะส่งไปคู่กับชื่อช่องทาง (ฟิลด์ <code>paymentTypes</code>)
+          ช่องทางที่ยังไม่กำหนดจะถูกส่งเป็น “อื่นๆ”
+        </p>
         <form
           className="payment-add-form"
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              await createPaymentMethodApi(name.trim());
+              await createPaymentMethodApi(name.trim(), newFmpType || undefined);
               setName('');
+              setNewFmpType('');
             }, 'เพิ่มช่องทางชำระเงินเรียบร้อย');
           }}
         >
@@ -124,6 +133,18 @@ export function PaymentMethodsPanel() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+          <select
+            aria-label="ประเภทใน FileMaker ของช่องทางใหม่"
+            value={newFmpType}
+            onChange={(e) => setNewFmpType(e.target.value)}
+          >
+            <option value="">ประเภทใน FileMaker: ยังไม่กำหนด</option>
+            {fmpPaymentTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
           <Button type="submit" disabled={busy || !name.trim()}>
             <span
               style={{
@@ -147,6 +168,7 @@ export function PaymentMethodsPanel() {
                   <th style={{ width: '40px', textAlign: 'center' }}></th>
                   <th style={{ width: '70px' }}>ลำดับ</th>
                   <th>ชื่อช่องทาง</th>
+                  <th>ประเภทใน FileMaker</th>
                   <th>สถานะ</th>
                   <th>Actions</th>
                 </tr>
@@ -223,6 +245,30 @@ export function PaymentMethodsPanel() {
                       <td>{index + 1}</td>
                       <td>
                         <strong>{method.name}</strong>
+                      </td>
+                      <td>
+                        <select
+                          aria-label={`ประเภทใน FileMaker ของ ${method.name}`}
+                          value={method.fmpType ?? ''}
+                          disabled={busy}
+                          onChange={(e) =>
+                            void run(
+                              () =>
+                                setPaymentMethodFmpTypeApi(
+                                  method.id,
+                                  e.target.value || null,
+                                ),
+                              'บันทึกประเภทใน FileMaker เรียบร้อย',
+                            )
+                          }
+                        >
+                          <option value="">ยังไม่กำหนด (ส่งเป็น อื่นๆ)</option>
+                          {fmpPaymentTypes.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
                       </td>
                       <td>
                         <span

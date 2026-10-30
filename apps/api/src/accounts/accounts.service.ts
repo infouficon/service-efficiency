@@ -30,14 +30,6 @@ import {
   STAFF_IMPORT_MAX_ROWS,
   STAFF_SHEET_COLUMNS,
 } from './staff-sheet';
-import {
-  accountChanges,
-  accountStart,
-  recordStaffAudit,
-  staffAuditLabel,
-  stateOf,
-  type StaffAuditVia,
-} from './staff-audit';
 const include = { roles: true, branch: true } satisfies Prisma.StaffInclude;
 export type Account = Prisma.StaffGetPayload<{ include: typeof include }>;
 export type PublicAccount = ReturnType<typeof publicAccount>;
@@ -274,7 +266,6 @@ export class AccountsService {
         },
       });
       await tx.loginSession.deleteMany({ where: { staffId: actor.staffId } });
-      await recordStaffAudit(tx, { actorStaffId: actor.staffId, action: 'ACCOUNT_PASSWORD_CHANGED', targetStaffId: actor.staffId, via: 'self' });
       return { ok: true };
     });
   }
@@ -344,7 +335,7 @@ export class AccountsService {
   createStaff(token: string | undefined, data: StaffCreateDto) {
     return this.transaction(async (tx) => {
       const actor = await this.actor(tx, token);
-      return this.createStaffIn(tx, actor, data, true, 'form');
+      return this.createStaffIn(tx, actor, data, true);
     });
   }
   /** `mustChange` false for an account that has no known password (made by the spreadsheet import, signs in by OTP). */
@@ -353,32 +344,25 @@ export class AccountsService {
     actor: Account,
     data: StaffCreateDto,
     mustChange: boolean,
-    via: StaffAuditVia,
   ) {
     this.assertManagement(actor, data);
     await this.validateAssignment(tx, data);
-    const created = await tx.staff.create({
-      data: {
-        staffId: data.staffId,
-        firstName: data.firstName ?? '',
-        lastName: data.lastName ?? '',
-        passwordHash: await hashPassword(data.password),
-        mustChangePassword: mustChange,
-        phone: data.phone ?? null,
-        branchId: data.branchId,
-        active: data.active,
-        roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
-      },
-      include,
-    });
-    await recordStaffAudit(tx, {
-      actorStaffId: actor.staffId,
-      action: 'ACCOUNT_CREATED',
-      targetStaffId: created.staffId,
-      via,
-      changes: accountStart(stateOf(created)),
-    });
-    return publicAccount(created);
+    return publicAccount(
+      await tx.staff.create({
+        data: {
+          staffId: data.staffId,
+          firstName: data.firstName ?? '',
+          lastName: data.lastName ?? '',
+          passwordHash: await hashPassword(data.password),
+          mustChangePassword: mustChange,
+          phone: data.phone ?? null,
+          branchId: data.branchId,
+          active: data.active,
+          roles: { create: data.roles.map((roleCode) => ({ roleCode })) },
+        },
+        include,
+      }),
+    );
   }
   updateStaff(
     token: string | undefined,
@@ -389,7 +373,7 @@ export class AccountsService {
       const actor = await this.actor(tx, token);
       const target = await tx.staff.findUnique({ where: { staffId }, include });
       if (!target) throw new BadRequestException('ไม่พบบัญชี');
-      return this.updateStaffIn(tx, actor, target, data, 'form');
+      return this.updateStaffIn(tx, actor, target, data);
     });
   }
   private async updateStaffIn(
@@ -397,7 +381,6 @@ export class AccountsService {
     actor: Account,
     target: Account,
     data: StaffUpdateDto,
-    via: StaffAuditVia,
   ) {
     const staffId = target.staffId;
     this.assertManagement(actor, data, target);
@@ -460,10 +443,6 @@ export class AccountsService {
     });
     if (!data.active)
       await tx.loginSession.deleteMany({ where: { staffId } });
-    // D92: who changed what; a save that changes nothing leaves no row
-    const changes = accountChanges(stateOf(target), stateOf(updated));
-    if (Object.keys(changes).length)
-      await recordStaffAudit(tx, { actorStaffId: actor.staffId, action: 'ACCOUNT_UPDATED', targetStaffId: staffId, via, changes });
     return publicAccount(updated);
   }
   /** ADMIN: every account with everything stored about it (never the password hash), for the Excel export (D86). */
@@ -484,7 +463,6 @@ export class AccountsService {
           select: { staffId: true, createdAt: true, smsStatus: true },
         }),
       ]);
-      await recordStaffAudit(tx, { actorStaffId: actor.staffId, action: 'ACCOUNTS_EXPORTED', via: 'form', changes: { count: staff.length } });
       const sessionsOf = new Map(sessions.map((s) => [s.staffId, s._count._all]));
       const otpOf = new Map(otps.map((o) => [o.staffId, o]));
       return {
@@ -632,7 +610,6 @@ export class AccountsService {
           phone: wantPhone ?? null,
         },
         false,
-        'import',
       );
       line.action = 'create';
       line.changes = ['staffId', ...(firstName ? ['firstName'] : []), ...(lastName ? ['lastName'] : []), 'roles', ...(branchId ? ['branchCode'] : []), ...(wantPhone ? ['phone'] : [])];
@@ -661,7 +638,7 @@ export class AccountsService {
       line.action = 'unchanged';
       return;
     }
-    await this.updateStaffIn(tx, actor, target, next, 'import');
+    await this.updateStaffIn(tx, actor, target, next);
     line.action = 'update';
     line.changes = changes;
   }
@@ -684,7 +661,6 @@ export class AccountsService {
         },
       });
       await tx.loginSession.deleteMany({ where: { staffId } });
-      await recordStaffAudit(tx, { actorStaffId: actor.staffId, action: 'ACCOUNT_PASSWORD_RESET', targetStaffId: staffId, via: 'form' });
       return { ok: true };
     });
   }
@@ -724,7 +700,7 @@ export class AccountsService {
   }
 
   async getAuditLogs(limit = 200) {
-    const [events, loginSessions, staffMembers, sessionsWithAck, accountAudits] = await Promise.all([
+    const [events, loginSessions, staffMembers, sessionsWithAck] = await Promise.all([
       this.prisma.sessionEvent.findMany({
         take: Math.min(limit, 500),
         orderBy: { createdAt: 'desc' },
@@ -755,7 +731,7 @@ export class AccountsService {
         },
       }),
       this.prisma.staff.findMany({
-        select: { staffId: true, firstName: true, lastName: true, branch: { select: { name: true } } },
+        select: { staffId: true, firstName: true, lastName: true },
       }),
       this.prisma.customerSession.findMany({
         where: {
@@ -772,22 +748,18 @@ export class AccountsService {
         take: 100,
         orderBy: { customerWalkInAt: 'desc' },
       }),
-      // D92: changes to user accounts
-      this.prisma.staffAudit.findMany({ take: Math.min(limit, 500), orderBy: { createdAt: 'desc' } }),
     ]);
 
     const staffNameMap = new Map<string, string>();
-    const staffBranchMap = new Map<string, string>();
     for (const s of staffMembers) {
       const fullName = [s.firstName, s.lastName].filter(Boolean).join(' ');
       staffNameMap.set(s.staffId, fullName || s.staffId);
-      if (s.branch) staffBranchMap.set(s.staffId, s.branch.name);
     }
 
     const auditItems: Array<{
       id: string;
       timestamp: string;
-      category: 'AUTH' | 'WORKFLOW' | 'STOCK' | 'ALERT' | 'ACCOUNT';
+      category: 'AUTH' | 'WORKFLOW' | 'STOCK' | 'ALERT';
       action: string;
       actionLabel: string;
       actorStaffId: string;
@@ -797,9 +769,6 @@ export class AccountsService {
       sessionReference?: string;
       /** What staff call the customer by (D57), e.g. "A012". */
       sessionQueue?: string;
-      /** D92: the account an ACCOUNT row is about. */
-      targetStaffId?: string;
-      targetName?: string;
       metadata?: Record<string, unknown> | null;
     }> = [];
 
@@ -888,24 +857,6 @@ export class AccountsService {
         actorName: staffName,
         branchName: ls.staff?.branch?.name || 'Global',
         metadata: { lastSeenAt: ls.lastSeenAt.toISOString() },
-      });
-    }
-
-    // 4. Changes to user accounts (D92)
-    for (const a of accountAudits) {
-      const changes = a.changes as Record<string, unknown> | null;
-      auditItems.push({
-        id: `account-${a.id}`,
-        timestamp: a.createdAt.toISOString(),
-        category: 'ACCOUNT',
-        action: a.action,
-        actionLabel: staffAuditLabel(a.action, changes),
-        actorStaffId: a.actorStaffId,
-        actorName: staffNameMap.get(a.actorStaffId) || a.actorStaffId,
-        branchName: (a.targetStaffId && staffBranchMap.get(a.targetStaffId)) || 'Global',
-        targetStaffId: a.targetStaffId ?? undefined,
-        targetName: a.targetStaffId ? staffNameMap.get(a.targetStaffId) : undefined,
-        metadata: { via: a.via, ...(changes ? { changes } : {}) },
       });
     }
 

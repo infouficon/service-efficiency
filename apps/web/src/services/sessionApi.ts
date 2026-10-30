@@ -470,7 +470,7 @@ export async function acknowledgeManagerAlertApi(id: string): Promise<MockSessio
 export interface AuditLogItem {
   id: string;
   timestamp: string;
-  category: 'AUTH' | 'WORKFLOW' | 'STOCK' | 'ALERT' | 'ACCOUNT';
+  category: 'AUTH' | 'WORKFLOW' | 'STOCK' | 'ALERT';
   action: string;
   actionLabel: string;
   actorStaffId: string;
@@ -480,9 +480,6 @@ export interface AuditLogItem {
   sessionReference?: string;
   /** "A012" (D57): what staff call the customer by. */
   sessionQueue?: string;
-  /** D92: the account an ACCOUNT row is about. */
-  targetStaffId?: string;
-  targetName?: string;
   metadata?: Record<string, unknown> | null;
 }
 

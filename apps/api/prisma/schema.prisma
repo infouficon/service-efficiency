@@ -79,22 +79,6 @@ model Branch {
  * SES maps to no role): picked by ADMIN by their ERP staff_id, with the roles (STAFF / STOCK / CASHIER) and the SES branch to give them.
  * Taking a row away deactivates the account at the next import, like any ERP leaver.
  */
-// D92: who created or changed a user account (and when a password was reset, the staff list exported, an ERP person picked by
-// hand), for the ADMIN audit page. Written in the same transaction as the change, so a change is never left without its row
-// and a dry run or a rolled-back import leaves none. Never holds a password, a hash or a full phone number.
-model StaffAudit {
-  id            String   @id @db.VarChar(36)
-  createdAt     DateTime @default(now()) @db.DateTime(3)
-  actorStaffId  String   @db.VarChar(64)
-  action        String   @db.VarChar(32)
-  targetStaffId String?  @db.VarChar(64)
-  via           String   @db.VarChar(16) // form | import | self | erp-extras
-  changes       Json? // fields changed as { from, to } (phone masked), or what a new account started with
-
-  @@index([createdAt])
-  @@index([targetStaffId, createdAt])
-}
-
 model ErpExtraStaff {
   erpStaffId Int      @id
   roles      String   @db.VarChar(64)

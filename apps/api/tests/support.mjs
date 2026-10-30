@@ -153,10 +153,6 @@ export async function cleanup(ctx, world) {
     await db.paymentMethod.deleteMany({
       where: { name: { startsWith: world.prefix } },
     });
-    // the account audit trail (D92) of what the test made or did
-    await db.staffAudit.deleteMany({
-      where: { OR: [{ actorStaffId: { startsWith: world.prefix } }, { targetStaffId: { startsWith: world.prefix } }] },
-    });
     await db.loginSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staffRole.deleteMany({ where: { staffId: { in: staffIds } } });
     await db.staff.deleteMany({ where: { staffId: { in: staffIds } } });

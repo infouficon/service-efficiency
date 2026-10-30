@@ -115,7 +115,7 @@ needs `Origin ∈ CORS_ORIGINS` **and** `X-Requested-With: ServiceEfficiency`, o
 `POST /auth/login` (:73) · `GET /auth/me` (:82) · `POST /auth/logout` (:87) ·
 `POST /auth/password` (:96) · `GET|POST /staff` (:110, :113) · `PUT /staff/:staffId` (:119) ·
 `POST /staff/:staffId/reset-password` (:126) · `GET|POST /branches` (:133, :136) ·
-`PUT /branches/:id` (:142) · `PUT /branches/:id/registration-url` `{url\|null}` (ADMIN; F10, D67: also on ERP-managed branches; http(s) only, ≤ 512 characters) · `GET /admin/audit-logs?limit=` (:149, ADMIN only, max 500 events per source: session events, logins, stock alerts and, since D92, `ACCOUNT` rows for changes to user accounts).
+`PUT /branches/:id` (:142) · `PUT /branches/:id/registration-url` `{url\|null}` (ADMIN; F10, D67: also on ERP-managed branches; http(s) only, ≤ 512 characters) · `GET /admin/audit-logs?limit=` (:149, ADMIN only, max 500 events).
 
 ERP import (D53/D54), ADMIN only, behind `OriginGuard`: `GET /admin/erp-sync/status` (configured, schedule, next run, last 10 runs),
 `POST /admin/erp-sync/run?dryRun=true|false&force=true|false&wait=true|false` (starts a run and returns at once; `dryRun` rolls everything back;

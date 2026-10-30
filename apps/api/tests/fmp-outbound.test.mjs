@@ -261,7 +261,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       const body = fm.calls.find((c) => c.path.endsWith('/records')).body;
       assert.equal(body.script, 'ProcessAAA');
       const row = await rowOf(s.reference);
-      assert.deepEqual(JSON.parse(body['script.param']), { source: 'SES', reference: s.reference, event: 'SENT_TO_CASHIER', outboxId: row.id });
+      assert.equal(body['script.param'], s.reference, 'D91: the parameter is the reference alone, as text, not JSON');
       assert.equal(row.scriptResult, 'ok');
       const e = await driveTo('send');
       reset();

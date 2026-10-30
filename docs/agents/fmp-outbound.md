@@ -44,8 +44,10 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
   cashier) or `RESEND` (an ADMIN sent an existing order again).
 - **No serial numbers and no prices**: SES has neither (stock is by part number; no price is stored, D58). `partNo` is the Apple part
   number (the key warroom uses). `customerPhone` is personal data.
-- Times are ISO 8601 UTC. If the FileMaker team asks for `script` + `script.param`, SES sends
-  `{"source":"SES","reference":"…","event":"…","outboxId":"…"}` as the param once `FMP_SCRIPT` is set.
+- Times are ISO 8601 UTC. Once `FMP_SCRIPT` is set (the script is named `ses`), the create call also runs it with `script.param` = the
+  order's **reference** as plain text (`SES-20261030-000002`), nothing else (D91). A reference can have two records (the first send and a
+  `RESEND`): take the latest, or read `outboxId` from `ses_body`. A script error is recorded in the admin log but SES does not send the
+  record again.
 
 ## Behaviour
 

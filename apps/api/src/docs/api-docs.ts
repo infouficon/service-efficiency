@@ -48,11 +48,13 @@ export function setupApiDocs(app: INestApplication) {
           '- ยืนยันตัวตนด้วย cookie `se_session` (ได้จาก `POST /api/auth/login`)',
           '- คำขอที่เปลี่ยนข้อมูล (POST/PUT/PATCH/DELETE) ต้องส่ง `Origin` ที่อยู่ใน `CORS_ORIGINS` และ header `X-Requested-With: ServiceEfficiency`',
           '- `/api/integrations/pos/*` ใช้ `Authorization: Bearer <POS_API_KEY>` แทน cookie (ดู `/api/pos-docs`)',
+          '- `/api/integrations/fmp/callback` ใช้ `Authorization: Bearer <FMP_CALLBACK_KEY>` (FileMaker รายงานผลกลับ, D90; ดู docs/agents/fmp-outbound.md)',
           '- สิทธิ์ตาม role (ADMIN / MANAGER / STAFF / STOCK / CASHIER) อยู่ในคำอธิบายของแต่ละ endpoint และใน docs/agents/permissions',
         ].join('\n'),
       )
       .addCookieAuth('se_session')
       .addBearerAuth({ type: 'http', scheme: 'bearer' }, 'pos-key')
+      .addBearerAuth({ type: 'http', scheme: 'bearer' }, 'fmp-key')
       .build(),
   );
   tagByPath(all);

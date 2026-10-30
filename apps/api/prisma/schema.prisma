@@ -108,10 +108,41 @@ model FmpOutbox {
   lastError     String?   @db.VarChar(255)
   createdAt     DateTime  @default(now()) @db.DateTime(3)
   sentAt        DateTime? @db.DateTime(3)
+  // D90: what FileMaker last reported back through the callback door (`success` | `error` | `reported` = said something else)
+  ackStatus     String?   @db.VarChar(16)
+  ackMessage    String?   @db.VarChar(255)
+  ackAt         DateTime? @db.DateTime(3) // the time FileMaker said it happened, when it sent one we could read
+  ackTimeText   String?   @db.VarChar(40) // that time as FileMaker wrote it (so an unreadable format is still visible)
+  ackReceivedAt DateTime? @db.DateTime(3)
 
   @@index([status, nextAttemptAt])
   @@index([reference])
   @@index([createdAt])
+}
+
+// D90: the trail of everything between SES and FileMaker, for the admin log: each Data API call SES makes (OUT), each callback
+// FileMaker sends (IN) and SES's own steps (SES: queued, retry, resend, gave up). Never holds a credential or a session token.
+model FmpLog {
+  id         String   @id @db.VarChar(36)
+  createdAt  DateTime @default(now()) @db.DateTime(3)
+  direction  String   @db.VarChar(3)
+  kind       String   @db.VarChar(16)
+  batchId    String?  @db.VarChar(36) // one worker round: its login, creates and logout share it
+  outboxId   String?  @db.VarChar(36)
+  reference  String?  @db.VarChar(32)
+  method     String?  @db.VarChar(8)
+  path       String?  @db.VarChar(255)
+  httpStatus Int?
+  fmCode     String?  @db.VarChar(16)
+  ok         Boolean
+  durationMs Int?
+  summary    String   @db.VarChar(255)
+  request    String?  @db.Text // what was sent / received, personal data masked, cut at 8,000 characters
+  response   String?  @db.Text // what came back, token masked, cut at 8,000 characters
+
+  @@index([createdAt])
+  @@index([reference, createdAt])
+  @@index([outboxId])
 }
 
 model Staff {

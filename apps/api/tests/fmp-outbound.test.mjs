@@ -11,7 +11,8 @@ const PASSWORD = 'pa,`^;ss!x'; // special characters on purpose; 'ses:' + this i
 const padded = Buffer.from(`${USER}:${PASSWORD}`).toString('base64');
 const stripped = padded.replace(/=+$/, '');
 
-const { FMP_MAX_ATTEMPTS } = await import('../dist/fmp/fmp.service.js');
+const { FMP_MAX_ATTEMPTS, ackStatusOf, maskPhone, maskedJson, parseFmpTime } = await import('../dist/fmp/fmp.service.js');
+const CALLBACK_KEY = 'test-fmp-callback-key-0123456789abcdef0123456789';
 
 // A stand-in for the FileMaker Data API (vLatest): sessions (login / logout) and the records of one layout.
 const fm = {
@@ -75,7 +76,7 @@ const ENV = {
 };
 const setEnv = () => Object.assign(process.env, ENV);
 const clearEnv = () => {
-  for (const k of [...Object.keys(ENV), 'FMP_SCRIPT']) delete process.env[k];
+  for (const k of [...Object.keys(ENV), 'FMP_SCRIPT', 'FMP_CALLBACK_KEY']) delete process.env[k];
 };
 
 test('orders reach FileMaker: queued with the order, sent in one session, retried, resent (D88)', async (t) => {
@@ -86,6 +87,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
   }
   const { db, request } = ctx;
   let world;
+  const testStart = new Date(Date.now() - 1000);
   try {
     assert.ok(padded.endsWith('='), 'the test password gives a padded base64, so the stripped form differs');
     world = await seedWorld(ctx);
@@ -306,12 +308,261 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal((await app('/admin/fmp', 'GET', undefined, 'staff')).status, 403);
       assert.equal((await request('/admin/fmp')).status, 401);
     });
+
+    // ---- D90: the admin log and the callback door ------------------------------------------------------------------------
+    const logsOf = (where) => db.fmpLog.findMany({ where, orderBy: { createdAt: 'asc' } });
+    const callback = (body, key = CALLBACK_KEY, raw = false) =>
+      fetch(`${base}/api/integrations/fmp/callback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) },
+        body: raw ? body : JSON.stringify(body),
+      }).then(async (res) => ({ status: res.status, data: await res.json().catch(() => null) }));
+
+    await t.test('every call is in the log: one round shares an id, the path has no host, and no secret, token or full phone is stored (D90)', async () => {
+      reset();
+      const s = await driveTo('send');
+      const row = await rowOf(s.reference);
+      const session = await db.customerSession.findFirst({ where: { reference: s.reference } });
+      assert.deepEqual(await fmp.tick(), { sent: 1, failed: 0 });
+      const rows = await logsOf({ OR: [{ reference: s.reference }, { batchId: { not: null }, createdAt: { gte: row.createdAt } }] });
+      const queued = rows.find((r) => r.kind === 'queued' && r.reference === s.reference);
+      const create = rows.find((r) => r.kind === 'create' && r.reference === s.reference);
+      assert.equal(queued.direction, 'SES');
+      assert.equal(queued.outboxId, row.id);
+      assert.equal(create.direction, 'OUT');
+      assert.equal(create.outboxId, row.id);
+      assert.equal(create.method, 'POST');
+      assert.equal(create.path, '/fmi/data/vLatest/databases/UFService/layouts/ses/records', 'no host in the logged path');
+      assert.equal(create.httpStatus, 200);
+      assert.equal(create.fmCode, '0');
+      assert.equal(create.ok, true);
+      assert.ok(create.durationMs >= 0);
+      assert.match(create.summary, /recordId \d+/);
+      const login = rows.find((r) => r.kind === 'login' && r.batchId === create.batchId);
+      const logout = rows.find((r) => r.kind === 'logout' && r.batchId === create.batchId);
+      assert.ok(login && logout, 'login and logout belong to the same round as the create');
+      assert.equal(login.path, '/fmi/data/vLatest/databases/UFService/sessions');
+      assert.equal(logout.method, 'DELETE');
+      assert.equal(logout.path, '/fmi/data/vLatest/databases/UFService/sessions/[token]', 'the token that ends a logout path is masked');
+      assert.match(login.response, /"token":"\[redacted\]"/);
+      // the order as FileMaker got it, with the customer's phone masked
+      const sent = JSON.parse(create.request);
+      assert.equal(sent.reference, s.reference);
+      assert.equal(sent.customerPhone, maskPhone(session.phone));
+      assert.notEqual(sent.customerPhone, session.phone);
+      const everything = JSON.stringify(await db.fmpLog.findMany({ where: { createdAt: { gte: testStart } } }));
+      for (const secret of [PASSWORD, stripped, padded, 'tok-'])
+        assert.ok(!everything.includes(secret), `the log never holds ${secret === PASSWORD ? 'the password' : secret}`);
+      assert.ok(!everything.includes(session.phone), 'no full customer phone in the log');
+      // a log that cannot be written never throws into the order or the send
+      await fmp.record({ direction: 'SES', kind: 'x', ok: true, summary: 'x' }, { fmpLog: { create: async () => { throw new Error('boom'); } } });
+    });
+
+    await t.test('a refusal is logged with what FileMaker answered and what SES will do; a retry by ADMIN is logged with who (D90)', async () => {
+      reset();
+      fm.recordStatus = 500;
+      const s = await driveTo('send');
+      assert.deepEqual(await fmp.tick(), { sent: 0, failed: 1 });
+      const rows = await logsOf({ reference: s.reference });
+      const create = rows.find((r) => r.kind === 'create');
+      assert.equal(create.ok, false);
+      assert.equal(create.httpStatus, 500);
+      assert.equal(create.fmCode, '-1');
+      assert.match(create.response, /Unknown error/, 'FileMaker\'s own answer is kept');
+      const again = rows.find((r) => r.kind === 'will-retry');
+      assert.equal(again.ok, false);
+      assert.match(again.summary, new RegExp(`ครั้งที่ 1/${FMP_MAX_ATTEMPTS}.*ลองใหม่ใน 1 นาที`));
+      const row = await rowOf(s.reference);
+      const res = await app(`/admin/fmp/outbox/${row.id}/retry`, 'POST', undefined, 'admin');
+      assert.equal(res.status, 201, JSON.stringify(res.data));
+      const retry = (await logsOf({ reference: s.reference, kind: 'retry' }))[0];
+      assert.equal(retry.direction, 'SES');
+      assert.match(retry.summary, /^ADMIN \S+ สั่งส่งซ้ำ/);
+      reset();
+      await fmp.tick();
+      assert.equal((await rowOf(s.reference)).status, 'sent');
+      // give-up is logged too
+      fm.recordStatus = 500;
+      const g = await driveTo('send');
+      const gRow = await rowOf(g.reference);
+      await db.fmpOutbox.update({ where: { id: gRow.id }, data: { attempts: FMP_MAX_ATTEMPTS - 1 } });
+      await fmp.tick();
+      assert.equal((await logsOf({ reference: g.reference, kind: 'gave-up' })).length, 1);
+      reset();
+    });
+
+    await t.test('the callback door: off without a key, 401 for a wrong one, loose about the body, strict about the id (D90)', async () => {
+      assert.equal((await callback({ reference: first.reference }, null)).status, 404, 'door off while FMP_CALLBACK_KEY is unset');
+      assert.match(JSON.stringify((await callback({ reference: first.reference }, CALLBACK_KEY)).data), /FMP_CALLBACK_KEY/);
+      process.env.FMP_CALLBACK_KEY = 'too-short';
+      assert.equal((await callback({ reference: first.reference }, 'too-short')).status, 404, 'under 32 characters is off too');
+      process.env.FMP_CALLBACK_KEY = CALLBACK_KEY;
+      assert.equal((await callback({ reference: first.reference }, null)).status, 401);
+      assert.equal((await callback({ reference: first.reference }, 'x'.repeat(CALLBACK_KEY.length))).status, 401);
+      const before = await db.fmpLog.count({ where: { direction: 'IN' } });
+      assert.equal(before, 0, 'a refused caller leaves nothing in the log');
+
+      assert.equal((await callback({})).status, 400);
+      assert.equal((await callback('not json at all', CALLBACK_KEY, true)).status, 400, 'not JSON: nothing to read, 400');
+      assert.equal((await callback({ outboxId: 'no-such-id', status: 'success' })).status, 404);
+      assert.equal((await callback({ reference: 'SES-00000000-000000', status: 'success' })).status, 404);
+      const other = await db.fmpOutbox.findFirst({ where: { reference: { not: first.reference } } });
+      const mine = await rowOf(first.reference, 'SENT_TO_CASHIER');
+      assert.equal((await callback({ outboxId: mine.id, reference: other.reference, status: 'success' })).status, 400, 'an id and a reference of different messages');
+      const refused = await db.fmpLog.findMany({ where: { direction: 'IN' } });
+      // an empty body, an unknown outboxId, an unknown reference and a mismatch; malformed JSON never reaches the door (the body parser answers 400)
+      assert.equal(refused.length, 4, 'the refused reports are logged (the unauthenticated ones are not)');
+      assert.ok(refused.every((r) => r.ok === false && r.kind === 'callback' && r.path === '/api/integrations/fmp/callback'));
+      assert.equal((await db.fmpOutbox.findUnique({ where: { id: mine.id } })).ackStatus, null, 'a refused report records nothing on the message');
+    });
+
+    await t.test('a report is recorded on the message and logged whole, phones masked; the order itself is untouched (D90)', async () => {
+      const mine = await rowOf(first.reference, 'SENT_TO_CASHIER');
+      const sessionBefore = await db.customerSession.findFirst({ where: { reference: first.reference } });
+      const res = await callback({
+        outboxId: mine.id,
+        status: 'success',
+        message: 'บันทึกบิลแล้ว',
+        time: '2026-10-30T17:31:31+07:00',
+        billNo: 'FM-1',
+        customerPhone: '0812345678',
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.data));
+      assert.deepEqual(res.data, { ok: true, outboxId: mine.id, reference: first.reference, status: 'success', time: '2026-10-30T10:31:31.000Z', timeReceived: true });
+      const row = await db.fmpOutbox.findUnique({ where: { id: mine.id } });
+      assert.equal(row.ackStatus, 'success');
+      assert.equal(row.ackMessage, 'บันทึกบิลแล้ว');
+      assert.equal(row.ackAt.toISOString(), '2026-10-30T10:31:31.000Z');
+      assert.equal(row.ackTimeText, '2026-10-30T17:31:31+07:00');
+      assert.ok(row.ackReceivedAt);
+      const log = (await logsOf({ reference: first.reference, direction: 'IN' })).at(-1);
+      assert.equal(log.ok, true);
+      assert.equal(log.httpStatus, 200);
+      assert.match(log.summary, /FileMaker รายงาน success: บันทึกบิลแล้ว$/);
+      assert.match(log.request, /"billNo":"FM-1"/, 'whatever else FileMaker sends is kept');
+      assert.ok(!log.request.includes('0812345678') && log.request.includes('******5678'), 'a phone it sends is masked');
+      const sessionAfter = await db.customerSession.findFirst({ where: { reference: first.reference } });
+      assert.deepEqual(sessionAfter, sessionBefore, 'the order is not changed by a report');
+
+      // by reference (the latest message), no time sent, status in capitals, before SES marked the message sent
+      const s = await driveTo('send');
+      const pending = await rowOf(s.reference);
+      assert.equal(pending.status, 'pending');
+      const early = await callback({ reference: s.reference, status: 'ERROR', message: 'ไม่พบสินค้า' });
+      assert.equal(early.status, 200);
+      assert.deepEqual(early.data, { ok: true, outboxId: pending.id, reference: s.reference, status: 'error', time: null, timeReceived: false });
+      const noTime = await db.fmpOutbox.findUnique({ where: { id: pending.id } });
+      assert.deepEqual([noTime.ackStatus, noTime.ackAt, noTime.ackTimeText], ['error', null, null]);
+      assert.match((await logsOf({ reference: s.reference, direction: 'IN' })).at(-1).summary, /ไม่ได้ส่งเวลา/);
+
+      // a time SES cannot read stays visible as text; the latest report wins, every one is logged
+      const odd = await callback({ reference: s.reference, status: 'success', time: '10/30/2026 17:31:31' });
+      assert.equal(odd.data.time, null);
+      assert.equal(odd.data.timeReceived, true);
+      const oddRow = await db.fmpOutbox.findUnique({ where: { id: pending.id } });
+      assert.deepEqual([oddRow.ackStatus, oddRow.ackAt, oddRow.ackTimeText], ['success', null, '10/30/2026 17:31:31']);
+      assert.match((await logsOf({ reference: s.reference, direction: 'IN' })).at(-1).summary, /อ่านเวลา "10\/30\/2026 17:31:31" ไม่ได้/);
+      assert.equal((await logsOf({ reference: s.reference, direction: 'IN' })).length, 2);
+      const bangkok = await callback({ reference: s.reference, status: 'success', time: '2026-10-30 17:31:31' });
+      assert.equal(bangkok.data.time, '2026-10-30T10:31:31.000Z', 'no offset: read as Bangkok time');
+      await fmp.tick();
+      assert.equal((await db.fmpOutbox.findUnique({ where: { id: pending.id } })).ackStatus, 'success', 'sending afterwards does not wipe the report');
+    });
+
+    await t.test('how FileMaker words the result and the time is read leniently, and never guessed (D90)', () => {
+      for (const ok of [{ status: 'success' }, { status: ' OK ' }, { result: 'Done' }, { status: 'สำเร็จ' }, { success: true }, { status: 'true' }])
+        assert.equal(ackStatusOf(ok), 'success', JSON.stringify(ok));
+      for (const bad of [{ status: 'error' }, { status: 'FAILED' }, { result: 'ล้มเหลว' }, { success: false }, { status: 'false' }])
+        assert.equal(ackStatusOf(bad), 'error', JSON.stringify(bad));
+      for (const other of [{}, { status: 'pending' }, { status: 0 }, { status: 1 }, { status: '0' }, { status: '' }, { status: null }])
+        assert.equal(ackStatusOf(other), 'reported', `not guessed: ${JSON.stringify(other)}`);
+      const iso = (text) => parseFmpTime(text)?.toISOString() ?? null;
+      assert.equal(iso('2026-10-30T17:31:31+07:00'), '2026-10-30T10:31:31.000Z');
+      assert.equal(iso('2026-10-30T17:31:31+0700'), '2026-10-30T10:31:31.000Z');
+      assert.equal(iso('2026-10-30T10:31:31Z'), '2026-10-30T10:31:31.000Z');
+      assert.equal(iso('2026-10-30T10:31:31.123Z'), '2026-10-30T10:31:31.123Z');
+      assert.equal(iso('2026-10-30 17:31:31'), '2026-10-30T10:31:31.000Z', 'no offset = Bangkok');
+      assert.equal(iso('2026-10-30T17:31'), '2026-10-30T10:31:00.000Z');
+      assert.equal(iso('1793356291'), '2026-10-30T10:31:31.000Z', 'epoch seconds');
+      assert.equal(iso('1793356291000'), '2026-10-30T10:31:31.000Z', 'epoch milliseconds');
+      for (const bad of ['10/30/2026 17:31:31', '30/10/2026', 'yesterday', '', '2026-13-45T25:00:00Z', '2026-10-30'])
+        assert.equal(iso(bad), null, bad);
+      assert.equal(maskPhone('0812345678'), '******5678');
+      assert.equal(maskPhone(812345678), '*****5678');
+      assert.equal(maskPhone('123'), '***');
+      const masked = JSON.parse(maskedJson({ customerPhone: '0812345678', tel: '0899999999', items: [{ mobile: '0811111111', name: 'n' }], note: 'x' }));
+      assert.deepEqual(masked, { customerPhone: '******5678', tel: '******9999', items: [{ mobile: '******1111', name: 'n' }], note: 'x' });
+      assert.equal(maskedJson('<html>502 Bad Gateway</html>'), '<html>502 Bad Gateway</html>', 'not JSON: kept as FileMaker\'s own words');
+      assert.ok(maskedJson('x'.repeat(9000)).length < 8100, 'cut');
+    });
+
+    await t.test('the log is for ADMIN: newest first, no bodies in the list, filters and pages, one row opens with its bodies (D90)', async () => {
+      const logs = (query = '', who = 'admin') => app(`/admin/fmp/logs${query}`, 'GET', undefined, who);
+      for (const who of ['staff', 'stock', 'cashier', 'manager']) assert.equal((await logs('', who)).status, 403, who);
+      assert.equal((await request('/admin/fmp/logs')).status, 401);
+      const all = await logs('?take=200');
+      assert.equal(all.status, 200, JSON.stringify(all.data));
+      const times = all.data.rows.map((r) => new Date(r.createdAt).getTime());
+      assert.deepEqual(times, [...times].sort((a, b) => b - a), 'newest first');
+      assert.ok(all.data.rows.every((r) => !('request' in r) && !('response' in r)), 'the list stays light');
+      assert.ok(all.data.rows.length >= 10);
+
+      const one = await logs(`?reference=${first.reference}`);
+      assert.ok(one.data.rows.length >= 3 && one.data.rows.every((r) => r.reference === first.reference));
+      const part = await logs(`?reference=${first.reference.slice(-8)}`);
+      assert.ok(part.data.rows.some((r) => r.reference === first.reference), 'a part of the reference is enough');
+      for (const direction of ['OUT', 'IN', 'SES']) {
+        const d = await logs(`?direction=${direction}&take=200`);
+        assert.ok(d.data.rows.length > 0 && d.data.rows.every((r) => r.direction === direction), direction);
+      }
+      assert.equal((await logs('?direction=SIDEWAYS')).status, 400);
+      const bad = await logs('?problems=true&take=200');
+      assert.ok(bad.data.rows.length > 0 && bad.data.rows.every((r) => r.ok === false));
+
+      const page1 = await logs('?take=3');
+      assert.equal(page1.data.rows.length, 3);
+      assert.ok(page1.data.next);
+      const page2 = await logs(`?take=3&after=${page1.data.next}`);
+      assert.equal(page2.data.rows.length, 3);
+      const ids = [...page1.data.rows, ...page2.data.rows].map((r) => r.id);
+      assert.equal(new Set(ids).size, 6, 'the second page continues where the first stopped');
+      assert.deepEqual(ids, all.data.rows.slice(0, 6).map((r) => r.id));
+
+      const create = all.data.rows.find((r) => r.kind === 'create' && r.ok);
+      const detail = await logs(`/${create.id}`.replace('?', ''));
+      assert.equal(detail.status, 200);
+      assert.equal(detail.data.id, create.id);
+      assert.ok(detail.data.request.includes('"reference"') && detail.data.response.includes('recordId'));
+      assert.equal((await app('/admin/fmp/logs/no-such-row', 'GET', undefined, 'admin')).status, 404);
+      assert.equal((await app(`/admin/fmp/logs/${create.id}`, 'GET', undefined, 'staff')).status, 403);
+
+      const status = await app('/admin/fmp', 'GET', undefined, 'admin');
+      assert.deepEqual(status.data.callback, { path: '/api/integrations/fmp/callback', keySet: true });
+      const acked = status.data.rows.find((r) => r.reference === first.reference && r.ackStatus);
+      assert.equal(acked.ackStatus, 'success');
+      assert.ok(!JSON.stringify(status.data).includes(CALLBACK_KEY), 'the key is never shown');
+    });
+
+    await t.test('log rows older than 90 days are cleared by the worker, newer ones stay (D90)', async () => {
+      const old = await db.fmpLog.create({ data: { id: 'old-log-row-test', createdAt: new Date(Date.now() - 91 * 86_400_000), direction: 'SES', kind: 'queued', ok: true, summary: 'old' } });
+      const recent = await db.fmpLog.create({ data: { id: 'recent-log-row-test', createdAt: new Date(Date.now() - 89 * 86_400_000), direction: 'SES', kind: 'queued', ok: true, summary: 'recent' } });
+      fmp.lastPrune = 0;
+      await fmp.tick();
+      assert.equal(await db.fmpLog.findUnique({ where: { id: old.id } }), null);
+      assert.ok(await db.fmpLog.findUnique({ where: { id: recent.id } }));
+      const stamp = fmp.lastPrune;
+      await db.fmpLog.create({ data: { id: 'old-log-row-test', createdAt: new Date(Date.now() - 91 * 86_400_000), direction: 'SES', kind: 'queued', ok: true, summary: 'old again' } });
+      await fmp.tick();
+      assert.ok(await db.fmpLog.findUnique({ where: { id: 'old-log-row-test' } }), 'it runs at most every 6 hours');
+      assert.equal(fmp.lastPrune, stamp);
+    });
   } finally {
     clearEnv();
     if (world) {
       const refs = await db.customerSession.findMany({ where: { branchId: { in: Object.values(world.branches).map((b) => b.id) } }, select: { reference: true } });
       await db.fmpOutbox.deleteMany({ where: { reference: { in: refs.map((r) => r.reference) } } });
     }
+    await db.fmpLog.deleteMany({ where: { OR: [{ createdAt: { gte: testStart } }, { id: { in: ['old-log-row-test', 'recent-log-row-test'] } }] } });
     fake.close();
     await cleanup(ctx, world);
   }

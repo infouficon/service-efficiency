@@ -1,7 +1,7 @@
 # SES -> FileMaker: the orders SES sends (D88)
 
-What SES sends to the FileMaker `UFService` database, when, and how it behaves when FileMaker is slow or down. Decision: D88
-in `docs/decisions.md`. Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
+What SES sends to the FileMaker `UFService` database, when, and how it behaves when FileMaker is slow or down. Decisions: D88, D89
+(payment types) in `docs/decisions.md`. Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
 
 ## Contract (what the FileMaker team receives)
 
@@ -24,6 +24,7 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
   "items": [{ "partNo": "MG8G4ZP/A", "name": "iPhone 17 Pro 256GB Deep Blue", "quantity": 2 }],
   "accessories": [{ "name": "Case", "quantity": 1 }],
   "payments": ["Cash", "Transfer"],
+  "paymentTypes": ["เงินสด", "โอนเงิน"],
   "ontop": ["AIS"],
   "points": ["MCard"],
   "burnPoints": [],
@@ -34,6 +35,11 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
 - Everything from `reference` down is **the same view the U POS door serves** (`GET /api/integrations/pos/orders`), produced by one function.
 - `reference` is the key (`SES-YYYYMMDD-NNNNNN`); `queue` is what staff call the customer by. Report the bill back with
   `POST /api/integrations/pos/bills {reference, billNo, openedAt}` (docs/agents/pos-integration.md).
+- `payments` = the payment **methods** as picked in SES (`Cash`, `Transfer`, `0% Credit Card`, `PayNext`, … — the list ADMIN keeps, so
+  it can grow). `paymentTypes` = the same payments by **type**, each type once, in the FileMaker team's words: `เงินสด`, `โอนเงิน`,
+  `บัตรเครดิต`, `บัตรเงินผ่อน`, `ใช้มัดจำ`, `Trade In`, `U-Joy`, `Partner Mall`, or `อื่นๆ` for a method with no type yet (D89).
+  Map on `paymentTypes`; `payments` says which method exactly. U-Joy points are in `points` / `burnPoints`, not here. SES stores no
+  amount per method, so the cashier enters the amounts.
 - `outboxId` is unique per message: **dedupe on it** (delivery is at-least-once). `event`: `SENT_TO_CASHIER` (the order reached the
   cashier) or `RESEND` (an ADMIN sent an existing order again).
 - **No serial numbers and no prices**: SES has neither (stock is by part number; no price is stored, D58). `partNo` is the Apple part

@@ -215,8 +215,13 @@ export function fetchPaymentMethodsApi(all = false): Promise<PaymentMethod[]> {
   return api<PaymentMethod[]>(`/payment-methods${all ? '?all=true' : ''}`);
 }
 
-export function createPaymentMethodApi(name: string): Promise<PaymentMethod> {
-  return api<PaymentMethod>('/payment-methods', 'POST', { name });
+export function createPaymentMethodApi(name: string, fmpType?: string): Promise<PaymentMethod> {
+  return api<PaymentMethod>('/payment-methods', 'POST', fmpType ? { name, fmpType } : { name });
+}
+
+/** D89: files a payment method under an FMP payment type (`null` clears it). */
+export function setPaymentMethodFmpTypeApi(id: string, fmpType: string | null): Promise<PaymentMethod> {
+  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/fmp-type`, 'PUT', { fmpType });
 }
 
 export function setPaymentMethodActiveApi(id: string, active: boolean): Promise<PaymentMethod> {

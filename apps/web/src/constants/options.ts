@@ -19,6 +19,18 @@ export const accessories = [
 ] as const;
 export const ontop = ['AIS', 'True', 'CATH', 'U Trade'] as const;
 export const points = ['MCard', 'The 1', 'UJOY'] as const;
+/** The payment types FileMaker knows (D89); the same list as `FMP_PAYMENT_TYPES` in the API (a test keeps them in step). */
+export const fmpPaymentTypes = [
+  'เงินสด',
+  'โอนเงิน',
+  'บัตรเครดิต',
+  'บัตรเงินผ่อน',
+  'ใช้มัดจำ',
+  'Trade In',
+  'U-Joy',
+  'Partner Mall',
+  'อื่นๆ',
+] as const;
 export const payments = [
   'Cash',
   'Transfer',

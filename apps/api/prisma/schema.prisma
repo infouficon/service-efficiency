@@ -233,6 +233,8 @@ model PaymentMethod {
   name      String   @unique @db.VarChar(64)
   active    Boolean  @default(true)
   position  Int      @default(0)
+  // D89: the payment type FileMaker knows this method by (one of FMP_PAYMENT_TYPES); null = not set, sent as "อื่นๆ"
+  fmpType   String?  @db.VarChar(32)
   createdAt DateTime @default(now()) @db.DateTime(3)
 }
 

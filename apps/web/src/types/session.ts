@@ -83,6 +83,8 @@ export interface PaymentMethod {
   name: string;
   active: boolean;
   position: number;
+  /** D89: the FMP payment type this method is filed under; null = not set (FileMaker is told "อื่นๆ") */
+  fmpType: string | null;
 }
 
 /** A product category (D72), kept by ADMIN and added by the warroom sync. The name is what products store. */

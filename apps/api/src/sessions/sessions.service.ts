@@ -8,7 +8,7 @@ import {
 import type { PublicAccount } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
-import { orderView } from './order-view';
+import { loadPaymentTypes, orderView } from './order-view';
 import { FmpService } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
 import type {
@@ -451,10 +451,11 @@ export class SessionsService {
       orderBy: { customerWalkInAt: 'asc' },
     });
     const wanted = queue?.toUpperCase();
+    const paymentTypes = await loadPaymentTypes(this.prisma);
     return {
       branch: { code: branch.code, name: branch.name },
       orders: sessions
-        .map((s) => orderView(s))
+        .map((s) => orderView(s, paymentTypes))
         .filter((order) => !wanted || order.queue === wanted),
     };
   }

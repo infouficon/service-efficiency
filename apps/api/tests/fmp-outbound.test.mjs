@@ -160,6 +160,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(order.items.length, 2);
       assert.equal(order.items[0].quantity, 2);
       assert.deepEqual(order.payments.sort(), ['Cash', 'Transfer']);
+      assert.deepEqual([...order.paymentTypes].sort(), ['เงินสด', 'โอนเงิน'], 'D89: the same payments by FMP type');
       assert.ok(!/"sn"|price|ราคา/i.test(row.payload), 'no serial numbers and no prices: SES has none');
       // a step that is not "send" queues nothing more
       assert.equal(await db.fmpOutbox.count({ where: { reference: first.reference } }), 1);

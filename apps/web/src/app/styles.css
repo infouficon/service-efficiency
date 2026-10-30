@@ -3660,6 +3660,10 @@ input[aria-invalid='true'] {
   flex: 1;
   min-width: 0;
 }
+.payment-add-form select {
+  width: auto;
+  max-width: 260px;
+}
 
 /* F9/F10: the receipt. On screen only the button; on paper only the sheet (80 mm, no prices) */
 .receipt-print-action {

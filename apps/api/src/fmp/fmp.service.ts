@@ -433,7 +433,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const body: Record<string, unknown> = { fieldData: { [cfg.field]: row.payload } };
     if (cfg.script) {
       body.script = cfg.script;
-      body['script.param'] = JSON.stringify({ source: 'SES', reference: row.reference, event: row.event, outboxId: row.id });
+      body['script.param'] = row.reference; // D91: the FileMaker script takes the order's reference (its "ses id") and nothing else
     }
     const trace: Trace = {
       kind: 'create',

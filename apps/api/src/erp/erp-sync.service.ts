@@ -1,3 +1,4 @@
+import { recordStaffAudit } from '../accounts/staff-audit';
 import {
   BadRequestException,
   ConflictException,
@@ -1192,16 +1193,28 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     });
     if (taken)
       throw new ConflictException(`รหัส ${data.erpStaffId} เป็นบัญชีที่สร้างเองใน SES อยู่แล้ว (ซิงก์ไม่แตะบัญชีที่สร้างเอง)`);
-    const row = await this.prisma.erpExtraStaff.upsert({
-      where: { erpStaffId: data.erpStaffId },
-      create: {
-        erpStaffId: data.erpStaffId,
-        roles: roles.join(','),
-        branchId: branch.id,
-        note: data.note?.trim() || null,
-        createdBy: actorStaffId,
-      },
-      update: { roles: roles.join(','), branchId: branch.id, note: data.note?.trim() || null },
+    // D92: the pick and its row in the account audit trail stand or fall together
+    const row = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.erpExtraStaff.findUnique({ where: { erpStaffId: data.erpStaffId } });
+      const saved = await tx.erpExtraStaff.upsert({
+        where: { erpStaffId: data.erpStaffId },
+        create: {
+          erpStaffId: data.erpStaffId,
+          roles: roles.join(','),
+          branchId: branch.id,
+          note: data.note?.trim() || null,
+          createdBy: actorStaffId,
+        },
+        update: { roles: roles.join(','), branchId: branch.id, note: data.note?.trim() || null },
+      });
+      await recordStaffAudit(tx, {
+        actorStaffId,
+        action: 'ERP_EXTRA_SET',
+        targetStaffId: String(saved.erpStaffId),
+        via: 'erp-extras',
+        changes: { roles: { from: before ? before.roles.split(',') : null, to: roles }, branch: { from: null, to: branch.code }, replaced: before !== null },
+      });
+      return saved;
     });
     this.log.warn(`ERP extra staff ${row.erpStaffId} (${row.roles}) set by ${actorStaffId}`);
     return row;
@@ -1210,7 +1223,16 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
   async removeExtra(actorStaffId: string, erpStaffId: number) {
     const found = await this.prisma.erpExtraStaff.findUnique({ where: { erpStaffId } });
     if (!found) throw new BadRequestException('ไม่พบรายการนี้');
-    await this.prisma.erpExtraStaff.delete({ where: { erpStaffId } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.erpExtraStaff.delete({ where: { erpStaffId } });
+      await recordStaffAudit(tx, {
+        actorStaffId,
+        action: 'ERP_EXTRA_REMOVED',
+        targetStaffId: String(erpStaffId),
+        via: 'erp-extras',
+        changes: { roles: { from: found.roles.split(','), to: null } },
+      });
+    });
     this.log.warn(`ERP extra staff ${erpStaffId} removed by ${actorStaffId}`);
     return { ok: true };
   }

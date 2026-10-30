@@ -12,6 +12,7 @@ import {
   ChevronDown,
   ChevronRight,
   RotateCcw,
+  UserCog,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { fetchAuditLogsApi, type AuditLogItem } from '../../services/sessionApi';
@@ -41,6 +42,23 @@ function getTodayString(): string {
   return `${year}-${month}-${day}`;
 }
 
+/** An ACCOUNT row's detail as lines, "field: before → after" (D92); the phone is already masked by the server. */
+function accountDetail(metadata: AuditLogItem['metadata']): string {
+  if (!metadata) return '';
+  const names: Record<string, string> = { firstName: 'ชื่อ', lastName: 'นามสกุล', roles: 'บทบาท', branch: 'สาขา', active: 'ใช้งาน', phone: 'เบอร์โทร', count: 'จำนวนบัญชี', replaced: 'แทนที่ของเดิม' };
+  const show = (value: unknown) =>
+    value === null || value === undefined ? '—' : Array.isArray(value) ? value.join(', ') || '—' : typeof value === 'boolean' ? (value ? 'ใช่' : 'ไม่') : String(value);
+  const lines: string[] = [];
+  if (metadata.via) lines.push(`ทางที่ทำ: ${({ form: 'หน้าจัดการผู้ใช้', import: 'นำเข้า Excel', self: 'ผู้ใช้เอง', 'erp-extras': 'เลือกพนักงาน ERP' } as Record<string, string>)[String(metadata.via)] ?? String(metadata.via)}`);
+  const changes = (metadata.changes ?? {}) as Record<string, unknown>;
+  for (const [key, value] of Object.entries(changes)) {
+    const pair = value as { from?: unknown; to?: unknown } | null;
+    if (pair && typeof pair === 'object' && ('from' in pair || 'to' in pair)) lines.push(`${names[key] ?? key}: ${show(pair.from)} → ${show(pair.to)}`);
+    else lines.push(`${names[key] ?? key}: ${show(value)}`);
+  }
+  return lines.join('\n');
+}
+
 export function SystemAuditLogs() {
   const [logs, setLogs] = useState<AuditLogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +67,7 @@ export function SystemAuditLogs() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('ALL');
-  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'WORKFLOW' | 'STOCK' | 'ALERT' | 'AUTH'>('ALL');
+  const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'WORKFLOW' | 'STOCK' | 'ALERT' | 'AUTH' | 'ACCOUNT'>('ALL');
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   const loadLogs = useCallback(async () => {
@@ -114,7 +132,9 @@ export function SystemAuditLogs() {
           item.actorName.toLowerCase().includes(q);
         const matchSession =
           (item.sessionQueue?.toLowerCase().includes(q) ?? false) ||
-          (item.sessionReference?.toLowerCase().includes(q) ?? false);
+          (item.sessionReference?.toLowerCase().includes(q) ?? false) ||
+          (item.targetStaffId?.toLowerCase().includes(q) ?? false) ||
+          (item.targetName?.toLowerCase().includes(q) ?? false);
         const matchAction =
           item.action.toLowerCase().includes(q) ||
           item.actionLabel.toLowerCase().includes(q);
@@ -143,6 +163,7 @@ export function SystemAuditLogs() {
   const stockCount = baseFilteredLogs.filter((l) => l.category === 'STOCK').length;
   const alertCount = baseFilteredLogs.filter((l) => l.category === 'ALERT').length;
   const authCount = baseFilteredLogs.filter((l) => l.category === 'AUTH').length;
+  const accountCount = baseFilteredLogs.filter((l) => l.category === 'ACCOUNT').length;
 
   // Final filtered logs with category tab applied
   const filteredLogs = useMemo(() => {
@@ -152,6 +173,25 @@ export function SystemAuditLogs() {
 
   const categoryBadge = (category: AuditLogItem['category']) => {
     switch (category) {
+      case 'ACCOUNT':
+        return (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 8px',
+              borderRadius: '9999px',
+              fontSize: '11px',
+              fontWeight: 600,
+              background: '#fffbeb',
+              color: '#b45309',
+              border: '1px solid #fde68a',
+            }}
+          >
+            <UserCog size={11} /> ผู้ใช้
+          </span>
+        );
       case 'AUTH':
         return (
           <span
@@ -334,6 +374,7 @@ export function SystemAuditLogs() {
                 { id: 'STOCK', label: `คลังสินค้า (${stockCount})` },
                 { id: 'ALERT', label: `แจ้งเตือน (${alertCount})` },
                 { id: 'AUTH', label: `เข้าสู่ระบบ (${authCount})` },
+                { id: 'ACCOUNT', label: `ผู้ใช้ (${accountCount})` },
               ] as const
             ).map((cat) => (
               <button
@@ -383,7 +424,7 @@ export function SystemAuditLogs() {
                 <th style={{ minWidth: '220px' }}>กิจกรรม (Action)</th>
                 <th style={{ minWidth: '160px', whiteSpace: 'nowrap' }}>ผู้ดำเนินการ (Actor)</th>
                 <th style={{ minWidth: '130px', whiteSpace: 'nowrap' }}>สาขา (Branch)</th>
-                <th style={{ width: '120px', minWidth: '120px', whiteSpace: 'nowrap' }}>คิว</th>
+                <th style={{ width: '120px', minWidth: '120px', whiteSpace: 'nowrap' }}>คิว / ผู้ใช้</th>
                 <th style={{ minWidth: '190px' }}>รายละเอียด</th>
               </tr>
             </thead>
@@ -418,7 +459,14 @@ export function SystemAuditLogs() {
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>{item.branchName}</td>
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {item.sessionQueue || item.sessionReference ? (
+                      {item.targetStaffId ? (
+                        <div title="บัญชีที่ถูกเพิ่ม/แก้ไข">
+                          <strong style={{ fontFamily: 'monospace' }}>→ {item.targetStaffId}</strong>
+                          {item.targetName && item.targetName !== item.targetStaffId && (
+                            <div style={{ fontSize: '11px', color: '#64748b' }}>{item.targetName}</div>
+                          )}
+                        </div>
+                      ) : item.sessionQueue || item.sessionReference ? (
                         <span
                           style={{
                             fontFamily: 'monospace',
@@ -477,7 +525,7 @@ export function SystemAuditLogs() {
                             maxWidth: '320px',
                           }}
                         >
-                          {JSON.stringify(item.metadata, null, 2)}
+                          {item.category === 'ACCOUNT' ? accountDetail(item.metadata) : JSON.stringify(item.metadata, null, 2)}
                         </div>
                       )}
                     </td>

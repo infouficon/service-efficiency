@@ -68,7 +68,8 @@ export function SerialScan({
     <div className="stock-note-section serial-scan">
       <strong>สแกน Serial Number ของสินค้าทุกเครื่อง ({filled}/{total})</strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
-        สแกนหรือพิมพ์ SN ของเครื่องที่หยิบจริง ทีละเครื่อง กด Enter เพื่อไปช่องถัดไป ต้องครบก่อนจึงส่งไปแคชเชียร์ได้
+        สแกนบาร์โค้ด Serial No. บนกล่องของเครื่องที่หยิบจริง ทีละเครื่อง (Mac/iPad ขึ้นต้นด้วย S, iPhone ใช้ IMEI) ให้ตรงกับที่ FileMaker เก็บ
+        กด Enter เพื่อไปช่องถัดไป ต้องครบก่อนจึงส่งไปแคชเชียร์ได้
       </p>
       {items.map((item) => (
         <div key={item.id} className="serial-scan-item">
@@ -97,7 +98,7 @@ export function SerialScan({
                   aria-label={`${itemName(item)} เครื่องที่ ${index + 1} Serial Number`}
                   aria-invalid={Boolean(why)}
                   disabled={busy}
-                  onChange={(e) => setValue(item.id as string, index, e.target.value)}
+                  onChange={(e) => setValue(item.id as string, index, e.target.value.toUpperCase())}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter') return;
                     e.preventDefault(); // a scanner ends with Enter: never submit anything by accident

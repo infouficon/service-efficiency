@@ -46,7 +46,7 @@ interface FmResponse {
 }
 /** What one Data API call is for, so its log row says so: Thai wording, the order it belongs to, the body sent. */
 interface Trace {
-  kind: 'login' | 'create' | 'logout';
+  kind: 'login' | 'create' | 'update' | 'logout';
   what: string;
   batchId: string;
   outboxId?: string;
@@ -111,6 +111,29 @@ const pickText = (source: Record<string, unknown>, keys: string[], max = 255): s
   }
   return null;
 };
+
+/**
+ * D95: what the FileMaker `ses` script answered (its result is JSON: `{ok, code, sesID, saleID, lines, message}`), as the status the
+ * admin page shows. `ALREADY_DONE` on a message that UPDATED an existing record means the bill was opened from an earlier send, so
+ * the serial numbers just sent were not used: that is not a success for the people looking at SES. Not JSON: null (nothing to say).
+ */
+export function scriptVerdict(result: string, wasUpdate: boolean): { status: 'success' | 'error'; message: string } | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || typeof (parsed as { ok?: unknown }).ok !== 'boolean') return null;
+  const r = parsed as { ok: boolean; code?: unknown; message?: unknown; saleID?: unknown; lines?: unknown };
+  const code = typeof r.code === 'string' ? r.code : '';
+  const sale = r.saleID !== undefined && r.saleID !== null && String(r.saleID) !== '' ? ` saleID ${String(r.saleID)}` : '';
+  const lines = typeof r.lines === 'number' ? ` (${r.lines} รายการ)` : '';
+  const message = typeof r.message === 'string' && r.message ? `: ${r.message}` : '';
+  if (r.ok && code === 'ALREADY_DONE' && wasUpdate)
+    return { status: 'error', message: `ALREADY_DONE${sale}: FMP เปิดบิลจากการส่งครั้งก่อนไปแล้ว SN ที่ส่งครั้งนี้ไม่ถูกใช้ (ต้องยกเลิกบิลพักเดิมใน FMP ก่อน)`.slice(0, 255) };
+  return { status: r.ok ? 'success' : 'error', message: `${code || (r.ok ? 'OK' : 'ERROR')}${sale}${lines}${message}`.slice(0, 255) };
+}
 
 /** What FileMaker says it did: `status` "success" / "error" (or a boolean). Anything else is kept as `reported`. */
 export function ackStatusOf(body: Record<string, unknown>): 'success' | 'error' | 'reported' {
@@ -309,11 +332,11 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
             token ??= await this.login(cfg, batchId);
             let out;
             try {
-              out = await this.createRecord(cfg, token, row, batchId);
+              out = await this.deliver(cfg, token, row, batchId);
             } catch (error) {
               if (!(error instanceof TokenExpired)) throw error;
               token = await this.login(cfg, batchId); // the token was dropped: once more with a new one
-              out = await this.createRecord(cfg, token, row, batchId);
+              out = await this.deliver(cfg, token, row, batchId);
             }
             await this.prisma.fmpOutbox.update({
               where: { id: row.id },
@@ -324,6 +347,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
                 fmpRecordId: out.recordId,
                 scriptResult: out.script,
                 lastError: out.scriptError,
+                ...(out.verdict ? { ackStatus: out.verdict.status, ackMessage: out.verdict.message, ackAt: new Date(), ackTimeText: null, ackReceivedAt: new Date() } : {}),
               },
             });
             result.sent += 1;
@@ -373,7 +397,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   // ---------------------------------------------------------------------------
   private async fm(
     cfg: FmpConfig,
-    method: 'POST' | 'DELETE',
+    method: 'POST' | 'PATCH' | 'DELETE',
     path: string,
     authorization: string,
     trace: Trace,
@@ -441,30 +465,71 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     throw new Error(`FileMaker login ไม่สำเร็จ (HTTP ${last?.status} ${last?.code} ${last?.message})`.trim());
   }
 
-  private async createRecord(cfg: FmpConfig, token: string, row: { id: string; reference: string; event: string; payload: string }, batchId: string) {
+  /**
+   * D95: FileMaker keeps ONE record per order: its `ses` script finds the record by the reference and needs exactly one. The first
+   * message of an order creates it; every later one (sent again after a cashier reject, or an ADMIN's "ส่งซ้ำ") updates that record's
+   * body and runs the script again, so the serial numbers scanned last are the ones FileMaker sees. A record FileMaker no longer has
+   * is created anew.
+   */
+  private async deliver(cfg: FmpConfig, token: string, row: { id: string; reference: string; event: string; payload: string }, batchId: string) {
+    const earlier = await this.prisma.fmpOutbox.findFirst({
+      where: { reference: row.reference, id: { not: row.id }, fmpRecordId: { not: null } },
+      orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
+      select: { fmpRecordId: true },
+    });
+    if (earlier?.fmpRecordId) {
+      const out = await this.writeRecord(cfg, token, row, batchId, earlier.fmpRecordId);
+      if (out !== 'missing') return out;
+      await this.record({ direction: 'SES', kind: 'record-gone', ok: false, batchId, outboxId: row.id, reference: row.reference, summary: `FileMaker ไม่มี record ${earlier.fmpRecordId} แล้ว: สร้างใหม่` });
+    }
+    const created = await this.writeRecord(cfg, token, row, batchId, null);
+    if (created === 'missing') throw new Error('FileMaker ปฏิเสธการสร้าง record');
+    return created;
+  }
+
+  /** Creates (`recordId` null) or updates one record of the `ses` layout and reads what the script answered. */
+  private async writeRecord(
+    cfg: FmpConfig,
+    token: string,
+    row: { id: string; reference: string; event: string; payload: string },
+    batchId: string,
+    recordId: string | null,
+  ) {
     const body: Record<string, unknown> = { fieldData: { [cfg.field]: row.payload } };
     if (cfg.script) {
       body.script = cfg.script;
       body['script.param'] = row.reference; // D91: the FileMaker script takes the order's reference (its "ses id") and nothing else
     }
-    const trace: Trace = {
-      kind: 'create',
-      what: `สร้าง record ใน layout ${cfg.layout} ฟิลด์ ${cfg.field} (${row.event})${cfg.script ? ` + script ${cfg.script}` : ''}`,
-      batchId,
-      outboxId: row.id,
-      reference: row.reference,
-      request: maskedJson(row.payload),
-    };
-    const res = await this.fm(cfg, 'POST', `/layouts/${encodeURIComponent(cfg.layout)}/records`, `Bearer ${token}`, trace, body);
+    const what = recordId
+      ? `แก้ record ${recordId} ใน layout ${cfg.layout} (ส่งซ้ำ ${row.event})${cfg.script ? ` + script ${cfg.script}` : ''}`
+      : `สร้าง record ใน layout ${cfg.layout} ฟิลด์ ${cfg.field} (${row.event})${cfg.script ? ` + script ${cfg.script}` : ''}`;
+    const trace: Trace = { kind: recordId ? 'update' : 'create', what, batchId, outboxId: row.id, reference: row.reference, request: maskedJson(row.payload) };
+    const path = `/layouts/${encodeURIComponent(cfg.layout)}/records${recordId ? `/${encodeURIComponent(recordId)}` : ''}`;
+    const res = await this.fm(cfg, recordId ? 'PATCH' : 'POST', path, `Bearer ${token}`, trace, body);
     if (res.status === 401 || res.code === '952') throw new TokenExpired();
+    if (recordId && res.code === '101') return 'missing' as const; // "Record is missing": deleted in FileMaker
     if (res.status !== 200 || res.code !== '0')
       throw new Error(`FileMaker ปฏิเสธ (HTTP ${res.status} ${res.code} ${res.message})`.trim());
     const scriptError = res.response.scriptError === undefined ? '0' : String(res.response.scriptError);
+    const scriptResult = cfg.script ? String(res.response.scriptResult ?? '') : null;
+    const verdict = scriptResult ? scriptVerdict(scriptResult, recordId !== null) : null;
+    if (verdict && scriptResult)
+      await this.record({
+        direction: 'IN',
+        kind: 'script',
+        ok: verdict.status === 'success',
+        batchId,
+        outboxId: row.id,
+        reference: row.reference,
+        summary: `สคริปต์ ${cfg.script} ตอบ: ${verdict.message}`.slice(0, 255),
+        response: scriptResult.slice(0, 8000),
+      });
     return {
-      recordId: res.response.recordId === undefined ? null : String(res.response.recordId).slice(0, 32),
-      script: cfg.script ? `${String(res.response.scriptResult ?? '').slice(0, 200)}` : null,
+      recordId: recordId ?? (res.response.recordId === undefined ? null : String(res.response.recordId).slice(0, 32)),
+      script: scriptResult === null ? null : scriptResult.slice(0, 200),
       // the record exists: a script error must not make SES send it again, it is only recorded
       scriptError: scriptError === '0' ? null : `script error ${scriptError}`,
+      verdict,
     };
   }
 

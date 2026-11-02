@@ -11,7 +11,7 @@ const PASSWORD = 'pa,`^;ss!x'; // special characters on purpose; 'ses:' + this i
 const padded = Buffer.from(`${USER}:${PASSWORD}`).toString('base64');
 const stripped = padded.replace(/=+$/, '');
 
-const { FMP_MAX_ATTEMPTS, ackStatusOf, maskPhone, maskedJson, parseFmpTime } = await import('../dist/fmp/fmp.service.js');
+const { FMP_MAX_ATTEMPTS, ackStatusOf, maskPhone, maskedJson, parseFmpTime, scriptVerdict } = await import('../dist/fmp/fmp.service.js');
 const CALLBACK_KEY = 'test-fmp-callback-key-0123456789abcdef0123456789';
 
 // A stand-in for the FileMaker Data API (vLatest): sessions (login / logout) and the records of one layout.
@@ -24,6 +24,8 @@ const fm = {
   recordStatus: 200,
   expireOnce: false,
   script: { result: 'ok', error: '0' },
+  bodies: new Map(), // recordId -> the last ses_body written (create or update)
+  gone: new Set(), // recordIds FileMaker no longer has
 };
 const fake = http.createServer((req, res) => {
   let raw = '';
@@ -60,7 +62,19 @@ const fake = http.createServer((req, res) => {
       if (!fm.valid.has(token)) return send(401, '952', 'Invalid FileMaker Data API token (*)');
       if (fm.recordStatus !== 200) return send(fm.recordStatus, '-1', 'Unknown error');
       fm.records += 1;
+      fm.bodies.set(String(fm.records), body.fieldData?.ses_body);
       const response = { recordId: String(fm.records), modId: '0' };
+      if (body.script) Object.assign(response, { scriptResult: fm.script.result, scriptError: fm.script.error });
+      return send(200, '0', 'OK', response);
+    }
+    const update = url.pathname.match(new RegExp(`^${base}/layouts/ses/records/(\\d+)$`));
+    if (req.method === 'PATCH' && update) {
+      const token = (req.headers.authorization ?? '').replace('Bearer ', '');
+      if (!fm.valid.has(token)) return send(401, '952', 'Invalid FileMaker Data API token (*)');
+      const id = update[1];
+      if (!fm.bodies.has(id) || fm.gone.has(id)) return send(500, '101', 'Record is missing');
+      fm.bodies.set(id, body.fieldData?.ses_body);
+      const response = { modId: '1' };
       if (body.script) Object.assign(response, { scriptResult: fm.script.result, scriptError: fm.script.error });
       return send(200, '0', 'OK', response);
     }
@@ -129,6 +143,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       fm.recordStatus = 200;
       fm.expireOnce = false;
       fm.script = { result: 'ok', error: '0' };
+      fm.gone.clear();
     };
 
     await t.test('nothing is queued or sent until FileMaker is configured', async () => {
@@ -568,6 +583,106 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.ok(await db.fmpLog.findUnique({ where: { id: 'old-log-row-test' } }), 'it runs at most every 6 hours');
       assert.equal(fmp.lastPrune, stamp);
     });
+
+    // ---- D95: one FileMaker record per order, and what the `ses` script answered ----------------------------------------
+    await t.test('a second send of the same order updates its FileMaker record (the script needs exactly one), with the new serials (D95)', async () => {
+      reset();
+      const s = await driveTo('send');
+      await fmp.tick();
+      const firstRow = await rowOf(s.reference, 'SENT_TO_CASHIER');
+      const recordsBefore = fm.records;
+      const firstBody = JSON.parse(fm.bodies.get(firstRow.fmpRecordId));
+      // the cashier sends it back, stock scans other units and sends again
+      assert.equal((await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'cashier')).status, 201);
+      for (const action of ['found', 'send']) assert.equal((await app(`/sessions/${s.id}/step`, 'POST', { action }, 'stock')).status, 201, action);
+      reset();
+      assert.deepEqual(await fmp.tick(), { sent: 1, failed: 0 });
+      assert.equal(fm.records, recordsBefore, 'no second record');
+      const patch = fm.calls.find((c) => c.method === 'PATCH');
+      assert.ok(patch, 'the record was updated');
+      assert.equal(patch.path, `/fmi/data/vLatest/databases/UFService/layouts/ses/records/${firstRow.fmpRecordId}`);
+      const rows = await db.fmpOutbox.findMany({ where: { reference: s.reference }, orderBy: { createdAt: 'asc' } });
+      assert.equal(rows.length, 2);
+      assert.equal(rows[1].fmpRecordId, firstRow.fmpRecordId, 'the second message names the same record');
+      const nowBody = JSON.parse(fm.bodies.get(firstRow.fmpRecordId));
+      assert.notDeepEqual(nowBody.items.flatMap((i) => i.sn), firstBody.items.flatMap((i) => i.sn), 'FileMaker now holds the serials scanned last');
+      assert.equal(nowBody.outboxId, rows[1].id);
+      assert.equal((await logsOf({ reference: s.reference, kind: 'update' })).length, 1);
+
+      // an ADMIN's resend updates the same record too
+      reset();
+      assert.equal((await app('/admin/fmp/resend', 'POST', { reference: s.reference }, 'admin')).status, 201);
+      await fmp.tick();
+      assert.equal(fm.records, recordsBefore);
+      assert.equal(fm.calls.filter((c) => c.method === 'PATCH').length, 1);
+
+      // a record FileMaker deleted is created anew
+      fm.gone.add(firstRow.fmpRecordId);
+      assert.equal((await app('/admin/fmp/resend', 'POST', { reference: s.reference }, 'admin')).status, 201);
+      fm.calls.length = 0;
+      await fmp.tick();
+      assert.equal(fm.records, recordsBefore + 1, 'created anew');
+      const latest = await rowOf(s.reference, 'RESEND');
+      assert.equal(latest.status, 'sent');
+      assert.equal(latest.fmpRecordId, String(fm.records));
+      assert.equal((await logsOf({ reference: s.reference, kind: 'record-gone' })).length, 1);
+      reset();
+    });
+
+    await t.test("the script's answer is shown: CREATED with the sale, an SN error, and ALREADY_DONE after a resend (D95)", async () => {
+      process.env.FMP_SCRIPT = 'ses';
+      reset();
+      fm.script = { result: JSON.stringify({ ok: true, code: 'CREATED', sesID: 'x', saleID: 'S-77', lines: 3, payments: 1 }), error: '0' };
+      const s = await driveTo('send');
+      await fmp.tick();
+      let row = await rowOf(s.reference, 'SENT_TO_CASHIER');
+      assert.equal(row.status, 'sent');
+      assert.equal(row.ackStatus, 'success');
+      assert.equal(row.ackMessage, 'CREATED saleID S-77 (3 รายการ)');
+      assert.ok(row.ackAt && row.ackReceivedAt);
+      const scriptLog = (await logsOf({ reference: s.reference, kind: 'script' })).at(-1);
+      assert.equal(scriptLog.direction, 'IN');
+      assert.equal(scriptLog.ok, true);
+      assert.match(scriptLog.summary, /สคริปต์ ses ตอบ: CREATED saleID S-77/);
+
+      // an SN FileMaker does not know: still "sent" (the record exists), but the answer is an error
+      fm.script = { result: JSON.stringify({ ok: false, code: 'SN_NOT_FOUND', sesID: 'x', message: 'SN F9X not found in stock' }), error: '0' };
+      const e = await driveTo('send');
+      await fmp.tick();
+      row = await rowOf(e.reference, 'SENT_TO_CASHIER');
+      assert.equal(row.status, 'sent');
+      assert.equal(row.ackStatus, 'error');
+      assert.equal(row.ackMessage, 'SN_NOT_FOUND: SN F9X not found in stock');
+      assert.equal((await logsOf({ reference: e.reference, kind: 'script' })).at(-1).ok, false);
+
+      // the bill was opened from the first send: a later send's serials are not used, so it is not a success
+      fm.script = { result: JSON.stringify({ ok: true, code: 'ALREADY_DONE', sesID: 'x', saleID: 'S-77' }), error: '0' };
+      assert.equal((await app('/admin/fmp/resend', 'POST', { reference: s.reference }, 'admin')).status, 201);
+      await fmp.tick();
+      row = await rowOf(s.reference, 'RESEND');
+      assert.equal(row.ackStatus, 'error');
+      assert.match(row.ackMessage, /^ALREADY_DONE saleID S-77: FMP เปิดบิลจากการส่งครั้งก่อนไปแล้ว/);
+
+      // a result that is not JSON says nothing about the order
+      fm.script = { result: 'ok', error: '0' };
+      const p = await driveTo('send');
+      await fmp.tick();
+      row = await rowOf(p.reference, 'SENT_TO_CASHIER');
+      assert.equal(row.ackStatus, null);
+      assert.equal(row.scriptResult, 'ok');
+      delete process.env.FMP_SCRIPT;
+      reset();
+    });
+
+    await t.test('reading the script answer: first send vs update, and anything that is not the script JSON (D95)', () => {
+      assert.deepEqual(scriptVerdict(JSON.stringify({ ok: true, code: 'ALREADY_DONE', saleID: 'S1' }), false), { status: 'success', message: 'ALREADY_DONE saleID S1' }, 'on a first send ALREADY_DONE is fine');
+      assert.equal(scriptVerdict(JSON.stringify({ ok: true, code: 'ALREADY_DONE', saleID: 'S1' }), true).status, 'error');
+      assert.deepEqual(scriptVerdict(JSON.stringify({ ok: false, code: 'IN_PROGRESS' }), false), { status: 'error', message: 'IN_PROGRESS' });
+      assert.deepEqual(scriptVerdict(JSON.stringify({ ok: true }), false), { status: 'success', message: 'OK' });
+      for (const junk of ['', 'ok', '[]', 'null', '{"code":"X"}', '{"ok":"yes"}']) assert.equal(scriptVerdict(junk, false), null, junk);
+      assert.ok(scriptVerdict(JSON.stringify({ ok: false, code: 'X', message: 'y'.repeat(400) }), false).message.length <= 255);
+    });
+
   } finally {
     clearEnv();
     if (world) {

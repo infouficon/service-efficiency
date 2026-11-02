@@ -69,6 +69,9 @@ const DIRECTION: Record<string, string> = { OUT: 'SES → FMP', IN: 'FMP → SES
 const KIND: Record<string, string> = {
   login: 'ขอ token (login)',
   create: 'สร้าง record',
+  update: 'แก้ record เดิม (ส่งซ้ำ)',
+  script: 'ผลสคริปต์ FMP',
+  'record-gone': 'record หายจาก FMP',
   logout: 'คืน token (logout)',
   callback: 'FMP รายงานกลับ',
   queued: 'ใส่คิวส่ง',

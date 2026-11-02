@@ -5,7 +5,7 @@ What SES sends to the FileMaker `UFService` database, when, and how it behaves w
 
 ## Contract (what the FileMaker team receives)
 
-One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest/databases/UFService/layouts/ses/records`), the field
+One record in layout `ses` **per order** (D95: the first message creates it, every later message of the same order **updates** it and runs the script again) (Data API `POST /fmi/data/vLatest/databases/UFService/layouts/ses/records`), the field
 `ses_body` holding a JSON text:
 
 ```json
@@ -43,7 +43,9 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
   `บัตรเครดิต`, `บัตรเงินผ่อน`, `ใช้มัดจำ`, `Trade In`, `U-Joy`, `Partner Mall`, or `อื่นๆ` for a method with no type yet (D89).
   Map on `paymentTypes`; `payments` says which method exactly. U-Joy points are in `points` / `burnPoints`, not here. SES stores no
   amount per method, so the cashier enters the amounts.
-- `outboxId` is unique per message: **dedupe on it** (delivery is at-least-once). `event`: `SENT_TO_CASHIER` (the order reached the
+- One record per order (D95): a second send of an order (after a cashier reject and a new scan, or an ADMIN's "ส่งซ้ำ") **updates the same
+  record**, so `ses_id` stays unique and the script sees the serial numbers scanned last. `outboxId` is unique per message (delivery is
+  at-least-once). `event`: `SENT_TO_CASHIER` (the order reached the
   cashier) or `RESEND` (an ADMIN sent an existing order again).
 - **No prices**: SES has none (D58). `partNo` is the Apple part number (the key warroom uses; the script compares it with `product_model`).
   **Serial numbers (D92):** `items[].sn` are the ones STOCK scanned when it pressed "send", exactly `quantity` per product, none repeated, none
@@ -79,6 +81,14 @@ What the script does with what SES sends, so nothing surprises anyone. These are
 | finds its record by `ses_id` and needs exactly one | an ADMIN's "send again" makes a second record with the same reference | `NOT_FOUND` (two found); pick the latest, or find by `outboxId` |
 | `staffId` read as a number | SES staff ids (numeric for ERP accounts, free text for hand-made ones) | a non-numeric id becomes 0 |
 | the bill price comes from FileMaker (`Price_Sell` of the serial's model) | SES has no price | nothing to do |
+
+## What SES reads from the script's answer (D95)
+
+When `FMP_SCRIPT` is set, the Data API returns the script's result. SES reads the script's JSON (`{ok, code, sesID, saleID, lines,
+message}`) and shows it on the order's row in Admin → ส่งไป FileMaker (and in the log): `ok:true` = success (e.g. `CREATED saleID …`),
+`ok:false` = error with its code and message (`SN_NOT_FOUND`, `SN_WRONG_BRANCH`, `SN_ALREADY_SOLD_OR_HELD`, `WRONG_PHONE` …).
+`ALREADY_DONE` when SES updated an existing record (a second send) is shown as an error: the serial numbers of that send were not used.
+Keep the result JSON as it is; a result that is not JSON is stored but not interpreted.
 
 ## Reporting back: the callback door (D90)
 

@@ -447,12 +447,20 @@ export const quoteIdent = (name: string): string => `"${name.replace(/"/g, '""')
 export const SERIAL_VIEW_COLUMNS = [
   'product_sn',
   'status',
+  'status_sub',
+  'stock_type',
   'branch_code',
+  'branch_name',
   'product_model',
   'product_upc',
   'product_name',
-  'date_transfer',
+  'qty',
+  'transfer_date',
+  'age_in_branch',
 ] as const;
+
+/** `%` and `_` typed by a person must not act as wildcards in the "branches that look like this" hint. */
+export const likePattern = (text: string): string => `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
 
 const rowsSql = (withAttrs: boolean) => `
   SELECT s.branch_code, s.product_model AS part_no, s.product_upc AS upc,
@@ -1418,6 +1426,12 @@ export class WarroomSyncService
           total: null as number | null,
           byStatus: {} as Record<string, number>,
           rows: [] as Record<string, unknown>[],
+          // only when nothing matched: what the view does hold, so a wrong branch code or part number is easy to see
+          hints: null as null | {
+            branchTotal: number | null;
+            partInOtherBranches: { branchCode: string | null; branchName: string | null; count: number }[];
+            branchesLike: { branchCode: string | null; branchName: string | null }[];
+          },
         };
         // the three columns the filter needs; without them there is nothing to look up
         if (!['product_sn', 'branch_code', 'product_model'].every((c) => columns.includes(c))) return result;
@@ -1436,6 +1450,23 @@ export class WarroomSyncService
           [branchCode, partNo],
         );
         result.rows = rows.rows as Record<string, unknown>[];
+        if (result.rows.length === 0) {
+          const name = columns.includes('branch_name') ? quoteIdent('branch_name') : 'NULL';
+          const branchTotal = await client.query<{ n: string }>(`SELECT count(*) AS n FROM mart.stock_current WHERE ${quoteIdent('branch_code')} = $1`, [branchCode]);
+          const elsewhere = await client.query<{ code: string | null; name: string | null; n: string }>(
+            `SELECT ${quoteIdent('branch_code')} AS code, ${name} AS name, count(*) AS n FROM mart.stock_current WHERE lower(${quoteIdent('product_model')}) = lower($1) GROUP BY 1, 2 ORDER BY 3 DESC, 1 LIMIT 20`,
+            [partNo],
+          );
+          const like = await client.query<{ code: string | null; name: string | null }>(
+            `SELECT DISTINCT ${quoteIdent('branch_code')} AS code, ${name} AS name FROM mart.stock_current WHERE ${quoteIdent('branch_code')} ILIKE $1 ESCAPE '\\'${columns.includes('branch_name') ? ` OR ${quoteIdent('branch_name')} ILIKE $1 ESCAPE '\\'` : ''} ORDER BY 1 LIMIT 20`,
+            [likePattern(branchCode)],
+          );
+          result.hints = {
+            branchTotal: Number(branchTotal.rows[0]?.n ?? 0),
+            partInOtherBranches: elsewhere.rows.map((r) => ({ branchCode: r.code, branchName: r.name, count: Number(r.n) })),
+            branchesLike: like.rows.map((r) => ({ branchCode: r.code, branchName: r.name })),
+          };
+        }
         return result;
       });
     } catch (error) {

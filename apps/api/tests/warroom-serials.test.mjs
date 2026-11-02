@@ -10,7 +10,9 @@ process.env.WARROOM_SYNC_MINUTES = '0'; // no background sync against the stub w
 test('serial lookup helpers: identifiers are quoted, the column list is fixed (D92)', () => {
   assert.equal(wr.quoteIdent('product_sn'), '"product_sn"');
   assert.equal(wr.quoteIdent('a"b'), '"a""b"');
-  assert.deepEqual([...wr.SERIAL_VIEW_COLUMNS], ['product_sn', 'status', 'branch_code', 'product_model', 'product_upc', 'product_name', 'date_transfer']);
+  assert.deepEqual([...wr.SERIAL_VIEW_COLUMNS], ['product_sn', 'status', 'status_sub', 'stock_type', 'branch_code', 'branch_name', 'product_model', 'product_upc', 'product_name', 'qty', 'transfer_date', 'age_in_branch']);
+  assert.equal(wr.likePattern('IS-TM'), '%IS-TM%');
+  assert.equal(wr.likePattern('50%_off\\x'), '%50\\%\\_off\\\\x%', 'wildcards typed by a person are escaped');
 });
 
 test('ADMIN looks at what warroom holds per serial number: read-only, limited, tolerant of a different view (D92)', async (t) => {
@@ -56,9 +58,12 @@ test('ADMIN looks at what warroom holds per serial number: read-only, limited, t
       await stub.query(`CREATE TABLE mart.stock_current (${columns})`);
       for (const [sql, params] of rows) await stub.query(sql, params);
     };
-    const FULL = `product_sn text, status text, branch_code text, product_model text, product_upc text, product_name text, date_transfer text, price_sell numeric`;
+    // the real view's columns (as warroom answered on 2026-11-02), with the price and cost the lookup must never show
+    const FULL = `stock_type text, snapshot_at timestamptz, no_inv text, product_sn text, product_upc text, product_name text, product_model text, product_cat text, qty int,
+      cost_before_vat numeric, price_sell numeric, age_in_stock int, age_in_branch int, status text, status_sub text, branch_code text, branch_name text, supplier_name text, transfer_date text`;
     const add = (sn, status, branch, part) => [
-      `INSERT INTO mart.stock_current (product_sn, status, branch_code, product_model, product_upc, product_name, date_transfer, price_sell) VALUES ($1,$2,$3,$4,'194253000001','iPhone Duo',NULL,99999)`,
+      `INSERT INTO mart.stock_current (stock_type, product_sn, product_upc, product_name, product_model, qty, cost_before_vat, price_sell, age_in_branch, status, status_sub, branch_code, branch_name, supplier_name)
+       VALUES ($2,$1,'194253000001','iPhone Duo',$4,1,77777,99999,12,$2,'sub',$3,'สาขา ' || $3,'SUPPLIER-X')`,
       [sn, status, branch, part],
     ];
 
@@ -78,7 +83,9 @@ test('ADMIN looks at what warroom holds per serial number: read-only, limited, t
       assert.deepEqual(res.data.byStatus, { ready: 3, transfer: 1 });
       assert.deepEqual(res.data.rows.map((r) => r.product_sn), ['F9AAA0001', 'F9AAA0002', 'F9AAA0003', 'F9AAA0004'], 'ordered by status then serial');
       assert.deepEqual(Object.keys(res.data.rows[0]), [...wr.SERIAL_VIEW_COLUMNS], 'a fixed list of columns, in order');
-      assert.ok(!JSON.stringify(res.data).includes('99999'), 'the price column is never returned');
+      for (const secret of ['99999', '77777', 'SUPPLIER-X']) assert.ok(!JSON.stringify(res.data).includes(secret), `price, cost and supplier are never returned (${secret})`);
+      assert.equal(res.data.rows[0].branch_name, 'สาขา IS-TM');
+      assert.equal(res.data.hints, null, 'hints only when nothing matched');
       assert.ok(res.data.columns.includes('price_sell'), 'the view\'s column list is shown so the team can compare');
       assert.deepEqual(res.data.missingColumns, []);
       assert.ok(res.data.ageMinutes >= 89 && res.data.ageMinutes <= 92, `snapshot is about 90 minutes old, got ${res.data.ageMinutes}`);
@@ -96,10 +103,36 @@ test('ADMIN looks at what warroom holds per serial number: read-only, limited, t
       const none = await look(q('IS-TM', 'NOPE/A'));
       assert.equal(none.status, 200);
       assert.deepEqual([none.data.total, none.data.rows], [0, []]);
+      assert.equal(none.data.hints.branchTotal, 30, 'the branch exists and holds 30 serials');
+      assert.deepEqual(none.data.hints.partInOtherBranches, []);
       const sneaky = await look(q('x', `' OR 1=1; DROP TABLE mart.stock_current; --`));
       assert.equal(sneaky.status, 200);
       assert.equal(sneaky.data.total, 0);
       assert.equal((await stub.query('SELECT count(*)::int AS n FROM mart.stock_current')).rows[0].n, 30, 'nothing was dropped or matched');
+    });
+
+    await t.test('when nothing matches, the answer says what the view does hold: the part in other branches, branches that look like the one typed (D93)', async () => {
+      await rebuild(FULL, [
+        add('AAA1', 'ready', 'IS-TM-21', 'MK2H4ZP/A'),
+        add('AAA2', 'ready', 'IS-TM-21', 'MK2H4ZP/A'),
+        add('AAA3', 'ready', 'IS-CTW', 'MK2H4ZP/A'),
+        add('AAA4', 'ready', 'IS-CTW', 'OTHER/A'),
+      ]);
+      const res = await look(q('IS-TM', 'MK2H4ZP/A'));
+      assert.equal(res.status, 200, JSON.stringify(res.data));
+      assert.equal(res.data.total, 0);
+      assert.deepEqual(res.data.hints, {
+        branchTotal: 0,
+        partInOtherBranches: [
+          { branchCode: 'IS-TM-21', branchName: 'สาขา IS-TM-21', count: 2 },
+          { branchCode: 'IS-CTW', branchName: 'สาขา IS-CTW', count: 1 },
+        ],
+        branchesLike: [{ branchCode: 'IS-TM-21', branchName: 'สาขา IS-TM-21' }],
+      });
+      // the name of the branch matches too, and a typed % is not a wildcard
+      const byName = await look(q('สาขา IS-C', 'NOPE/A'));
+      assert.deepEqual(byName.data.hints.branchesLike, [{ branchCode: 'IS-CTW', branchName: 'สาขา IS-CTW' }]);
+      assert.deepEqual((await look(q('%', 'NOPE/A'))).data.hints.branchesLike, [], 'a lone % finds nothing');
     });
 
     await t.test('a READ ONLY transaction (the one the lookup runs in) refuses writes', async () => {
@@ -118,7 +151,7 @@ test('ADMIN looks at what warroom holds per serial number: read-only, limited, t
       await rebuild(`product_sn text, branch_code text, product_model text`, [[`INSERT INTO mart.stock_current VALUES ('S1','IS-TM','P/A')`, []]]);
       const slim = await look(q('IS-TM', 'P/A'));
       assert.equal(slim.status, 200, JSON.stringify(slim.data));
-      assert.deepEqual(slim.data.missingColumns, ['status', 'product_upc', 'product_name', 'date_transfer']);
+      assert.deepEqual(slim.data.missingColumns, ['status', 'status_sub', 'stock_type', 'branch_name', 'product_upc', 'product_name', 'qty', 'transfer_date', 'age_in_branch']);
       assert.deepEqual(slim.data.rows, [{ product_sn: 'S1', branch_code: 'IS-TM', product_model: 'P/A' }]);
       assert.deepEqual(slim.data.byStatus, {});
       assert.equal(slim.data.total, null, 'no status column, no counts');

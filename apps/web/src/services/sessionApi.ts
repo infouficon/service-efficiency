@@ -48,6 +48,7 @@ export interface ApiSession {
     skuId: string;
     quantity: number;
     deducted: number;
+    serials?: { sn: string; position: number }[];
     sku: {
       id: string;
       sku: string;
@@ -152,6 +153,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       items: (s.items ?? []).map((item) => ({
         id: item.id,
         quantity: item.quantity,
+        serials: (item.serials ?? []).map((x) => x.sn),
         product: {
           id: item.sku.id,
           category: item.sku.model.product.category,
@@ -295,8 +297,13 @@ export function saveCustomerTypeApi(
       });
 }
 
-export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action });
+/** `serials` (D92) is only for `send`: the serial numbers STOCK scanned, `quantity` of them per main product. */
+export async function advanceStepApi(
+  id: string,
+  action: string,
+  serials?: { itemId: string; sn: string[] }[],
+): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', serials ? { action, serials } : { action });
   return mapApiSessionToMockSession(data);
 }
 

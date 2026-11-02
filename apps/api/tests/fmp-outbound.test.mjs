@@ -155,15 +155,27 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(payload.event, 'SENT_TO_CASHIER');
       assert.equal(payload.outboxId, row.id, 'FileMaker can dedupe by outboxId');
       assert.deepEqual(payload.branch, { code: branches.a.code, name: branches.a.name });
-      const { source, event, outboxId, queuedAt, branch, ...order } = payload;
+      const { source, event, outboxId, queuedAt, branch, version, test, createdAt, ...order } = payload;
       assert.ok(queuedAt && source && event && outboxId && branch);
+      // D92: what the FileMaker `ses` script checks before it opens a bill
+      assert.equal(version, 1);
+      assert.equal(test, false);
+      assert.match(createdAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+07:00$/, 'Thai local time with its offset');
+      assert.equal(createdAt.slice(0, 16), new Date(new Date(queuedAt).getTime() + 7 * 3_600_000).toISOString().slice(0, 16), 'the same moment as queuedAt');
       assert.deepEqual(order, JSON.parse(JSON.stringify(await posOrder(first.reference))), 'the same view as the POS door, not a second copy');
       assert.match(order.queue, /^[A-Z]\d{3,4}$/);
       assert.equal(order.items.length, 2);
       assert.equal(order.items[0].quantity, 2);
       assert.deepEqual(order.payments.sort(), ['Cash', 'Transfer']);
       assert.deepEqual([...order.paymentTypes].sort(), ['เงินสด', 'โอนเงิน'], 'D89: the same payments by FMP type');
-      assert.ok(!/"sn"|price|ราคา/i.test(row.payload), 'no serial numbers and no prices: SES has none');
+      assert.ok(!/price|ราคา/i.test(row.payload), 'no prices: SES has none');
+      // D92: one serial number per unit, as STOCK scanned them; the script refuses a count that differs from `quantity`
+      for (const item of order.items) {
+        assert.equal(item.sn.length, item.quantity, `${item.partNo}: one serial per unit`);
+        assert.ok(item.sn.every((x) => typeof x === 'string' && x.length > 0));
+        assert.ok('upc' in item);
+      }
+      assert.equal(new Set(order.items.flatMap((i) => i.sn)).size, 3, 'three different units');
       // a step that is not "send" queues nothing more
       assert.equal(await db.fmpOutbox.count({ where: { reference: first.reference } }), 1);
     });

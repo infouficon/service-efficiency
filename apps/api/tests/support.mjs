@@ -18,6 +18,14 @@ const { hashPassword } = await import('../dist/accounts/password.js');
 
 export const PASSWORD = 'Support-test-1234';
 
+/** Unique made-up serial numbers for the items of a session: exactly `quantity` per item. */
+export function madeUpSerials(items) {
+  return items.map((item) => ({
+    itemId: item.id,
+    sn: Array.from({ length: item.quantity }, () => `T${randomUUID().replace(/-/g, '').slice(0, 11).toUpperCase()}`),
+  }));
+}
+
 /** Starts the API on a random port. Returns null (and skips `t`) when the database server is not reachable. */
 export async function startApi(t) {
   let app;
@@ -40,6 +48,14 @@ export async function startApi(t) {
   }
   const base = await app.getUrl();
   const request = async (path, method = 'GET', body, cookie = '') => {
+    // D92: a `send` step carries the serial numbers STOCK scanned. Tests that are not about serials get some made up here;
+    // a test that sends its own `serials` (even an empty list) gets exactly what it sent.
+    const stepOf = /^\/sessions\/([^/]+)\/step$/.exec(path);
+    if (method === 'POST' && stepOf && body?.action === 'send' && body.serials === undefined) {
+      const session = await request(`/sessions/${stepOf[1]}`, 'GET', undefined, cookie);
+      if (session.status === 200 && Array.isArray(session.data?.items))
+        body = { ...body, serials: madeUpSerials(session.data.items) };
+    }
     const response = await fetch(`${base}/api${path}`, {
       method,
       headers: {

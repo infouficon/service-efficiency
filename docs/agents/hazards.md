@@ -232,7 +232,7 @@ Still open:
 - **At-least-once.** A timeout after FileMaker created the record sends it again: duplicates unless FileMaker dedupes by `outboxId`.
 - **FileMaker tokens linger** (about 15 minutes idle). SES logs out after every round, and a crash between login and logout leaves one.
 - **Only the first event is sent**: a cancel or a cashier reject after "sent to cashier" is not told to FileMaker, so FileMaker can hold an order SES has cancelled.
-- **No serial numbers**; the 2 sample records made in FMP on 2026-10-29 carry invented ones.
+- **Serial numbers are what STOCK typed or scanned (D92)**: a wrong one is only caught by FileMaker's script (`SN_*` codes in the log). Orders sent before D92 have none.
 - **Credentials**: `FMP_PASSWORD` is only in Coolify; the account's password was pasted in a chat on 2026-10-29 and should be rotated by the FileMaker team after the test.
 - **The outbox grows** (one row per message with its body); nothing deletes old `sent` rows yet.
 

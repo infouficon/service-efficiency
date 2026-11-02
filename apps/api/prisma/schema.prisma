@@ -448,9 +448,25 @@ model SessionItem {
   quantity  Int             @default(1)
   deducted  Int             @default(0)
   createdAt DateTime        @default(now()) @db.DateTime(3)
+  serials   SessionItemSerial[]
 
   @@index([sessionId])
   @@index([skuId])
+}
+
+// D92: the serial numbers STOCK scanned for a main product when it sent the goods to the cashier: exactly `quantity` of them
+// per SessionItem, kept in the order scanned (`position`). The same serial can be in two sessions only when one of them is
+// over (cancelled, or sold): the service refuses it for two open sessions. Cleared when the cashier sends the order back.
+model SessionItemSerial {
+  id            String      @id @default(uuid()) @db.VarChar(36)
+  sessionItemId String      @db.VarChar(36)
+  item          SessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Cascade)
+  sn            String      @db.VarChar(64)
+  position      Int
+  createdAt     DateTime    @default(now()) @db.DateTime(3)
+
+  @@unique([sessionItemId, sn])
+  @@index([sn])
 }
 
 model SessionAccessory {

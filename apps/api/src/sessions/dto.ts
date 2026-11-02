@@ -49,9 +49,30 @@ export class CreateSessionDto {
   customerTypeId?: string;
 }
 
+/** D92: the serial numbers scanned for one main product (`itemId` = the SessionItem), exactly `quantity` of them. */
+export class StepSerialsDto {
+  @IsString()
+  @MaxLength(36)
+  itemId!: string;
+
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  sn!: string[];
+}
+
 export class AdvanceStepDto {
   @IsIn(STEP_ACTIONS)
   action!: StepAction;
+
+  /** D92: required by `send` when the order has main products; ignored by every other action. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => StepSerialsDto)
+  serials?: StepSerialsDto[];
 }
 
 export class NotBuyDto {

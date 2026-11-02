@@ -1475,6 +1475,62 @@ export class WarroomSyncService
     }
   }
 
+  /**
+   * ADMIN diagnostic (D93): what branch codes (`what = 'branches'`) or part numbers of one branch (`what = 'parts'`) warroom holds, by
+   * counting the per-serial view (`mart.stock_current`) and the aggregated one the sync reads (`mart.stock_mv`) side by side, so a
+   * code or a part that one of them spells differently from SES and FileMaker shows up. Counts only, at most 60 rows, read-only.
+   */
+  async listWarroom(what: 'branches' | 'parts', branchCode?: string) {
+    const url = this.url();
+    if (!url) throw new BadRequestException('ยังไม่ได้ตั้งค่า WARROOM_DATABASE_URL');
+    try {
+      return await withWarroom(url, async (client) => {
+        const hasName = (
+          await client.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'mart' AND table_name = 'stock_current' AND column_name = 'branch_name'`)
+        ).rowCount;
+        const name = hasName ? 'max(branch_name)' : 'NULL';
+        if (what === 'branches') {
+          const serials = await client.query<{ code: string | null; name: string | null; n: string }>(
+            `SELECT branch_code AS code, ${name} AS name, count(*) AS n FROM mart.stock_current GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT 60`,
+          );
+          const mv = await client.query<{ code: string | null; q: string }>(
+            `SELECT branch_code AS code, COALESCE(sum(qty), 0) AS q FROM mart.stock_mv GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 60`,
+          );
+          const rows = new Map<string, { branchCode: string | null; branchName: string | null; serialsInStockCurrent: number; qtyInStockMv: number }>();
+          const at = (code: string | null) => {
+            const key = code ?? '(ว่าง)';
+            if (!rows.has(key)) rows.set(key, { branchCode: code, branchName: null, serialsInStockCurrent: 0, qtyInStockMv: 0 });
+            return rows.get(key)!;
+          };
+          for (const r of serials.rows) Object.assign(at(r.code), { branchName: r.name, serialsInStockCurrent: Number(r.n) });
+          for (const r of mv.rows) at(r.code).qtyInStockMv = Number(r.q);
+          return { what, rows: [...rows.values()].slice(0, 60) };
+        }
+        if (!branchCode) throw new BadRequestException('list=parts ต้องระบุ branch');
+        const serials = await client.query<{ part: string | null; name: string | null; n: string }>(
+          `SELECT product_model AS part, max(product_name) AS name, count(*) AS n FROM mart.stock_current WHERE branch_code = $1 GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT 60`,
+          [branchCode],
+        );
+        const mv = await client.query<{ part: string | null; q: string }>(
+          `SELECT product_model AS part, COALESCE(sum(qty), 0) AS q FROM mart.stock_mv WHERE branch_code = $1 GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT 60`,
+          [branchCode],
+        );
+        const rows = new Map<string, { partNo: string | null; name: string | null; serialsInStockCurrent: number; qtyInStockMv: number }>();
+        const at = (part: string | null) => {
+          const key = part ?? '(ว่าง)';
+          if (!rows.has(key)) rows.set(key, { partNo: part, name: null, serialsInStockCurrent: 0, qtyInStockMv: 0 });
+          return rows.get(key)!;
+        };
+        for (const r of serials.rows) Object.assign(at(r.part), { name: r.name, serialsInStockCurrent: Number(r.n) });
+        for (const r of mv.rows) at(r.part).qtyInStockMv = Number(r.q);
+        return { what, branch: branchCode, rows: [...rows.values()].slice(0, 60) };
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`อ่าน warroom ไม่สำเร็จ: ${safeMessage(error)}`);
+    }
+  }
+
   async status(): Promise<{
     configured: boolean;
     mode: WarroomMode;

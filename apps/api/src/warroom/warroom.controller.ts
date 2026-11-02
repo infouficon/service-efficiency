@@ -46,7 +46,9 @@ export class WarroomController {
   /**
    * D92: what warroom holds per serial number for one branch (`branch` = branch code) and one part number (`part`), at most
    * `take` (default 10, max 20) rows. A read-only look for the team to compare with FileMaker; nothing in SES uses it.
-   * Example: `/api/admin/warroom-sync/serials?branch=IS-TM&part=MK2H4ZP/A`
+   * Example: `/api/admin/warroom-sync/serials?branch=IS-TM&part=MK2H4ZP/A`. `?list=branches` shows the branch codes warroom holds
+   * and `?list=parts&branch=<code>` the part numbers of one branch (counts from both views), to see which code or part is spelled
+   * differently.
    */
   @Get('serials')
   async serials(
@@ -54,8 +56,15 @@ export class WarroomController {
     @Query('branch') branch?: string,
     @Query('part') part?: string,
     @Query('take') take?: string,
+    @Query('list') list?: string,
   ) {
     await this.admin(req);
+    // `list=branches` / `list=parts&branch=<code>`: what codes and part numbers warroom really holds (counts only)
+    if (list !== undefined) {
+      if (list !== 'branches' && list !== 'parts') throw new BadRequestException('list ต้องเป็น branches หรือ parts');
+      if (branch && branch.length > 64) throw new BadRequestException('branch ยาวเกินไป');
+      return this.sync.listWarroom(list, branch?.trim() || undefined);
+    }
     if (!branch?.trim() || !part?.trim()) throw new BadRequestException('ต้องระบุ branch (รหัสสาขา) และ part (part number)');
     if (branch.length > 64 || part.length > 64) throw new BadRequestException('branch หรือ part ยาวเกินไป');
     return this.sync.serialLookup(branch.trim(), part.trim(), take ? Number(take) : 10);

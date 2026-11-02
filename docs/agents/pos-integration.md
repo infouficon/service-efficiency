@@ -54,6 +54,7 @@ The orders of that branch (ERP `branch_code`) that have reached the cashier and 
 }
 ```
 - `reference` is the key to report back with; `queue` is what staff call the customer by (not unique across days).
+- The FileMaker message differs in one field only: its `accessories` is always empty and the list is under `accessoriesForCashier` (D97).
 - `items[].sn` are the serial numbers STOCK scanned (D92): exactly `quantity` of them once the order is at the cashier; `upc` is the warroom barcode (null if unknown).
 - `items[].partNo` is the Apple part number (SES `ProductSku.sku`, the same key warroom uses); accessories are free names (SES has no SKU for them);
   payments / Ontop / points are names; `paymentTypes` files the payments under the FileMaker payment types (D89, see fmp-outbound.md). **No prices anywhere**: SES stores none (D58/D26).

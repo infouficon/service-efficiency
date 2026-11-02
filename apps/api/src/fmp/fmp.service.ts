@@ -269,13 +269,16 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
 
   /**
    * Queues one message for FileMaker (inside the caller's transaction). Returns its id, or null when the push is not configured.
-   * The payload is the order exactly as SES describes it elsewhere, plus where it comes from.
+   * The payload is the order exactly as SES describes it elsewhere, plus where it comes from, with one difference (D97): the
+   * accessories are not bill lines for FileMaker (the shop adds them in FileMaker by hand), so `accessories` is always empty and
+   * they are listed, for information only, under `accessoriesForCashier`.
    */
   async enqueue(db: Outbox, session: FmpSession, event: string): Promise<string | null> {
     if (!this.configured()) return null;
     const id = randomUUID();
     const paymentTypes = await loadPaymentTypes(db);
     const queued = new Date();
+    const view = orderView(session, paymentTypes);
     const payload = JSON.stringify({
       source: 'SES',
       // D92: what the FileMaker `ses` script checks before it opens a bill: the contract version, `test` (false: a real order)
@@ -287,7 +290,10 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       outboxId: id,
       queuedAt: queued.toISOString(),
       branch: { code: session.branch.code, name: session.branch.name },
-      ...orderView(session, paymentTypes),
+      ...view,
+      // D97: the `ses` script refuses any order with accessories; the shop adds them in FileMaker, so they travel as a note only
+      accessories: [],
+      accessoriesForCashier: view.accessories,
     });
     await db.fmpOutbox.create({
       data: { id, sessionId: session.id, reference: session.reference, event, payload },

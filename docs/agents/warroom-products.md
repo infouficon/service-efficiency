@@ -30,6 +30,12 @@ ERP (FileMaker) ──5×/day──▶ warroom Postgres: mart.stock_mv ──rea
 `erpAsOf` is `max(snapshot_at)` of `stock_mv`: the last time a stock row changed in warroom (unchanged rows are dropped as duplicates),
 so it can be somewhat older than the real pull; that errs on the safe side (see H-32).
 
+## Serial-number lookup (D93)
+
+`GET /api/admin/warroom-sync/serials?branch=IS-TM&part=MK2H4ZP/A` (ADMIN, read-only, ≤ 20 rows) shows what `mart.stock_current` holds per
+serial number for one branch and part: the view's column list, `snapshotAt` / `ageMinutes`, the count by status and the first rows. For
+comparing with FileMaker and with what STOCK scans (D92); no workflow uses it. Test: `warroom-serials.test.mjs` (needs the Postgres stub).
+
 ## Modes (`WARROOM_STOCK_MODE`, default `shadow`; nothing runs without `WARROOM_DATABASE_URL`)
 
 | Mode | Stores ERP numbers | Creates/updates catalog | Staff screen | Manual stock edit |

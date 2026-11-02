@@ -33,7 +33,7 @@ so it can be somewhat older than the real pull; that errs on the safe side (see 
 ## Serial-number lookup (D93)
 
 `GET /api/admin/warroom-sync/serials?branch=IS-TM&part=MK2H4ZP/A` (ADMIN, read-only, ≤ 20 rows) shows what `mart.stock_current` holds per
-serial number for one branch and part: the view's column list, `snapshotAt` / `ageMinutes`, the count by status and the first rows. For
+serial number for one branch and part: the view's column list, `snapshotAt` / `ageMinutes`, the count by status and the first rows (and, when nothing matches, `hints`). `?list=branches` and `?list=parts&branch=<code>` list the branch codes / part numbers it holds, counted in `stock_current` and in `stock_mv` side by side. For
 comparing with FileMaker and with what STOCK scans (D92); no workflow uses it. Test: `warroom-serials.test.mjs` (needs the Postgres stub).
 
 ## Modes (`WARROOM_STOCK_MODE`, default `shadow`; nothing runs without `WARROOM_DATABASE_URL`)

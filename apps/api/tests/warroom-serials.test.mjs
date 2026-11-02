@@ -135,6 +135,38 @@ test('ADMIN looks at what warroom holds per serial number: read-only, limited, t
       assert.deepEqual((await look(q('%', 'NOPE/A'))).data.hints.branchesLike, [], 'a lone % finds nothing');
     });
 
+    await t.test('list=branches and list=parts show what warroom really holds, from both views side by side; counts only (D93)', async () => {
+      await rebuild(FULL, [
+        add('L1', 'ready', 'ISTUDIO-T21', 'MK2H4ZP/A'),
+        add('L2', 'ready', 'ISTUDIO-T21', 'MK2H4ZP/A'),
+        add('L3', 'ready', 'ISTUDIO-T21', 'MGEA4TH/A'),
+        add('L4', 'ready', 'IS-CTW', 'MGEA4TH/A'),
+      ]);
+      // the aggregated view the sync reads spells one branch differently
+      await stub.query(`ALTER TABLE mart.stock_mv ADD COLUMN branch_code text, ADD COLUMN product_model text, ADD COLUMN qty numeric, ADD COLUMN stock_type text`);
+      await stub.query(`DELETE FROM mart.stock_mv`);
+      await stub.query(`INSERT INTO mart.stock_mv (snapshot_at, branch_code, product_model, qty, stock_type) VALUES (now(), 'IS-TM', 'MK2H4ZP/A', 2, 'ready'), (now(), 'IS-TM', 'MGEA4TH/A', 1, 'ready'), (now(), 'IS-CTW', 'MGEA4TH/A', 1, 'ready')`);
+      const branches = await look('?list=branches');
+      assert.equal(branches.status, 200, JSON.stringify(branches.data));
+      assert.deepEqual(
+        branches.data.rows.map((r) => [r.branchCode, r.branchName, r.serialsInStockCurrent, r.qtyInStockMv]).sort((a, b) => a[0].localeCompare(b[0])),
+        [
+          ['IS-CTW', 'สาขา IS-CTW', 1, 1],
+          ['IS-TM', null, 0, 3],
+          ['ISTUDIO-T21', 'สาขา ISTUDIO-T21', 3, 0],
+        ],
+        'IS-TM exists only in the aggregated view, ISTUDIO-T21 only in the per-serial one: that is the finding',
+      );
+      const parts = await look('?list=parts&branch=ISTUDIO-T21');
+      assert.deepEqual(parts.data.rows.map((r) => [r.partNo, r.serialsInStockCurrent, r.qtyInStockMv]), [['MK2H4ZP/A', 2, 0], ['MGEA4TH/A', 1, 0]]);
+      assert.equal(parts.data.branch, 'ISTUDIO-T21');
+      assert.deepEqual((await look('?list=parts&branch=IS-TM')).data.rows.map((r) => [r.partNo, r.serialsInStockCurrent, r.qtyInStockMv]), [['MK2H4ZP/A', 0, 2], ['MGEA4TH/A', 0, 1]]);
+      assert.equal((await look('?list=parts')).status, 400, 'parts need a branch');
+      assert.equal((await look('?list=everything')).status, 400);
+      for (const secret of ['99999', '77777', 'SUPPLIER-X', 'L1']) assert.ok(!JSON.stringify(branches.data).includes(secret) && !JSON.stringify(parts.data).includes(secret), `no prices, costs, suppliers or serials in the lists (${secret})`);
+      for (const who of ['staff', 'manager']) assert.equal((await look('?list=branches', who)).status, 403, who);
+    });
+
     await t.test('a READ ONLY transaction (the one the lookup runs in) refuses writes', async () => {
       const rw = new pg.Client({ connectionString: PG_URL });
       await rw.connect();

@@ -29,6 +29,7 @@ import { OtpPanel } from './OtpPanel';
 import { FmpPanel } from './FmpPanel';
 import { ErpExtrasPanel } from './ErpExtrasPanel';
 import { StaffSheetTools } from './StaffSheetTools';
+import { branchCodeWarning } from '../../utils/branchCode';
 /** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories`, `otp` and `fmp`. */
 export type AdminSubView =
   | 'users'
@@ -771,6 +772,21 @@ export function AdminHub({
                 onChange={(e) => setBranch({ ...branch, code: e.target.value })}
               />
             </label>
+            {(() => {
+              // D94: FileMaker and warroom know a branch only by the ERP's branch code
+              const warning = branchCodeWarning(branch, branches);
+              if (!warning) return null;
+              return warning.kind === 'duplicate-of-erp' ? (
+                <Notice>
+                  มีสาขาจาก ERP รหัส <code>{branch.code.trim()}</code> อยู่แล้ว ({warning.erpName}) ให้ใช้สาขานั้นแทนการสร้างซ้ำ
+                </Notice>
+              ) : (
+                <Notice>
+                  รหัส <code>{branch.code.trim()}</code> ไม่ใช่รหัสสาขาของ ERP ออเดอร์ของสาขานี้จะส่ง FileMaker ไม่ผ่าน (WRONG_BRANCH)
+                  และไม่ได้สต็อกหรือ Serial Number จาก warroom ใช้รหัสจาก ERP เช่น {warning.examples.join(', ')} (สร้างต่อได้ ถ้าตั้งใจ)
+                </Notice>
+              );
+            })()}
             <label>
               Branch Name
               <input

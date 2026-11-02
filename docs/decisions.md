@@ -1313,3 +1313,10 @@ Owner: "ตรวจสอบ แล้วทำให้ product_sn ส่ง�
 2. **What.** A create or update that runs the script waits up to **60 s** (login, logout and finds keep 15 s). A message that is being tried again (attempt > 1) and whose order has no known FileMaker record first **looks the order up** (`_find` on `ses_id` = reference, the newest record if several) and updates it instead of creating; logged as `find`.
 3. **Guide.** `docs/agents/fmp-team-th.md`, in Thai, for the FileMaker team: why SES sends orders, the connection, every field, a step-by-step check of their `ses` / `ses_fail` scripts against what SES sends (usable as is for orders without accessories, with a payment, for a known customer), what they should change and in which order (accessories, `paymentTypes` mapping, new customers, no payment, the held bill after a cashier reject, picking the newest record, `staffId`, an index on `product_sn`), and how FileMaker reports the bill back (`POST /api/integrations/pos/bills` with the POS key moves the order to BILL_OPENED; the D90 callback only records).
 
+## D97 — Accessories are added by the shop in FileMaker; the FileMaker message carries them as a note only (2026-11-03)
+
+Owner: "อุปกรณ์เสริมไม่ต้องห่วง ให้หน้าร้านเพิ่มกันเอาเอง … ข้ามฝั่ง SES ไป". The FileMaker `ses` script refuses any order whose `accessories` is not empty (`ACCESSORIES_NOT_SUPPORTED`), and most orders have some; SES accessories are free names without SKU or serial, so they cannot become bill lines anyway.
+
+1. **What.** In the FileMaker message `accessories` is always `[]`; the accessories the customer picked are listed under `accessoriesForCashier` (`[{name, quantity}]`), for information only. The cashier adds them to the bill in FileMaker. The script needs no change.
+2. **Unchanged.** Picking accessories in SES (staff), finding them (stock), the receipt, the summary, and the U POS door (`GET /integrations/pos/orders` still lists `accessories`). This is the one place where the FileMaker message and the U POS view differ on purpose (D88 had them identical).
+

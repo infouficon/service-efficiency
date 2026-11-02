@@ -29,7 +29,8 @@ it never creates a second record (D96).
   "staffId": "1004",
   "confirmedAt": "2026-10-29T10:20:03.411Z",
   "items": [{ "partNo": "MG8G4ZP/A", "upc": "194253000001", "name": "iPhone 17 Pro 256GB Deep Blue", "quantity": 2, "sn": ["F9XXXXXXXX01", "F9XXXXXXXX02"] }],
-  "accessories": [{ "name": "Case", "quantity": 1 }],
+  "accessories": [],
+  "accessoriesForCashier": [{ "name": "Case", "quantity": 1 }],
   "payments": ["Cash", "Transfer"],
   "paymentTypes": ["เงินสด", "โอนเงิน"],
   "ontop": ["AIS"],
@@ -39,6 +40,8 @@ it never creates a second record (D96).
 }
 ```
 
+- **Accessories (D97):** `accessories` is always `[]` in the FileMaker message (the `ses` script refuses any; the shop adds them in
+  FileMaker by hand); what the customer picked is under `accessoriesForCashier` for information. The U POS door still lists them.
 - Everything from `reference` down is **the same view the U POS door serves** (`GET /api/integrations/pos/orders`), produced by one function.
 - `reference` is the key (`SES-YYYYMMDD-NNNNNN`); `queue` is what staff call the customer by. Report the bill back with
   `POST /api/integrations/pos/bills {reference, billNo, openedAt}` (docs/agents/pos-integration.md).

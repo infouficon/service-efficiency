@@ -190,7 +190,14 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(test, false);
       assert.match(createdAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+07:00$/, 'Thai local time with its offset');
       assert.equal(createdAt.slice(0, 16), new Date(new Date(queuedAt).getTime() + 7 * 3_600_000).toISOString().slice(0, 16), 'the same moment as queuedAt');
-      assert.deepEqual(order, JSON.parse(JSON.stringify(await posOrder(first.reference))), 'the same view as the POS door, not a second copy');
+      // the same view as the POS door, not a second copy; except the accessories (D97): never bill lines for FileMaker, only a note
+      const door = JSON.parse(JSON.stringify(await posOrder(first.reference)));
+      const { accessories: sentAccessories, accessoriesForCashier, ...rest } = order;
+      const { accessories: doorAccessories, ...doorRest } = door;
+      assert.deepEqual(rest, doorRest, 'the same view as the POS door, not a second copy');
+      assert.deepEqual(sentAccessories, [], 'FileMaker gets no accessory lines (its script refuses them; the shop adds them by hand)');
+      assert.deepEqual(accessoriesForCashier, doorAccessories, 'they are still there to read');
+      assert.deepEqual(accessoriesForCashier, [{ name: 'Case', quantity: 1 }]);
       assert.match(order.queue, /^[A-Z]\d{3,4}$/);
       assert.equal(order.items.length, 2);
       assert.equal(order.items[0].quantity, 2);

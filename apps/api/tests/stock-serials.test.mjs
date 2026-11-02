@@ -82,13 +82,13 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
       for (const who of ['staff', 'cashier']) assert.equal((await send(first, full(first, 10), who)).status, 403, who);
       assert.equal(await stored(first), 0);
       const serials = full(first, 10);
-      serials[0].sn[0] = `  ${serials[0].sn[0]}\n`; // a scanner often adds a line break
+      serials[0].sn[0] = `  ${serials[0].sn[0].toLowerCase()}\n`; // a scanner often adds a line break; typed in lower case
       const res = await send(first, serials);
       assert.equal(res.status, 201, JSON.stringify(res.data));
       assert.equal(res.data.state, 'SENT_TO_CASHIER');
       assert.equal(await stored(first), 3);
       const detail = (await app(`/sessions/${first.id}`, 'GET', undefined, 'staff')).data;
-      assert.deepEqual(itemOf(detail, skuA).serials.map((x) => x.sn), [snOf(10), snOf(11)], 'in the order scanned, trimmed');
+      assert.deepEqual(itemOf(detail, skuA).serials.map((x) => x.sn), [snOf(10), snOf(11)], 'in the order scanned, trimmed, in capitals like FileMaker (D95)');
       assert.deepEqual(itemOf(detail, skuB).serials.map((x) => x.sn), [snOf(12)]);
     });
 

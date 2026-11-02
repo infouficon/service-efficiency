@@ -607,7 +607,8 @@ export class SessionsService {
     for (const entry of given) {
       if (!items.some((i) => i.id === entry.itemId)) throw new BadRequestException(`ไม่พบรายการสินค้า ${entry.itemId} ในออเดอร์นี้`);
       if (byItem.has(entry.itemId)) throw new BadRequestException('ส่ง Serial Number ของสินค้ารายการเดียวกันมากกว่าหนึ่งชุด');
-      byItem.set(entry.itemId, entry.sn.map((sn) => sn.trim()));
+      // D95: FileMaker keeps serial numbers in capitals (Apple serials, IMEIs): a typed lower-case one would never match
+      byItem.set(entry.itemId, entry.sn.map((sn) => sn.trim().toUpperCase()));
     }
     const seen = new Set<string>();
     const out: { itemId: string; sn: string[] }[] = [];

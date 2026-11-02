@@ -440,6 +440,20 @@ async function withWarroom<T>(
   }
 }
 
+/** `"name"` as a Postgres identifier (the names come from the database's own column list, never from a request). */
+export const quoteIdent = (name: string): string => `"${name.replace(/"/g, '""')}"`;
+
+/** The columns of the serial-number view the lookup shows, in this order, when the view has them (D92). */
+export const SERIAL_VIEW_COLUMNS = [
+  'product_sn',
+  'status',
+  'branch_code',
+  'product_model',
+  'product_upc',
+  'product_name',
+  'date_transfer',
+] as const;
+
 const rowsSql = (withAttrs: boolean) => `
   SELECT s.branch_code, s.product_model AS part_no, s.product_upc AS upc,
          max(s.product_name) AS product_name, max(s.product_cat) AS cat,
@@ -1373,6 +1387,61 @@ export class WarroomSyncService
       { timeout: 120_000, maxWait: 10_000 },
     );
     return counts;
+  }
+
+  /**
+   * ADMIN diagnostic (D92): what warroom holds per serial number for one branch and one part number, so the team can compare it
+   * with FileMaker and with what STOCK scans (format, status, age). Read-only like the sync (`BEGIN READ ONLY`, 20 s timeout), at
+   * most 20 rows, a fixed list of columns, no free SQL. The view's column list is returned too, so a name that is not there shows
+   * up as such instead of an error. Not used by any workflow.
+   */
+  async serialLookup(branchCode: string, partNo: string, take = 10) {
+    const url = this.url();
+    if (!url) throw new BadRequestException('ยังไม่ได้ตั้งค่า WARROOM_DATABASE_URL');
+    const limit = Math.min(Math.max(Math.trunc(take) || 10, 1), 20);
+    try {
+      return await withWarroom(url, async (client) => {
+        const cols = await client.query<{ column_name: string }>(
+          `SELECT column_name FROM information_schema.columns WHERE table_schema = 'mart' AND table_name = 'stock_current' ORDER BY ordinal_position`,
+        );
+        const columns = cols.rows.map((r) => r.column_name);
+        const shown = SERIAL_VIEW_COLUMNS.filter((c) => columns.includes(c));
+        const missing = SERIAL_VIEW_COLUMNS.filter((c) => !columns.includes(c));
+        const fresh = await client.query<{ at: Date | null }>(`SELECT max(snapshot_at) AS at FROM mart.stock_mv`);
+        const at = fresh.rows[0]?.at ?? null;
+        const result = {
+          view: 'mart.stock_current',
+          columns,
+          missingColumns: missing,
+          snapshotAt: at instanceof Date ? at.toISOString() : null,
+          ageMinutes: at instanceof Date ? Math.round((Date.now() - at.getTime()) / 60_000) : null,
+          total: null as number | null,
+          byStatus: {} as Record<string, number>,
+          rows: [] as Record<string, unknown>[],
+        };
+        // the three columns the filter needs; without them there is nothing to look up
+        if (!['product_sn', 'branch_code', 'product_model'].every((c) => columns.includes(c))) return result;
+        const where = `${quoteIdent('branch_code')} = $1 AND lower(${quoteIdent('product_model')}) = lower($2)`;
+        if (columns.includes('status')) {
+          const counts = await client.query<{ status: string | null; n: string }>(
+            `SELECT ${quoteIdent('status')} AS status, count(*) AS n FROM mart.stock_current WHERE ${where} GROUP BY 1`,
+            [branchCode, partNo],
+          );
+          for (const r of counts.rows) result.byStatus[r.status ?? '(ว่าง)'] = Number(r.n);
+          result.total = counts.rows.reduce((sum, r) => sum + Number(r.n), 0);
+        }
+        const order = columns.includes('status') ? `${quoteIdent('status')}, ${quoteIdent('product_sn')}` : quoteIdent('product_sn');
+        const rows = await client.query(
+          `SELECT ${shown.map(quoteIdent).join(', ')} FROM mart.stock_current WHERE ${where} ORDER BY ${order} LIMIT ${limit}`,
+          [branchCode, partNo],
+        );
+        result.rows = rows.rows as Record<string, unknown>[];
+        return result;
+      });
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`อ่าน warroom ไม่สำเร็จ: ${safeMessage(error)}`);
+    }
   }
 
   async status(): Promise<{

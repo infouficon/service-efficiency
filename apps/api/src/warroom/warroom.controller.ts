@@ -43,6 +43,24 @@ export class WarroomController {
     return this.sync.status();
   }
 
+  /**
+   * D92: what warroom holds per serial number for one branch (`branch` = branch code) and one part number (`part`), at most
+   * `take` (default 10, max 20) rows. A read-only look for the team to compare with FileMaker; nothing in SES uses it.
+   * Example: `/api/admin/warroom-sync/serials?branch=IS-TM&part=MK2H4ZP/A`
+   */
+  @Get('serials')
+  async serials(
+    @Req() req: Request,
+    @Query('branch') branch?: string,
+    @Query('part') part?: string,
+    @Query('take') take?: string,
+  ) {
+    await this.admin(req);
+    if (!branch?.trim() || !part?.trim()) throw new BadRequestException('ต้องระบุ branch (รหัสสาขา) และ part (part number)');
+    if (branch.length > 64 || part.length > 64) throw new BadRequestException('branch หรือ part ยาวเกินไป');
+    return this.sync.serialLookup(branch.trim(), part.trim(), take ? Number(take) : 10);
+  }
+
   /** Starts a run and returns at once (poll `status`); `wait=true` holds the response until it finished. */
   @Post('run')
   async run(

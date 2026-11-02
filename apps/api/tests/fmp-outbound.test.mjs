@@ -26,6 +26,7 @@ const fm = {
   script: { result: 'ok', error: '0' },
   bodies: new Map(), // recordId -> the last ses_body written (create or update)
   gone: new Set(), // recordIds FileMaker no longer has
+  createButFail: false, // FileMaker makes the record but SES gets an error (as when the answer times out)
 };
 const fake = http.createServer((req, res) => {
   let raw = '';
@@ -63,9 +64,20 @@ const fake = http.createServer((req, res) => {
       if (fm.recordStatus !== 200) return send(fm.recordStatus, '-1', 'Unknown error');
       fm.records += 1;
       fm.bodies.set(String(fm.records), body.fieldData?.ses_body);
+      if (fm.createButFail) return send(500, '-1', 'Timeout (made the record anyway)');
       const response = { recordId: String(fm.records), modId: '0' };
       if (body.script) Object.assign(response, { scriptResult: fm.script.result, scriptError: fm.script.error });
       return send(200, '0', 'OK', response);
+    }
+    if (req.method === 'POST' && url.pathname === `${base}/layouts/ses/_find`) {
+      const token = (req.headers.authorization ?? '').replace('Bearer ', '');
+      if (!fm.valid.has(token)) return send(401, '952', 'Invalid FileMaker Data API token (*)');
+      const wanted = String(body?.query?.[0]?.ses_id ?? '').replace(/^==/, '');
+      const data = [...fm.bodies.entries()]
+        .filter(([id, b]) => !fm.gone.has(id) && b && JSON.parse(b).reference === wanted)
+        .map(([recordId]) => ({ recordId, modId: '0', fieldData: {} }));
+      if (!data.length) return send(500, '401', 'No records match the request');
+      return send(200, '0', 'OK', { data, dataInfo: { foundCount: data.length } });
     }
     const update = url.pathname.match(new RegExp(`^${base}/layouts/ses/records/(\\d+)$`));
     if (req.method === 'PATCH' && update) {
@@ -144,6 +156,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       fm.expireOnce = false;
       fm.script = { result: 'ok', error: '0' };
       fm.gone.clear();
+      fm.createButFail = false;
     };
 
     await t.test('nothing is queued or sent until FileMaker is configured', async () => {
@@ -626,6 +639,34 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(latest.status, 'sent');
       assert.equal(latest.fmpRecordId, String(fm.records));
       assert.equal((await logsOf({ reference: s.reference, kind: 'record-gone' })).length, 1);
+      reset();
+    });
+
+    await t.test('a retry after FileMaker made the record but SES did not hear back finds that record instead of making a second (D96)', async () => {
+      reset();
+      fm.createButFail = true;
+      const s = await driveTo('send');
+      assert.deepEqual(await fmp.tick(), { sent: 0, failed: 1 });
+      const made = fm.records;
+      const row = await rowOf(s.reference);
+      assert.equal(row.status, 'pending');
+      assert.equal(row.fmpRecordId, null, 'SES never learnt the id');
+      // the next try: FileMaker answers again
+      fm.createButFail = false;
+      await db.fmpOutbox.update({ where: { id: row.id }, data: { nextAttemptAt: new Date(Date.now() - 1000) } });
+      fm.calls.length = 0;
+      assert.deepEqual(await fmp.tick(), { sent: 1, failed: 0 });
+      assert.equal(fm.records, made, 'no second record of the same order');
+      assert.ok(fm.calls.some((c) => c.method === 'POST' && c.path.endsWith('/_find')), 'looked the order up first');
+      assert.ok(fm.calls.some((c) => c.method === 'PATCH' && c.path.endsWith(`/records/${made}`)), 'and updated the record it found');
+      assert.equal((await rowOf(s.reference)).fmpRecordId, String(made));
+      assert.equal((await logsOf({ reference: s.reference, kind: 'find' })).length, 1);
+      // a first try never looks anything up
+      reset();
+      const t2 = await driveTo('send');
+      await fmp.tick();
+      assert.ok(!fm.calls.some((c) => c.path.endsWith('/_find')), 'no lookup on a first try');
+      assert.equal((await rowOf(t2.reference)).status, 'sent');
       reset();
     });
 

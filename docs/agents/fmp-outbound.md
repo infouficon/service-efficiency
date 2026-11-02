@@ -1,12 +1,16 @@
 # SES -> FileMaker: the orders SES sends (D88)
 
 What SES sends to the FileMaker `UFService` database, when, and how it behaves when FileMaker is slow or down. Decisions: D88, D89
-(payment types), D90 (log and callback), D91 (script parameter), D92 (serial numbers) in `docs/decisions.md`. Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
+(payment types), D90 (log and callback), D91 (script parameter), D92 (serial numbers), D95/D96 (one record per order, script answer,
+retries) in `docs/decisions.md`. **For the FileMaker team, in Thai:** [fmp-team-th.md](fmp-team-th.md) (why, what their `ses` script
+needs to change, how FMP reports the bill back). Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
 
 ## Contract (what the FileMaker team receives)
 
-One record in layout `ses` **per order** (D95: the first message creates it, every later message of the same order **updates** it and runs the script again) (Data API `POST /fmi/data/vLatest/databases/UFService/layouts/ses/records`), the field
-`ses_body` holding a JSON text:
+One record in layout `ses` **per order**, the field `ses_body` holding a JSON text. The first message of an order creates the record
+(Data API `POST …/layouts/ses/records`); every later message of the same order **updates** it (`PATCH …/layouts/ses/records/<recordId>`)
+and runs the script again (D95). A retry of a message that may have reached FileMaker looks the order up first (`_find` on `ses_id`), so
+it never creates a second record (D96).
 
 ```json
 {
@@ -62,7 +66,7 @@ One record in layout `ses` **per order** (D95: the first message creates it, eve
 | Situation | What SES does |
 | --- | --- |
 | Not configured (`FMP_*` unset) | queues and sends nothing |
-| FileMaker up | the worker (every 10 s) logs in once, creates one record per message, logs out |
+| FileMaker up | the worker (every 10 s) logs in once, creates the order's record (or updates it on a later send), logs out; a create or update that runs the script may take up to 60 s |
 | FileMaker down / error | retries after 1, 2, 5, 10, 20, 30, 60 min (8 attempts), then `failed`; Admin → "ส่งไป FileMaker" → "ส่งซ้ำ" |
 | Token dropped mid-round | logs in again once |
 | Script error from FileMaker | recorded, the message counts as sent (the record exists) |
@@ -133,5 +137,8 @@ direction or "only problems"; click a row for what was sent and what came back. 
 to their last four digits; rows are kept 90 days.
 
 ## Open
+For the bill itself, FileMaker can tell SES it opened the bill through the U POS door, `POST /api/integrations/pos/bills
+{reference, billNo, openedAt}` with `Authorization: Bearer <POS_API_KEY>` (the order moves to BILL_OPENED; [pos-integration.md](pos-integration.md)).
+
 Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet (a cashier reject clears the
 serial numbers in SES, the held bill in FileMaker stays). A damaged unit the cashier removes (D75) is not told either.

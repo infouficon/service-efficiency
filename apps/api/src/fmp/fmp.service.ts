@@ -16,6 +16,8 @@ const TICK_DEFAULT_SECONDS = 10;
 const BATCH = 20;
 const STALE_SENDING_MS = 5 * 60_000;
 const HTTP_TIMEOUT_MS = 15_000;
+/** D96: a create / update that runs the FileMaker script waits longer: the script looks every serial number up in a large table. */
+const SCRIPT_TIMEOUT_MS = 60_000;
 /** The admin log (D90): how long a row is kept, how often the worker clears the old ones, and the longest body kept per row. */
 const LOG_KEEP_DAYS = 90;
 const PRUNE_EVERY_MS = 6 * 3_600_000;
@@ -46,7 +48,7 @@ interface FmResponse {
 }
 /** What one Data API call is for, so its log row says so: Thai wording, the order it belongs to, the body sent. */
 interface Trace {
-  kind: 'login' | 'create' | 'update' | 'logout';
+  kind: 'login' | 'create' | 'update' | 'find' | 'logout';
   what: string;
   batchId: string;
   outboxId?: string;
@@ -402,9 +404,10 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     authorization: string,
     trace: Trace,
     body?: unknown,
+    timeoutMs = HTTP_TIMEOUT_MS,
   ): Promise<FmResponse> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), HTTP_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     const started = Date.now();
     // the path as logged: no host, and the session token that ends a logout path masked
     const logPath = `/fmi/data/vLatest/databases/${encodeURIComponent(cfg.database)}${path}`.replace(/\/sessions\/[^/]+$/, '/sessions/[token]');
@@ -439,7 +442,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       return out;
     } catch (error) {
       // never echo error.message: a runtime may quote the URL or headers in it
-      const message = error instanceof Error && error.name === 'AbortError' ? 'FileMaker ไม่ตอบภายใน 15 วินาที' : 'เชื่อมต่อ FileMaker ไม่สำเร็จ';
+      const message = error instanceof Error && error.name === 'AbortError' ? `FileMaker ไม่ตอบภายใน ${Math.round(timeoutMs / 1000)} วินาที` : 'เชื่อมต่อ FileMaker ไม่สำเร็จ';
       await this.record({ ...entry, ok: false, durationMs: Date.now() - started, summary: `${trace.what} → ${message}` });
       throw new Error(message);
     } finally {
@@ -471,20 +474,46 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
    * body and runs the script again, so the serial numbers scanned last are the ones FileMaker sees. A record FileMaker no longer has
    * is created anew.
    */
-  private async deliver(cfg: FmpConfig, token: string, row: { id: string; reference: string; event: string; payload: string }, batchId: string) {
+  private async deliver(
+    cfg: FmpConfig,
+    token: string,
+    row: { id: string; reference: string; event: string; payload: string; attempts: number },
+    batchId: string,
+  ) {
     const earlier = await this.prisma.fmpOutbox.findFirst({
       where: { reference: row.reference, id: { not: row.id }, fmpRecordId: { not: null } },
       orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
       select: { fmpRecordId: true },
     });
-    if (earlier?.fmpRecordId) {
-      const out = await this.writeRecord(cfg, token, row, batchId, earlier.fmpRecordId);
+    // D96: an earlier try of THIS message may have reached FileMaker without SES learning the record id (a timeout while the script
+    // ran): look the order up by its reference before creating, so a retry never makes a second record of the same order
+    const target = earlier?.fmpRecordId ?? (row.attempts > 0 ? await this.findRecord(cfg, token, row, batchId) : null);
+    if (target) {
+      const out = await this.writeRecord(cfg, token, row, batchId, target);
       if (out !== 'missing') return out;
-      await this.record({ direction: 'SES', kind: 'record-gone', ok: false, batchId, outboxId: row.id, reference: row.reference, summary: `FileMaker ไม่มี record ${earlier.fmpRecordId} แล้ว: สร้างใหม่` });
+      await this.record({ direction: 'SES', kind: 'record-gone', ok: false, batchId, outboxId: row.id, reference: row.reference, summary: `FileMaker ไม่มี record ${target} แล้ว: สร้างใหม่` });
     }
     const created = await this.writeRecord(cfg, token, row, batchId, null);
     if (created === 'missing') throw new Error('FileMaker ปฏิเสธการสร้าง record');
     return created;
+  }
+
+  /** The record id of the order's record in the `ses` layout (found by `ses_id` = reference), or null when there is none. */
+  private async findRecord(cfg: FmpConfig, token: string, row: { id: string; reference: string }, batchId: string): Promise<string | null> {
+    const res = await this.fm(
+      cfg,
+      'POST',
+      `/layouts/${encodeURIComponent(cfg.layout)}/_find`,
+      `Bearer ${token}`,
+      { kind: 'find', what: `ค้น record ของ ${row.reference} (ครั้งก่อนอาจไปถึง FileMaker แล้ว)`, batchId, outboxId: row.id, reference: row.reference },
+      { query: [{ ses_id: `==${row.reference}` }], limit: 5 },
+    );
+    if (res.status === 401 && res.code === '952') throw new TokenExpired();
+    if (res.code === '401') return null; // "No records match the request"
+    if (res.status !== 200 || res.code !== '0') throw new Error(`ค้น record ใน FileMaker ไม่สำเร็จ (HTTP ${res.status} ${res.code} ${res.message})`.trim());
+    const data = Array.isArray(res.response.data) ? (res.response.data as { recordId?: unknown }[]) : [];
+    const ids = data.map((d) => String(d.recordId ?? '')).filter(Boolean);
+    return ids.length ? ids.sort((a, b) => Number(b) - Number(a))[0].slice(0, 32) : null; // the newest if FileMaker has several
   }
 
   /** Creates (`recordId` null) or updates one record of the `ses` layout and reads what the script answered. */
@@ -505,7 +534,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       : `สร้าง record ใน layout ${cfg.layout} ฟิลด์ ${cfg.field} (${row.event})${cfg.script ? ` + script ${cfg.script}` : ''}`;
     const trace: Trace = { kind: recordId ? 'update' : 'create', what, batchId, outboxId: row.id, reference: row.reference, request: maskedJson(row.payload) };
     const path = `/layouts/${encodeURIComponent(cfg.layout)}/records${recordId ? `/${encodeURIComponent(recordId)}` : ''}`;
-    const res = await this.fm(cfg, recordId ? 'PATCH' : 'POST', path, `Bearer ${token}`, trace, body);
+    const res = await this.fm(cfg, recordId ? 'PATCH' : 'POST', path, `Bearer ${token}`, trace, body, cfg.script ? SCRIPT_TIMEOUT_MS : HTTP_TIMEOUT_MS);
     if (res.status === 401 || res.code === '952') throw new TokenExpired();
     if (recordId && res.code === '101') return 'missing' as const; // "Record is missing": deleted in FileMaker
     if (res.status !== 200 || res.code !== '0')

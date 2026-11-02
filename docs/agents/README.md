@@ -19,6 +19,7 @@ by reading the code. These files describe **what the code really does**; the old
 | 9 | [warroom-products.md](warroom-products.md) | products and stock read from the warroom database: modes, rules, switching on |
 | 10 | [meeting-feedback-2026-10-13.md](meeting-feedback-2026-10-13.md) | the 17 requests from the 2026-10-13 meeting (queue numbers, phone first, multiple products, receipt/QR, cancel/reject, A/B, U POS) with current behaviour, impact and open questions |
 | 12 | [fmp-outbound.md](fmp-outbound.md) | what SES sends to FileMaker (D88): the message, when, retries, what FMP must dedupe on |
+| 12a | [fmp-team-th.md](fmp-team-th.md) | ภาษาไทยสำหรับทีม FMP: ทำไมต้องเชื่อม, สคริปต์ `ses` ใช้ได้แค่ไหน ต้องปรับอะไร, การแจ้งเปิดบิลกลับมาที่ SES |
 | 11 | [pos-integration.md](pos-integration.md) | the U POS door (D60): the contract SES offers, the key, and the request to paste into `infouficon/UFPOS` |
 | — | [../adr/README.md](../adr/README.md) | when recording an architectural decision |
 

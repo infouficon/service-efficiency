@@ -12,7 +12,7 @@ export interface OrderViewSource {
   phone: string | null;
   staffId: string;
   productSelectionConfirmedAt: Date | null;
-  items: { quantity: number; sku: { sku: string; name: string } }[];
+  items: { quantity: number; sku: { sku: string; name: string; upc: string | null }; serials: { sn: string; position: number }[] }[];
   accessories: { accessoryName: string; quantity: number }[];
   payments: { method: string }[];
   ontop: { name: string }[];
@@ -36,7 +36,7 @@ export async function loadPaymentTypes(
 
 /**
  * One order as SES describes it to other systems. ONE function for every door, so what U POS reads and what FileMaker is sent
- * cannot drift apart. No prices (SES stores none, D58) and no serial numbers (SES does not capture them).
+ * cannot drift apart. No prices (SES stores none, D58). Serial numbers (`items[].sn`, D92) are the ones STOCK scanned.
  */
 export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
   return {
@@ -48,8 +48,11 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
     confirmedAt: s.productSelectionConfirmedAt,
     items: s.items.map((i) => ({
       partNo: i.sku.sku,
+      upc: i.sku.upc,
       name: i.sku.name,
       quantity: i.quantity,
+      // D92: the serial numbers STOCK scanned, in the order scanned (empty before the goods were sent to the cashier)
+      sn: [...i.serials].sort((a, b) => a.position - b.position).map((x) => x.sn),
     })),
     accessories: s.accessories.map((a) => ({
       name: a.accessoryName,

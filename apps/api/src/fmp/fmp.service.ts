@@ -20,6 +20,12 @@ const HTTP_TIMEOUT_MS = 15_000;
 const LOG_KEEP_DAYS = 90;
 const PRUNE_EVERY_MS = 6 * 3_600_000;
 const BODY_MAX = 8000;
+/** The version of the message contract; the FileMaker script refuses any other (D92). Raised only when a field changes meaning. */
+export const FMP_MESSAGE_VERSION = 1;
+/** `2026-10-29T17:31:31+07:00`: the time in Thailand with its offset. */
+export function bangkokIso(date: Date): string {
+  return `${new Date(date.getTime() + 7 * 3_600_000).toISOString().slice(0, 19)}+07:00`;
+}
 /** Where FileMaker reports back (the route is in fmp.controller.ts); shown in the log. */
 export const FMP_CALLBACK_PATH = '/api/integrations/fmp/callback';
 
@@ -244,11 +250,17 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     if (!this.configured()) return null;
     const id = randomUUID();
     const paymentTypes = await loadPaymentTypes(db);
+    const queued = new Date();
     const payload = JSON.stringify({
       source: 'SES',
+      // D92: what the FileMaker `ses` script checks before it opens a bill: the contract version, `test` (false: a real order)
+      // and `createdAt` as Thai local time with its offset (the script reads the digits as they are written)
+      version: FMP_MESSAGE_VERSION,
+      test: false,
+      createdAt: bangkokIso(queued),
       event,
       outboxId: id,
-      queuedAt: new Date().toISOString(),
+      queuedAt: queued.toISOString(),
       branch: { code: session.branch.code, name: session.branch.name },
       ...orderView(session, paymentTypes),
     });
@@ -527,7 +539,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       where: { reference },
       include: {
         branch: true,
-        items: { include: { sku: true }, orderBy: { createdAt: 'asc' } },
+        items: { include: { sku: true, serials: true }, orderBy: { createdAt: 'asc' } },
         accessories: true,
         ontop: true,
         points: true,

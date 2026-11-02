@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
+import { SerialScan, type SerialsByItem } from './SerialScan';
 import { ReasonForm } from '../session/ReasonForm';
 import { cancelReasons } from '../../constants/options';
 import type { MockSession, MockUser } from '../../types/session';
@@ -221,15 +222,18 @@ export function StockWorkspace({
     setSuccessMessage('');
   };
 
+  const [sending, setSending] = useState(false);
   const handleAction = async (
     session: MockSession,
     action: 'search' | 'found' | 'send',
+    serials?: SerialsByItem,
   ) => {
     setError('');
     setSuccessMessage('');
     if (session.id) {
+      setSending(true);
       try {
-        const updated = await advanceStepApi(session.id, action);
+        const updated = await advanceStepApi(session.id, action, serials);
         onUpdateSession(updated);
         setFoundSelection([]);
         setStockNote('');
@@ -239,6 +243,8 @@ export function StockWorkspace({
         const msg = err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ';
         setError(msg);
         return;
+      } finally {
+        setSending(false);
       }
     }
     const updated = advance(session, action, previewTime());
@@ -1177,24 +1183,29 @@ export function StockWorkspace({
                     );
                   })()}
 
-                  {selectedSession.state === 'FOUND' && (
-                    <div className="actions">
-                      <Button
-                        onClick={() => handleAction(selectedSession, 'send')}
-                      >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                          <Send size={16} />
-                          ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
-                        </span>
-                      </Button>
-                      <Button
-                        variant="danger"
-                        onClick={() => setCancellingSession(selectedSession)}
-                      >
-                        ลูกค้ายกเลิก
-                      </Button>
-                    </div>
-                  )}
+                  {selectedSession.state === 'FOUND' &&
+                    (selectedSession.id ? (
+                      // D92: the serial number of every unit is scanned before the goods go to the cashier
+                      <SerialScan
+                        key={selectedSession.id}
+                        session={selectedSession}
+                        busy={sending}
+                        onSend={(serials) => handleAction(selectedSession, 'send', serials)}
+                        onCancel={() => setCancellingSession(selectedSession)}
+                      />
+                    ) : (
+                      <div className="actions">
+                        <Button onClick={() => handleAction(selectedSession, 'send')}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <Send size={16} />
+                            ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
+                          </span>
+                        </Button>
+                        <Button variant="danger" onClick={() => setCancellingSession(selectedSession)}>
+                          ลูกค้ายกเลิก
+                        </Button>
+                      </div>
+                    ))}
                 </div>
 
                 <details className="panel" style={{ marginTop: '1rem' }}>

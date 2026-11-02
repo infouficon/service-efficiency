@@ -80,6 +80,11 @@ export function Summary({
                     {itemName(item)}{' '}
                     <strong style={{ color: '#0abab5' }}>× {item.quantity}</strong>{' '}
                     <span className="product-sku-chip">{item.product.sku || '—'}</span>
+                    {item.serials && item.serials.length > 0 && (
+                      <div className="fine muted" title="Serial Number ที่ STOCK สแกน">
+                        SN: {item.serials.join(', ')}
+                      </div>
+                    )}
                   </span>
                 </div>
               ))

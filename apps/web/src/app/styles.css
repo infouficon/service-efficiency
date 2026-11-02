@@ -2093,6 +2093,29 @@ input[aria-invalid='true'] {
 .cancel-action-row {
   margin-top: 12px;
 }
+.serial-scan-item {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.serial-scan-box {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 340px);
+  align-items: center;
+  gap: 4px 10px;
+}
+.serial-scan-box input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.02em;
+}
+.serial-scan-box input[aria-invalid='true'] {
+  border-color: #e11d48;
+}
+.serial-scan-problem {
+  grid-column: 2;
+  color: #e11d48;
+  font-size: 12px;
+}
 
 /* CASHIER MODERN DASHBOARD STYLES */
 .cashier-detail-card {

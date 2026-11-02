@@ -1,7 +1,7 @@
 # SES -> FileMaker: the orders SES sends (D88)
 
 What SES sends to the FileMaker `UFService` database, when, and how it behaves when FileMaker is slow or down. Decisions: D88, D89
-(payment types), D90 (log and callback) in `docs/decisions.md`. Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
+(payment types), D90 (log and callback), D91 (script parameter), D92 (serial numbers) in `docs/decisions.md`. Code: `apps/api/src/fmp/`, `apps/api/src/sessions/order-view.ts`, test `apps/api/tests/fmp-outbound.test.mjs`.
 
 ## Contract (what the FileMaker team receives)
 
@@ -11,6 +11,9 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
 ```json
 {
   "source": "SES",
+  "version": 1,
+  "test": false,
+  "createdAt": "2026-10-29T17:31:31+07:00",
   "event": "SENT_TO_CASHIER",
   "outboxId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
   "queuedAt": "2026-10-29T10:31:31.123Z",
@@ -21,7 +24,7 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
   "customerPhone": "0812345678",
   "staffId": "1004",
   "confirmedAt": "2026-10-29T10:20:03.411Z",
-  "items": [{ "partNo": "MG8G4ZP/A", "name": "iPhone 17 Pro 256GB Deep Blue", "quantity": 2 }],
+  "items": [{ "partNo": "MG8G4ZP/A", "upc": "194253000001", "name": "iPhone 17 Pro 256GB Deep Blue", "quantity": 2, "sn": ["F9XXXXXXXX01", "F9XXXXXXXX02"] }],
   "accessories": [{ "name": "Case", "quantity": 1 }],
   "payments": ["Cash", "Transfer"],
   "paymentTypes": ["เงินสด", "โอนเงิน"],
@@ -42,8 +45,11 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
   amount per method, so the cashier enters the amounts.
 - `outboxId` is unique per message: **dedupe on it** (delivery is at-least-once). `event`: `SENT_TO_CASHIER` (the order reached the
   cashier) or `RESEND` (an ADMIN sent an existing order again).
-- **No serial numbers and no prices**: SES has neither (stock is by part number; no price is stored, D58). `partNo` is the Apple part
-  number (the key warroom uses). `customerPhone` is personal data.
+- **No prices**: SES has none (D58). `partNo` is the Apple part number (the key warroom uses; the script compares it with `product_model`).
+  **Serial numbers (D92):** `items[].sn` are the ones STOCK scanned when it pressed "send", exactly `quantity` per product, none repeated, none
+  in another open order; they are typed or scanned as the shop reads them, so a wrong one is only caught by your script (`SN_*`). `upc` is
+  the warroom barcode (null if unknown). `version` is 1 until a field changes meaning; `test` is false for real orders; `createdAt` is the
+  moment the message was made, in Thai time with its offset (your script reads the digits as written). `customerPhone` is personal data.
 - Times are ISO 8601 UTC. Once `FMP_SCRIPT` is set (the script is named `ses`), the create call also runs it with `script.param` = the
   order's **reference** as plain text (`SES-20261030-000002`), nothing else (D91). A reference can have two records (the first send and a
   `RESEND`): take the latest, or read `outboxId` from `ses_body`. A script error is recorded in the admin log but SES does not send the
@@ -59,6 +65,20 @@ One **new record** in layout `ses` per message (Data API `POST /fmi/data/vLatest
 | Token dropped mid-round | logs in again once |
 | Script error from FileMaker | recorded, the message counts as sent (the record exists) |
 | Two containers | a message is claimed before it is sent, so one sends it |
+
+## Notes from reading the `ses` script (2026-11-02), for the FileMaker team
+
+What the script does with what SES sends, so nothing surprises anyone. These are for the FileMaker side to settle; SES changes only what is said above.
+
+| The script | SES sends | What happens |
+| --- | --- | --- |
+| `accessories` must be empty (`ACCESSORIES_NOT_SUPPORTED`) | most orders have some (free names, no SKU, no price) | those orders fail until accessories are handled or ignored |
+| `payments` is mapped by English words (Cash, Transfer, Credit Card, Installment, Deposit…) | SES method names: `Cash`, `Full Credit Card`, `0% Credit Card`, `PayNext`, `ใช้มัดจำ`, `WEB`… (ADMIN can add more) | names that do not contain those words do not map; **`paymentTypes`** (D89: เงินสด, โอนเงิน, บัตรเครดิต, บัตรเงินผ่อน, ใช้มัดจำ, Trade In, U-Joy, Partner Mall, อื่นๆ) is the field meant for this |
+| the customer must exist by phone (`customer.cust_tel`, else `WRONG_PHONE`) | the phone typed at the walk-in; new customers are not in FileMaker | a first-time customer fails |
+| `state` must be `SENT_TO_CASHIER` | `state` is the order's state at the time: a "send again" after the cashier moved on carries the later state | `INVALID_STATE` |
+| finds its record by `ses_id` and needs exactly one | an ADMIN's "send again" makes a second record with the same reference | `NOT_FOUND` (two found); pick the latest, or find by `outboxId` |
+| `staffId` read as a number | SES staff ids (numeric for ERP accounts, free text for hand-made ones) | a non-numeric id becomes 0 |
+| the bill price comes from FileMaker (`Price_Sell` of the serial's model) | SES has no price | nothing to do |
 
 ## Reporting back: the callback door (D90)
 
@@ -103,5 +123,5 @@ direction or "only problems"; click a row for what was sent and what came back. 
 to their last four digits; rows are kept 90 days.
 
 ## Open
-Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet; serial numbers need a STOCK
-step in SES (not built).
+Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet (a cashier reject clears the
+serial numbers in SES, the held bill in FileMaker stays). A damaged unit the cashier removes (D75) is not told either.

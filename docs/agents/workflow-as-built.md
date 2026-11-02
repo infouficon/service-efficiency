@@ -23,7 +23,7 @@ Source: the `STEPS` map in `apps/api/src/sessions/sessions.service.ts`, executed
 | `startSelection` | DECISION → PRODUCT_SELECTION | STAFF | `productSelectionStartAt` | PRODUCT_SELECTION_STARTED | requires `decisionAt` |
 | `search` | STOCK_REQUESTED → SEARCHING | STOCK | `stockStartedAt` | STOCK_SEARCHING | |
 | `found` | SEARCHING → FOUND | STOCK | `stockFoundAt` | STOCK_FOUND `{deducted}` | **BranchInventory.stock −quantity** for each item (D61), no floor (H-07), **unless "stock unlimited" is on (D59)**; each item's `deducted` records what was really taken, `metadata.deducted` is the total |
-| `send` | FOUND → SENT_TO_CASHIER | STOCK | — | STOCK_SENT_TO_CASHIER | |
+| `send` | FOUND → SENT_TO_CASHIER | STOCK | — | STOCK_SENT_TO_CASHIER | **D92:** body `{action:'send', serials:[{itemId, sn:[…]}]}`, exactly `quantity` serial numbers per main product, none twice, none in another open order (409); saved in `SessionItemSerial`; a cashier reject (F13) clears them. Also queues the FileMaker message (D88) |
 | `receive` | SENT_TO_CASHIER → CASHIER_RECEIVED | CASHIER | `cashierReceivedAt` | CASHIER_RECEIVED | |
 | `scan` | CASHIER_RECEIVED → CASHIER_SCAN | CASHIER | `cashierScanAt` | CASHIER_SCANNED | |
 | `bill` | CASHIER_SCAN → BILL_OPENED | CASHIER | `billOpenedAt` | BILL_OPENED | |

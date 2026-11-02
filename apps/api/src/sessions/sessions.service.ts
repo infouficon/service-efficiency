@@ -122,7 +122,10 @@ const sessionInclude = {
   customerType: { select: { id: true, letter: true, name: true } },
   // F3: the main products, in the order the staff added them, each with its SKU, model and product
   items: {
-    include: { sku: { include: { model: { include: { product: true } } } } },
+    include: {
+      sku: { include: { model: { include: { product: true } } } },
+      serials: { orderBy: { position: 'asc' } }, // D92
+    },
     orderBy: { createdAt: 'asc' },
   },
   accessories: true,
@@ -554,9 +557,13 @@ export class SessionsService {
       throw new BadRequestException('Must record BUY decision before starting selection');
     }
 
+    // D92: the goods leave stock with their serial numbers; checked before anything is written
+    const serials = dto.action === 'send' ? this.checkSerials(session.items, dto.serials) : [];
+
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
+      if (dto.action === 'send') await this.saveSerials(tx, session, serials);
       const deducted =
         dto.action === 'found'
           ? await this.takeItemsFromShelf(tx, session.branchId, session.items)
@@ -584,6 +591,70 @@ export class SessionsService {
 
       return updated;
     });
+  }
+
+  /**
+   * D92: STOCK scans the serial number of every unit when it sends the goods to the cashier (the FileMaker bill script opens the
+   * bill from them). Exactly `quantity` per main product, each printable ASCII without spaces, none twice. Returns what to save.
+   */
+  private checkSerials(
+    items: { id: string; quantity: number; sku: { name: string } }[],
+    given: { itemId: string; sn: string[] }[] | undefined,
+  ): { itemId: string; sn: string[] }[] {
+    if (!items.length) return [];
+    if (!given?.length) throw new BadRequestException('ต้องสแกน Serial Number ของสินค้าทุกเครื่องก่อนส่งไปแคชเชียร์');
+    const byItem = new Map<string, string[]>();
+    for (const entry of given) {
+      if (!items.some((i) => i.id === entry.itemId)) throw new BadRequestException(`ไม่พบรายการสินค้า ${entry.itemId} ในออเดอร์นี้`);
+      if (byItem.has(entry.itemId)) throw new BadRequestException('ส่ง Serial Number ของสินค้ารายการเดียวกันมากกว่าหนึ่งชุด');
+      byItem.set(entry.itemId, entry.sn.map((sn) => sn.trim()));
+    }
+    const seen = new Set<string>();
+    const out: { itemId: string; sn: string[] }[] = [];
+    for (const item of items) {
+      const sn = byItem.get(item.id);
+      if (!sn) throw new BadRequestException(`${item.sku.name}: ยังไม่ได้สแกน Serial Number`);
+      if (sn.length !== item.quantity)
+        throw new BadRequestException(`${item.sku.name}: ต้องสแกน ${item.quantity} เครื่อง แต่ได้ ${sn.length}`);
+      for (const one of sn) {
+        if (!/^[\x21-\x7E]{1,64}$/.test(one))
+          throw new BadRequestException(`Serial Number "${one}" ไม่ถูกต้อง (ใช้ตัวอักษรหรือตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ยาวไม่เกิน 64 ตัว)`);
+        const key = one.toLowerCase();
+        if (seen.has(key)) throw new BadRequestException(`Serial Number "${one}" ซ้ำกันในรายการที่สแกน`);
+        seen.add(key);
+      }
+      out.push({ itemId: item.id, sn });
+    }
+    return out;
+  }
+
+  /**
+   * D92: replaces the serial numbers of the session with the ones just scanned. A serial that is in another order that is still
+   * open (not cancelled, not sold) is refused: one unit cannot be promised to two customers. (Two scans at the very same moment
+   * can both pass; FileMaker's script refuses the second bill, `SN_ALREADY_SOLD_OR_HELD`.)
+   */
+  private async saveSerials(
+    tx: Prisma.TransactionClient,
+    session: { id: string },
+    serials: { itemId: string; sn: string[] }[],
+  ) {
+    if (!serials.length) return;
+    const all = serials.flatMap((s) => s.sn);
+    const taken = await tx.sessionItemSerial.findFirst({
+      where: {
+        sn: { in: all },
+        item: { session: { id: { not: session.id }, outcome: null, state: { not: 'COMPLETED' } } },
+      },
+      include: { item: { select: { session: { select: { reference: true, queueLetter: true, queueNo: true } } } } },
+    });
+    if (taken) {
+      const other = taken.item.session;
+      const queue = other.queueNo === null ? other.reference : formatQueue(other.queueLetter, other.queueNo);
+      throw new ConflictException(`Serial Number "${taken.sn}" อยู่ในออเดอร์ ${queue} ที่ยังไม่จบ`);
+    }
+    await tx.sessionItemSerial.deleteMany({ where: { item: { sessionId: session.id } } });
+    for (const { itemId, sn } of serials)
+      await tx.sessionItemSerial.createMany({ data: sn.map((one, position) => ({ sessionItemId: itemId, sn: one, position })) });
   }
 
   async recordNotBuy(user: PublicAccount, id: string, dto: NotBuyDto) {
@@ -1086,6 +1157,8 @@ export class SessionsService {
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
       await this.returnItemsToShelf(tx, session.branchId, session.items);
+      // D92: the units go back to the shelf, so the serial numbers scanned for them are no longer true; STOCK scans again
+      await tx.sessionItemSerial.deleteMany({ where: { item: { sessionId: session.id } } });
       return tx.customerSession.update({
         where: { id: session.id },
         data: {

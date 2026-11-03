@@ -236,3 +236,7 @@ Still open:
 - **Credentials**: `FMP_PASSWORD` is only in Coolify; the account's password was pasted in a chat on 2026-10-29 and should be rotated by the FileMaker team after the test.
 - **The outbox grows** (one row per message with its body); nothing deletes old `sent` rows yet.
 
+### H-38: The database is shared and Coolify's own backup is off · S2 · mitigated (2026-11-03)
+- `service_efficiency` lives on the Coolify MySQL `mysql-uat` with iMedic (`default`), `booking`, `worktrack`: another app pointed at it can damage SES (worktrack's `db push --accept-data-loss` wiped iMedic on 2026-10-30). Coolify's scheduled backup of `mysql-uat` is disabled.
+- Mitigation: the hourly dump of every database to the QNAP NAS (30 days), with retry since 2026-11-03 and a restore test from the NAS copy (32/32 tables): `docs/coolify-deployment.md` §2.5. A run that never starts (cron removed) does not alert: check `/opt/backups/imedic-mysql-backup.log`.
+

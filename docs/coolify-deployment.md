@@ -142,6 +142,23 @@
 
 ---
 
+## 2.5 Backup ฐานข้อมูล (ขึ้น NAS ทุกชั่วโมง)
+
+ฐานข้อมูล `service_efficiency` อยู่บน Coolify MySQL **`mysql-uat`** (ใช้ร่วมกับ iMedic และแอปอื่น) ซึ่ง **ปิด backup ในตัวของ Coolify อยู่**
+backup จริงคือสคริปต์บนเครื่อง Coolify (VM109) ที่ dump **ทุกฐานข้อมูล** ของ `mysql-uat` รวม `service_efficiency` ทุกชั่วโมง
+
+| เรื่อง | ค่า |
+| --- | --- |
+| สคริปต์ | `/opt/backups/imedic-mysql-backup.sh` (root, cron `30 * * * *` UTC) |
+| ไฟล์ | `service_efficiency-<YYYYmmddTHHMMZ>.sql.gz` (ไม่มี `CREATE DATABASE` กู้เข้าชื่อไหนก็ได้) |
+| ปลายทาง | QNAP NAS `…/uficon-backups/imedic-mysql/` เก็บ **30 วัน** · บนเครื่อง `/opt/backups/imedic-mysql/` เก็บ 2 วัน |
+| ตรวจ | `gzip -t`, บรรทัดท้าย `-- Dump completed`, ขนาดบน NAS เท่ากับบนเครื่อง · ล้มเหลวแจ้ง Telegram |
+| retry | ทุกคำสั่งที่คุยกับ NAS ลองซ้ำ 3 ครั้ง ห่าง 60 วินาที (เพิ่ม 2026-11-03 หลัง NAS ค้าง 12 รอบ) |
+| ทดสอบกู้คืน | 2026-11-03: ดึงไฟล์ล่าสุด **จาก NAS** โหลดเข้า MySQL 8.4 ชั่วคราว จำนวนแถวตรงกับ prod ครบ 32/32 ตาราง |
+
+วิธีกู้คืน (ห้ามโหลดทับ prod ตรงๆ): runbook ของ oracle `ψ/writing/runbooks/imedic-mysql-backup-to-nas.md` §3 ใช้ไฟล์ `service_efficiency-…` แทน `default-…`
+โหลดเข้าฐานข้อมูลชื่อใหม่ก่อน เทียบ แล้วค่อยสลับ ข้อควรระวัง: ห้ามรีสตาร์ต/สร้าง `mysql-uat` ใหม่หลังข้อมูลหาย (binlog 30 วันอยู่ใน volume)
+
 ## 3. การตรวจสอบความถูกต้อง (Verification & Troubleshooting)
 
 - **ตรวจสอบ Migration & Startup ของ API**:

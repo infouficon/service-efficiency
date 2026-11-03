@@ -1,0 +1,25 @@
+# =====================================================================
+# Script : ses_fail
+# Param  : { "code": "...", "message": "..." }
+# หน้าที่ : บันทึก ERROR ลง Inbox record ปัจจุบัน แล้วคืน JSON ให้ผู้เรียก
+# Version: v2 2026-11-03 (SES) เปลี่ยนบรรทัดเดียว มี "[SES v2]" นำหน้า
+# =====================================================================
+Set Error Capture [ On ]
+Set Variable [ $p ; Value: Get ( ScriptParameter ) ]
+Set Variable [ $code ; Value: JSONGetElement ( $p ; "code" ) ]
+Set Variable [ $msg ; Value: JSONGetElement ( $p ; "message" ) ]
+# 
+Go to Layout [ “ses” (ses) ; Animation: None ]
+# found set เดิมยังอยู่
+Set Variable [ $sesID ; Value: ses::ses_id ]
+# 
+# [SES v2] เดิม = 1 · สคริปต์ ses v2 เหลือ found set 1 record เสมอ แต่กันไว้: ใช้ record ปัจจุบันถ้ามีอย่างน้อย 1
+If [ Get ( FoundCount ) ≥ 1 ]
+	Set Field [ ses::ses_status ; "ERROR" ]
+	Set Field [ ses::ses_error ; $code & ": " & $msg ]
+	Set Field [ ses::status_at ; Get ( CurrentHostTimestamp ) ]
+	Set Field [ ses::processed_at ; Get ( CurrentHostTimestamp ) ]
+	Commit Records/Requests [ Skip data entry validation ; With dialog: Off ]
+End If
+# 
+Exit Script [ Text Result: JSONSetElement ( "{}" ;     [ "ok" ; False ; JSONBoolean ] ;     [ "code" ; $code ; JSONString ] ;     [ "sesID" ; $sesID ; JSONString ] ;     [ "message" ; $msg ; JSONString ] ) ]

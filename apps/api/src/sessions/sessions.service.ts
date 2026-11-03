@@ -533,6 +533,18 @@ export class SessionsService {
     return summary(updated);
   }
 
+  /**
+   * H-01: claims the session row inside the caller's transaction (`SELECT … FOR UPDATE`) under the same condition the method
+   * checked on its plain read. A second click or a retry waits on the lock, then reads the committed row, finds the condition
+   * false and gets 409, instead of applying the action twice (stock taken or given back twice, two events, a timestamp overwritten).
+   */
+  private async claim(tx: Prisma.TransactionClient, id: string, condition: Prisma.Sql) {
+    const rows = await tx.$queryRaw<{ id: string }[]>(
+      Prisma.sql`SELECT id FROM CustomerSession WHERE id = ${id} AND ${condition} FOR UPDATE`,
+    );
+    if (rows.length !== 1) throw new ConflictException('รายการนี้ถูกดำเนินการไปแล้ว (อาจกดซ้ำ) กรุณารีเฟรชหน้า');
+  }
+
   async advanceStep(user: PublicAccount, id: string, dto: AdvanceStepDto) {
     const session = await this.getById(user, id);
 
@@ -563,6 +575,7 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`state = ${step.from} AND outcome IS NULL`); // H-01
       if (dto.action === 'send') await this.saveSerials(tx, session, serials);
       const deducted =
         dto.action === 'found'
@@ -908,6 +921,7 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`state = 'PRODUCT_SELECTION' AND outcome IS NULL AND confirmed = false`); // H-01
       // D70: allocate queue number if not already allocated (e.g. rebuy keeps old queue)
       let customerTypeId = session.customerTypeId;
       let queueLetter = session.queueLetter;
@@ -1007,6 +1021,7 @@ export class SessionsService {
     const outOfStockItems = dto.outOfStockItems || [];
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`state = 'SEARCHING' AND outcome IS NULL`); // H-01
       if (dto.action === 'partial') {
         // Customer proceeds with remaining items: remove out of stock items and advance to FOUND
         const missing = session.items.filter(
@@ -1107,6 +1122,7 @@ export class SessionsService {
       session.productSelectionConfirmedAt !== null && !goodsPicked && user.roles.includes('STOCK');
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state <> 'COMPLETED'`); // H-01
       // Give back what FOUND took off the shelf (D41): exactly the units recorded per item (none while "stock unlimited" was on, D59)
       await this.returnItemsToShelf(tx, session.branchId, session.items);
 
@@ -1157,6 +1173,7 @@ export class SessionsService {
 
     const now = new Date();
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN')`); // H-01
       await this.returnItemsToShelf(tx, session.branchId, session.items);
       // D92: the units go back to the shelf, so the serial numbers scanned for them are no longer true; STOCK scans again
       await tx.sessionItemSerial.deleteMany({ where: { item: { sessionId: session.id } } });
@@ -1227,6 +1244,12 @@ export class SessionsService {
     ];
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN')`); // H-01
+      // the same items may have been removed by a click a moment ago: only what is still on the order counts
+      const stillThere = await tx.sessionItem.count({ where: { sessionId: session.id, id: { in: removedMainItems.map((i) => i.id) } } });
+      const accStillThere = await tx.sessionAccessory.count({ where: { sessionId: session.id, id: { in: removedAccessories.map((a) => a.id) } } });
+      if (stillThere !== removedMainItems.length || accStillThere !== removedAccessories.length)
+        throw new ConflictException('รายการนี้ถูกดำเนินการไปแล้ว (อาจกดซ้ำ) กรุณารีเฟรชหน้า');
       // Return deducted units of the removed main items to shelf
       await this.returnItemsToShelf(tx, session.branchId, removedMainItems);
 
@@ -1437,20 +1460,23 @@ export class SessionsService {
     }
 
     const now = new Date();
-    return this.prisma.customerSession.update({
-      where: { id: session.id },
-      data: {
-        stockAckAt: now,
-        stockAckBy: user.staffId,
-        events: {
-          create: {
-            eventType: 'STOCK_ACKNOWLEDGED_CANCEL',
-            actorStaffId: user.staffId,
-            createdAt: now,
+    return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome = 'CUSTOMER_CANCELLED' AND stockAckAt IS NULL`); // H-01
+      return tx.customerSession.update({
+        where: { id: session.id },
+        data: {
+          stockAckAt: now,
+          stockAckBy: user.staffId,
+          events: {
+            create: {
+              eventType: 'STOCK_ACKNOWLEDGED_CANCEL',
+              actorStaffId: user.staffId,
+              createdAt: now,
+            },
           },
         },
-      },
-      include: sessionInclude,
+        include: sessionInclude,
+      });
     });
   }
 
@@ -1577,6 +1603,7 @@ export class SessionsService {
     };
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('STOCK_REQUESTED', 'SEARCHING')`); // H-01
       // D41: a missing main product sets that SKU's branch stock to 0 (and only that one)
       await this.zeroShelf(tx, session.branchId, missingRows, now);
 
@@ -1632,6 +1659,7 @@ export class SessionsService {
     const missingAccessory = (name: string) => name.replace(/\s*\(x\d+\)$/, '').trim();
 
     return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('STOCK_REQUESTED', 'SEARCHING')`); // H-01
       if (dto.action === 'ACCEPT_PARTIAL') {
         // Remove missing accessories and main products, then take what is left off the shelf
         for (const missing of missingItems) {

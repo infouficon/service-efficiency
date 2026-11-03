@@ -14,7 +14,7 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 
 ## Top priorities
 
-1. **H-01** concurrent and duplicate actions double-apply (stock deducted twice).
+1. ~~**H-01** concurrent and duplicate actions double-apply (stock deducted twice).~~ **Fixed 2026-11-03 (D99).**
 2. **H-13** cancellation permissions differ from the confirmed matrix.
 3. **H-03** the CSRF/Origin guard is missing on the session and product mutations.
 4. **H-06** `GET /sessions` is unbounded and ignores the STAFF history rule.
@@ -22,7 +22,8 @@ When you fix an item, change its status to `fixed in <sha>/PR#`. Do not delete i
 
 ---
 
-### H-01: State is checked outside the transaction, so actions can double-apply · S1 · confirmed
+### H-01: State is checked outside the transaction, so actions can double-apply · S1 · **fixed 2026-11-03 (D99)**
+- **Fix:** every state-changing session action now claims the row first inside its transaction (`SELECT … FOR UPDATE` under the method's own precondition, `claim()` in `sessions.service.ts`); the loser of a race gets 409. Reproduced before the fix 3/3 (found, cancel, cashier reject double-applied) and passing after: `tests/double-click.test.mjs`.
 - **Where:** `apps/api/src/sessions/sessions.service.ts`: each mutating method calls `getById()` (a plain read) and then `$transaction(... update({ where: { id } }))` without re-checking state inside the transaction. Example: `advanceStep` reads with `getById`, checks `state === from`, and only then writes in `$transaction`.
 - **Impact:** a double-click or a retry of `found` deducts `BranchInventory.stock` twice and writes two `STOCK_FOUND` events, and the second request overwrites `stockFoundAt`. `cancel` and `found` racing can leave the stock off by one. This breaks state-machine.md: "Duplicate clicks/retries must not overwrite timestamps or create a second accepted transition".
 - **Fix direction:** a conditional write inside the transaction, `updateMany({ where: { id, state: from, outcome: null } })`, then treat `count === 0` as 409 Conflict (or `SELECT … FOR UPDATE` on the row). Decide the HTTP contract for a duplicate (409 or idempotent 200); that is OQ-06.

@@ -9,6 +9,7 @@ import type {
   Selection,
   Timestamp,
   WorkflowState,
+  FmpStatus,
 } from '../types/session';
 import { formatQueue } from '../features/session/workflow';
 
@@ -40,6 +41,7 @@ export interface ApiSession {
   stockAckBy?: string | null;
   posBillNo?: string | null;
   posBillOpenedAt?: string | null;
+  fmp?: FmpStatus | null;
   rebuyOf?: { id: string; reference: string } | null;
   rebuiltAs?: { id: string; reference: string } | null;
   /** F3: the main products, each with its SKU, model and product. */
@@ -144,6 +146,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     cancelledBy: s.cancelledBy || undefined,
     posBillNo: s.posBillNo || undefined,
     posBillOpenedAt: s.posBillOpenedAt || undefined,
+    fmp: s.fmp ?? null,
     stockAckAt: s.stockAckAt || undefined,
     stockAckBy: s.stockAckBy || undefined,
     rebuyOf: s.rebuyOf || undefined,

@@ -332,6 +332,40 @@ export class SessionsService {
     });
   }
 
+  /**
+   * D100: the FileMaker side of each order, for the people at the shop: the latest message SES sent for it and what FileMaker
+   * answered (the `ses` script's verdict, D95, or a report on the callback door, D90). `null` when nothing was sent (FileMaker
+   * off, or the order has not reached the cashier).
+   */
+  async withFmp<T extends { id: string }>(sessions: T[]) {
+    const ids = sessions.map((s) => s.id);
+    const rows = ids.length
+      ? await this.prisma.fmpOutbox.findMany({
+          where: { sessionId: { in: ids } },
+          orderBy: { createdAt: 'desc' },
+          select: { sessionId: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, ackReceivedAt: true, sentAt: true, createdAt: true },
+        })
+      : [];
+    const latest = new Map<string, (typeof rows)[number]>();
+    for (const r of rows) if (!latest.has(r.sessionId)) latest.set(r.sessionId, r);
+    return sessions.map((s) => {
+      const r = latest.get(s.id);
+      return {
+        ...s,
+        fmp: r
+          ? {
+              status: r.status, // pending | sending | sent | failed
+              attempts: r.attempts,
+              error: r.status === 'sent' ? null : r.lastError,
+              ackStatus: r.ackStatus, // success | error | reported | null (no answer yet)
+              ackMessage: r.ackMessage,
+              at: (r.ackReceivedAt ?? r.sentAt ?? r.createdAt).toISOString(),
+            }
+          : null,
+      };
+    });
+  }
+
   async getById(user: PublicAccount, idOrRef: string) {
     const session = await this.prisma.customerSession.findFirst({
       where: {

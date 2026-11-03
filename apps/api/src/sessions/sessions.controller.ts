@@ -38,13 +38,13 @@ export class SessionsController {
     @Query('branchId') branchId?: string,
   ) {
     const user = await this.accounts.authenticate(req);
-    return this.sessions.list(user, branchId);
+    return this.sessions.withFmp(await this.sessions.list(user, branchId));
   }
 
   @Get(':id')
   async getById(@Req() req: Request, @Param('id') id: string) {
     const user = await this.accounts.authenticate(req);
-    return this.sessions.getById(user, id);
+    return (await this.sessions.withFmp([await this.sessions.getById(user, id)]))[0];
   }
 
   @Post()

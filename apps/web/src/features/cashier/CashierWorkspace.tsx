@@ -24,7 +24,7 @@ import { ReasonForm } from '../session/ReasonForm';
 import { CashierRejectForm } from './CashierRejectForm';
 import { ChangeItemModal } from '../session/ChangeItemModal';
 import { cancelReasons, rejectReasons } from '../../constants/options';
-import { Summary } from '../session/Summary';
+import { FmpStatusLine, Summary } from '../session/Summary';
 import { ReceiptPrint } from '../session/Receipt';
 import type { MockSession, MockUser } from '../../types/session';
 import {
@@ -471,6 +471,9 @@ export function CashierWorkspace({
                     </span>
                   </div>
                 </div>
+
+                {/* D100: what FileMaker did with this order, above everything when it refused it */}
+                {selectedSession.fmp && <FmpStatusLine fmp={selectedSession.fmp} />}
 
                 {/* 2. Modern Stepper */}
                 <div className="cashier-stepper">

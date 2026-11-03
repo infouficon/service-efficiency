@@ -1328,3 +1328,10 @@ Owner: "เขาให้ไฟล์ ses.rtf มาให้เราแก้
 2. **`ses_report_bill` (new):** called by FileMaker when it issues the bill of a held bill that came from SES; posts `{reference, billNo, openedAt}` to `/api/integrations/pos/bills` with the POS key (kept in a restricted FileMaker field, never in the script) and a non-curl User-Agent: Cloudflare in front of ses.uficon.com answered 403 to curl's default user-agent and 401 (reached the API) to any other, tested 2026-11-03.
 3. **Still FileMaker's:** the PayBy labels of Trade In / U-Joy / Partner Mall / อื่นๆ, the two switches, what to do with a held bill when the cashier sends the order back (`ALREADY_DONE`), an index on `product_sn`, where to call `ses_report_bill`. Nothing here is verified inside FileMaker.
 
+## D99 — A double click or a retry applies a session action once; the loser gets 409 (2026-11-03)
+
+H-01 (S1): every session action read the session, checked its state, then wrote in a transaction without checking again, so two quick clicks (or a retry) on "found" took the units off the shelf twice, a double cancel or cashier "send back" gave them back twice, and events and timestamps were doubled. Answers OQ-06 (the HTTP contract of a duplicate).
+
+1. **What.** Each state-changing action (step `advanceStep`, `confirmPurchase`, `recordOutOfStock`, `cancelSession`, `cashierReject`, `cashierRemoveDamaged`, `acknowledgeStockCancel`, `reportStockMissing`, `resolveStockReview`) first claims the session row in its transaction: `SELECT id … WHERE id = ? AND <the method's own precondition> FOR UPDATE`. The second request waits for the lock, reads the committed row, finds the precondition false and gets **409** "รายการนี้ถูกดำเนินการไปแล้ว (อาจกดซ้ำ) กรุณารีเฟรชหน้า". A click that arrives after the first has finished still gets the old 400 from the plain read. Removing damaged items also re-counts the items inside the lock.
+2. **Proof.** `tests/double-click.test.mjs` fires each action twice at once: before the fix "found", "cancel" and "cashier reject" double-applied on every run (3/3); after it, stock moves once and there is one event.
+

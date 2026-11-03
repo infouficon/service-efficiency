@@ -1335,3 +1335,10 @@ H-01 (S1): every session action read the session, checked its state, then wrote 
 1. **What.** Each state-changing action (step `advanceStep`, `confirmPurchase`, `recordOutOfStock`, `cancelSession`, `cashierReject`, `cashierRemoveDamaged`, `acknowledgeStockCancel`, `reportStockMissing`, `resolveStockReview`) first claims the session row in its transaction: `SELECT id … WHERE id = ? AND <the method's own precondition> FOR UPDATE`. The second request waits for the lock, reads the committed row, finds the precondition false and gets **409** "รายการนี้ถูกดำเนินการไปแล้ว (อาจกดซ้ำ) กรุณารีเฟรชหน้า". A click that arrives after the first has finished still gets the old 400 from the plain read. Removing damaged items also re-counts the items inside the lock.
 2. **Proof.** `tests/double-click.test.mjs` fires each action twice at once: before the fix "found", "cancel" and "cashier reject" double-applied on every run (3/3); after it, stock moves once and there is one event.
 
+## D100 — Every order shows its FileMaker side to the shop (2026-11-03)
+
+Until now what FileMaker did with an order (delivered or not, the `ses` script's answer, D95) was visible only on the ADMIN page; a cashier could not tell that FileMaker had refused a serial number, and stock found out only when the bill did not appear.
+
+1. **What.** `GET /sessions` and `GET /sessions/:id` carry `fmp`: the order's latest message to FileMaker (`status` pending / sending / sent / failed, `attempts`, the delivery `error`) and FileMaker's answer (`ackStatus` success / error / reported, `ackMessage`), or `null` when nothing was sent. Never the message body (it carries the customer's phone).
+2. **Where.** One line "FileMaker:" in the order summary (staff, stock, cashier) and, on the cashier's order, a banner above the steps; red when FileMaker refused or the delivery failed. A serial-number refusal (`SN_…`) says what to do: send the order back to stock to scan again (the next send updates the same FileMaker record and runs the script again, D95).
+

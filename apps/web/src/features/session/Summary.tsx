@@ -6,13 +6,26 @@ import {
   Percent,
   CreditCard,
 } from 'lucide-react';
-import type { MockSession } from '../../types/session';
+import type { FmpStatus, MockSession } from '../../types/session';
+import { fmpStatusText } from './fmpStatusText';
 import { itemName } from './workflow';
 
 interface SummaryProps {
   session: MockSession;
   hideHeader?: boolean;
   title?: string;
+}
+
+/** D100: the order's FileMaker side in one line (see `fmpStatusText`). */
+export function FmpStatusLine({ fmp }: { fmp: FmpStatus | null | undefined }) {
+  const line = fmpStatusText(fmp);
+  if (!line) return null;
+  return (
+    <div className={`fmp-status fmp-status-${line.tone}`} role={line.tone === 'bad' ? 'alert' : undefined}>
+      <strong>{line.text}</strong>
+      {line.hint && <div className="fine">{line.hint}</div>}
+    </div>
+  );
 }
 
 export function Summary({
@@ -156,6 +169,14 @@ export function Summary({
                 )}
               </div>
             </div>
+            {session.fmp && (
+              <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
+                <span className="info-item-label">FileMaker:</span>
+                <span className="info-item-value">
+                  <FmpStatusLine fmp={session.fmp} />
+                </span>
+              </div>
+            )}
             {session.posBillNo && (
               <div className="info-item-row">
                 <span className="info-item-label">บิลใน U POS:</span>

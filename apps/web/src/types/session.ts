@@ -192,6 +192,8 @@ export interface MockSession {
   /** F17 (D60): the bill U POS opened for this order, as U POS reported it: its number and the real time. */
   posBillNo?: string;
   posBillOpenedAt?: string;
+  /** D100: the order's FileMaker side: the latest message SES sent and what FileMaker answered (null: nothing sent). */
+  fmp?: FmpStatus | null;
   /** F12: when and by whom stock acknowledged this cancel; absent while stock still has to act. */
   stockAckAt?: string;
   stockAckBy?: string;
@@ -219,3 +221,16 @@ export type AppView =
   | 'products'
   | 'logs'
   | 'admin';
+
+/** D100: what the shop sees of FileMaker for one order. */
+export interface FmpStatus {
+  /** delivery of SES's message: pending / sending / sent / failed */
+  status: 'pending' | 'sending' | 'sent' | 'failed';
+  attempts: number;
+  error: string | null;
+  /** FileMaker's answer (the `ses` script or a callback): success / error / reported; null = no answer yet */
+  ackStatus: 'success' | 'error' | 'reported' | null;
+  ackMessage: string | null;
+  at: string;
+}
+

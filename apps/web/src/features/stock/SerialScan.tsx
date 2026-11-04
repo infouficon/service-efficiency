@@ -1,131 +1,197 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Send } from 'lucide-react';
-import { Button, Notice } from '../../components/ui';
-import type { MockSession } from '../../types/session';
-import { itemName } from '../session/workflow';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { X } from 'lucide-react';
+import { Notice } from '../../components/ui';
+import type { MockSession, SelectionItem } from '../../types/session';
+import { addSerialApi, removeSerialApi } from '../../services/sessionApi';
+import { itemName, serialsLeft } from '../session/workflow';
 
 /** What the server accepts as a serial number (D92): printable ASCII, no spaces, 1 to 64 characters. */
 const SERIAL = /^[\x21-\x7E]{1,64}$/;
 
-export type SerialsByItem = { itemId: string; sn: string[] }[];
+type Scan = { itemId: string; sn: string };
 
 /**
- * D92: STOCK scans the serial number of every unit before sending the goods to the cashier (the FileMaker bill script opens the
- * bill from them). One box per unit, grouped by product. A barcode scanner types the number and presses Enter, which moves on to
- * the next box; the send button wakes up when every box is filled, valid and different. The server checks all of it again.
+ * D101: STOCK scans the serial number of each unit at the shelf, one at a time, and every scan is saved at once (the server
+ * stamps it), so the order's times are the real ones. One box per main product while units are left; a barcode scanner types
+ * the number and presses Enter. The box clears straight away and the scans are saved in order behind it, so a fast scanner
+ * never types into a box still waiting for the server. A wrong scan is taken back with ×. The server checks everything again
+ * (the unit is in no other open order, no repeat, not more than the quantity).
  */
 export function SerialScan({
   session,
-  busy,
-  onSend,
-  onCancel,
+  badge,
+  onSaved,
 }: {
   session: MockSession;
-  busy: boolean;
-  onSend: (serials: SerialsByItem) => void;
-  onCancel: () => void;
+  /** Marks on a product row (sent back by the cashier, the new product of a swap). */
+  badge?: (item: SelectionItem) => ReactNode;
+  /** The order as the server has it after each saved or removed scan. */
+  onSaved: (updated: MockSession) => void;
 }) {
-  const items = useMemo(() => session.selection.items.filter((item) => item.id), [session.selection.items]);
-  const [values, setValues] = useState<Record<string, string[]>>(() =>
-    Object.fromEntries(items.map((item) => [item.id as string, Array.from({ length: item.quantity }, (_, i) => item.serials?.[i] ?? '')])),
-  );
+  const items = session.selection.items.filter((item) => item.id);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [problems, setProblems] = useState<Record<string, string>>({});
+  const [queued, setQueued] = useState<Scan[]>([]);
+  const [removing, setRemoving] = useState(false);
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
-  const actions = useRef<HTMLDivElement | null>(null);
-  const order = useMemo(() => items.flatMap((item) => Array.from({ length: item.quantity }, (_, i) => `${item.id}:${i}`)), [items]);
-
-  // the first empty box is ready for the scanner as soon as the panel opens
+  const queue = useRef<Scan[]>([]);
+  const draining = useRef(false);
+  const latestOnSaved = useRef(onSaved);
   useEffect(() => {
-    const firstEmpty = order.find((key) => !(values[key.split(':')[0]]?.[Number(key.split(':')[1])] ?? '').trim());
-    boxes.current[firstEmpty ?? order[0]]?.focus();
+    latestOnSaved.current = onSaved;
+  });
+
+  const waiting = (itemId: string) => queued.filter((scan) => scan.itemId === itemId).length;
+  const left = (item: SelectionItem) => Math.max(0, serialsLeft(item) - waiting(item.id as string));
+  const firstOpen = (except?: string) => items.find((item) => item.id !== except && left(item) > 0)?.id;
+
+  // the first product with units left is ready for the scanner as soon as the panel opens
+  useEffect(() => {
+    const target = firstOpen();
+    if (target) boxes.current[target]?.focus();
     // only when the panel opens for this order
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
 
-  const all = Object.values(values).flat().map((v) => v.trim());
-  const seen = new Map<string, number>();
-  for (const v of all) if (v) seen.set(v.toLowerCase(), (seen.get(v.toLowerCase()) ?? 0) + 1);
-  const problem = (value: string): string => {
-    const v = value.trim();
-    if (!v) return '';
-    if (!SERIAL.test(v)) return 'ใช้ตัวอักษร/ตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ไม่เกิน 64 ตัว';
-    if ((seen.get(v.toLowerCase()) ?? 0) > 1) return 'ซ้ำกับเครื่องอื่นในออเดอร์นี้';
-    return '';
+  const drain = async () => {
+    if (draining.current || !session.id) return;
+    draining.current = true;
+    while (queue.current.length) {
+      const scan = queue.current[0];
+      try {
+        latestOnSaved.current(await addSerialApi(session.id, scan.itemId, scan.sn));
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ';
+        setProblems((current) => ({ ...current, [scan.itemId]: `${scan.sn}: ${message}` }));
+      }
+      queue.current = queue.current.slice(1);
+      setQueued(queue.current);
+    }
+    draining.current = false;
   };
-  const total = order.length;
-  const filled = all.filter(Boolean).length;
-  const ready = total > 0 && filled === total && all.every((v) => !problem(v));
 
-  const setValue = (itemId: string, index: number, value: string) =>
-    setValues((current) => ({ ...current, [itemId]: current[itemId].map((v, i) => (i === index ? value : v)) }));
-
-  const next = (key: string) => {
-    const after = order[order.indexOf(key) + 1];
-    if (after) boxes.current[after]?.focus();
-    else actions.current?.querySelector('button')?.focus();
+  const submit = (item: SelectionItem) => {
+    const itemId = item.id as string;
+    const sn = (values[itemId] ?? '').trim().toUpperCase();
+    if (!sn) return;
+    const problem = !SERIAL.test(sn)
+      ? 'ใช้ตัวอักษร/ตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ไม่เกิน 64 ตัว'
+      : session.selection.items.some((one) => one.serials?.some((serial) => serial.sn === sn)) ||
+          queue.current.some((scan) => scan.sn === sn)
+        ? 'สแกนเครื่องนี้ไปแล้วในออเดอร์นี้'
+        : '';
+    if (problem) {
+      setProblems((current) => ({ ...current, [itemId]: problem }));
+      return;
+    }
+    queue.current = [...queue.current, { itemId, sn }];
+    setQueued(queue.current);
+    setValues((current) => ({ ...current, [itemId]: '' }));
+    setProblems((current) => ({ ...current, [itemId]: '' }));
+    // this product is done: the scanner goes on with the next one
+    if (left(item) - 1 <= 0) {
+      const next = firstOpen(itemId);
+      if (next) boxes.current[next]?.focus();
+    }
+    void drain();
   };
+
+  const remove = async (item: SelectionItem, serialId: string) => {
+    if (!session.id) return;
+    setRemoving(true);
+    try {
+      latestOnSaved.current(await removeSerialApi(session.id, serialId));
+      setProblems((current) => ({ ...current, [item.id as string]: '' }));
+    } catch (err: unknown) {
+      setProblems((current) => ({ ...current, [item.id as string]: err instanceof Error ? err.message : 'ลบไม่สำเร็จ' }));
+    } finally {
+      setRemoving(false);
+    }
+  };
+
+  const total = items.reduce((sum, item) => sum + item.quantity, 0);
+  const saved = items.reduce((sum, item) => sum + Math.min(item.quantity, item.serials?.length ?? 0), 0);
 
   return (
     <div className="stock-note-section serial-scan">
-      <strong>สแกน Serial Number ของสินค้าทุกเครื่อง ({filled}/{total})</strong>
+      <strong>
+        สแกน Serial Number เครื่องที่หยิบจริง ({saved}/{total})
+      </strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
-        สแกนบาร์โค้ด Serial No. บนกล่องของเครื่องที่หยิบจริง ทีละเครื่อง (Mac/iPad ขึ้นต้นด้วย S, iPhone ใช้ IMEI) ให้ตรงกับที่ FileMaker เก็บ
-        กด Enter เพื่อไปช่องถัดไป ต้องครบก่อนจึงส่งไปแคชเชียร์ได้
+        สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบจากชั้น (Mac/iPad ขึ้นต้นด้วย S, iPhone ใช้ IMEI) ระบบบันทึกทันทีพร้อมเวลา
+        สแกนผิดกด × แล้วสแกนใหม่
       </p>
-      {items.map((item) => (
-        <div key={item.id} className="serial-scan-item">
-          <div>
-            <strong>{itemName(item)}</strong> <span className="muted">× {item.quantity}</span>
-            <span className="product-sku-chip" style={{ marginLeft: '6px' }}>
-              {item.product.sku || '—'}
-            </span>
-          </div>
-          {Array.from({ length: item.quantity }, (_, index) => {
-            const key = `${item.id}:${index}`;
-            const value = values[item.id as string]?.[index] ?? '';
-            const why = problem(value);
-            return (
-              <label key={key} className="serial-scan-box">
-                <span className="fine muted">เครื่องที่ {index + 1}</span>
+      {items.map((item) => {
+        const itemId = item.id as string;
+        const remaining = left(item);
+        const done = serialsLeft(item) === 0;
+        const problem = problems[itemId];
+        return (
+          <div key={itemId} className="serial-scan-item">
+            <div className="serial-scan-head">
+              <strong>{itemName(item)}</strong> <span className="muted">× {item.quantity}</span>
+              <span className="product-sku-chip">{item.product.sku || '—'}</span>
+              {badge?.(item)}
+              <span className={`status-tag ${done ? 'status-found' : 'status-searching'}`} style={{ marginLeft: 'auto' }}>
+                {done ? 'ครบแล้ว' : `สแกนแล้ว ${item.serials?.length ?? 0}/${item.quantity}`}
+              </span>
+            </div>
+            {(item.serials?.length || waiting(itemId) > 0) && (
+              <div className="serial-chips">
+                {item.serials?.map((serial) => (
+                  <span key={serial.id} className="serial-chip">
+                    {serial.sn}
+                    <button
+                      type="button"
+                      aria-label={`ลบ SN ${serial.sn}`}
+                      title="สแกนผิด ลบแล้วสแกนใหม่"
+                      disabled={removing || queued.length > 0}
+                      onClick={() => remove(item, serial.id)}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+                {queued
+                  .filter((scan) => scan.itemId === itemId)
+                  .map((scan) => (
+                    <span key={scan.sn} className="serial-chip saving">
+                      {scan.sn} · กำลังบันทึก…
+                    </span>
+                  ))}
+              </div>
+            )}
+            {remaining > 0 && (
+              <label className="serial-scan-box">
+                <span className="fine muted">
+                  เครื่องที่ {item.quantity - remaining + 1}/{item.quantity}
+                </span>
                 <input
                   ref={(element) => {
-                    boxes.current[key] = element;
+                    boxes.current[itemId] = element;
                   }}
-                  value={value}
+                  value={values[itemId] ?? ''}
                   maxLength={80}
                   autoComplete="off"
                   spellCheck={false}
+                  enterKeyHint="done"
                   placeholder="สแกน SN"
-                  aria-label={`${itemName(item)} เครื่องที่ ${index + 1} Serial Number`}
-                  aria-invalid={Boolean(why)}
-                  disabled={busy}
-                  onChange={(e) => setValue(item.id as string, index, e.target.value.toUpperCase())}
+                  aria-label={`${itemName(item)} Serial Number เครื่องที่ ${item.quantity - remaining + 1}`}
+                  aria-invalid={Boolean(problem)}
+                  onChange={(e) => setValues((current) => ({ ...current, [itemId]: e.target.value.toUpperCase() }))}
                   onKeyDown={(e) => {
                     if (e.key !== 'Enter') return;
                     e.preventDefault(); // a scanner ends with Enter: never submit anything by accident
-                    if (value.trim() && !why) next(key);
+                    submit(item);
                   }}
                 />
-                {why && <span className="serial-scan-problem">{why}</span>}
               </label>
-            );
-          })}
-        </div>
-      ))}
-      {total === 0 && <Notice>ออเดอร์นี้ไม่มีสินค้าหลักที่ต้องสแกน</Notice>}
-      <div className="actions" style={{ marginTop: '12px' }} ref={actions}>
-        <Button
-          disabled={busy || (total > 0 && !ready)}
-          onClick={() => onSend(items.map((item) => ({ itemId: item.id as string, sn: (values[item.id as string] ?? []).map((v) => v.trim()) })))}
-        >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <Send size={16} />
-            ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
-          </span>
-        </Button>
-        <Button variant="danger" onClick={onCancel}>
-          ลูกค้ายกเลิก
-        </Button>
-      </div>
+            )}
+            {problem && <span className="serial-scan-problem">{problem}</span>}
+          </div>
+        );
+      })}
+      {items.length === 0 && <Notice>ออเดอร์นี้ไม่มีสินค้าหลักที่ต้องสแกน</Notice>}
     </div>
   );
 }

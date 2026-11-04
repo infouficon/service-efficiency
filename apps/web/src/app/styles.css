@@ -2112,9 +2112,53 @@ input[aria-invalid='true'] {
   border-color: #e11d48;
 }
 .serial-scan-problem {
-  grid-column: 2;
   color: #e11d48;
   font-size: 12px;
+}
+.serial-scan-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.serial-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.serial-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  background: #ecfdf5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.serial-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border: 0;
+  background: transparent;
+  color: #b91c1c;
+  cursor: pointer;
+}
+.serial-chip button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.serial-chip.saving {
+  padding-right: 8px;
+  border-color: #e5e7eb;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.queue-card .card-actions {
+  margin-top: 8px;
 }
 
 /* CASHIER MODERN DASHBOARD STYLES */

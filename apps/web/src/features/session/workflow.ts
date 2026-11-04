@@ -156,6 +156,16 @@ export function itemLabel(item: SelectionItem): string {
   return `${itemName(item)} (x${item.quantity})`;
 }
 
+/** D101: how many units of a main product still wait for their serial number to be scanned. */
+export function serialsLeft(item: SelectionItem): number {
+  return Math.max(0, item.quantity - (item.serials?.length ?? 0));
+}
+
+/** D101: every main product has one saved serial per unit (an item that only exists in the browser has nothing to scan). */
+export function serialsComplete(session: MockSession): boolean {
+  return session.selection.items.every((item) => !item.id || serialsLeft(item) === 0);
+}
+
 /** All main products on one line: "A ×2, B". Empty when none is chosen. */
 export function itemsText(items: SelectionItem[]): string {
   return items

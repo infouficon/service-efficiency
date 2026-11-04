@@ -3,7 +3,6 @@ import {
   Package,
   Search,
   Check,
-  X,
   Send,
   Clock,
   Zap,
@@ -14,15 +13,14 @@ import {
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
-import { SerialScan, type SerialsByItem } from './SerialScan';
+import { SerialScan } from './SerialScan';
 import { ReasonForm } from '../session/ReasonForm';
 import { cancelReasons } from '../../constants/options';
-import type { MockSession, MockUser } from '../../types/session';
+import type { MockSession, MockUser, SelectionItem } from '../../types/session';
 import {
   acknowledgeStockCancelApi,
   advanceStepApi,
   cancelSessionApi,
-  recordOutOfStockApi,
   reportStockMissingApi,
 } from '../../services/sessionApi';
 import {
@@ -35,7 +33,8 @@ import {
   itemName,
   itemsText,
   needsStockAck,
-  partialFulfillStock,
+  serialsComplete,
+  serialsLeft,
 } from '../session/workflow';
 
 const previewTime = () => new Date().toISOString();
@@ -223,17 +222,13 @@ export function StockWorkspace({
   };
 
   const [sending, setSending] = useState(false);
-  const handleAction = async (
-    session: MockSession,
-    action: 'search' | 'found' | 'send',
-    serials?: SerialsByItem,
-  ) => {
+  const handleAction = async (session: MockSession, action: 'search' | 'found' | 'send') => {
     setError('');
     setSuccessMessage('');
     if (session.id) {
       setSending(true);
       try {
-        const updated = await advanceStepApi(session.id, action, serials);
+        const updated = await advanceStepApi(session.id, action);
         onUpdateSession(updated);
         setFoundSelection([]);
         setStockNote('');
@@ -256,7 +251,33 @@ export function StockWorkspace({
     setStockNote('');
   };
 
-  /** F3: STOCK ticks what it found, item by item; the unticked main products are reported by id, accessories by name. */
+  /** D101: every unit of every main product is scanned and every accessory is ticked. */
+  const allFound = (session: MockSession, selection: string[]) => {
+    const accessories = Object.keys(session.selection.accessories);
+    return (
+      session.selection.items.length + accessories.length > 0 &&
+      serialsComplete(session) &&
+      accessories.every((name) => selection.includes(name))
+    );
+  };
+
+  /**
+   * D101: the moment the last unit is scanned (or the last accessory ticked) is the moment STOCK found everything, so FOUND is
+   * recorded then, without another tap; stock_found_at is the real time. Not while a step is on its way (the server refuses a
+   * second one anyway); the "found" button stays for a retry when it fails.
+   */
+  const recordFoundIfComplete = (session: MockSession, selection: string[]) => {
+    if (sending || !session.id || session.state !== 'SEARCHING' || session.stockPendingReview) return;
+    if (allFound(session, selection)) void handleAction(session, 'found');
+  };
+
+  const toggleAccessory = (session: MockSession, name: string) => {
+    const next = foundSelection.includes(name) ? foundSelection.filter((one) => one !== name) : [...foundSelection, name];
+    setFoundSelection(next);
+    recordFoundIfComplete(session, next);
+  };
+
+  /** F3/D101: a main product counts as found once all its units are scanned; the rest are reported by id, accessories by name. */
   const handleSendToStaff = async (session: MockSession) => {
     setError('');
     if (!session.id) return;
@@ -265,7 +286,7 @@ export function StockWorkspace({
     const foundNames: string[] = [];
 
     for (const item of session.selection.items) {
-      if (item.id && foundSelection.includes(item.id)) {
+      if (item.id && serialsLeft(item) === 0) {
         foundNames.push(itemLabel(item));
       } else {
         missingItems.push(itemLabel(item));
@@ -579,6 +600,25 @@ export function StockWorkspace({
                       <span>โทร: {s.phone}</span>
                       <span>ร้องขอโดย: {s.staffId}</span>
                     </div>
+                    {s.state === 'STOCK_REQUESTED' && (
+                      // D101: one tap on the card when STOCK walks to the shelf; opening a card to look never starts the search
+                      <div className="card-actions">
+                        <Button
+                          size="sm"
+                          disabled={sending}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectCard(s.reference);
+                            void handleAction(s, 'search');
+                          }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <Search size={14} />
+                            เริ่มหา
+                          </span>
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -708,7 +748,7 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Clock size={16} />
-                        ได้รับคำขอยืนยันจากหน้าร้านแล้ว (กดปุ่ม "เริ่มค้นหา" เมื่อเริ่มเดินไปหยิบสินค้า)
+                        ได้รับคำขอยืนยันจากหน้าร้านแล้ว (กด "เริ่มหา" ตอนเริ่มเดินไปหยิบสินค้า)
                       </span>
                     </Notice>
                   )}
@@ -716,7 +756,7 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Search size={16} />
-                        กำลังค้นหาสินค้าในคลัง (ติ๊กเลือกเฉพาะสินค้าที่พบจริง)
+                        กำลังค้นหา: สแกน SN เครื่องที่หยิบจริงทีละเครื่อง ครบเมื่อไรระบบบันทึก "พบ" เอง
                       </span>
                     </Notice>
                   )}
@@ -724,7 +764,7 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Check size={16} />
-                        พบสินค้าแล้ว (Server บันทึก stock_found_at เรียบร้อย พร้อมส่งต่อแคชเชียร์)
+                        พบสินค้าครบแล้ว — กด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของให้แคชเชียร์
                       </span>
                     </Notice>
                   )}
@@ -880,7 +920,7 @@ export function StockWorkspace({
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <Search size={16} />
-                          เริ่มค้นหาสินค้า
+                          เริ่มหา
                         </span>
                       </Button>
                       <Button
@@ -893,232 +933,95 @@ export function StockWorkspace({
                   )}
 
                   {selectedSession.state === 'SEARCHING' && (() => {
-                    const items = selectedSession.selection.items;
-                    const totalCount =
-                      items.length +
-                      Object.keys(selectedSession.selection.accessories).length;
+                    const accessories = Object.keys(selectedSession.selection.accessories);
+                    const totalCount = selectedSession.selection.items.length + accessories.length;
                     const foundCount =
-                      items.filter((item) => item.id && foundSelection.includes(item.id))
-                        .length +
-                      Object.keys(selectedSession.selection.accessories).filter((a) =>
-                        foundSelection.includes(a),
-                      ).length;
-                    const isAllFound = totalCount > 0 && foundCount === totalCount;
+                      selectedSession.selection.items.filter((item) => serialsLeft(item) === 0).length +
+                      accessories.filter((a) => foundSelection.includes(a)).length;
+                    const isAllFound = allFound(selectedSession, foundSelection);
+                    const reject = cashierRejectNotice(selectedSession);
+                    const itemChange = itemChangeNotice(selectedSession);
+                    const itemBadge = (item: SelectionItem) => {
+                      const isNewSwappedItem = Boolean(
+                        itemChange &&
+                          (item.product.id === itemChange.newSkuId || item.product.sku === itemChange.newSku),
+                      );
+                      const wrongBadge = getWrongItemBadgeText(reject, item.id ?? item.product.id, itemLabel(item));
+                      return (
+                        <>
+                          {isNewSwappedItem && (
+                            <span className="status-tag" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
+                              ✨ ชิ้นใหม่ที่ต้องหยิบ
+                            </span>
+                          )}
+                          {wrongBadge && (
+                            <span className="status-tag" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                              {wrongBadge}
+                            </span>
+                          )}
+                        </>
+                      );
+                    };
 
                     return (
                       <div className="searching-action-box">
-                        <div style={{ marginBottom: '16px' }}>
-                          <h4 style={{ margin: '0 0 4px', fontSize: '13px', color: '#496357' }}>
-                            เลือกรายการสินค้าที่ <strong>"พบแล้ว"</strong> (ชิ้นที่ไม่ได้ติ๊ก จะถือว่าไม่พบ/ของขาด):
-                          </h4>
-                          <p style={{ margin: '0 0 8px', fontSize: '12px', color: '#6b7280' }}>
-                            * ติ๊กเครื่องหมายถูกเฉพาะชิ้นที่หยิบพบจริงในคลัง ชิ้นที่ไม่ได้ติ๊กจะถูกส่งเรื่องให้ Staff ดำเนินการ
-                          </p>
-                          <div className="accessory-list">
-                            {items.map((item) => {
-                              const itemId = item.id ?? item.product.id;
-                              const isFound = foundSelection.includes(itemId);
-                              const reject = cashierRejectNotice(selectedSession);
-                              const itemChange = itemChangeNotice(selectedSession);
-                              const isNewSwappedItem = Boolean(
-                                itemChange &&
-                                  (item.product.id === itemChange.newSkuId ||
-                                    item.product.sku === itemChange.newSku),
-                              );
-                              const wrongBadge = getWrongItemBadgeText(
-                                reject,
-                                itemId,
-                                itemLabel(item),
-                              );
-                              const isWrong = Boolean(wrongBadge);
-                              return (
-                                <div
-                                  key={itemId}
-                                  className={`accessory-item ${
-                                    isFound ? '' : 'out-of-stock-item'
-                                  }`}
-                                  style={
-                                    isWrong && !isFound
-                                      ? {
-                                          borderColor: '#ef4444',
-                                          backgroundColor: '#fff5f5',
-                                        }
-                                      : isNewSwappedItem && !isFound
-                                        ? {
-                                            borderColor: '#10b981',
-                                            backgroundColor: '#f0fdf4',
-                                          }
-                                        : undefined
-                                  }
-                                >
-                                  <label
-                                    style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: '8px',
-                                      cursor: 'pointer',
-                                      margin: 0,
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={isFound}
-                                      onChange={() => {
-                                        setFoundSelection((prev) =>
-                                          prev.includes(itemId)
-                                            ? prev.filter((i) => i !== itemId)
-                                            : [...prev, itemId],
-                                        );
-                                      }}
-                                    />
-                                    <span>
-                                      <strong>สินค้าหลัก:</strong> {itemName(item)} (
-                                      {item.product.sku}) จำนวน {item.quantity} ชิ้น
-                                    </span>
-                                    {isNewSwappedItem && (
-                                      <span
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          backgroundColor: '#ecfdf5',
-                                          color: '#047857',
-                                          border: '1px solid #a7f3d0',
-                                          borderRadius: '4px',
-                                          padding: '2px 6px',
-                                          fontSize: '11px',
-                                          fontWeight: 600,
-                                        }}
-                                      >
-                                        ✨ ชิ้นใหม่ที่ต้องหยิบ
-                                      </span>
-                                    )}
-                                    {wrongBadge && (
-                                      <span
-                                        style={{
-                                          display: 'inline-flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                          backgroundColor: '#fef2f2',
-                                          color: '#b91c1c',
-                                          border: '1px solid #fecaca',
-                                          borderRadius: '4px',
-                                          padding: '2px 6px',
-                                          fontSize: '11px',
-                                          fontWeight: 600,
-                                        }}
-                                      >
-                                        {wrongBadge}
-                                      </span>
-                                    )}
-                                    {isFound ? (
-                                      <span
-                                        className="status-tag status-found"
-                                        style={{ marginLeft: 'auto' }}
-                                      >
-                                        พบแล้ว
-                                      </span>
-                                    ) : (
-                                      <span
-                                        className="status-tag status-searching"
-                                        style={{ marginLeft: 'auto' }}
-                                      >
-                                        ยังไม่พบ
-                                      </span>
-                                    )}
-                                  </label>
-                                </div>
-                              );
-                            })}
+                        {selectedSession.id && (
+                          <SerialScan
+                            key={selectedSession.id}
+                            session={selectedSession}
+                            badge={itemBadge}
+                            onSaved={(updated) => {
+                              onUpdateSession(updated);
+                              recordFoundIfComplete(updated, foundSelection);
+                            }}
+                          />
+                        )}
 
-                            {Object.entries(selectedSession.selection.accessories).map(
-                              ([name, qty]) => {
+                        {accessories.length > 0 && (
+                          <div style={{ marginTop: '12px' }}>
+                            <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#496357' }}>
+                              ติ๊กอุปกรณ์เสริมที่หยิบแล้ว (ชิ้นที่ไม่ได้ติ๊ก จะถือว่าไม่พบ/ของขาด):
+                            </h4>
+                            <div className="accessory-list">
+                              {Object.entries(selectedSession.selection.accessories).map(([name, qty]) => {
                                 const isFound = foundSelection.includes(name);
-                                const accLabel = `${name} (x${qty})`;
-                                const reject = cashierRejectNotice(selectedSession);
                                 const wrongBadge =
-                                  getWrongItemBadgeText(reject, name, accLabel) ||
+                                  getWrongItemBadgeText(reject, name, `${name} (x${qty})`) ||
                                   getWrongItemBadgeText(reject, name, name);
-                                const isWrong = Boolean(wrongBadge);
                                 return (
                                   <div
                                     key={name}
-                                    className={`accessory-item ${
-                                      isFound ? '' : 'out-of-stock-item'
-                                    }`}
-                                    style={
-                                      isWrong && !isFound
-                                        ? {
-                                            borderColor: '#ef4444',
-                                            backgroundColor: '#fff5f5',
-                                          }
-                                        : undefined
-                                    }
+                                    className={`accessory-item ${isFound ? '' : 'out-of-stock-item'}`}
+                                    style={wrongBadge && !isFound ? { borderColor: '#ef4444', backgroundColor: '#fff5f5' } : undefined}
                                   >
-                                    <label
-                                      style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: '8px',
-                                        cursor: 'pointer',
-                                        margin: 0,
-                                      }}
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        checked={isFound}
-                                        onChange={() => {
-                                          setFoundSelection((prev) =>
-                                            prev.includes(name)
-                                              ? prev.filter((i) => i !== name)
-                                              : [...prev, name],
-                                          );
-                                        }}
-                                      />
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
+                                      <input type="checkbox" checked={isFound} onChange={() => toggleAccessory(selectedSession, name)} />
                                       <span>
-                                        <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน:{' '}
-                                        {qty} ชิ้น)
+                                        <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน: {qty} ชิ้น)
                                       </span>
                                       {wrongBadge && (
-                                        <span
-                                          style={{
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                            backgroundColor: '#fef2f2',
-                                            color: '#b91c1c',
-                                            border: '1px solid #fecaca',
-                                            borderRadius: '4px',
-                                            padding: '2px 6px',
-                                            fontSize: '11px',
-                                            fontWeight: 600,
-                                          }}
-                                        >
+                                        <span className="status-tag" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
                                           {wrongBadge}
                                         </span>
                                       )}
-                                      {isFound ? (
-                                        <span
-                                          className="status-tag status-found"
-                                          style={{ marginLeft: 'auto' }}
-                                        >
-                                          พบแล้ว
-                                        </span>
-                                      ) : (
-                                        <span
-                                          className="status-tag status-searching"
-                                          style={{ marginLeft: 'auto' }}
-                                        >
-                                          ยังไม่พบ
-                                        </span>
-                                      )}
+                                      <span
+                                        className={`status-tag ${isFound ? 'status-found' : 'status-searching'}`}
+                                        style={{ marginLeft: 'auto' }}
+                                      >
+                                        {isFound ? 'พบแล้ว' : 'ยังไม่พบ'}
+                                      </span>
                                     </label>
                                   </div>
                                 );
-                              },
-                            )}
+                              })}
+                            </div>
                           </div>
-                        </div>
+                        )}
+
+                        <p className="muted" style={{ margin: '12px 0 0', fontSize: '12px' }}>
+                          * สแกนครบทุกเครื่อง{accessories.length > 0 ? 'และติ๊กอุปกรณ์เสริมครบ' : ''} ระบบบันทึก "พบสินค้า" ให้เอง
+                          ตามเวลาที่หยิบชิ้นสุดท้าย ถ้าของไม่มี กด "แจ้งสินค้าไม่ครบ/หมด"
+                        </p>
 
                         <div className={`stock-note-section ${isAllFound ? '' : 'has-missing'}`}>
                           <label>
@@ -1139,25 +1042,15 @@ export function StockWorkspace({
 
                         <div className="actions" style={{ marginTop: '16px' }}>
                           {isAllFound ? (
-                            <Button
-                              onClick={() => handleAction(selectedSession, 'found')}
-                            >
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '6px',
-                                }}
-                              >
+                            // normally recorded on its own after the last scan; this is for a retry, or an order coming back complete
+                            <Button disabled={sending} onClick={() => handleAction(selectedSession, 'found')}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                 <Check size={16} />
-                                พบสินค้าครบทั้งหมด ({foundCount}/{totalCount}) → บันทึก FOUND
+                                {sending ? 'กำลังบันทึกพบสินค้า…' : `พบสินค้าครบ (${foundCount}/${totalCount}) → บันทึก FOUND`}
                               </span>
                             </Button>
                           ) : (
-                            <Button
-                              variant="secondary"
-                              onClick={() => handleSendToStaff(selectedSession)}
-                            >
+                            <Button variant="secondary" onClick={() => handleSendToStaff(selectedSession)}>
                               <span
                                 style={{
                                   display: 'inline-flex',
@@ -1172,10 +1065,7 @@ export function StockWorkspace({
                               </span>
                             </Button>
                           )}
-                          <Button
-                            variant="danger"
-                            onClick={() => setCancellingSession(selectedSession)}
-                          >
+                          <Button variant="danger" onClick={() => setCancellingSession(selectedSession)}>
                             ลูกค้ายกเลิก
                           </Button>
                         </div>
@@ -1183,19 +1073,17 @@ export function StockWorkspace({
                     );
                   })()}
 
-                  {selectedSession.state === 'FOUND' &&
-                    (selectedSession.id ? (
-                      // D92: the serial number of every unit is scanned before the goods go to the cashier
-                      <SerialScan
-                        key={selectedSession.id}
-                        session={selectedSession}
-                        busy={sending}
-                        onSend={(serials) => handleAction(selectedSession, 'send', serials)}
-                        onCancel={() => setCancellingSession(selectedSession)}
-                      />
-                    ) : (
-                      <div className="actions">
-                        <Button onClick={() => handleAction(selectedSession, 'send')}>
+                  {selectedSession.state === 'FOUND' && (
+                    <>
+                      {/* D101: the serials are already saved; they can still be fixed until the goods leave stock */}
+                      {selectedSession.id && (
+                        <SerialScan key={selectedSession.id} session={selectedSession} onSaved={onUpdateSession} />
+                      )}
+                      <div className="actions" style={{ marginTop: '12px' }}>
+                        <Button
+                          disabled={sending || !serialsComplete(selectedSession)}
+                          onClick={() => handleAction(selectedSession, 'send')}
+                        >
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                             <Send size={16} />
                             ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
@@ -1205,7 +1093,8 @@ export function StockWorkspace({
                           ลูกค้ายกเลิก
                         </Button>
                       </div>
-                    ))}
+                    </>
+                  )}
                 </div>
 
                 <details className="panel" style={{ marginTop: '1rem' }}>

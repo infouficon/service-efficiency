@@ -49,11 +49,12 @@ export async function startApi(t) {
   const base = await app.getUrl();
   const request = async (path, method = 'GET', body, cookie = '') => {
     // D92: a `send` step carries the serial numbers STOCK scanned. Tests that are not about serials get some made up here;
-    // a test that sends its own `serials` (even an empty list) gets exactly what it sent.
+    // a test that sends its own `serials` (even an empty list) gets exactly what it sent, and so does an order on which STOCK
+    // already scanned serials one by one (D101: `send` then uses those).
     const stepOf = /^\/sessions\/([^/]+)\/step$/.exec(path);
     if (method === 'POST' && stepOf && body?.action === 'send' && body.serials === undefined) {
       const session = await request(`/sessions/${stepOf[1]}`, 'GET', undefined, cookie);
-      if (session.status === 200 && Array.isArray(session.data?.items))
+      if (session.status === 200 && Array.isArray(session.data?.items) && !session.data.items.some((i) => i.serials?.length))
         body = { ...body, serials: madeUpSerials(session.data.items) };
     }
     const response = await fetch(`${base}/api${path}`, {

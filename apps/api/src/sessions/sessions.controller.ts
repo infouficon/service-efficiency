@@ -7,10 +7,12 @@ import {
   Put,
   Query,
   Req,
+  Delete,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AccountsService } from '../accounts/accounts.service';
 import {
+  AddSerialDto,
   AdvanceStepDto,
   CancelSessionDto,
   CashierRejectDto,
@@ -61,6 +63,19 @@ export class SessionsController {
   ) {
     const user = await this.accounts.authenticate(req);
     return this.sessions.advanceStep(user, id, dto);
+  }
+
+  /** D101: STOCK saves the serial number of one unit as it scans it (server time). */
+  @Post(':id/serials')
+  async addSerial(@Req() req: Request, @Param('id') id: string, @Body() dto: AddSerialDto) {
+    const user = await this.accounts.authenticate(req);
+    return (await this.sessions.withFmp([await this.sessions.addSerial(user, id, dto)]))[0];
+  }
+
+  @Delete(':id/serials/:serialId')
+  async removeSerial(@Req() req: Request, @Param('id') id: string, @Param('serialId') serialId: string) {
+    const user = await this.accounts.authenticate(req);
+    return (await this.sessions.withFmp([await this.sessions.removeSerial(user, id, serialId)]))[0];
   }
 
   @Post(':id/decision/not-buy')

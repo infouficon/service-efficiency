@@ -50,7 +50,7 @@ export interface ApiSession {
     skuId: string;
     quantity: number;
     deducted: number;
-    serials?: { sn: string; position: number }[];
+    serials?: { id: string; sn: string; position: number }[];
     sku: {
       id: string;
       sku: string;
@@ -156,7 +156,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       items: (s.items ?? []).map((item) => ({
         id: item.id,
         quantity: item.quantity,
-        serials: (item.serials ?? []).map((x) => x.sn),
+        serials: (item.serials ?? []).map((x) => ({ id: x.id, sn: x.sn })),
         product: {
           id: item.sku.id,
           category: item.sku.model.product.category,
@@ -300,13 +300,21 @@ export function saveCustomerTypeApi(
       });
 }
 
-/** `serials` (D92) is only for `send`: the serial numbers STOCK scanned, `quantity` of them per main product. */
-export async function advanceStepApi(
-  id: string,
-  action: string,
-  serials?: { itemId: string; sn: string[] }[],
-): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', serials ? { action, serials } : { action });
+/** `send` takes the serial numbers STOCK already scanned one by one (D101); the server refuses it until they are complete. */
+export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action });
+  return mapApiSessionToMockSession(data);
+}
+
+/** D101: one serial number STOCK just scanned at the shelf, saved at once with the server time. */
+export async function addSerialApi(id: string, itemId: string, sn: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/serials`, 'POST', { itemId, sn });
+  return mapApiSessionToMockSession(data);
+}
+
+/** D101: takes back a wrong scan so the right unit can be scanned. */
+export async function removeSerialApi(id: string, serialId: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/serials/${encodeURIComponent(serialId)}`, 'DELETE');
   return mapApiSessionToMockSession(data);
 }
 

@@ -43,6 +43,7 @@ test('changeItem keeps STOCK_REQUESTED when in STOCK_REQUESTED, and resets to SE
     let updatedSessionData = null;
     let updatedItemData = null;
     let returnedShelfStock = 0;
+    let clearedSerialsOf = null;
 
     const sessionRow = {
       id: 'sess-1',
@@ -93,6 +94,11 @@ test('changeItem keeps STOCK_REQUESTED when in STOCK_REQUESTED, and resets to SE
           updatedItemData = data;
         },
       },
+      sessionItemSerial: {
+        deleteMany: async ({ where }) => {
+          clearedSerialsOf = where.sessionItemId;
+        },
+      },
       customerSession: {
         update: async ({ data }) => {
           updatedSessionData = data;
@@ -117,6 +123,7 @@ test('changeItem keeps STOCK_REQUESTED when in STOCK_REQUESTED, and resets to SE
       getUpdatedSessionData: () => updatedSessionData,
       getUpdatedItemData: () => updatedItemData,
       getReturnedShelfStock: () => returnedShelfStock,
+      getClearedSerialsOf: () => clearedSerialsOf,
     };
   };
 
@@ -151,6 +158,7 @@ test('changeItem keeps STOCK_REQUESTED when in STOCK_REQUESTED, and resets to SE
   assert.equal(foundCase.getUpdatedSessionData().state, 'SEARCHING');
   assert.equal(foundCase.getUpdatedItemData().skuId, 'sku-new');
   assert.equal(foundCase.getReturnedShelfStock(), 1);
+  assert.equal(foundCase.getClearedSerialsOf(), 'item-1', 'the serials scanned for the old product are dropped (D101)');
   assert.equal(
     foundCase.getUpdatedSessionData().events.create.metadata.fromState,
     'FOUND',

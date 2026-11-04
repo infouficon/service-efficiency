@@ -15,7 +15,9 @@ STOCK sends the goods ─▶ SES order at the cashier (SENT_TO_CASHIER)
 cashier in U POS ──GET /api/integrations/pos/orders?branch=<code>[&queue=A012]──▶ SES   (pick the order, the bill is pre-filled)
 cashier saves / issues the bill in U POS
 U POS ──POST /api/integrations/pos/bills {reference, billNo, openedAt}──▶ SES           (SES: BILL_OPENED at the real time)
-cashier completes the sale in SES (one click) · or no click in SES at all, a later step
+customer pays in U POS
+U POS ──POST /api/integrations/pos/bills {reference, billNo, openedAt, completedAt}──▶ SES (SES: COMPLETED at the real time, D101)
+(one call with both times when the bill is opened and paid in one go; the cashier's SES buttons stay for a POS that reports nothing)
 ```
 
 ## 2. The contract (SES side, built)
@@ -62,14 +64,19 @@ The orders of that branch (ERP `branch_code`) that have reached the cashier and 
 
 ### `POST /integrations/pos/bills`
 ```json
-{ "reference": "SES-20261013-000042", "billNo": "INV-2026-000123", "openedAt": "2026-10-13T05:20:11.000+07:00" }
+{ "reference": "SES-20261013-000042", "billNo": "INV-2026-000123", "openedAt": "2026-10-13T05:20:11.000+07:00", "completedAt": "2026-10-13T05:26:40.000+07:00" }
 ```
 - `openedAt`: ISO 8601 with a time zone, not later than 5 minutes ahead, not before the order's walk-in, not older than a year (else 400).
+  Used the first time SES hears of the bill; on a later call (the payment) the stored time stays.
 - An order **at the cashier** (`SENT_TO_CASHIER` / `CASHIER_RECEIVED` / `CASHIER_SCAN`) moves to `BILL_OPENED`: `billOpenedAt` = `openedAt`, event `BILL_OPENED` by actor `U-POS`
-  (`{source, billNo, openedAt}`). The cashier then only completes the sale in SES.
+  (`{source, billNo, openedAt}`).
+- `completedAt` (optional, D101): the moment the customer paid. An order at `BILL_OPENED` (opened by this call, an earlier one, or the
+  cashier's button) moves to `COMPLETED`, event `COMPLETED` by actor `U-POS` at that time (`{source, billNo, completedAt}`); nobody
+  presses anything in SES. Same rules as `openedAt`, and not before the bill was opened (else 400). An order not at the bill yet is 409; one
+  already `COMPLETED` (the cashier pressed first) keeps SES's time.
 - If the cashier **pressed first** in SES (`BILL_OPENED`) or the sale is already `COMPLETED`: SES's own time is kept and the bill number and time are stored beside it
   (`posBillNo`, `posBillOpenedAt`); no second event.
-- **Idempotent**: the same `reference` + `billNo` again returns 201 with the same body and changes nothing; another `billNo` for the same order is **409**.
+- **Idempotent**: the same `reference` + `billNo` (with or without the same `completedAt`) again returns 201 and changes nothing; another `billNo` for the same order is **409**.
 - 404 unknown reference · 409 order cancelled / ended, or not at the cashier yet · 400 bad body (unknown fields are refused).
 - Response: `{ reference, state, posBillNo, posBillOpenedAt, billOpenedAt }` (the status code is 201).
 

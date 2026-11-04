@@ -503,7 +503,7 @@ export class SessionsService {
    * cashier pressed first, SES's own milestone stays and the U POS bill is added beside it. The same report again changes
    * nothing; another bill number for the same order is a conflict.
    */
-  async recordPosBill(dto: { reference: string; billNo: string; openedAt: string }) {
+  async recordPosBill(dto: { reference: string; billNo: string; openedAt: string; completedAt?: string }) {
     const session = await this.prisma.customerSession.findUnique({
       where: { reference: dto.reference },
       include: sessionInclude,
@@ -517,55 +517,79 @@ export class SessionsService {
       posBillOpenedAt: s.posBillOpenedAt,
       billOpenedAt: s.billOpenedAt,
     });
-    if (session.posBillNo !== null) {
-      if (session.posBillNo === dto.billNo) return summary(session);
-      throw new ConflictException('This order already has another bill');
-    }
+    if (session.posBillNo !== null && session.posBillNo !== dto.billNo) throw new ConflictException('This order already has another bill');
+    if (session.posBillNo !== null && !dto.completedAt) return summary(session);
 
     const openedAt = new Date(dto.openedAt);
     const now = Date.now();
-    if (
-      openedAt.getTime() > now + 5 * 60_000 ||
-      openedAt.getTime() < now - 366 * 86_400_000 ||
-      openedAt < session.customerWalkInAt
-    ) {
+    const plausible = (t: Date) => t.getTime() <= now + 5 * 60_000 && t.getTime() >= now - 366 * 86_400_000 && t >= session.customerWalkInAt;
+    if (session.posBillNo === null && !plausible(openedAt)) {
       throw new BadRequestException('openedAt is not a plausible time for this order');
     }
+    const completedAt = dto.completedAt ? new Date(dto.completedAt) : null;
+    if (completedAt && (!plausible(completedAt) || completedAt < (session.posBillOpenedAt ?? openedAt)))
+      throw new BadRequestException('completedAt is not a plausible time for this order (before the bill, or in the future)');
     const atCashier = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state);
     if (!atCashier && !['BILL_OPENED', 'COMPLETED'].includes(session.state)) {
       throw new ConflictException('The order has not reached the cashier');
     }
 
-    // the event keeps its place in the history even if the bill was opened before SES saw the last step
-    const lastEvent = session.events.at(-1)?.createdAt ?? openedAt;
-    const eventAt = openedAt > lastEvent ? openedAt : lastEvent;
-    const updated = await this.prisma.customerSession.update({
-      where: { id: session.id },
-      data: {
-        posBillNo: dto.billNo,
-        posBillOpenedAt: openedAt,
-        ...(atCashier
-          ? {
-              state: 'BILL_OPENED',
-              billOpenedAt: openedAt,
-              events: {
-                create: {
-                  eventType: 'BILL_OPENED',
-                  actorStaffId: 'U-POS',
-                  createdAt: eventAt,
-                  metadata: {
-                    source: 'U-POS',
-                    billNo: dto.billNo,
-                    openedAt: openedAt.toISOString(),
+    return this.prisma.$transaction(async (tx) => {
+      let current = session;
+      // the event keeps its place in the history even if the bill was opened before SES saw the last step
+      const lastEventAt = () => current.events.at(-1)?.createdAt ?? openedAt;
+      if (session.posBillNo === null) {
+        await this.claim(tx, session.id, Prisma.sql`posBillNo IS NULL AND outcome IS NULL`); // H-01: two reports at once
+        const eventAt = openedAt > lastEventAt() ? openedAt : lastEventAt();
+        current = await tx.customerSession.update({
+          where: { id: session.id },
+          data: {
+            posBillNo: dto.billNo,
+            posBillOpenedAt: openedAt,
+            ...(atCashier
+              ? {
+                  state: 'BILL_OPENED',
+                  billOpenedAt: openedAt,
+                  events: {
+                    create: {
+                      eventType: 'BILL_OPENED',
+                      actorStaffId: 'U-POS',
+                      createdAt: eventAt,
+                      metadata: { source: 'U-POS', billNo: dto.billNo, openedAt: openedAt.toISOString() },
+                    },
                   },
-                },
+                }
+              : {}),
+          },
+          include: sessionInclude,
+        });
+      }
+      // D101: the POS closed the sale: the order is completed with the POS's real time (the cashier presses nothing in SES)
+      if (completedAt && current.state === 'BILL_OPENED') {
+        await this.claim(tx, session.id, Prisma.sql`state = 'BILL_OPENED' AND outcome IS NULL`);
+        const eventAt = completedAt > lastEventAt() ? completedAt : lastEventAt();
+        current = await tx.customerSession.update({
+          where: { id: session.id },
+          data: {
+            state: 'COMPLETED',
+            events: {
+              create: {
+                eventType: 'COMPLETED',
+                actorStaffId: 'U-POS',
+                createdAt: eventAt,
+                metadata: { source: 'U-POS', billNo: dto.billNo, completedAt: completedAt.toISOString() },
               },
-            }
-          : {}),
-      },
+            },
+          },
+          include: sessionInclude,
+        });
+      } else if (completedAt && current.state !== 'COMPLETED') {
+        throw new ConflictException('The bill is not open in SES yet (the order is not at the cashier)');
+      }
+      return summary(current);
     });
-    return summary(updated);
   }
+
 
   /**
    * H-01: claims the session row inside the caller's transaction (`SELECT … FOR UPDATE`) under the same condition the method
@@ -603,14 +627,17 @@ export class SessionsService {
       throw new BadRequestException('Must record BUY decision before starting selection');
     }
 
-    // D92: the goods leave stock with their serial numbers; checked before anything is written
-    const serials = dto.action === 'send' ? this.checkSerials(session.items, dto.serials) : [];
+    // D92: the goods leave stock with their serial numbers; checked before anything is written. D101: without a list in the body,
+    // the serials STOCK scanned one by one while searching are used (checked again inside the transaction)
+    const useSaved = dto.action === 'send' && dto.serials === undefined;
+    const serials = dto.action === 'send' && !useSaved ? this.checkSerials(session.items, dto.serials) : [];
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       await this.claim(tx, session.id, Prisma.sql`state = ${step.from} AND outcome IS NULL`); // H-01
-      if (dto.action === 'send') await this.saveSerials(tx, session, serials);
+      if (dto.action === 'send' && !useSaved) await this.saveSerials(tx, session, serials);
+      if (useSaved) await this.assertSerialsComplete(tx, session.items);
       const deducted =
         dto.action === 'found'
           ? await this.takeItemsFromShelf(tx, session.branchId, session.items)
@@ -687,11 +714,18 @@ export class SessionsService {
     serials: { itemId: string; sn: string[] }[],
   ) {
     if (!serials.length) return;
-    const all = serials.flatMap((s) => s.sn);
+    await this.assertSerialsFree(tx, session.id, serials.flatMap((s) => s.sn));
+    await tx.sessionItemSerial.deleteMany({ where: { item: { sessionId: session.id } } });
+    for (const { itemId, sn } of serials)
+      await tx.sessionItemSerial.createMany({ data: sn.map((one, position) => ({ sessionItemId: itemId, sn: one, position })) });
+  }
+
+  /** D92: a serial that is in another order that is still open (not cancelled, not sold) cannot be used again. */
+  private async assertSerialsFree(tx: Prisma.TransactionClient, sessionId: string, all: string[]) {
     const taken = await tx.sessionItemSerial.findFirst({
       where: {
         sn: { in: all },
-        item: { session: { id: { not: session.id }, outcome: null, state: { not: 'COMPLETED' } } },
+        item: { session: { id: { not: sessionId }, outcome: null, state: { not: 'COMPLETED' } } },
       },
       include: { item: { select: { session: { select: { reference: true, queueLetter: true, queueNo: true } } } } },
     });
@@ -700,9 +734,66 @@ export class SessionsService {
       const queue = other.queueNo === null ? other.reference : formatQueue(other.queueLetter, other.queueNo);
       throw new ConflictException(`Serial Number "${taken.sn}" อยู่ในออเดอร์ ${queue} ที่ยังไม่จบ`);
     }
-    await tx.sessionItemSerial.deleteMany({ where: { item: { sessionId: session.id } } });
-    for (const { itemId, sn } of serials)
-      await tx.sessionItemSerial.createMany({ data: sn.map((one, position) => ({ sessionItemId: itemId, sn: one, position })) });
+  }
+
+  /** D101: every main product has exactly `quantity` serial numbers saved (read inside the caller's transaction). */
+  private async assertSerialsComplete(tx: Prisma.TransactionClient, items: { id: string; quantity: number; sku: { name: string } }[]) {
+    for (const item of items) {
+      const n = await tx.sessionItemSerial.count({ where: { sessionItemId: item.id } });
+      if (n !== item.quantity)
+        throw new BadRequestException(`${item.sku.name}: สแกน Serial Number แล้ว ${n} จาก ${item.quantity} เครื่อง ต้องสแกนให้ครบก่อนส่งไปแคชเชียร์`);
+    }
+  }
+
+  /** D95/D101: a serial number as FileMaker keeps it: trimmed, in capitals, printable ASCII without spaces, 1–64 characters. */
+  private normalizeSerial(raw: string): string {
+    const sn = raw.trim().toUpperCase();
+    if (!/^[\x21-\x7E]{1,64}$/.test(sn))
+      throw new BadRequestException(`Serial Number "${raw.trim()}" ไม่ถูกต้อง (ใช้ตัวอักษรหรือตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ยาวไม่เกิน 64 ตัว)`);
+    return sn;
+  }
+
+  /**
+   * D101: STOCK scans the serial number of one unit while it is at the shelf. Saved at once with the server's time, so the moment
+   * the last unit is scanned is the real moment the goods are in hand (the stock screen then records FOUND). Allowed while
+   * SEARCHING and FOUND (a wrong scan can be removed and scanned again until the goods are sent).
+   */
+  async addSerial(user: PublicAccount, id: string, dto: { itemId: string; sn: string }) {
+    this.checkRole(user, 'STOCK');
+    const session = await this.getById(user, id);
+    if (session.outcome || !['SEARCHING', 'FOUND'].includes(session.state))
+      throw new BadRequestException('สแกน Serial Number ได้ระหว่างค้นหาสินค้าหรือหลังพบสินค้าเท่านั้น');
+    const item = session.items.find((i) => i.id === dto.itemId);
+    if (!item) throw new BadRequestException(`ไม่พบรายการสินค้า ${dto.itemId} ในออเดอร์นี้`);
+    const sn = this.normalizeSerial(dto.sn);
+    return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('SEARCHING', 'FOUND')`);
+      const existing = await tx.sessionItemSerial.findMany({ where: { item: { sessionId: session.id } } });
+      if (existing.some((s) => s.sn.toLowerCase() === sn.toLowerCase()))
+        throw new BadRequestException(`Serial Number "${sn}" สแกนไปแล้วในออเดอร์นี้`);
+      const mine = existing.filter((s) => s.sessionItemId === item.id);
+      if (mine.length >= item.quantity)
+        throw new BadRequestException(`${item.sku.name}: สแกนครบ ${item.quantity} เครื่องแล้ว`);
+      await this.assertSerialsFree(tx, session.id, [sn]);
+      await tx.sessionItemSerial.create({
+        data: { sessionItemId: item.id, sn, position: mine.reduce((max, s) => Math.max(max, s.position + 1), 0) },
+      });
+      return tx.customerSession.findUniqueOrThrow({ where: { id: session.id }, include: sessionInclude });
+    });
+  }
+
+  /** D101: removes one scanned serial number (a wrong unit) before the goods are sent. */
+  async removeSerial(user: PublicAccount, id: string, serialId: string) {
+    this.checkRole(user, 'STOCK');
+    const session = await this.getById(user, id);
+    if (session.outcome || !['SEARCHING', 'FOUND'].includes(session.state))
+      throw new BadRequestException('แก้ Serial Number ได้ก่อนส่งสินค้าไปแคชเชียร์เท่านั้น');
+    return this.prisma.$transaction(async (tx) => {
+      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('SEARCHING', 'FOUND')`);
+      const { count } = await tx.sessionItemSerial.deleteMany({ where: { id: serialId, item: { sessionId: session.id } } });
+      if (count !== 1) throw new NotFoundException('ไม่พบ Serial Number นี้ในออเดอร์');
+      return tx.customerSession.findUniqueOrThrow({ where: { id: session.id }, include: sessionInclude });
+    });
   }
 
   async recordNotBuy(user: PublicAccount, id: string, dto: NotBuyDto) {
@@ -1431,6 +1522,9 @@ export class SessionsService {
       if (['FOUND', 'SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state)) {
         await this.returnItemsToShelf(tx, session.branchId, session.items);
       }
+
+      // D101: the serials scanned for the old product belong to units of another SKU; STOCK scans the new one again
+      await tx.sessionItemSerial.deleteMany({ where: { sessionItemId: oldItem.id } });
 
       // Update the session item to the new SKU
       await tx.sessionItem.update({

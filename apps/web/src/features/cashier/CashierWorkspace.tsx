@@ -536,7 +536,8 @@ export function CashierWorkspace({
                         <div>
                           <h3>ขั้นตอนที่ 3: บันทึกและเปิดบิลใน FileMaker</h3>
                           <div className="action-banner-body">
-                            กรอกข้อมูลการสั่งซื้อและชำระเงินในระบบ FileMaker เมื่อเปิดบิลสำเร็จแล้ว กดปุ่มยืนยันเพื่อบันทึก <code>bill_opened_at</code>
+                            กรอกข้อมูลการสั่งซื้อและชำระเงินในระบบ FileMaker เมื่อ FileMaker ออกบิล ระบบบันทึกเลขบิลและเวลาจริงจาก FileMaker ให้เอง
+                            กดปุ่มยืนยันเฉพาะตอนที่ FileMaker ยังไม่ส่งมา
                           </div>
                         </div>
                       </>
@@ -547,7 +548,7 @@ export function CashierWorkspace({
                         <div>
                           <h3>ขั้นตอนที่ 4: ปิดการขายสมบูรณ์ (Workflow Completed)</h3>
                           <div className="action-banner-body">
-                            มอบสินค้าและใบเสร็จให้ลูกค้าเรียบร้อยแล้ว กดปุ่มด้านล่างเพื่อสิ้นสุดขั้นตอนการบริการของ Session นี้
+                            เมื่อ FileMaker ส่งเวลาชำระเงินมา ระบบปิดการขายให้เองตามเวลานั้น ถ้ายังไม่ส่ง มอบสินค้าและใบเสร็จแล้วกดปุ่มด้านล่าง
                           </div>
                         </div>
                       </>

@@ -62,11 +62,22 @@ export class StepSerialsDto {
   sn!: string[];
 }
 
+/** D101: one serial number STOCK just scanned for one main product (the order's SessionItem). */
+export class AddSerialDto {
+  @IsString()
+  @MaxLength(36)
+  itemId!: string;
+
+  @IsString()
+  @MaxLength(80)
+  sn!: string;
+}
+
 export class AdvanceStepDto {
   @IsIn(STEP_ACTIONS)
   action!: StepAction;
 
-  /** D92: required by `send` when the order has main products; ignored by every other action. */
+  /** D92: for `send`: the serial numbers; left out (D101), the ones STOCK scanned while searching are used and must be complete. */
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(50)

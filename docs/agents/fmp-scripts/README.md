@@ -7,7 +7,7 @@
 | --- | --- |
 | [ses_v2.txt](ses_v2.txt) | สคริปต์ `ses` เวอร์ชันใหม่ ทุกจุดที่เปลี่ยนมี `[SES v2]` นำหน้า |
 | [ses_fail_v2.txt](ses_fail_v2.txt) | สคริปต์ `ses_fail` เวอร์ชันใหม่ (เปลี่ยน 1 บรรทัด) |
-| [ses_report_bill.txt](ses_report_bill.txt) | **ใหม่** แจ้ง SES ว่าเปิดบิลแล้ว → ออเดอร์ใน SES เป็น "เปิดบิลแล้ว" |
+| [ses_report_bill.txt](ses_report_bill.txt) | **ใหม่ (v2 2026-11-04)** แจ้ง SES ว่าเปิดบิลแล้ว และว่าชำระเงินเสร็จแล้ว (`"paid": 1`) ด้วยเวลาจริงของ FMP |
 | `ses_v1_from_fmp.txt`, `ses_fail_v1_from_fmp.txt` | ต้นฉบับที่ทีม FMP ส่งมา (ไว้เทียบ) |
 
 ไฟล์เป็นข้อความจากการ export ของ FileMaker วางกลับเข้า Script Workspace ตรงๆ ไม่ได้ ให้แก้ทีละ step ตามรายการด้านล่าง
@@ -34,8 +34,9 @@
 
 ## สคริปต์ใหม่ `ses_report_bill`
 
-เรียกตอนออกบิลจริงจากบิลพักที่มาจาก SES (`pos_front_sale_tmp::ses_id` ไม่ว่าง) Parameter `{ "sesID": "...", "billNo": "..." }`
-สคริปต์เรียก `POST https://ses.uficon.com/api/integrations/pos/bills` ด้วยคีย์ `POS_API_KEY` (ขอจากเจ้าของระบบ SES เก็บไว้ในฟิลด์ที่จำกัดสิทธิ์
+เรียกในบิลพักที่มาจาก SES (`pos_front_sale_tmp::ses_id` ไม่ว่าง) 2 จุด: ตอนเปิดบิลพักขึ้นมาทำรายการ Parameter `{ "sesID": "...", "billNo": "..." }`
+→ SES "เปิดบิลแล้ว" และตอนชำระเงินเสร็จ Parameter `{ "sesID": "...", "billNo": "...", "paid": 1 }` → SES "ปิดการขาย" ตามเวลาที่ชำระ
+(**v2, 2026-11-04**: เพิ่ม `paid`; เรียกได้จุดเดียวให้เรียกตอนชำระ) สคริปต์เรียก `POST https://ses.uficon.com/api/integrations/pos/bills` ด้วยคีย์ `POS_API_KEY` (ขอจากเจ้าของระบบ SES เก็บไว้ในฟิลด์ที่จำกัดสิทธิ์
 ห้ามเขียนลงสคริปต์) ต้องส่ง User-Agent ที่ไม่ใช่ของ curl เพราะ Cloudflare ตอบ 403 กับ user-agent ของ curl (ใส่ไว้ในสคริปต์แล้ว)
 
 ## ที่ทีม FMP ยังต้องตัดสินใจ / เติม
@@ -45,4 +46,4 @@
 3. บิลพักเดิมเมื่อแคชเชียร์ตีกลับ: สคริปต์ตอบ `ALREADY_DONE` และ SN ชุดใหม่ไม่ถูกใช้ (SES แสดงเป็น error) ทีม FMP ต้องยกเลิกบิลพักเดิมเอง
    แล้วตั้ง `ses_status` เป็นว่าง จากนั้น ADMIN ของ SES กด "ส่งซ้ำ"
 4. ทำ index ให้ `ProductStore_detail::product_sn` (SES รอคำตอบได้ไม่เกิน 60 วินาที)
-5. จุดที่จะเรียก `ses_report_bill` ในขั้นตอนออกบิลของ FMP
+5. จุดที่จะเรียก `ses_report_bill` ในขั้นตอนของ FMP: ตอนเปิดบิลพัก และตอนชำระเงินเสร็จ (`"paid": 1`)

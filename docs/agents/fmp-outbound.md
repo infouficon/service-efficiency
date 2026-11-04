@@ -44,7 +44,7 @@ it never creates a second record (D96).
   FileMaker by hand); what the customer picked is under `accessoriesForCashier` for information. The U POS door still lists them.
 - Everything from `reference` down is **the same view the U POS door serves** (`GET /api/integrations/pos/orders`), produced by one function.
 - `reference` is the key (`SES-YYYYMMDD-NNNNNN`); `queue` is what staff call the customer by. Report the bill back with
-  `POST /api/integrations/pos/bills {reference, billNo, openedAt}` (docs/agents/pos-integration.md).
+  `POST /api/integrations/pos/bills {reference, billNo, openedAt, completedAt?}` (docs/agents/pos-integration.md).
 - `payments` = the payment **methods** as picked in SES (`Cash`, `Transfer`, `0% Credit Card`, `PayNext`, … — the list ADMIN keeps, so
   it can grow). `paymentTypes` = the same payments by **type**, each type once, in the FileMaker team's words: `เงินสด`, `โอนเงิน`,
   `บัตรเครดิต`, `บัตรเงินผ่อน`, `ใช้มัดจำ`, `Trade In`, `U-Joy`, `Partner Mall`, or `อื่นๆ` for a method with no type yet (D89).
@@ -55,7 +55,8 @@ it never creates a second record (D96).
   at-least-once). `event`: `SENT_TO_CASHIER` (the order reached the
   cashier) or `RESEND` (an ADMIN sent an existing order again).
 - **No prices**: SES has none (D58). `partNo` is the Apple part number (the key warroom uses; the script compares it with `product_model`).
-  **Serial numbers (D92):** `items[].sn` are the ones STOCK scanned when it pressed "send", exactly `quantity` per product, none repeated, none
+  **Serial numbers (D92/D101):** `items[].sn` are the ones STOCK scanned at the shelf, one by one while picking (each saved at once), and
+  the message goes when STOCK presses "send"; exactly `quantity` per product, none repeated, none
   in another open order; they are typed or scanned as the shop reads them, so a wrong one is only caught by your script (`SN_*`). `upc` is
   the warroom barcode (null if unknown). `version` is 1 until a field changes meaning; `test` is false for real orders; `createdAt` is the
   moment the message was made, in Thai time with its offset (your script reads the digits as written). `customerPhone` is personal data.
@@ -141,7 +142,9 @@ to their last four digits; rows are kept 90 days.
 
 ## Open
 For the bill itself, FileMaker can tell SES it opened the bill through the U POS door, `POST /api/integrations/pos/bills
-{reference, billNo, openedAt}` with `Authorization: Bearer <POS_API_KEY>` (the order moves to BILL_OPENED; [pos-integration.md](pos-integration.md)).
+{reference, billNo, openedAt}` with `Authorization: Bearer <POS_API_KEY>` (the order moves to BILL_OPENED), and that the customer paid,
+the same call with `completedAt` (the order is COMPLETED at that time, D101; [pos-integration.md](pos-integration.md); the ready-made
+`ses_report_bill` v2 sends both).
 
 Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet (a cashier reject clears the
 serial numbers in SES, the held bill in FileMaker stays). A damaged unit the cashier removes (D75) is not told either.

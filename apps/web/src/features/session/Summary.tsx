@@ -95,7 +95,7 @@ export function Summary({
                     <span className="product-sku-chip">{item.product.sku || '—'}</span>
                     {item.serials && item.serials.length > 0 && (
                       <div className="fine muted" title="Serial Number ที่ STOCK สแกน">
-                        SN: {item.serials.join(', ')}
+                        SN: {item.serials.map((serial) => serial.sn).join(', ')}
                       </div>
                     )}
                   </span>

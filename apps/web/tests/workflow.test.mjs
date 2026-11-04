@@ -24,6 +24,8 @@ import {
   progressIndex,
   removeDamagedItems,
   itemChangeNotice,
+  serialsLeft,
+  serialsComplete,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 const fixture = () => ({
@@ -594,4 +596,15 @@ test('settleChoice: memory, then capacity, then the SKU; single choices fill in,
   assert.deepEqual(settleChoice([sku('x'), sku('y')], '', ''), { memory: '', storage: '', skuId: '' });
   // one memory only: skipped
   assert.deepEqual(settleChoice([sku('m', '8GB', '256GB')], '', ''), { memory: '8GB', storage: '256GB', skuId: 'm' });
+});
+
+test('a main product is found once every unit has a saved serial; browser-only items have nothing to scan (D101)', () => {
+  const item = (id, quantity, sns = []) => ({ id, product: { id: `sku-${id}` }, quantity, serials: sns.map((sn, i) => ({ id: `${id}-${i}`, sn })) });
+  assert.equal(serialsLeft(item('a', 2)), 2);
+  assert.equal(serialsLeft(item('a', 2, ['S1'])), 1);
+  assert.equal(serialsLeft(item('a', 1, ['S1', 'S2'])), 0, 'never negative');
+  const session = (items) => ({ ...fixture(), selection: { ...fixture().selection, items } });
+  assert.equal(serialsComplete(session([item('a', 2, ['S1', 'S2']), item('b', 1, ['S3'])])), true);
+  assert.equal(serialsComplete(session([item('a', 2, ['S1']), item('b', 1, ['S3'])])), false);
+  assert.equal(serialsComplete(session([{ product: { id: 'x' }, quantity: 1 }])), true, 'not on the server yet');
 });

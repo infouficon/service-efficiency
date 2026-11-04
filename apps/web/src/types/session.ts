@@ -115,8 +115,8 @@ export interface SelectionItem {
   /** `product.id` is the SKU id. */
   product: Product;
   quantity: number;
-  /** D92: the serial numbers STOCK scanned, in the order scanned (empty before the goods were sent to the cashier). */
-  serials?: string[];
+  /** D92/D101: the serial numbers STOCK scanned at the shelf, in the order scanned; `id` lets STOCK remove a wrong scan. */
+  serials?: { id: string; sn: string }[];
 }
 
 export interface Selection {

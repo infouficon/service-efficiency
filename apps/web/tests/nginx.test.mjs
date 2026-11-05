@@ -10,3 +10,11 @@ test('nginx: /api/ is a ^~ prefix, so the assets regex never takes API files (th
   // the static-assets rule still exists for the SPA's own files
   assert.match(conf, /location ~\* \\\.\(\?:css\|js\|/);
 });
+
+test('nginx: a missing asset is 503 no-store, never a 404 Cloudflare would cache (H-39)', () => {
+  assert.match(conf, /try_files \$uri @asset_missing;/);
+  assert.doesNotMatch(conf, /try_files \$uri =404;/);
+  const missing = conf.slice(conf.indexOf('location @asset_missing'));
+  assert.match(missing, /add_header Cache-Control "no-store" always;/);
+  assert.match(missing, /return 503;/);
+});

@@ -12,11 +12,15 @@ export function fmpStatusText(
     const message = fmp.ackMessage ?? '';
     // D103: the unit is in the shop but FileMaker has it elsewhere / not yet (a transfer not received)
     const notHereYet = /^SN_(WRONG_BRANCH|NOT_FOUND|NOT_READY_FOR_SALE)/.test(message);
+    // D103: SES only sends fewer serials than units when STOCK chose "send with serials missing"; an older `ses` script refuses that
+    const snMissing = /^SN_COUNT_MISMATCH/.test(message);
     const sn = /^SN_|INVALID_SN/.test(message);
     return {
       tone: 'bad',
       text: `FileMaker ไม่รับ: ${fmp.ackMessage ?? 'ไม่ทราบสาเหตุ'}`,
-      hint: notHereYet
+      hint: snMissing
+        ? 'FileMaker ยังไม่รองรับออเดอร์ที่ขาด SN (สคริปต์รุ่นเก่า): แคชเชียร์คีย์บิลเองใน U POS / FileMaker'
+        : notHereYet
         ? 'เครื่องอยู่ที่ร้านแต่ FileMaker ยังไม่อัปเดต (เช่น ยังไม่รับโอน): รับโอนใน FileMaker แล้ว ADMIN กด "ส่งซ้ำ" · หยิบผิดเครื่อง: ส่งกลับ Stock ให้สแกนใหม่'
         : sn
           ? 'Serial Number ไม่ตรงกับสต็อกใน FileMaker: ส่งกลับ Stock ให้สแกนใหม่'

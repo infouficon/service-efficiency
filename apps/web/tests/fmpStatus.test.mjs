@@ -30,3 +30,11 @@ test('a unit FileMaker does not have here yet, and a held bill waiting for seria
   assert.equal(later.tone, 'warn');
   assert.match(later.hint, /สแกนขายเครื่องที่ขาดเพิ่มในบิล/);
 });
+
+test('an order sent with serials missing, refused by an older FileMaker script, says to key the bill in by hand (D103)', () => {
+  const r = fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'SN_COUNT_MISMATCH: MG6M4ZP/A quantity=1 but sn=0' });
+  assert.equal(r.tone, 'bad');
+  assert.match(r.hint, /คีย์บิลเอง/);
+  assert.doesNotMatch(r.hint, /ส่งกลับ Stock/);
+});
+

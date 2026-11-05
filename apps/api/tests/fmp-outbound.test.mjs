@@ -727,6 +727,11 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(scriptVerdict(JSON.stringify({ ok: true, code: 'ALREADY_DONE', saleID: 'S1' }), true).status, 'error');
       assert.deepEqual(scriptVerdict(JSON.stringify({ ok: false, code: 'IN_PROGRESS' }), false), { status: 'error', message: 'IN_PROGRESS' });
       assert.deepEqual(scriptVerdict(JSON.stringify({ ok: true }), false), { status: 'success', message: 'OK' });
+      // D103: script v3 opened the held bill with lines waiting for their serial; the web shows it as a warning by its code
+      assert.deepEqual(
+        scriptVerdict(JSON.stringify({ ok: true, code: 'CREATED_SN_LATER', saleID: 'S9', lines: 2, snPending: 1, message: 'รอสแกน SN ใน FMP 1 เครื่อง' }), false),
+        { status: 'success', message: 'CREATED_SN_LATER saleID S9 (2 รายการ): รอสแกน SN ใน FMP 1 เครื่อง' },
+      );
       for (const junk of ['', 'ok', '[]', 'null', '{"code":"X"}', '{"ok":"yes"}']) assert.equal(scriptVerdict(junk, false), null, junk);
       assert.ok(scriptVerdict(JSON.stringify({ ok: false, code: 'X', message: 'y'.repeat(400) }), false).message.length <= 255);
     });

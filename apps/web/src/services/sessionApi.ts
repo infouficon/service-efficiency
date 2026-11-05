@@ -300,9 +300,12 @@ export function saveCustomerTypeApi(
       });
 }
 
-/** `send` takes the serial numbers STOCK already scanned one by one (D101); the server refuses it until they are complete. */
-export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action });
+/**
+ * `send` takes the serial numbers STOCK already scanned one by one (D101); the server refuses it until they are complete,
+ * unless `serialsLater` (D103): the missing units are then scanned in FileMaker.
+ */
+export async function advanceStepApi(id: string, action: string, options: { serialsLater?: boolean } = {}): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action, ...options });
   return mapApiSessionToMockSession(data);
 }
 

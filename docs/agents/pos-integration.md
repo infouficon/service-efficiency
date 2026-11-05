@@ -43,7 +43,7 @@ The orders of that branch (ERP `branch_code`) that have reached the cashier and 
       "customerPhone": "0812345678",
       "staffId": "100234",
       "confirmedAt": "2026-10-13T05:12:03.411Z",
-      "items": [{ "partNo": "MG8G4ZP/A", "upc": "194253000001", "name": "iPhone 16 Pro 256GB Desert Titanium", "quantity": 2, "sn": ["F9XXXXXXXX01", "F9XXXXXXXX02"] }],
+      "items": [{ "partNo": "MG8G4ZP/A", "upc": "194253000001", "name": "iPhone 16 Pro 256GB Desert Titanium", "quantity": 2, "sn": ["F9XXXXXXXX01", "F9XXXXXXXX02"], "snMissing": 0 }],
       "accessories": [{ "name": "Case", "quantity": 1 }],
       "payments": ["Cash", "Transfer"],
       "paymentTypes": ["เงินสด", "โอนเงิน"],
@@ -57,7 +57,7 @@ The orders of that branch (ERP `branch_code`) that have reached the cashier and 
 ```
 - `reference` is the key to report back with; `queue` is what staff call the customer by (not unique across days).
 - The FileMaker message differs in one field only: its `accessories` is always empty and the list is under `accessoriesForCashier` (D97).
-- `items[].sn` are the serial numbers STOCK scanned (D92): exactly `quantity` of them once the order is at the cashier; `upc` is the warroom barcode (null if unknown).
+- `items[].sn` are the serial numbers STOCK scanned (D92): `quantity` of them once the order is at the cashier, unless STOCK sent it with serials missing (D103): `snMissing` = how many units still need one (scanned at the till); `upc` is the warroom barcode (null if unknown).
 - `items[].partNo` is the Apple part number (SES `ProductSku.sku`, the same key warroom uses); accessories are free names (SES has no SKU for them);
   payments / Ontop / points are names; `paymentTypes` files the payments under the FileMaker payment types (D89, see fmp-outbound.md). **No prices anywhere**: SES stores none (D58/D26).
 - `customerPhone` (10 digits) lets U POS find or create the customer. It is personal data: the key is the only protection, keep it secret.

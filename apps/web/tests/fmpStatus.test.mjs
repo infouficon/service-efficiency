@@ -20,3 +20,13 @@ test('the FileMaker line says what happened, worst first (D100)', () => {
   assert.match(sn.hint, /ส่งกลับ Stock/);
   assert.match(fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'WRONG_BRANCH: branch.code is wrong' }).hint, /ADMIN/);
 });
+
+test('a unit FileMaker does not have here yet, and a held bill waiting for serials (D103)', () => {
+  const wrong = fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'SN_WRONG_BRANCH: SN 3577 is in branch 16, not ISTA (9)' });
+  assert.equal(wrong.tone, 'bad');
+  assert.match(wrong.hint, /รับโอนใน FileMaker แล้ว ADMIN กด "ส่งซ้ำ"/);
+  assert.match(fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'SN_MODEL_MISMATCH: SN X is model Y' }).hint, /^Serial Number ไม่ตรง/);
+  const later = fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'CREATED_SN_LATER saleID S-9 (2 รายการ): รอสแกน SN 1 เครื่อง' });
+  assert.equal(later.tone, 'warn');
+  assert.match(later.hint, /สแกน SN ใน FileMaker/);
+});

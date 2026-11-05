@@ -222,13 +222,19 @@ export function StockWorkspace({
   };
 
   const [sending, setSending] = useState(false);
-  const handleAction = async (session: MockSession, action: 'search' | 'found' | 'send') => {
+  /** D103: the order whose "send without all serials" waits for STOCK to confirm. */
+  const [confirmLater, setConfirmLater] = useState<string | null>(null);
+  const handleAction = async (
+    session: MockSession,
+    action: 'search' | 'found' | 'send',
+    options: { serialsLater?: boolean } = {},
+  ) => {
     setError('');
     setSuccessMessage('');
     if (session.id) {
       setSending(true);
       try {
-        const updated = await advanceStepApi(session.id, action);
+        const updated = await advanceStepApi(session.id, action, options);
         onUpdateSession(updated);
         setFoundSelection([]);
         setStockNote('');
@@ -771,7 +777,7 @@ export function StockWorkspace({
                         <Check size={16} />
                         {serialsComplete(selectedSession)
                           ? 'พบสินค้าครบแล้ว — กด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของให้แคชเชียร์'
-                          : 'พบสินค้าครบแล้ว — สแกน SN ให้ครบก่อน แล้วกด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของ'}
+                          : 'พบสินค้าครบแล้ว — สแกน SN ให้ครบ แล้วกด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของ (สแกนไม่ได้: "ส่งโดย SN ยังไม่ครบ")'}
                       </span>
                     </Notice>
                   )}
@@ -1082,28 +1088,59 @@ export function StockWorkspace({
                     );
                   })()}
 
-                  {selectedSession.state === 'FOUND' && (
-                    <>
-                      {/* D101: the serials are already saved; they can still be fixed until the goods leave stock */}
-                      {selectedSession.id && (
-                        <SerialScan key={selectedSession.id} session={selectedSession} onSaved={onUpdateSession} />
-                      )}
-                      <div className="actions" style={{ marginTop: '12px' }}>
-                        <Button
-                          disabled={sending || !serialsComplete(selectedSession)}
-                          onClick={() => handleAction(selectedSession, 'send')}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                            <Send size={16} />
-                            ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
-                          </span>
-                        </Button>
-                        <Button variant="danger" onClick={() => setCancellingSession(selectedSession)}>
-                          ลูกค้ายกเลิก
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                  {selectedSession.state === 'FOUND' && (() => {
+                    const missing = selectedSession.selection.items.reduce((sum, item) => sum + (item.id ? serialsLeft(item) : 0), 0);
+                    const asking = missing > 0 && confirmLater === selectedSession.id;
+                    return (
+                      <>
+                        {/* D101: the serials are already saved; they can still be fixed until the goods leave stock */}
+                        {selectedSession.id && (
+                          <SerialScan key={selectedSession.id} session={selectedSession} onSaved={onUpdateSession} />
+                        )}
+                        <div className="actions" style={{ marginTop: '12px' }}>
+                          <Button disabled={sending || missing > 0} onClick={() => handleAction(selectedSession, 'send')}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <Send size={16} />
+                              ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
+                            </span>
+                          </Button>
+                          {missing > 0 && !asking && (
+                            // D103: the unit is here but has no serial FileMaker accepts yet (e.g. a transfer not received)
+                            <Button variant="secondary" disabled={sending} onClick={() => setConfirmLater(selectedSession.id ?? null)}>
+                              ส่งโดย SN ยังไม่ครบ ({missing} เครื่อง)
+                            </Button>
+                          )}
+                          <Button variant="danger" onClick={() => setCancellingSession(selectedSession)}>
+                            ลูกค้ายกเลิก
+                          </Button>
+                        </div>
+                        {asking && (
+                          <div className="stock-note-section has-missing" role="alert">
+                            <strong>ส่งไปแคชเชียร์โดยยังไม่มี SN {missing} เครื่อง?</strong>
+                            <p style={{ margin: '4px 0 10px' }}>
+                              ใช้เมื่อเครื่องอยู่ที่ร้านจริง แต่สแกนไม่ได้หรือ FileMaker ยังไม่อัปเดต (เช่น สินค้าโอนมายังไม่ได้รับโอน) FileMaker
+                              เปิดบิลพักโดยเว้น SN ของเครื่องนั้นไว้ แคชเชียร์สแกน SN ใน FileMaker ตอนรับเงิน (เครื่องที่โอนมา: รับโอนใน
+                              FileMaker ก่อน)
+                            </p>
+                            <div className="actions">
+                              <Button
+                                disabled={sending}
+                                onClick={() => {
+                                  setConfirmLater(null);
+                                  void handleAction(selectedSession, 'send', { serialsLater: true });
+                                }}
+                              >
+                                ยืนยัน ส่งโดย SN ยังไม่ครบ
+                              </Button>
+                              <Button variant="secondary" onClick={() => setConfirmLater(null)}>
+                                กลับไปสแกน
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <details className="panel" style={{ marginTop: '1rem' }}>

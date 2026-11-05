@@ -220,7 +220,7 @@ Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password
 `_ModificationTimestamp` (never the personal/payroll fields). Run branch first, then staff. Credentials from env only:
 `ERP_ODATA_BASE_URL`, `ERP_ODATA_USER`, `ERP_ODATA_PASS` (Coolify), plus `ERP_SYNC_TIMES=10:00`. Temporarily the shared `dashboard` account, later a dedicated one.
 
-**Staff mapping.**
+**Staff mapping.** (D105: a `cashier` position no longer maps to any SES role; such people are listed as unmapped and get no account; old CASHIER accounts cannot sign in.)
 
 | SES `Staff` | From the ERP |
 | --- | --- |

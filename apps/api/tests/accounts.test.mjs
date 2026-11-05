@@ -207,7 +207,7 @@ test('real MySQL account, authorization and session lifecycle', async (t) => {
         for (const [name, roles, b] of [
           ['manager', ['MANAGER'], 'a'],
           ['staff', ['STAFF'], 'a'],
-          ['other', ['CASHIER'], 'b'],
+          ['other', ['STOCK'], 'b'],
         ]) {
           assert.equal(
             (
@@ -257,7 +257,7 @@ test('real MySQL account, authorization and session lifecycle', async (t) => {
             await request(
               '/staff',
               'POST',
-              account('local', ['STAFF', 'STOCK', 'CASHIER'], branches.a),
+              account('local', ['STAFF', 'STOCK'], branches.a),
               manager,
             )
           ).status,
@@ -279,7 +279,7 @@ test('real MySQL account, authorization and session lifecycle', async (t) => {
             await request(
               `/staff/${id('other')}`,
               'PUT',
-              update(['CASHIER'], branches.b),
+              update(['STOCK'], branches.b),
               manager,
             )
           ).status,

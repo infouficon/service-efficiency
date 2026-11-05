@@ -65,8 +65,8 @@ export class SerialCheckService {
   }
 
   async check(user: PublicAccount, snRaw: string, partRaw?: string, branchCode?: string): Promise<SerialCheckAnswer> {
-    if (!(['STOCK', 'CASHIER', 'ADMIN'] as const).some((role) => user.roles.includes(role)))
-      throw new ForbiddenException('Access restricted to STOCK, CASHIER or ADMIN');
+    if (!(['STOCK', 'STAFF', 'ADMIN'] as const).some((role) => user.roles.includes(role)))
+      throw new ForbiddenException('Access restricted to STOCK, STAFF or ADMIN');
     const sn = (snRaw ?? '').trim().toUpperCase();
     if (!/^[\x21-\x7E]{1,64}$/.test(sn)) throw new BadRequestException('sn ไม่ถูกต้อง');
     const part = partRaw?.trim() || undefined;

@@ -40,7 +40,7 @@ test('clearing the old catalog and queue history is counted first and needs a ty
     });
 
     await t.test('only ADMIN; flags must be exactly true/false', async () => {
-      for (const who of ['staff', 'stock', 'cashier', 'manager'])
+      for (const who of ['staff', 'stock', 'manager'])
         assert.equal((await post('?dryRun=true', undefined, who)).status, 403, who);
       assert.equal((await post('?dryRun=1')).status, 400);
     });

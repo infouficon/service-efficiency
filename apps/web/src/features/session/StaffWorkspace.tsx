@@ -23,6 +23,7 @@ import type { MockSession, MockUser, Selection } from '../../types/session';
 import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
+import { ReturnToStockForm } from './ReturnToStockForm';
 import { WalkInForm } from './WalkInForm';
 import { ChangeItemModal } from './ChangeItemModal';
 import { ReceiptSheet, nowText } from './Receipt';
@@ -43,6 +44,7 @@ import {
   rebuyApi,
   recordNotBuyApi,
   resolveStockReviewApi,
+  returnToStockApi,
   updateSelectionApi,
 } from '../../services/sessionApi';
 
@@ -61,7 +63,7 @@ interface StaffWorkspaceProps {
   onUpdateSession: (session: MockSession) => void;
 }
 
-type FormView = 'normal' | 'notBuy' | 'review' | 'cancel';
+type FormView = 'normal' | 'notBuy' | 'review' | 'cancel' | 'return';
 
 function isTodaySession(s: MockSession): boolean {
   const getLocalDateStr = (d: Date) => {
@@ -291,6 +293,27 @@ export function StaffWorkspace({
       setForm('normal');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ยกเลิกไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** F13/D105: the cashier (in U POS) found the wrong unit; STAFF sends the order back to stock with which items and why. */
+  const handleReturnToStock = async (
+    reason: string,
+    text: string,
+    wrongItems?: string[],
+    wrongItemIds?: string[],
+    wrongItemDetails?: Record<string, { reason: string; note?: string }>,
+  ) => {
+    if (!activeSession?.id) return;
+    setBusy(true);
+    setError('');
+    try {
+      onUpdateSession(await returnToStockApi(activeSession.id, reason, text || undefined, wrongItems, wrongItemIds, wrongItemDetails));
+      setForm('normal');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'ส่งกลับ Stock ไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -581,7 +604,9 @@ export function StaffWorkspace({
                           ? 'ตรวจสอบและยืนยันข้อมูลสั่งซื้อ'
                           : form === 'cancel'
                             ? 'ยืนยันการยกเลิกบริการ'
-                            : 'ดำเนินการบริการ'
+                            : form === 'return'
+                              ? 'ส่งสินค้ากลับ Stock (หยิบผิด)'
+                              : 'ดำเนินการบริการ'
                     }
                     eyebrow="CURRENT STAGE"
                   >
@@ -635,6 +660,8 @@ export function StaffWorkspace({
                         label="ยืนยันการยกเลิก"
                         onSubmit={handleCancelCurrent}
                       />
+                    ) : form === 'return' ? (
+                      <ReturnToStockForm session={activeSession} onBack={() => setForm('normal')} onSubmit={handleReturnToStock} />
                     ) : (
                       <>
                         {activeSession.stockPendingReview && (
@@ -806,14 +833,23 @@ export function StaffWorkspace({
                             <Notice>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                 <CreditCard size={16} />
-                                สินค้าส่งถึงฝ่าย Cashier แล้ว ({activeSession.state})
+                                {activeSession.state === 'BILL_OPENED'
+                                  ? `เปิดบิลใน U POS แล้ว${activeSession.posBillNo ? ` (บิล ${activeSession.posBillNo})` : ''} รอชำระเงิน`
+                                  : 'ส่งของถึงแคชเชียร์แล้ว รอเปิดบิลใน U POS'}
                               </span>
                             </Notice>
                             <p className="muted">
-                              แคชเชียร์กำลังเปิดบิลและรับชำระเงิน
-                              สามารถสลับไปหน้า "แคชเชียร์" เพื่อดูความคืบหน้าได้
+                              แคชเชียร์ทำรายการใน U POS ระบบอัปเดตสถานะให้เอง ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ Stock"
                             </p>
                             <Summary session={activeSession} />
+                            {activeSession.state !== 'BILL_OPENED' && (
+                              // D105: the cashier works in U POS and tells the staff; the staff sends the order back
+                              <div style={{ marginTop: '16px' }}>
+                                <Button variant="secondary" onClick={() => setForm('return')}>
+                                  ส่งกลับ Stock (หยิบผิด)
+                                </Button>
+                              </div>
+                            )}
                           </>
                         )}
 

@@ -66,7 +66,7 @@ test('staff export and import: everything stored, all or nothing, same rules as 
 
     await t.test('ADMIN only', async () => {
       assert.equal((await request('/staff/export')).status, 401);
-      for (const who of ['staff', 'stock', 'cashier', 'manager']) {
+      for (const who of ['staff', 'stock', 'manager']) {
         assert.equal((await request('/staff/export', 'GET', undefined, cookies[who])).status, 403, who);
         assert.equal((await post([{ staffId: 'x' }], true, who)).status, 403, who);
       }
@@ -205,7 +205,8 @@ test('staff export and import: everything stored, all or nothing, same rules as 
         [{ phone: '0899999999' }, /ERP/],
         [{ branchCode: branches.b.code }, /ERP/],
         [{ active: 'FALSE' }, /ERP/],
-        [{ roles: 'CASHIER' }, /ERP/],
+        [{ roles: 'STOCK' }, /ERP/],
+        [{ roles: 'CASHIER' }, /U POS/], // D105
       ]) {
         const res = await post([{ staffId: id('erp'), ...change }], true);
         assert.equal(res.data.rows[0].action, 'error', JSON.stringify(change));

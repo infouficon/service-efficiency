@@ -40,7 +40,8 @@ export class StaffUpdateDto {
   @IsArray()
   @ArrayNotEmpty()
   @ArrayUnique()
-  @IsIn(Object.values(RoleCode), { each: true })
+  // D105: CASHIER is not given any more (the cashiers work in U POS)
+  @IsIn(Object.values(RoleCode).filter((role) => role !== 'CASHIER'), { each: true })
   roles!: RoleCode[];
   @ValidateIf((_object, value) => value !== null)
   @IsString()

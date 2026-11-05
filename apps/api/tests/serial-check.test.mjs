@@ -75,8 +75,8 @@ test('one scanned serial against the stock: warroom by default, FileMaker live w
     await unit(sn(3), 'transfer', branches.a);
     await unit(sn(4), 'ready', branches.a, 'OTHER/A');
 
-    await t.test('only STOCK, CASHIER and ADMIN; a serial is required and checked', async () => {
-      assert.equal((await ask({ sn: sn(1) }, 'staff')).status, 403);
+    await t.test('only STOCK, STAFF and ADMIN; a serial is required and checked', async () => {
+      assert.equal((await ask({ sn: sn(1) }, 'manager')).status, 403);
       assert.equal((await ask({})).status, 400);
       assert.equal((await ask({ sn: 'AB CD' })).status, 400);
       assert.equal((await ask({ sn: sn(1), part: "x' or 1" })).status, 400);

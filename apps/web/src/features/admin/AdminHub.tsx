@@ -176,7 +176,7 @@ export function AdminHub({
   };
   const allowedRoles = admin
     ? accountRoles
-    : accountRoles.filter((r) => ['STAFF', 'STOCK', 'CASHIER'].includes(r));
+    : accountRoles.filter((r) => ['STAFF', 'STOCK'].includes(r));
   return (
     <>
       <div

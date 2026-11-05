@@ -217,7 +217,6 @@ export interface MockSession {
 export type AppView =
   | 'staff'
   | 'stock'
-  | 'cashier'
   | 'products'
   | 'logs'
   | 'admin';

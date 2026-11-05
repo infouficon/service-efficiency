@@ -388,8 +388,8 @@ export async function cancelSessionApi(id: string, reason: string, otherReason?:
   return mapApiSessionToMockSession(data);
 }
 
-/** F13: the cashier sends the order back to stock (wrong item picked). */
-export async function cashierRejectApi(
+/** F13/D105: STAFF sends the order back to stock (wrong item picked); the path keeps its old name. */
+export async function returnToStockApi(
   id: string,
   reason: string,
   otherReason?: string,
@@ -407,20 +407,7 @@ export async function cashierRejectApi(
   return mapApiSessionToMockSession(data);
 }
 
-/** D75: cashier removes damaged items and proceeds with the rest of the order. */
-export async function cashierRemoveDamagedApi(
-  id: string,
-  itemIds: string[],
-  note?: string,
-): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/remove-damaged`, 'POST', {
-    itemIds,
-    note,
-  });
-  return mapApiSessionToMockSession(data);
-}
-
-/** D78: Staff or Cashier changes an item (model, color, capacity) in the order and sends it to Stock. */
+/** D78: Staff changes an item (model, color, capacity) in the order and sends it to Stock. */
 export async function changeSessionItemApi(
   id: string,
   oldItemId: string,

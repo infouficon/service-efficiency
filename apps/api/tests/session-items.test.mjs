@@ -492,6 +492,9 @@ test('a session holds several main products with quantities (D40 flow, F3)', asy
         );
         assert.equal(resolved.status, 201, JSON.stringify(resolved.data));
         assert.equal(resolved.data.state, 'FOUND');
+        // D105: found when stock reported the rest missing, not when the customer decided
+        const report = resolved.data.events.find((e) => e.eventType === 'STOCK_REPORTED_MISSING');
+        assert.equal(new Date(resolved.data.stockFoundAt).toISOString(), report.metadata.reportedAt);
         assert.deepEqual(
           resolved.data.items.map((i) => i.skuId),
           [skuA.id],

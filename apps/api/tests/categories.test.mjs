@@ -27,7 +27,7 @@ test('product categories are a list ADMIN keeps; staff only see products of an a
           [false, false, false, false, true],
         );
         assert.ok(all.slice(0, 5).every((c) => c.active));
-        for (const who of ['staff', 'stock', 'cashier', 'manager', 'admin'])
+        for (const who of ['staff', 'stock', 'manager', 'admin'])
           assert.equal((await list(who)).status, 200, who);
         assert.equal((await request('/categories', 'GET')).status, 401);
         assert.equal(
@@ -43,7 +43,7 @@ test('product categories are a list ADMIN keeps; staff only see products of an a
       async () => {
         const add = (body, who = 'admin') =>
           request('/categories', 'POST', body, cookies[who]);
-        for (const who of ['staff', 'stock', 'cashier', 'manager'])
+        for (const who of ['staff', 'stock', 'manager'])
           assert.equal((await add({ name: `${prefix} Tablet` }, who)).status, 403, who);
         const made = await add({ name: `${prefix} Tablet`, isAccessory: false });
         assert.equal(made.status, 201, JSON.stringify(made.data));

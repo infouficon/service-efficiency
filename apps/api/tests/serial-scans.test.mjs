@@ -36,7 +36,7 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
       const a = itemOf(s, skuA);
       assert.equal((await scan(s, a, sn())).status, 400, 'not before the search started (STOCK_REQUESTED)');
       assert.equal((await step(s, 'search')).status, 201);
-      for (const who of ['staff', 'cashier']) assert.equal((await scan(s, a, sn(), who)).status, 403, who);
+      for (const who of ['staff', 'manager']) assert.equal((await scan(s, a, sn(), who)).status, 403, who);
       const before = Date.now();
       const first = sn();
       const res = await scan(s, a, `  ${first.toLowerCase()} `);

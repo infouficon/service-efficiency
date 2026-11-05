@@ -16,7 +16,6 @@ import {
   AdvanceStepDto,
   CancelSessionDto,
   CashierRejectDto,
-  CashierRemoveDamagedDto,
   ChangeSessionItemDto,
   CreateSessionDto,
   NotBuyDto,
@@ -133,17 +132,6 @@ export class SessionsController {
   ) {
     const user = await this.accounts.authenticate(req);
     return this.sessions.cashierReject(user, id, dto);
-  }
-
-  /** D75: cashier removes damaged items and proceeds with the rest of the order. */
-  @Post(':id/cashier/remove-damaged')
-  async cashierRemoveDamaged(
-    @Req() req: Request,
-    @Param('id') id: string,
-    @Body() dto: CashierRemoveDamagedDto,
-  ) {
-    const user = await this.accounts.authenticate(req);
-    return this.sessions.cashierRemoveDamaged(user, id, dto);
   }
 
   /** F12: stock confirms it has seen a cancel (and brought the goods back). */

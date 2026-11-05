@@ -36,6 +36,15 @@ export type PublicAccount = ReturnType<typeof publicAccount>;
 type Tx = Prisma.TransactionClient;
 /** Roles that follow the ERP for accounts created by the ERP import (D54); ADMIN and MANAGER stay manual. */
 export const ERP_MANAGED_ROLES: RoleCode[] = ['STAFF', 'STOCK', 'CASHIER'];
+/**
+ * D105: roles SES no longer has a screen for. The cashiers work in U POS: the role stays in the database (old accounts, history)
+ * but is never shown, given or enough to sign in.
+ */
+export const RETIRED_ROLES: RoleCode[] = ['CASHIER'];
+const sesRoles = (account: { roles: { roleCode: RoleCode }[] }) =>
+  account.roles.map((r) => r.roleCode).filter((role) => !RETIRED_ROLES.includes(role));
+/** D105: an account with nothing to do in SES any more (only retired roles). */
+export const NO_SES_WORK = 'บัญชีนี้ไม่ได้ใช้ SES แล้ว (แคชเชียร์ทำงานใน U POS)';
 const ERP_PASSWORD_MESSAGE =
   'บัญชีนี้ใช้รหัสผ่านเดียวกับ ERP กรุณาเปลี่ยนรหัสผ่านที่ ERP (ระบบซิงก์ทุกวัน 10:00)';
 const queueOf = (
@@ -51,7 +60,7 @@ export function publicAccount(account: Account) {
     firstName: account.firstName || '',
     lastName: account.lastName || '',
     name: fullName || account.staffId,
-    roles: account.roles.map((r) => r.roleCode),
+    roles: sesRoles(account),
     branchId: account.branchId,
     branchCode: account.branch?.code ?? null,
     branch: account.branch?.name ?? 'Global',
@@ -173,6 +182,7 @@ export class AccountsService {
       (session.staff.branch && !session.staff.branch.active)
     )
       throw new UnauthorizedException('กรุณาเข้าสู่ระบบใหม่');
+    if (!sesRoles(session.staff).length) throw new UnauthorizedException(NO_SES_WORK);
     if (session.staff.mustChangePassword && !allowPasswordChange)
       throw new ForbiddenException('ต้องเปลี่ยนรหัสผ่านก่อนใช้งาน');
     await tx.loginSession.update({
@@ -218,9 +228,11 @@ export class AccountsService {
         where: { staffId },
         data: { failedAttempts: 0, lockedUntil: null },
       });
+      if (!sesRoles(account).length) return 'no-ses-work' as const;
       const token = await this.createSession(tx, staffId);
       return { token, user: publicAccount(account) };
     });
+    if (result === 'no-ses-work') throw new ForbiddenException(NO_SES_WORK);
     if (!result)
       throw new UnauthorizedException(
         this.otpEnabled()
@@ -577,7 +589,8 @@ export class AccountsService {
     if ((firstName?.length ?? 0) > 100) throw bad('firstName', 'ยาวเกิน 100 ตัวอักษร');
     if ((lastName?.length ?? 0) > 100) throw bad('lastName', 'ยาวเกิน 100 ตัวอักษร');
     const roles = parseRolesCell(raw.roles);
-    if (roles === null) throw bad('roles', 'ใช้ได้เฉพาะ ADMIN, MANAGER, STAFF, STOCK, CASHIER คั่นด้วย ,');
+    if (roles === null) throw bad('roles', 'ใช้ได้เฉพาะ ADMIN, MANAGER, STAFF, STOCK คั่นด้วย ,');
+    const retiredRoleError = () => bad('roles', 'CASHIER ไม่ใช้แล้ว (แคชเชียร์ทำงานใน U POS)');
     const active = parseActiveCell(raw.active);
     if (active === null) throw bad('active', 'ใช้ TRUE หรือ FALSE');
     const phone = parsePhoneCell(raw.phone);
@@ -595,6 +608,7 @@ export class AccountsService {
 
     if (!target) {
       if (!roles) throw bad('roles', 'ว่าง (บัญชีใหม่ต้องระบุบทบาท)');
+      if (roles.some((role) => RETIRED_ROLES.includes(role))) throw retiredRoleError(); // D105
       const adminOnly = roles.every((r) => r === 'ADMIN');
       await this.createStaffIn(
         tx,
@@ -618,6 +632,8 @@ export class AccountsService {
 
     const currentRoles = target.roles.map((r) => r.roleCode);
     const nextRoles = roles ?? currentRoles;
+    // D105: CASHIER is never given; an export read back keeps an old account's role as it is
+    if (nextRoles.some((role) => RETIRED_ROLES.includes(role) && !currentRoles.includes(role))) throw retiredRoleError();
     const adminOnly = nextRoles.every((r) => r === 'ADMIN');
     const next = {
       firstName: firstName ?? target.firstName,

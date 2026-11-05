@@ -123,6 +123,11 @@ export async function seedWorld(ctx) {
       staffId,
       password: PASSWORD,
     });
+    // D105: a cashier-only account has nothing in SES any more (the cashiers work in U POS): it cannot sign in
+    if (roles.every((role) => role === 'CASHIER')) {
+      assert.equal(login.status, 403, `login ${name}`);
+      continue;
+    }
     assert.equal(login.status, 201, `login ${name}`);
     cookies[name] = login.cookie;
   }
@@ -219,14 +224,14 @@ export async function seedCatalog(ctx, world, count = 2, stock = 5) {
   return skus;
 }
 
-/** The steps of the happy path in order (D68: starts at product selection), with the role that performs each one. */
+/**
+ * The steps of the happy path in order (D68: starts at product selection), with the role that performs each one. D105: after
+ * "send" the till is U POS (it reports the bill and the payment); `complete` here is ADMIN's fallback.
+ */
 export const PATH = [
   ['confirm', 'staff'],
   ['search', 'stock'],
   ['found', 'stock'],
   ['send', 'stock'],
-  ['receive', 'cashier'],
-  ['scan', 'cashier'],
-  ['bill', 'cashier'],
-  ['complete', 'cashier'],
+  ['complete', 'admin'],
 ];

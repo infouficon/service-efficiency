@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { SmsService } from '../sms/sms.service';
-import { AccountsService, publicAccount } from './accounts.service';
+import { AccountsService, RETIRED_ROLES, publicAccount } from './accounts.service';
 
 export const OTP_TTL_MS = 5 * 60_000;
 export const OTP_MAX_ATTEMPTS = 5;
@@ -47,13 +47,15 @@ export class OtpService {
     const staffId = staffIdInput.trim();
     const account = await this.prisma.staff.findUnique({
       where: { staffId },
-      include: { branch: true },
+      include: { branch: true, roles: true },
     });
     const eligible =
       account &&
       account.active &&
       account.phone &&
-      (!account.branch || account.branch.active);
+      (!account.branch || account.branch.active) &&
+      // D105: no SMS (and no cost) for an account SES has no screen for (the cashiers work in U POS)
+      account.roles.some((r) => !RETIRED_ROLES.includes(r.roleCode));
     if (!eligible) return { ok: true };
 
     const now = Date.now();
@@ -122,6 +124,7 @@ export class OtpService {
         include: { roles: true, branch: true },
       });
       if (!account || !account.active || (account.branch && !account.branch.active)) return null;
+      if (!account.roles.some((r) => !RETIRED_ROLES.includes(r.roleCode))) return null; // D105
       const otp = await tx.loginOtp.findFirst({
         where: { staffId: account.staffId, consumedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: 'desc' },

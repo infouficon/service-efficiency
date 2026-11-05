@@ -40,7 +40,7 @@ test('payment methods are a list ADMIN keeps; names are history, so never rename
           (await names('staff')).slice(0, SEEDED.length),
           SEEDED,
         );
-        for (const who of ['staff', 'stock', 'cashier', 'manager', 'admin'])
+        for (const who of ['staff', 'stock', 'manager', 'admin'])
           assert.equal((await list(who)).status, 200, who);
         assert.equal((await request('/payment-methods', 'GET')).status, 401);
       },
@@ -51,7 +51,7 @@ test('payment methods are a list ADMIN keeps; names are history, so never rename
       async () => {
         const add = (body, who = 'admin') =>
           request('/payment-methods', 'POST', body, cookies[who]);
-        for (const who of ['staff', 'stock', 'cashier', 'manager'])
+        for (const who of ['staff', 'stock', 'manager'])
           assert.equal(
             (await add({ name: `${prefix} Wallet` }, who)).status,
             403,

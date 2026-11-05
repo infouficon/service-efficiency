@@ -23,9 +23,8 @@ export const STEP_ACTIONS = [
   'search',
   'found',
   'send',
-  'receive',
-  'scan',
-  'bill',
+  // D105: no receive / scan / bill: the cashiers work in U POS, which reports the bill and the payment (/integrations/pos/bills).
+  // `complete` is ADMIN's fallback while U POS reports nothing.
   'complete',
 ] as const;
 
@@ -261,16 +260,6 @@ export class ResolveStockReviewDto {
   @IsOptional()
   @IsString()
   otherReason?: string;
-}
-
-export class CashierRemoveDamagedDto {
-  @IsArray()
-  @IsString({ each: true })
-  itemIds!: string[];
-
-  @IsOptional()
-  @IsString()
-  note?: string;
 }
 
 export class ChangeSessionItemDto {

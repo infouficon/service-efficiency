@@ -15,7 +15,6 @@ import type {
   AdvanceStepDto,
   CancelSessionDto,
   CashierRejectDto,
-  CashierRemoveDamagedDto,
   ChangeSessionItemDto,
   CreateSessionDto,
   NotBuyDto,
@@ -28,14 +27,17 @@ import type {
 } from './dto';
 import { EventType, Prisma, WorkflowState } from '@prisma/client';
 
+/** The orders that left stock and wait for the till (U POS); the CASHIER_* states only hold orders from before D105. */
+const AT_TILL: WorkflowState[] = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'];
+
 const STEPS: Record<
   StepAction,
   {
-    from: WorkflowState;
+    from: WorkflowState | WorkflowState[];
     to: WorkflowState;
     timestampField?: string;
     eventType: EventType;
-    requiredRole: 'STAFF' | 'STOCK' | 'CASHIER';
+    requiredRole: 'STAFF' | 'STOCK' | 'ADMIN';
   }
 > = {
   startDemo: {
@@ -86,32 +88,12 @@ const STEPS: Record<
     eventType: 'STOCK_SENT_TO_CASHIER',
     requiredRole: 'STOCK',
   },
-  receive: {
-    from: 'SENT_TO_CASHIER',
-    to: 'CASHIER_RECEIVED',
-    timestampField: 'cashierReceivedAt',
-    eventType: 'CASHIER_RECEIVED',
-    requiredRole: 'CASHIER',
-  },
-  scan: {
-    from: 'CASHIER_RECEIVED',
-    to: 'CASHIER_SCAN',
-    timestampField: 'cashierScanAt',
-    eventType: 'CASHIER_SCANNED',
-    requiredRole: 'CASHIER',
-  },
-  bill: {
-    from: 'CASHIER_SCAN',
-    to: 'BILL_OPENED',
-    timestampField: 'billOpenedAt',
-    eventType: 'BILL_OPENED',
-    requiredRole: 'CASHIER',
-  },
+  // D105: ADMIN closes a sale U POS did not report (U POS normally completes it with the payment time, D101)
   complete: {
-    from: 'BILL_OPENED',
+    from: AT_TILL,
     to: 'COMPLETED',
     eventType: 'COMPLETED',
-    requiredRole: 'CASHIER',
+    requiredRole: 'ADMIN',
   },
 };
 
@@ -294,7 +276,7 @@ export class SessionsService {
     return resolved;
   }
 
-  private checkRole(user: PublicAccount, role: 'STAFF' | 'STOCK' | 'CASHIER' | 'MANAGER' | 'ADMIN') {
+  private checkRole(user: PublicAccount, role: 'STAFF' | 'STOCK' | 'MANAGER' | 'ADMIN') {
     if (user.roles.includes('ADMIN')) return;
     if (!user.roles.includes(role)) {
       throw new ForbiddenException(`Missing required role: ${role}`);
@@ -617,9 +599,10 @@ export class SessionsService {
 
     this.checkRole(user, step.requiredRole);
 
-    if (session.state !== step.from) {
+    const from = Array.isArray(step.from) ? step.from : [step.from];
+    if (!from.includes(session.state)) {
       throw new BadRequestException(
-        `Cannot execute ${dto.action} from state ${session.state} (expected ${step.from})`,
+        `Cannot execute ${dto.action} from state ${session.state} (expected ${from.join(' / ')})`,
       );
     }
 
@@ -637,7 +620,7 @@ export class SessionsService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      await this.claim(tx, session.id, Prisma.sql`state = ${step.from} AND outcome IS NULL`); // H-01
+      await this.claim(tx, session.id, Prisma.sql`state IN (${Prisma.join(from)}) AND outcome IS NULL`); // H-01
       if (dto.action === 'send' && !useSaved) await this.saveSerials(tx, session, serials);
       if (useSaved && !dto.serialsLater) await this.assertSerialsComplete(tx, session.items);
       // D103: how many units leave without a serial (scanned in FileMaker later); kept on the event, FileMaker gets `snMissing`
@@ -1290,13 +1273,13 @@ export class SessionsService {
   }
 
   /**
-   * F13: the cashier sends the order back to stock (the wrong item was picked). Allowed from SENT_TO_CASHIER,
-   * CASHIER_RECEIVED and CASHIER_SCAN, not once the bill is open. The units FOUND took go back to the shelf, the session is
-   * at the stock stage again (SEARCHING) and its milestones for the stock-found and cashier steps start over; the first
-   * round stays in the events (CASHIER_REJECTED, then a second STOCK_FOUND...).
+   * F13/D105: the order goes back to stock (the wrong item was picked). Since D105 STAFF does it (the cashiers work in U POS and
+   * tell the staff). Allowed from SENT_TO_CASHIER (and the CASHIER_* states of older orders), not once the bill is open. The
+   * units FOUND took go back to the shelf, the session is at the stock stage again (SEARCHING) and its stock-found milestone
+   * starts over; the first round stays in the events (CASHIER_REJECTED, then a second STOCK_FOUND...).
    */
   async cashierReject(user: PublicAccount, id: string, dto: CashierRejectDto) {
-    this.checkRole(user, 'CASHIER');
+    this.checkRole(user, 'STAFF');
     const session = await this.getById(user, id);
 
     if (
@@ -1346,116 +1329,6 @@ export class SessionsService {
   }
 
   /**
-   * D75: Cashier removes damaged item(s) from an order and proceeds with remaining items.
-   * If all items in the order are removed, the session is cancelled with CUSTOMER_CANCELLED (reason: 'สินค้าชำรุด/มีตำหนิ').
-   */
-  async cashierRemoveDamaged(user: PublicAccount, id: string, dto: CashierRemoveDamagedDto) {
-    this.checkRole(user, 'CASHIER');
-    const session = await this.getById(user, id);
-
-    if (
-      session.outcome ||
-      !['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN'].includes(session.state)
-    ) {
-      throw new BadRequestException(
-        'Only an order that is with the cashier and not yet billed can have damaged items removed',
-      );
-    }
-    if (!Array.isArray(dto.itemIds) || dto.itemIds.length === 0) {
-      throw new BadRequestException('At least one item must be specified to remove');
-    }
-
-    const removedItemIds = new Set(dto.itemIds);
-    const removedMainItems = session.items.filter(
-      (item) => removedItemIds.has(item.id) || removedItemIds.has(item.skuId),
-    );
-    const removedAccessories = session.accessories.filter(
-      (acc) => removedItemIds.has(acc.id) || removedItemIds.has(acc.accessoryName),
-    );
-
-    const remainingMainCount = session.items.length - removedMainItems.length;
-    const remainingAccCount = session.accessories.length - removedAccessories.length;
-    const totalRemaining = remainingMainCount + remainingAccCount;
-
-    const now = new Date();
-    const removedNames = [
-      ...removedMainItems.map((i) => `${i.sku.name} (${i.sku.sku})`),
-      ...removedAccessories.map((a) => `${a.accessoryName} (x${a.quantity})`),
-    ];
-
-    return this.prisma.$transaction(async (tx) => {
-      await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN')`); // H-01
-      // the same items may have been removed by a click a moment ago: only what is still on the order counts
-      const stillThere = await tx.sessionItem.count({ where: { sessionId: session.id, id: { in: removedMainItems.map((i) => i.id) } } });
-      const accStillThere = await tx.sessionAccessory.count({ where: { sessionId: session.id, id: { in: removedAccessories.map((a) => a.id) } } });
-      if (stillThere !== removedMainItems.length || accStillThere !== removedAccessories.length)
-        throw new ConflictException('รายการนี้ถูกดำเนินการไปแล้ว (อาจกดซ้ำ) กรุณารีเฟรชหน้า');
-      // Return deducted units of the removed main items to shelf
-      await this.returnItemsToShelf(tx, session.branchId, removedMainItems);
-
-      // If all items are removed, cancel the session
-      if (totalRemaining <= 0) {
-        return tx.customerSession.update({
-          where: { id: session.id },
-          data: {
-            outcome: 'CUSTOMER_CANCELLED',
-            reason: 'สินค้าชำรุด/มีตำหนิ',
-            otherReason: dto.note?.trim() || null,
-            cancelledBy: user.staffId,
-            cancelledAt: now,
-            events: {
-              create: {
-                eventType: 'CUSTOMER_CANCELLED',
-                actorStaffId: user.staffId,
-                createdAt: now,
-                metadata: {
-                  reason: 'สินค้าชำรุด/มีตำหนิ',
-                  otherReason: dto.note?.trim() || null,
-                  removedItems: removedNames,
-                  allRemoved: true,
-                },
-              },
-            },
-          },
-          include: sessionInclude,
-        });
-      }
-
-      // Delete removed main product rows
-      for (const item of removedMainItems) {
-        await tx.sessionItem.delete({ where: { id: item.id } });
-      }
-
-      // Delete removed accessory rows
-      for (const acc of removedAccessories) {
-        await tx.sessionAccessory.delete({ where: { id: acc.id } });
-      }
-
-      // Record CASHIER_REJECTED event with action: REMOVE_DAMAGED
-      return tx.customerSession.update({
-        where: { id: session.id },
-        data: {
-          events: {
-            create: {
-              eventType: 'CASHIER_REJECTED',
-              actorStaffId: user.staffId,
-              createdAt: now,
-              metadata: {
-                action: 'REMOVE_DAMAGED',
-                reason: 'สินค้าชำรุด/มีตำหนิ',
-                otherReason: dto.note?.trim() || null,
-                removedItems: removedNames,
-                removedItemIds: dto.itemIds,
-              },
-            },
-          },
-        },
-        include: sessionInclude,
-      });
-    });
-  }
-
-  /**
    * D78: Staff or Cashier changes a main product item (model, color, capacity) in the order.
    * Allowed stages:
    * - STAFF (or ADMIN): STOCK_REQUESTED, SEARCHING, FOUND
@@ -1471,26 +1344,13 @@ export class SessionsService {
       throw new BadRequestException('คิวนี้เสร็จสิ้นหรือเปิดบิลแล้ว ไม่สามารถเปลี่ยนสินค้าได้');
     }
 
-    const isAdmin = user.roles.includes('ADMIN');
-    const isCashier = user.roles.includes('CASHIER');
-    const isStaff = user.roles.includes('STAFF');
-
-    const cashierStates: WorkflowState[] = ['CASHIER_RECEIVED', 'CASHIER_SCAN'];
+    // D105: only STAFF (or ADMIN) changes a product, while the order is with stock; the cashier's change at the till is gone
+    if (!user.roles.includes('STAFF') && !user.roles.includes('ADMIN'))
+      throw new ForbiddenException('เฉพาะ Staff เท่านั้นที่มีสิทธิ์เปลี่ยนสินค้า');
     const staffStates: WorkflowState[] = ['STOCK_REQUESTED', 'SEARCHING', 'FOUND'];
-
-    let actorRole: 'STAFF' | 'CASHIER';
-    if ((isCashier || isAdmin) && cashierStates.includes(session.state)) {
-      actorRole = 'CASHIER';
-    } else if ((isStaff || isAdmin) && staffStates.includes(session.state)) {
-      actorRole = 'STAFF';
-    } else {
-      if (!isCashier && !isStaff && !isAdmin) {
-        throw new ForbiddenException('เฉพาะ Staff หรือ Cashier เท่านั้นที่มีสิทธิ์เปลี่ยนสินค้า');
-      }
-      throw new BadRequestException(
-        `ไม่สามารถเปลี่ยนสินค้าในสถานะ ${session.state} ได้ (Staff: รอค้นหา/พบแล้ว, Cashier: ตรวจรับ/สแกน)`,
-      );
-    }
+    if (!staffStates.includes(session.state))
+      throw new BadRequestException(`ไม่สามารถเปลี่ยนสินค้าในสถานะ ${session.state} ได้ (ได้เฉพาะตอนรอค้นหา / กำลังค้นหา / พบแล้ว)`);
+    const actorRole = 'STAFF' as const;
 
     if (!dto.reason?.trim()) {
       throw new BadRequestException('กรุณาระบุเหตุผลในการเปลี่ยนสินค้า');
@@ -1793,6 +1653,7 @@ export class SessionsService {
       missingItems?: string[];
       foundItems?: string[];
       missingItemIds?: string[];
+      reportedAt?: string;
     };
     const missingItems = Array.isArray(review?.missingItems) ? review.missingItems : [];
     // F3: the review points at the missing items by id; a review made before F3 names the main product instead
@@ -1819,11 +1680,14 @@ export class SessionsService {
           session.items.filter((item) => !missingRows.includes(item)),
         );
 
+        // D105: stock found what it found when it reported the rest missing, not when the customer decided (real times, D101)
+        const reportedAt = review?.reportedAt ? new Date(review.reportedAt) : null;
+        const foundAt = reportedAt && !Number.isNaN(reportedAt.getTime()) && reportedAt <= now ? reportedAt : now;
         return tx.customerSession.update({
           where: { id: session.id },
           data: {
             state: 'FOUND',
-            stockFoundAt: now,
+            stockFoundAt: foundAt,
             stockReview: null as unknown as undefined,
             events: {
               create: [
@@ -1837,7 +1701,7 @@ export class SessionsService {
                   eventType: 'STOCK_FOUND',
                   actorStaffId: user.staffId,
                   createdAt: now,
-                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL', deducted },
+                  metadata: { source: 'CUSTOMER_ACCEPT_PARTIAL', deducted, foundAt: foundAt.toISOString() },
                 },
               ],
             },

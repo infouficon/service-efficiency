@@ -4,7 +4,7 @@ import { ArrayNotEmpty, ArrayUnique, IsArray, IsIn, IsInt, IsOptional, IsString,
 /** D87: one person picked by hand for the ERP import. */
 export class ErpExtraDto {
   @IsInt() @Min(1) erpStaffId!: number;
-  @IsArray() @ArrayNotEmpty() @ArrayUnique() @IsIn(['STAFF', 'STOCK', 'CASHIER'], { each: true }) roles!: RoleCode[];
+  @IsArray() @ArrayNotEmpty() @ArrayUnique() @IsIn(['STAFF', 'STOCK'], { each: true }) roles!: RoleCode[]; // D105: no CASHIER
   @IsString() @MinLength(1) @MaxLength(36) branchId!: string;
   @IsOptional() @IsString() @MaxLength(191) note?: string;
 }

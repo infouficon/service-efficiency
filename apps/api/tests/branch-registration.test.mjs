@@ -20,7 +20,7 @@ test('each branch has a registration URL for the receipt QR, set by ADMIN even w
         null,
         'none to begin with',
       );
-      for (const who of ['staff', 'stock', 'cashier', 'manager'])
+      for (const who of ['staff', 'stock', 'manager'])
         assert.equal((await put(branches.a.id, { url }, who)).status, 403, who);
       const set = await put(branches.a.id, { url });
       assert.equal(set.status, 200, JSON.stringify(set.data));

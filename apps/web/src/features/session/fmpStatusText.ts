@@ -23,12 +23,12 @@ export function fmpStatusText(
           : 'แจ้ง ADMIN / ทีม FileMaker',
     };
   }
-  // D103: FileMaker opened the held bill, but some lines wait for their serial (the cashier scans it in FileMaker)
+  // D103: FileMaker opened the held bill without the units that have no serial it accepts; the cashier scans those in as usual
   if (fmp.ackStatus === 'success' && /^CREATED_SN_LATER/.test(fmp.ackMessage ?? ''))
     return {
       tone: 'warn',
-      text: `FileMaker เปิดบิลพักแล้ว แต่ยังขาด SN: ${fmp.ackMessage}`,
-      hint: 'แคชเชียร์สแกน SN ใน FileMaker ตอนรับเงิน (เครื่องที่โอนมา: รับโอนใน FileMaker ก่อน)',
+      text: `FileMaker เปิดบิลพักแล้ว แต่บางเครื่องไม่อยู่ในบิล: ${fmp.ackMessage}`,
+      hint: 'แคชเชียร์สแกนขายเครื่องที่ขาดเพิ่มในบิลตามปกติ (เครื่องที่โอนมา: รับโอนใน FileMaker ก่อน)',
     };
   if (fmp.ackStatus === 'success') return { tone: 'ok', text: `FileMaker รับแล้ว: ${fmp.ackMessage ?? 'สำเร็จ'}` };
   if (fmp.ackStatus === 'reported') return { tone: 'wait', text: `FileMaker แจ้ง: ${fmp.ackMessage ?? '-'}` };

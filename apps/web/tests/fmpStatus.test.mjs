@@ -26,7 +26,7 @@ test('a unit FileMaker does not have here yet, and a held bill waiting for seria
   assert.equal(wrong.tone, 'bad');
   assert.match(wrong.hint, /รับโอนใน FileMaker แล้ว ADMIN กด "ส่งซ้ำ"/);
   assert.match(fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'SN_MODEL_MISMATCH: SN X is model Y' }).hint, /^Serial Number ไม่ตรง/);
-  const later = fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'CREATED_SN_LATER saleID S-9 (2 รายการ): รอสแกน SN 1 เครื่อง' });
+  const later = fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'CREATED_SN_LATER saleID S-9 (1 รายการ): แคชเชียร์สแกนขายเพิ่ม 1 เครื่อง' });
   assert.equal(later.tone, 'warn');
-  assert.match(later.hint, /สแกน SN ใน FileMaker/);
+  assert.match(later.hint, /สแกนขายเครื่องที่ขาดเพิ่มในบิล/);
 });

@@ -1,6 +1,7 @@
 # [SES v3] 2026-11-05 ทีม SES: สคริปต์ ses เวอร์ชัน 3 = v2 + "สแกน SN ทีหลัง" (ทุกจุดที่เปลี่ยนมี [SES v3] นำหน้า, ดู README.md)
 # [SES v3] เครื่องอยู่ที่ร้านแล้วแต่ FMP ยังไม่อัปเดต (เช่น ยังไม่รับโอน: SN_WRONG_BRANCH) หรือ STOCK ยังสแกนไม่ได้: เปิดบิลพักได้
-# [SES v3] บรรทัดของเครื่องนั้นไม่มี SN (ราคาจากรุ่น) แคชเชียร์สแกน SN ใน FMP ตอนรับเงิน แทนการปฏิเสธทั้งออเดอร์
+# [SES v3] v3.1 (ตามทีม FMP 2026-11-05): เครื่องนั้น "ข้าม" ไม่เขียนบรรทัด (ช่อง SN เป็นช่องหลังบ้าน แคชเชียร์กรอกไม่ได้)
+# [SES v3] แคชเชียร์สแกนขายเครื่องนั้นเพิ่มในบิลตามปกติหน้าร้าน แทนการปฏิเสธทั้งออเดอร์
 # =====================================================================
 # Script : ses
 # เรียกโดย : FileMaker Data API พร้อม "script":"ses", "script.param":"<SES reference>"
@@ -24,10 +25,10 @@ Set Variable [ $ALLOW_NO_PAYMENT ; Value: 1 ]
 # [SES v2] คำเตือนที่ไม่ทำให้ล้ม จะส่งกลับใน "warnings" และ "message" (SES แสดงในหน้า Admin)
 Set Variable [ $warnings ; Value: "" ]
 # [SES v3] 1 = เครื่องที่ยังไม่มี SN (SES ส่ง sn น้อยกว่า quantity, "snMissing") หรือ SN ที่ FMP ยังไม่มีในสาขานี้ (SN_NOT_FOUND,
-# [SES v3]     SN_WRONG_BRANCH, SN_NOT_READY_FOR_SALE) เปิดบรรทัดโดยไม่มี SN ให้แคชเชียร์สแกนใน FMP · 0 = ปฏิเสธทั้งออเดอร์แบบ v2
+# [SES v3]     SN_WRONG_BRANCH, SN_NOT_READY_FOR_SALE) ข้ามไม่เขียนบรรทัด แคชเชียร์สแกนขายเพิ่มหน้าร้าน · 0 = ปฏิเสธทั้งออเดอร์แบบ v2
 # [SES v3] SN รุ่นไม่ตรง / ขายไปแล้ว / อยู่ในบิลพักอื่น / ซ้ำ ยังปฏิเสธเหมือนเดิม (หยิบผิดเครื่อง ต้องให้ Stock สแกนใหม่)
 Set Variable [ $ALLOW_SN_LATER ; Value: 1 ]
-# [SES v3] จำนวนเครื่องที่รอสแกน SN และเหตุผล (ส่งกลับใน "snPending" และ "message")
+# [SES v3] จำนวนเครื่องที่ข้าม (แคชเชียร์ต้องสแกนขายเพิ่ม) และเหตุผล (ส่งกลับใน "snPending" และ "message")
 Set Variable [ $snPending ; Value: 0 ]
 Set Variable [ $snLaterMsg ; Value: "" ]
 # 
@@ -236,15 +237,12 @@ Loop [ Flush: Minimum ]
 		# เช็คจำนวน sn
 		Set Variable [ $snArr ; Value: JSONGetElement ( $item ; "sn" ) ]
 		Set Variable [ $snCnt ; Value: ValueCount ( JSONListKeys ( $snArr ; "" ) ) ]
-		# [SES v3] sn น้อยกว่า quantity ได้ถ้า $ALLOW_SN_LATER = 1 (เครื่องที่ขาดเปิดบรรทัดไม่มี SN ด้านล่าง) มากกว่า quantity ไม่ได้
+		# [SES v3] sn น้อยกว่า quantity ได้ถ้า $ALLOW_SN_LATER = 1 (เครื่องที่ขาดข้ามไป แคชเชียร์สแกนขายเพิ่ม) มากกว่า quantity ไม่ได้
 		If [ $qty < 1 or $snCnt > $qty or ( $snCnt < $qty and not $ALLOW_SN_LATER ) ]
 			Set Variable [ $errCode ; Value: "SN_COUNT_MISMATCH" ]
 			Set Variable [ $errMsg ; Value: $partNo & " quantity=" & $qty & " but sn=" & $snCnt ]
 			Exit Loop If [ True ]
 		End If
-		# [SES v3] ข้อมูลรุ่นสำหรับบรรทัดที่ไม่มี SN: คอลัมน์เรียงเหมือน $snRow (1 upc · 2 status · 3 model · 4 ราคา · 5–8 ต้นทุน/INV ว่าง ·
-		# [SES v3] 9 brand · 10–12 หมวด · 13 สาขา · 14 ชื่อ) ชื่อฟิลด์ของ ProductStore ให้ใช้ชื่อเดียวกับใน SQL ของ $snRow (ส่วนที่ export ตัดไป)
-		Set Variable [ $partRow ; Value: ExecuteSQL ( "SELECT p.Product_upc, '', p.product_model, p.Price_Sell, '', '', '', '', p.product_brand, p.product_Category, p.product_SubCategory, p.product_SubSubCategory, '', p.product_name FROM ProductStore p WHERE p.product_model = ? FETCH FIRST 1 ROWS ONLY" ; ¶ ; "" ; $partNo ) ]
 		# [SES v3] เครื่องที่ SES ส่งมาโดยยังไม่มี SN
 		Set Variable [ $later ; Value: $qty - $snCnt ]
 		# 
@@ -300,7 +298,7 @@ Loop [ Flush: Minimum ]
 				Set Variable [ $errCode ; Value: "SN_ALREADY_SOLD_OR_HELD" ]
 				Set Variable [ $errMsg ; Value: "SN " & $sn & " is already sold or in a held bill" ]
 			End If
-			# [SES v3] FMP ยังไม่มีเครื่องนี้ในสาขานี้ (ยังไม่รับโอน / ยังไม่เข้าสต็อก / ยังไม่ ready): ไม่ปฏิเสธ เปิดบรรทัดไม่มี SN แทน
+			# [SES v3] FMP ยังไม่มีเครื่องนี้ในสาขานี้ (ยังไม่รับโอน / ยังไม่เข้าสต็อก / ยังไม่ ready): ไม่ปฏิเสธ ข้ามเครื่องนี้ไป
 			If [ $ALLOW_SN_LATER and ( $errCode = "SN_NOT_FOUND" or $errCode = "SN_WRONG_BRANCH" or $errCode = "SN_NOT_READY_FOR_SALE" ) ]
 				Set Variable [ $snLaterMsg ; Value: List ( $snLaterMsg ; $errMsg ) ]
 				Set Variable [ $errCode ; Value: "" ]
@@ -320,22 +318,10 @@ Loop [ Flush: Minimum ]
 			End If
 		End Loop
 		Exit Loop If [ not IsEmpty ( $errCode ) ]
-		# [SES v3] บรรทัดไม่มี SN ของรุ่นนี้ (SES ส่งมาไม่ครบ + SN ที่ FMP ยังไม่มีในสาขานี้)
+		# [SES v3] เครื่องของรุ่นนี้ที่ข้ามไป (SES ส่งมาไม่ครบ + SN ที่ FMP ยังไม่มีในสาขานี้): ไม่เขียนบรรทัด นับไว้บอก SES
 		If [ $later > 0 ]
-			If [ IsEmpty ( $partRow ) or $partRow = "?" or GetAsNumber ( GetValue ( $partRow ; 4 ) ) ≤ 0 ]
-				Set Variable [ $errCode ; Value: "PART_NOT_FOUND" ]
-				Set Variable [ $errMsg ; Value: "Model " & $partNo & " not found or has no selling price (needed for a line without SN)" ]
-				Exit Loop If [ True ]
-			End If
-			Set Variable [ $k ; Value: 0 ]
-			Loop [ Flush: Minimum ]
-				Exit Loop If [ $k ≥ $later ]
-				Set Variable [ $line ; Value: $line + 1 ]
-				Set Variable [ $L_sn[$line] ; Value: "" ]
-				Set Variable [ $L_row[$line] ; Value: $partRow ]
-				Set Variable [ $k ; Value: $k + 1 ]
-			End Loop
 			Set Variable [ $snPending ; Value: $snPending + $later ]
+			Set Variable [ $snLaterMsg ; Value: List ( $snLaterMsg ; $partNo & " ข้าม " & $later & " เครื่อง" ) ]
 		End If
 		Exit Loop If [ not IsEmpty ( $errCode ) ]
 		# 
@@ -401,10 +387,6 @@ When you assign a custom code and message within this range, FileMaker stops the
 		Set Variable [ $pdName ; Value: GetValue ( $r ; 14) ]
 		# 
 		Set Variable [ $title ; Value: TextFormatRemove ( Case ( not IsEmpty ( $pdModel ) ; $pdModel & " " ; "" ) & Case ( not IsEmpty ( $pdName ) ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ; "" ) & ¶ & "SN: " & $L_sn[$n] ) ]
-		# [SES v3] บรรทัดไม่มี SN: บอกแคชเชียร์ให้สแกน SN
-		If [ IsEmpty ( $L_sn[$n] ) ]
-			Set Variable [ $title ; Value: $title & " (รอสแกน SN)" ]
-		End If
 		# 
 		Set Variable [ $isLuxury ; Value: "N" ]
 		If [ $pdCat = "iPad" ]
@@ -507,8 +489,9 @@ Set Variable [ $warnMsg ; Value: Substitute ( $warnings ;
 	[ "NO_PAYMENT" ; "ไม่มีวิธีชำระ ให้เลือกตอนรับเงิน" ] ;
 	[ "UNKNOWN_STAFF" ; "ไม่พบรหัสพนักงานใน FMP" ] ;
 	[ ¶ ; " · " ] ) ]
-# [SES v3] มีบรรทัดรอสแกน SN: code = CREATED_SN_LATER (SES แสดงเป็นคำเตือนสีเหลืองให้แคชเชียร์สแกน SN ใน FMP)
+# [SES v3] มีเครื่องที่ข้าม: code = CREATED_SN_LATER (SES แสดงเป็นคำเตือนสีเหลืองให้แคชเชียร์สแกนขายเพิ่มในบิล)
+# [SES v3] ทุกเครื่องถูกข้าม (lines = 0): ยังเปิดบิลพัก (ลูกค้า วิธีชำระ คิว) ให้แคชเชียร์สแกนขายทั้งหมดหน้าร้าน
 If [ $snPending > 0 ]
-	Set Variable [ $warnMsg ; Value: "รอสแกน SN ใน FMP " & $snPending & " เครื่อง" & Case ( not IsEmpty ( $snLaterMsg ) ; " (" & Substitute ( $snLaterMsg ; ¶ ; " · " ) & ")" ; "" ) & Case ( not IsEmpty ( $warnMsg ) ; " · " & $warnMsg ; "" ) ]
+	Set Variable [ $warnMsg ; Value: "แคชเชียร์สแกนขายเพิ่ม " & $snPending & " เครื่อง" & Case ( not IsEmpty ( $snLaterMsg ) ; " (" & Substitute ( $snLaterMsg ; ¶ ; " · " ) & ")" ; "" ) & Case ( not IsEmpty ( $warnMsg ) ; " · " & $warnMsg ; "" ) ]
 End If
 Exit Script [ Text Result: JSONSetElement ( "{}" ;     [ "ok" ; True ; JSONBoolean ] ;     [ "code" ; If ( $snPending > 0 ; "CREATED_SN_LATER" ; "CREATED" ) ; JSONString ] ;     [ "snPending" ; $snPending ; JSONNumber ] ;     [ "sesID" ; $sesID ; JSONString ] ;     [ "saleID" ; $priKey ; JSONString ] ;     [ "lines" ; $line ; JSONNumber ] ;     [ "payments" ; $payCnt ; JSONNumber ] ;     [ "message" ; $warnMsg ; JSONString ] ;     [ "warnings" ; Substitute ( $warnings ; ¶ ; "," ) ; JSONString ] ) ]

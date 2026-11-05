@@ -1394,3 +1394,11 @@ The shops' team, on the cashier screen: "Cashier เอาออกทั้ง�
 4. **Payments.** A migration adds the method "ใบมัดจำ" (FileMaker type "ใช้มัดจำ"), or switches on and types an existing "ใบมัดจำ" / "ใช้มัดจำ"; the FileMaker types list loses "Trade In" (an On top item) and "Partner Mall"; methods typed with them become untyped and methods named after them are switched off (ADMIN can switch them back on).
 5. **Also (owner's OK):** when the customer accepts what stock found (ACCEPT_PARTIAL, D73), `stock_found_at` is the time stock reported the rest missing, not the staff's decision (real times, D101); the rebuy test now expects the old session's letter and type (the type is matched again at confirm, D69).
 
+## D106 — Every shop-floor account from the ERP is STAFF + STOCK (2026-11-05)
+
+Owner: "user ใน ses erp ที่ login ses ต้องเปลี่ยนให้ทุกคนเป็น stock + cashier + staff … ปรับ role ที่มาจาก erp ทุก account". CASHIER has no screen since D105, so the owner chose STAFF + STOCK for everyone, for the shop-floor positions only.
+
+1. **Rule.** The ERP import maps `sale`, `store manager`, `cashier` and `stock` positions to **STAFF + STOCK** (`POSITION_ROLE_RULES`). Other positions (technician, housekeeper, …) still get no account. CASHIER is never given; an old CASHIER role on an ERP account is dropped at the next run. ADMIN / MANAGER stay hand-managed (D54).
+2. **Now, without waiting for the import.** Migration `202611050002_erp_accounts_staff_stock`: every account with an ERP id gets STAFF and STOCK and loses CASHIER; the extra people picked by hand (D87) are reset to STAFF + STOCK once (ADMIN can change them again). Hand-made accounts are untouched.
+3. **Effect.** Cashier-position staff can sign in to SES again (as STAFF + STOCK; the till stays in U POS); everyone on the floor sees both the staff and the stock screens.
+

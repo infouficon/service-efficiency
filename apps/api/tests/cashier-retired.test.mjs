@@ -4,10 +4,11 @@ import { PASSWORD, cleanup, seedWorld, startApi } from './support.mjs';
 
 const { rolesForPosition } = await import('../dist/erp/erp-sync.service.js');
 
-test('the ERP import gives a cashier position no SES role any more (D105)', () => {
-  assert.deepEqual(rolesForPosition('Cashier'), []);
-  assert.deepEqual(rolesForPosition('Sale Consultant'), ['STAFF']);
-  assert.deepEqual(rolesForPosition('Stock'), ['STOCK']);
+test('the ERP import never gives CASHIER: a cashier position works the floor and the stock room like everyone (D105, D106)', () => {
+  assert.deepEqual(rolesForPosition('Cashier'), ['STAFF', 'STOCK']);
+  assert.deepEqual(rolesForPosition('Sale Consultant'), ['STAFF', 'STOCK']);
+  assert.deepEqual(rolesForPosition('Stock'), ['STAFF', 'STOCK']);
+  assert.deepEqual(rolesForPosition('Technician'), []);
 });
 
 test('the cashiers work in U POS: a cashier-only account cannot use SES, the role is never shown or given (D105)', async (t) => {

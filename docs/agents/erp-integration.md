@@ -220,7 +220,7 @@ Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password
 `_ModificationTimestamp` (never the personal/payroll fields). Run branch first, then staff. Credentials from env only:
 `ERP_ODATA_BASE_URL`, `ERP_ODATA_USER`, `ERP_ODATA_PASS` (Coolify), plus `ERP_SYNC_TIMES=10:00`. Temporarily the shared `dashboard` account, later a dedicated one.
 
-**Staff mapping.** (D105: a `cashier` position no longer maps to any SES role; such people are listed as unmapped and get no account; old CASHIER accounts cannot sign in.)
+**Staff mapping.** (D106: every shop-floor position, cashiers included, is STAFF + STOCK; CASHIER is never given, D105.)
 
 | SES `Staff` | From the ERP |
 | --- | --- |
@@ -230,7 +230,7 @@ Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password
 | `active` | `status` active (ignore case) AND the branch is active |
 | `passwordHash` | scrypt of `user password`, recomputed only when the stored hash no longer verifies (≈ 90 hashes, a few seconds; compute **before** taking the `AccountLock`, see H-02) |
 | `mustChangePassword` | `false`: the ERP owns the password, so SES change/reset-password is refused for synced accounts with a Thai message |
-| roles | sync-managed set = STAFF, STOCK, CASHIER; from `position` (normalised, contains): `sale` → STAFF, `cashier` → CASHIER, `in store stock` → STOCK; other positions (technician, housekeeper, …) get an account with no role. `ADMIN`/`MANAGER` are never granted or removed by the sync (proposal; "Store Manager" is 12 of the 89 and would then be MANAGER by hand in SES, or the owner overrides D39 for that one position) |
+| roles | **D106 (2026-11-05):** every shop-floor position (`sale`, `store manager`, `cashier`, `stock`, normalised, contains) → **STAFF + STOCK**; CASHIER is never given (the till is U POS, D105) and an old CASHIER role is dropped at the next run; other positions (technician, housekeeper, …) get no account. `ADMIN`/`MANAGER` are never granted or removed by the sync |
 
 **Never touched:** any account the sync did not create (existing/test users, `0001`). Track it with an additive column (for example
 `Staff.erpStaffId Int? @unique` plus `erpSyncedAt`); an ERP `user name` equal to an existing SES `staffId` is skipped and reported, never adopted.
@@ -241,7 +241,7 @@ only after its synced staff were deactivated in the same run (D39 order).
 **Built as follows (differences from the first proposal).** No `$filter` (see §0); manual runs return at once and the panel polls `status` (an awaited run would hit
 the 60 s proxy timeout of the web container); a closed ERP branch that SES never had is not created; an ERP-linked branch is read-only in SES (409 on `PUT /branches/:id`);
 a mass-deactivation guard aborts a run that would deactivate more than max(5, 30%) of the synced accounts unless `force=true`; positions that map to no role get **no account**
-(an account without a role could still read the branch's session list, H-06); "Store Manager" maps to STAFF until the owner sends the table.
+(an account without a role could still read the branch's session list, H-06); since D106 "Store Manager" is STAFF + STOCK like the other shop-floor positions.
 
 **Job.** A tick every 30 s in the API process (no scheduler dependency today), a DB row per `(kind, slot)` claimed with `INSERT … ON CONFLICT`
 (the warroom `claimSlot` pattern) so two containers or a restart run a slot once, a 60-minute catch-up window, and a new table `ErpSyncRun`

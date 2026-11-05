@@ -508,3 +508,22 @@ export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
   return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
 
+/** D104: one scanned serial against the stock data (warroom by default, FileMaker live once it has an index on the serial). */
+export type SerialCheck =
+  | { status: 'off' | 'unavailable'; reason: string }
+  | {
+      status: 'ok';
+      source: 'warroom' | 'fmp';
+      asOf: string | null;
+      sn: string;
+      verdict: 'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
+      branchCode?: string | null;
+      branchName?: string | null;
+      stockStatus?: string;
+      model?: string | null;
+    };
+
+export async function serialCheckApi(sn: string, part?: string): Promise<SerialCheck> {
+  const query = new URLSearchParams(part ? { sn, part } : { sn });
+  return api<SerialCheck>(`/stock/serial-check?${query}`);
+}

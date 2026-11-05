@@ -13,6 +13,7 @@ import type { Request } from 'express';
 import { OriginGuard } from '../accounts/accounts.controller';
 import { AccountsService } from '../accounts/accounts.service';
 import { WarroomSyncService } from './warroom-sync.service';
+import { SerialCheckService } from './serial-check.service';
 
 /** A flag must be exactly true/false: anything else must not silently turn a dry run into a real run. */
 function flag(name: string, value: unknown): boolean {
@@ -106,3 +107,24 @@ export class WarroomController {
     );
   }
 }
+
+/**
+ * D104: one scanned serial against the stock data (warroom by default, FileMaker live once it has an index on product_sn; see
+ * SerialCheckService). `GET /api/stock/serial-check?sn=…[&part=…][&branch=<code>, ADMIN]`. Answers 200 with `status: off |
+ * unavailable` when it cannot check; it never blocks a step.
+ */
+@Controller('stock')
+export class StockSerialController {
+  constructor(
+    private readonly accounts: AccountsService,
+    private readonly serials: SerialCheckService,
+  ) {}
+
+  @Get('serial-check')
+  async serialCheck(@Req() req: Request, @Query('sn') sn?: string, @Query('part') part?: string, @Query('branch') branch?: string) {
+    const user = await this.accounts.authenticate(req);
+    if (!sn) throw new BadRequestException('ต้องระบุ sn');
+    return this.serials.check(user, sn, part, branch);
+  }
+}
+

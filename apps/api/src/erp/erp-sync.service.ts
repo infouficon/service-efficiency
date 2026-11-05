@@ -41,13 +41,15 @@ const HASH_CONCURRENCY = 4;
  * Provisional mapping from the ERP `position` text to SES roles (owner will send corrections, D54).
  * Roles are the union of every matching rule. A position that matches nothing gets no account
  * (least privilege: an account without a role can still read the branch's session list).
- * ADMIN and MANAGER are never granted here; "Store Manager" is STAFF until the owner decides.
+ * ADMIN and MANAGER are never granted here; "Store Manager" works the floor and the stock room like the others (D106).
  */
 export const POSITION_ROLE_RULES: { pattern: RegExp; roles: RoleCode[] }[] = [
-  { pattern: /sale/i, roles: ['STAFF'] },
-  { pattern: /store\s*manager/i, roles: ['STAFF'] },
-  // D105: cashiers work in U POS, not SES: a cashier position gets no SES account (the import lists them as unmapped)
-  { pattern: /stock/i, roles: ['STOCK'] },
+  // D106 (owner, 2026-11-05): every shop-floor position works both the floor and the stock room in SES: STAFF + STOCK.
+  // A cashier does the till in U POS (D105) and the rest in SES like everyone else; CASHIER is never given.
+  { pattern: /sale/i, roles: ['STAFF', 'STOCK'] },
+  { pattern: /store\s*manager/i, roles: ['STAFF', 'STOCK'] },
+  { pattern: /cashier/i, roles: ['STAFF', 'STOCK'] },
+  { pattern: /stock/i, roles: ['STAFF', 'STOCK'] },
 ];
 
 export function rolesForPosition(

@@ -508,3 +508,22 @@ export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
   return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
 
+/** D104: what FileMaker holds as ready for one model (live over the ERP); `status` off / unavailable when it cannot check. */
+export type FmpUnits =
+  | { status: 'off' | 'unavailable'; reason: string }
+  | {
+      status: 'ok';
+      checkedAt: string;
+      part: string;
+      upc: string;
+      branch: { code: string; erpBranchId: number };
+      here: string[];
+      elsewhere: { branchCode: string | null; erpBranchId: number | null; count: number }[];
+      sn?: { sn: string; verdict: 'here' | 'other-branch' | 'not-ready'; branchCode?: string | null; branchName?: string | null };
+    };
+
+export async function fmpUnitsApi(part: string, sn?: string): Promise<FmpUnits> {
+  const query = new URLSearchParams(sn ? { part, sn } : { part });
+  return api<FmpUnits>(`/stock/fmp-units?${query}`);
+}
+

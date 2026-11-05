@@ -208,6 +208,13 @@ in warroom: it is one small table, and putting ERP passwords into warroom's data
 
 ### 3.4 Design (D53/D54 decided; role table to be given by the owner later; the rest is the agreed proposal)
 
+**Live unit check (D104, 2026-11-05).** The stock screen asks the ERP what FileMaker holds as `ready` for one model:
+`GET /ProductStore_detail?$filter=product_upc eq '<upc>' and status eq 'ready'&$select=product_sn,BranchStore_id,status` (the UPC from SES's
+catalog, else once `GET /ProductStore?$filter=product_model eq '<part>'&$select=Product_upc&$top=1`). This is the only place SES sends a
+`$filter`, and only on the UPC: a filter on `product_sn` (no index) did not answer in 30 s on 2026-11-05 14:04. Guards in `fmp-units.service.ts`:
+one request at a time, 5 s timeout, no retry, a 10-minute pause after any failure, a one-minute cache per model, no request from 5 minutes before
+to 30 minutes after each warroom pull (`FMP_UNIT_CHECK_QUIET`), `FMP_UNIT_CHECK=off` switches it off.
+
 **Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status` (45 rows, ~0.05 s), keep `iStudio`/`U-Store`.
 Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password"`, `status`, `branch_id`, `position`, `name_first_th`, `name_last_th`,
 `_ModificationTimestamp` (never the personal/payroll fields). Run branch first, then staff. Credentials from env only:

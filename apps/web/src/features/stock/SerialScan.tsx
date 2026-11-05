@@ -2,13 +2,34 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
-import { addSerialApi, removeSerialApi } from '../../services/sessionApi';
+import { addSerialApi, fmpUnitsApi, removeSerialApi, type FmpUnits } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
 
 /** What the server accepts as a serial number (D92): printable ASCII, no spaces, 1 to 64 characters. */
 const SERIAL = /^[\x21-\x7E]{1,64}$/;
 
 type Scan = { itemId: string; sn: string };
+/** D104: FileMaker's word on one scanned serial (null: the check is off). */
+type FmpCheck = NonNullable<Extract<FmpUnits, { status: 'ok' }>['sn']> | { verdict: 'unavailable'; reason: string } | null;
+
+const fmpCheckOf = (answer: FmpUnits): FmpCheck =>
+  answer.status === 'ok' ? (answer.sn ?? null) : answer.status === 'unavailable' ? { verdict: 'unavailable', reason: answer.reason } : null;
+
+/** D104: the little FileMaker mark next to a saved serial. */
+function FmpMark({ check }: { check: FmpCheck | undefined }) {
+  if (!check || check.verdict === 'unavailable') return null;
+  if (check.verdict === 'here')
+    return (
+      <span className="fmp-mark ok" title="FileMaker: เครื่องนี้ ready ที่สาขานี้">
+        ✓ FMP
+      </span>
+    );
+  return (
+    <span className="fmp-mark warn" title="FileMaker ยังไม่มีเครื่องนี้ ready ที่สาขานี้">
+      {check.verdict === 'other-branch' ? `FMP: อยู่ ${check.branchCode ?? 'สาขาอื่น'}` : 'FMP: ไม่มีใน ready'}
+    </span>
+  );
+}
 
 /**
  * D101: STOCK scans the serial number of each unit at the shelf, one at a time, and every scan is saved at once (the server
@@ -17,6 +38,8 @@ type Scan = { itemId: string; sn: string };
  * never types into a box still waiting for the server. A wrong scan is taken back with ×. The server checks everything again
  * (the unit is in no other open order, no repeat, not more than the quantity).
  * D102: while searching a product can also be ticked "found" without scanning; its serials are then scanned before "send".
+ * D104: every saved serial is checked against FileMaker (ready here / in another branch / not ready) and the units FileMaker holds
+ * here can be listed; both only inform, nothing waits for them.
  */
 export function SerialScan({
   session,
@@ -39,6 +62,8 @@ export function SerialScan({
   const [problems, setProblems] = useState<Record<string, string>>({});
   const [queued, setQueued] = useState<Scan[]>([]);
   const [removing, setRemoving] = useState(false);
+  const [checks, setChecks] = useState<Record<string, FmpCheck>>({});
+  const [lists, setLists] = useState<Record<string, FmpUnits | 'loading'>>({});
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
   const queue = useRef<Scan[]>([]);
   const draining = useRef(false);
@@ -59,13 +84,43 @@ export function SerialScan({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id]);
 
+  /** D104: asks FileMaker about one serial; a failure only means no mark. */
+  const checkSerial = (part: string, sn: string) => {
+    fmpUnitsApi(part, sn)
+      .then((answer) => setChecks((current) => ({ ...current, [sn]: fmpCheckOf(answer) })))
+      .catch(() => undefined);
+  };
+
+  // the serials already saved when the panel opens (scanned at the shelf, now at the hand-over) get their mark too
+  useEffect(() => {
+    for (const item of items) for (const serial of item.serials ?? []) checkSerial(item.product.sku, serial.sn);
+    // only when the panel opens for this order
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.id]);
+
+  /** D104: shows (or hides) the units FileMaker holds as ready in this branch for one product. */
+  const showFmpUnits = (item: SelectionItem) => {
+    const itemId = item.id as string;
+    if (lists[itemId]) {
+      setLists((current) => Object.fromEntries(Object.entries(current).filter(([key]) => key !== itemId)));
+      return;
+    }
+    setLists((current) => ({ ...current, [itemId]: 'loading' }));
+    fmpUnitsApi(item.product.sku)
+      .then((answer) => setLists((current) => ({ ...current, [itemId]: answer })))
+      .catch(() => setLists((current) => ({ ...current, [itemId]: { status: 'unavailable', reason: 'ตรวจกับ FileMaker ไม่ได้ตอนนี้' } })));
+  };
+
   const drain = async () => {
     if (draining.current || !session.id) return;
     draining.current = true;
     while (queue.current.length) {
       const scan = queue.current[0];
       try {
-        latestOnSaved.current(await addSerialApi(session.id, scan.itemId, scan.sn));
+        const updated = await addSerialApi(session.id, scan.itemId, scan.sn);
+        latestOnSaved.current(updated);
+        const part = updated.selection.items.find((item) => item.id === scan.itemId)?.product.sku;
+        if (part) checkSerial(part, scan.sn);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'บันทึกไม่สำเร็จ';
         setProblems((current) => ({ ...current, [scan.itemId]: `${scan.sn}: ${message}` }));
@@ -134,6 +189,12 @@ export function SerialScan({
         const done = serialsLeft(item) === 0;
         const isPicked = done || Boolean(picked?.includes(itemId));
         const problem = problems[itemId];
+        const list = lists[itemId];
+        const saved = new Set((item.serials ?? []).map((serial) => serial.sn));
+        const notHere = (item.serials ?? []).some((serial) => {
+          const check = checks[serial.sn];
+          return check?.verdict === 'other-branch' || check?.verdict === 'not-ready';
+        });
         return (
           <div key={itemId} className="serial-scan-item">
             <div className="serial-scan-head">
@@ -155,6 +216,7 @@ export function SerialScan({
                 {item.serials?.map((serial) => (
                   <span key={serial.id} className="serial-chip">
                     {serial.sn}
+                    <FmpMark check={checks[serial.sn]} />
                     <button
                       type="button"
                       aria-label={`ลบ SN ${serial.sn}`}
@@ -202,6 +264,51 @@ export function SerialScan({
               </label>
             )}
             {problem && <span className="serial-scan-problem">{problem}</span>}
+            {notHere && (
+              // D104: FileMaker's `ses` script would refuse (v2) or leave out (v3.1) such a unit
+              <span className="serial-pending">
+                FileMaker ยังไม่มีเครื่องนี้ ready ที่สาขานี้: หยิบผิด → ลบแล้วสแกนเครื่องอื่น · เครื่องโอนมายังไม่รับโอน → แจ้งรับโอนใน FileMaker
+              </span>
+            )}
+            <div className="fmp-units">
+              <button type="button" className="link-button" onClick={() => showFmpUnits(item)}>
+                {list ? 'ซ่อนเครื่องใน FileMaker' : 'ดูเครื่องที่ FileMaker มีที่สาขานี้'}
+              </button>
+              {list === 'loading' && <span className="fine muted">กำลังถาม FileMaker…</span>}
+              {list && list !== 'loading' && list.status !== 'ok' && <span className="fine muted">{list.reason}</span>}
+              {list && list !== 'loading' && list.status === 'ok' && (
+                <>
+                  {list.here.filter((sn) => !saved.has(sn)).length ? (
+                    <span className="fmp-units-list">
+                      {list.here
+                        .filter((sn) => !saved.has(sn))
+                        .map((sn) => (
+                          <button
+                            key={sn}
+                            type="button"
+                            className="serial-chip"
+                            title="ใส่ในช่องสแกน (เทียบกับกล่องจริงก่อนกด Enter)"
+                            disabled={remaining === 0}
+                            onClick={() => {
+                              setValues((current) => ({ ...current, [itemId]: sn }));
+                              boxes.current[itemId]?.focus();
+                            }}
+                          >
+                            {sn}
+                          </button>
+                        ))}
+                    </span>
+                  ) : (
+                    <span className="fine muted">FileMaker ไม่มีเครื่อง ready ที่สาขานี้</span>
+                  )}
+                  {list.elsewhere.length > 0 && (
+                    <span className="fine muted">
+                      สาขาอื่น: {list.elsewhere.map((e) => `${e.branchCode ?? `#${e.erpBranchId ?? '?'}`} ${e.count}`).join(', ')}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         );
       })}

@@ -463,20 +463,37 @@ export function parseOData(body: string): unknown {
   }
 }
 
+/** The ERP OData connection from the environment, or null when it is not (properly) set. */
+export function erpConfigFrom(config: ConfigService): ErpConfig | null {
+  const baseUrl = (config.get<string>('ERP_ODATA_BASE_URL') ?? '').trim();
+  const user = config.get<string>('ERP_ODATA_USER') ?? '';
+  const pass = config.get<string>('ERP_ODATA_PASS') ?? '';
+  if (!baseUrl || !user || !pass) return null;
+  try {
+    const url = new URL(baseUrl);
+    if (url.username || url.password) return null; // credentials belong in ERP_ODATA_USER/PASS, and would leak in errors
+  } catch {
+    return null;
+  }
+  return { baseUrl, user, pass };
+}
+
 /**
  * One GET against the ERP. A timeout is final: an ERP that does not answer is overloaded and a retry would only add load
- * (the shops sell on the same FileMaker server). Connection errors and 5xx are retried once; 4xx never. No credentials in errors.
+ * (the shops sell on the same FileMaker server). Connection errors and 5xx are retried once (`attempts` = 2); 4xx never.
+ * No credentials in errors.
  */
 export async function odataRows(
   cfg: ErpConfig,
   entity: string,
   query: string,
   timeoutMs = 60_000,
+  attempts = 2,
 ): Promise<unknown[]> {
   const url = `${cfg.baseUrl.replace(/\/+$/, '')}/${entity}?${query}`;
   const authorization = `Basic ${Buffer.from(`${cfg.user}:${cfg.pass}`).toString('base64')}`;
   let lastError = 'unknown';
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
     const controller = new AbortController();
     // The timer must cover reading the body, not only the headers.
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -510,7 +527,7 @@ export async function odataRows(
     } finally {
       clearTimeout(timer);
     }
-    if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 3000));
+    if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 3000));
   }
   throw new Error(lastError);
 }
@@ -545,19 +562,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
   ) {}
 
   private erpConfig(): ErpConfig | null {
-    const baseUrl = (
-      this.config.get<string>('ERP_ODATA_BASE_URL') ?? ''
-    ).trim();
-    const user = this.config.get<string>('ERP_ODATA_USER') ?? '';
-    const pass = this.config.get<string>('ERP_ODATA_PASS') ?? '';
-    if (!baseUrl || !user || !pass) return null;
-    try {
-      const url = new URL(baseUrl);
-      if (url.username || url.password) return null; // credentials belong in ERP_ODATA_USER/PASS, and would leak in errors
-    } catch {
-      return null;
-    }
-    return { baseUrl, user, pass };
+    return erpConfigFrom(this.config);
   }
   private times(): number[] {
     return parseTimes(this.config.get<string>('ERP_SYNC_TIMES') ?? '10:00');

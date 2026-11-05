@@ -53,6 +53,8 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
       quantity: i.quantity,
       // D92: the serial numbers STOCK scanned, in the order scanned (empty before the goods were sent to the cashier)
       sn: [...i.serials].sort((a, b) => a.position - b.position).map((x) => x.sn),
+      // D103: units sent without a serial (STOCK chose "scan later"): FileMaker opens those lines without one
+      snMissing: Math.max(0, i.quantity - i.serials.length),
     })),
     accessories: s.accessories.map((a) => ({
       name: a.accessoryName,

@@ -38,6 +38,8 @@ export function Summary({
     session.branchName || (session.branchCode ? `สาขา ${session.branchCode}` : '—');
 
   const accessoriesList = Object.entries(s?.accessories || {});
+  // D103: the goods have left stock, so a unit without a serial was sent "scan later"
+  const afterStock = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED', 'COMPLETED'].includes(session.state);
 
   return (
     <div className="cashier-summary-card">
@@ -96,6 +98,12 @@ export function Summary({
                     {item.serials && item.serials.length > 0 && (
                       <div className="fine muted" title="Serial Number ที่ STOCK สแกน">
                         SN: {item.serials.map((serial) => serial.sn).join(', ')}
+                      </div>
+                    )}
+                    {/* D103: STOCK sent units without a serial: they are scanned in FileMaker */}
+                    {item.id && afterStock && (item.serials?.length ?? 0) < item.quantity && (
+                      <div className="fine serial-pending">
+                        รอสแกน SN ใน FileMaker {item.quantity - (item.serials?.length ?? 0)} เครื่อง
                       </div>
                     )}
                   </span>

@@ -4,16 +4,32 @@ import type { FmpStatus } from '../../types/session';
  * D100: the order's FileMaker side in one line, for staff, stock and the cashier: was SES's message delivered, and what did
  * FileMaker answer (e.g. its `ses` script opened the held bill, or refused a serial number). Nothing when nothing was sent.
  */
-export function fmpStatusText(fmp: FmpStatus | null | undefined): { tone: 'ok' | 'wait' | 'bad'; text: string; hint?: string } | null {
+export function fmpStatusText(
+  fmp: FmpStatus | null | undefined,
+): { tone: 'ok' | 'warn' | 'wait' | 'bad'; text: string; hint?: string } | null {
   if (!fmp) return null;
   if (fmp.ackStatus === 'error') {
-    const sn = /^SN_|INVALID_SN/.test(fmp.ackMessage ?? '');
+    const message = fmp.ackMessage ?? '';
+    // D103: the unit is in the shop but FileMaker has it elsewhere / not yet (a transfer not received)
+    const notHereYet = /^SN_(WRONG_BRANCH|NOT_FOUND|NOT_READY_FOR_SALE)/.test(message);
+    const sn = /^SN_|INVALID_SN/.test(message);
     return {
       tone: 'bad',
       text: `FileMaker ไม่รับ: ${fmp.ackMessage ?? 'ไม่ทราบสาเหตุ'}`,
-      hint: sn ? 'Serial Number ไม่ตรงกับสต็อกใน FileMaker: ส่งกลับ Stock ให้สแกนใหม่' : 'แจ้ง ADMIN / ทีม FileMaker',
+      hint: notHereYet
+        ? 'เครื่องอยู่ที่ร้านแต่ FileMaker ยังไม่อัปเดต (เช่น ยังไม่รับโอน): รับโอนใน FileMaker แล้ว ADMIN กด "ส่งซ้ำ" · หยิบผิดเครื่อง: ส่งกลับ Stock ให้สแกนใหม่'
+        : sn
+          ? 'Serial Number ไม่ตรงกับสต็อกใน FileMaker: ส่งกลับ Stock ให้สแกนใหม่'
+          : 'แจ้ง ADMIN / ทีม FileMaker',
     };
   }
+  // D103: FileMaker opened the held bill, but some lines wait for their serial (the cashier scans it in FileMaker)
+  if (fmp.ackStatus === 'success' && /^CREATED_SN_LATER/.test(fmp.ackMessage ?? ''))
+    return {
+      tone: 'warn',
+      text: `FileMaker เปิดบิลพักแล้ว แต่ยังขาด SN: ${fmp.ackMessage}`,
+      hint: 'แคชเชียร์สแกน SN ใน FileMaker ตอนรับเงิน (เครื่องที่โอนมา: รับโอนใน FileMaker ก่อน)',
+    };
   if (fmp.ackStatus === 'success') return { tone: 'ok', text: `FileMaker รับแล้ว: ${fmp.ackMessage ?? 'สำเร็จ'}` };
   if (fmp.ackStatus === 'reported') return { tone: 'wait', text: `FileMaker แจ้ง: ${fmp.ackMessage ?? '-'}` };
   if (fmp.status === 'failed') return { tone: 'bad', text: `ส่งไป FileMaker ไม่สำเร็จ: ${fmp.error ?? '-'}`, hint: 'ADMIN กด "ส่งซ้ำ" ได้ที่ Admin → ส่งไป FileMaker' };

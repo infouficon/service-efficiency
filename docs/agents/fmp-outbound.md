@@ -56,7 +56,8 @@ it never creates a second record (D96).
   cashier) or `RESEND` (an ADMIN sent an existing order again).
 - **No prices**: SES has none (D58). `partNo` is the Apple part number (the key warroom uses; the script compares it with `product_model`).
   **Serial numbers (D92/D101):** `items[].sn` are the ones STOCK scanned at the shelf, one by one while picking (each saved at once), and
-  the message goes when STOCK presses "send"; exactly `quantity` per product, none repeated, none
+  the message goes when STOCK presses "send"; normally exactly `quantity` per product (D103: fewer when STOCK chose "send with serials
+  missing"; `items[].snMissing` says how many, the `ses` v3 script opens those lines without a serial), none repeated, none
   in another open order; they are typed or scanned as the shop reads them, so a wrong one is only caught by your script (`SN_*`). `upc` is
   the warroom barcode (null if unknown). `version` is 1 until a field changes meaning; `test` is false for real orders; `createdAt` is the
   moment the message was made, in Thai time with its offset (your script reads the digits as written). `customerPhone` is personal data.

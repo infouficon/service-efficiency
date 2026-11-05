@@ -631,17 +631,25 @@ export class SessionsService {
     // the serials STOCK scanned one by one while searching are used (checked again inside the transaction)
     const useSaved = dto.action === 'send' && dto.serials === undefined;
     const serials = dto.action === 'send' && !useSaved ? this.checkSerials(session.items, dto.serials) : [];
+    if (dto.serialsLater && !useSaved)
+      throw new BadRequestException('serialsLater is only for "send" with the serials STOCK already scanned (no list in the body)');
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       await this.claim(tx, session.id, Prisma.sql`state = ${step.from} AND outcome IS NULL`); // H-01
       if (dto.action === 'send' && !useSaved) await this.saveSerials(tx, session, serials);
-      if (useSaved) await this.assertSerialsComplete(tx, session.items);
+      if (useSaved && !dto.serialsLater) await this.assertSerialsComplete(tx, session.items);
+      // D103: how many units leave without a serial (scanned in FileMaker later); kept on the event, FileMaker gets `snMissing`
+      const serialsMissing = dto.serialsLater ? await this.countMissingSerials(tx, session.items) : 0;
       const deducted =
         dto.action === 'found'
           ? await this.takeItemsFromShelf(tx, session.branchId, session.items)
           : undefined;
+      const metadata = {
+        ...(deducted === undefined ? {} : { deducted }),
+        ...(serialsMissing > 0 ? { serialsMissing } : {}),
+      };
 
       const updated = await tx.customerSession.update({
         where: { id: session.id },
@@ -653,7 +661,7 @@ export class SessionsService {
               eventType: step.eventType,
               actorStaffId: user.staffId,
               createdAt: now,
-              ...(deducted === undefined ? {} : { metadata: { deducted } }),
+              ...(Object.keys(metadata).length ? { metadata } : {}),
             },
           },
         },
@@ -743,6 +751,13 @@ export class SessionsService {
       if (n !== item.quantity)
         throw new BadRequestException(`${item.sku.name}: สแกน Serial Number แล้ว ${n} จาก ${item.quantity} เครื่อง ต้องสแกนให้ครบก่อนส่งไปแคชเชียร์`);
     }
+  }
+
+  /** D103: the units of the order's main products that have no scanned serial. */
+  private async countMissingSerials(tx: Prisma.TransactionClient, items: { id: string; quantity: number }[]) {
+    let missing = 0;
+    for (const item of items) missing += Math.max(0, item.quantity - (await tx.sessionItemSerial.count({ where: { sessionItemId: item.id } })));
+    return missing;
   }
 
   /** D95/D101: a serial number as FileMaker keeps it: trimmed, in capitals, printable ASCII without spaces, 1–64 characters. */

@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -84,6 +85,14 @@ export class AdvanceStepDto {
   @ValidateNested({ each: true })
   @Type(() => StepSerialsDto)
   serials?: StepSerialsDto[];
+
+  /**
+   * D103: for `send` with the saved serials: send even when some units have no serial yet (the unit is in the shop but FileMaker
+   * does not have it here yet, e.g. a transfer not received). The missing ones are scanned in FileMaker later.
+   */
+  @IsOptional()
+  @IsBoolean()
+  serialsLater?: boolean;
 }
 
 export class NotBuyDto {

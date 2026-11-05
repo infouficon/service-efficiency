@@ -16,15 +16,21 @@ type Scan = { itemId: string; sn: string };
  * the number and presses Enter. The box clears straight away and the scans are saved in order behind it, so a fast scanner
  * never types into a box still waiting for the server. A wrong scan is taken back with ×. The server checks everything again
  * (the unit is in no other open order, no repeat, not more than the quantity).
+ * D102: while searching a product can also be ticked "found" without scanning; its serials are then scanned before "send".
  */
 export function SerialScan({
   session,
   badge,
+  picked,
+  onPick,
   onSaved,
 }: {
   session: MockSession;
   /** Marks on a product row (sent back by the cashier, the new product of a swap). */
   badge?: (item: SelectionItem) => ReactNode;
+  /** D102: the products ticked "found" without (all) their scans; with `onPick`, each row gets that tick box. */
+  picked?: string[];
+  onPick?: (itemId: string) => void;
   /** The order as the server has it after each saved or removed scan. */
   onSaved: (updated: MockSession) => void;
 }) {
@@ -120,11 +126,13 @@ export function SerialScan({
       <p className="muted" style={{ margin: '4px 0 10px' }}>
         สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบจากชั้น (Mac/iPad ขึ้นต้นด้วย S, iPhone ใช้ IMEI) ระบบบันทึกทันทีพร้อมเวลา
         สแกนผิดกด × แล้วสแกนใหม่
+        {onPick ? ' ยังไม่สะดวกสแกน ติ๊ก "พบแล้ว" ไปก่อนได้ แล้วสแกนให้ครบก่อนกดส่ง' : ' ต้องครบก่อนกดส่ง'}
       </p>
       {items.map((item) => {
         const itemId = item.id as string;
         const remaining = left(item);
         const done = serialsLeft(item) === 0;
+        const isPicked = done || Boolean(picked?.includes(itemId));
         const problem = problems[itemId];
         return (
           <div key={itemId} className="serial-scan-item">
@@ -132,7 +140,13 @@ export function SerialScan({
               <strong>{itemName(item)}</strong> <span className="muted">× {item.quantity}</span>
               <span className="product-sku-chip">{item.product.sku || '—'}</span>
               {badge?.(item)}
-              <span className={`status-tag ${done ? 'status-found' : 'status-searching'}`} style={{ marginLeft: 'auto' }}>
+              {onPick && !done && (
+                <label className="serial-scan-pick">
+                  <input type="checkbox" checked={isPicked} onChange={() => onPick(itemId)} />
+                  พบแล้ว
+                </label>
+              )}
+              <span className={`status-tag ${isPicked ? 'status-found' : 'status-searching'}`} style={{ marginLeft: onPick && !done ? undefined : 'auto' }}>
                 {done ? 'ครบแล้ว' : `สแกนแล้ว ${item.serials?.length ?? 0}/${item.quantity}`}
               </span>
             </div>

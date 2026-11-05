@@ -100,10 +100,10 @@ export function Summary({
                         SN: {item.serials.map((serial) => serial.sn).join(', ')}
                       </div>
                     )}
-                    {/* D103: STOCK sent units without a serial: they are scanned in FileMaker */}
+                    {/* D103: STOCK sent units without a serial: not in FileMaker's held bill, the cashier scans them in */}
                     {item.id && afterStock && (item.serials?.length ?? 0) < item.quantity && (
                       <div className="fine serial-pending">
-                        รอสแกน SN ใน FileMaker {item.quantity - (item.serials?.length ?? 0)} เครื่อง
+                        ไม่อยู่ในบิลพัก: แคชเชียร์สแกนขายเพิ่มใน FileMaker {item.quantity - (item.serials?.length ?? 0)} เครื่อง
                       </div>
                     )}
                   </span>

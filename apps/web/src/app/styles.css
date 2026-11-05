@@ -2121,6 +2121,14 @@ input[aria-invalid='true'] {
   flex-wrap: wrap;
   gap: 6px;
 }
+.serial-scan-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-weight: 600;
+  cursor: pointer;
+}
 .serial-chips {
   display: flex;
   flex-wrap: wrap;

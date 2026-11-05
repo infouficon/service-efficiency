@@ -251,18 +251,22 @@ export function StockWorkspace({
     setStockNote('');
   };
 
-  /** D101: every unit of every main product is scanned and every accessory is ticked. */
+  /** D101/D102: a main product is found once all its units are scanned or it is ticked "found" (scanned later, before "send"). */
+  const itemFound = (item: SelectionItem, selection: string[]) =>
+    !item.id || serialsLeft(item) === 0 || selection.includes(item.id);
+
+  /** Every main product found and every accessory ticked. */
   const allFound = (session: MockSession, selection: string[]) => {
     const accessories = Object.keys(session.selection.accessories);
     return (
       session.selection.items.length + accessories.length > 0 &&
-      serialsComplete(session) &&
+      session.selection.items.every((item) => itemFound(item, selection)) &&
       accessories.every((name) => selection.includes(name))
     );
   };
 
   /**
-   * D101: the moment the last unit is scanned (or the last accessory ticked) is the moment STOCK found everything, so FOUND is
+   * D101: the moment the last unit is scanned (or the last product or accessory ticked) is the moment STOCK found everything, so FOUND is
    * recorded then, without another tap; stock_found_at is the real time. Not while a step is on its way (the server refuses a
    * second one anyway); the "found" button stays for a retry when it fails.
    */
@@ -271,13 +275,14 @@ export function StockWorkspace({
     if (allFound(session, selection)) void handleAction(session, 'found');
   };
 
-  const toggleAccessory = (session: MockSession, name: string) => {
-    const next = foundSelection.includes(name) ? foundSelection.filter((one) => one !== name) : [...foundSelection, name];
+  /** Ticks a main product (by item id, D102) or an accessory (by name) found, or takes the tick back. */
+  const toggleFound = (session: MockSession, key: string) => {
+    const next = foundSelection.includes(key) ? foundSelection.filter((one) => one !== key) : [...foundSelection, key];
     setFoundSelection(next);
     recordFoundIfComplete(session, next);
   };
 
-  /** F3/D101: a main product counts as found once all its units are scanned; the rest are reported by id, accessories by name. */
+  /** F3/D101/D102: a main product counts as found once scanned or ticked; the rest are reported by id, accessories by name. */
   const handleSendToStaff = async (session: MockSession) => {
     setError('');
     if (!session.id) return;
@@ -286,7 +291,7 @@ export function StockWorkspace({
     const foundNames: string[] = [];
 
     for (const item of session.selection.items) {
-      if (item.id && serialsLeft(item) === 0) {
+      if (item.id && itemFound(item, foundSelection)) {
         foundNames.push(itemLabel(item));
       } else {
         missingItems.push(itemLabel(item));
@@ -614,7 +619,7 @@ export function StockWorkspace({
                         >
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                             <Search size={14} />
-                            เริ่มหา
+                            รับงาน
                           </span>
                         </Button>
                       </div>
@@ -748,7 +753,7 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Clock size={16} />
-                        ได้รับคำขอยืนยันจากหน้าร้านแล้ว (กด "เริ่มหา" ตอนเริ่มเดินไปหยิบสินค้า)
+                        ได้รับคำขอยืนยันจากหน้าร้านแล้ว (กด "รับงาน" ตอนเริ่มเดินไปหยิบสินค้า)
                       </span>
                     </Notice>
                   )}
@@ -756,7 +761,7 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Search size={16} />
-                        กำลังค้นหา: สแกน SN เครื่องที่หยิบจริงทีละเครื่อง ครบเมื่อไรระบบบันทึก "พบ" เอง
+                        กำลังค้นหา: สแกน SN เครื่องที่หยิบจริง หรือติ๊ก "พบแล้ว" ครบเมื่อไรระบบบันทึก "พบ" เอง
                       </span>
                     </Notice>
                   )}
@@ -764,7 +769,9 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Check size={16} />
-                        พบสินค้าครบแล้ว — กด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของให้แคชเชียร์
+                        {serialsComplete(selectedSession)
+                          ? 'พบสินค้าครบแล้ว — กด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของให้แคชเชียร์'
+                          : 'พบสินค้าครบแล้ว — สแกน SN ให้ครบก่อน แล้วกด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของ'}
                       </span>
                     </Notice>
                   )}
@@ -920,7 +927,7 @@ export function StockWorkspace({
                       >
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                           <Search size={16} />
-                          เริ่มหา
+                          รับงาน
                         </span>
                       </Button>
                       <Button
@@ -936,7 +943,7 @@ export function StockWorkspace({
                     const accessories = Object.keys(selectedSession.selection.accessories);
                     const totalCount = selectedSession.selection.items.length + accessories.length;
                     const foundCount =
-                      selectedSession.selection.items.filter((item) => serialsLeft(item) === 0).length +
+                      selectedSession.selection.items.filter((item) => itemFound(item, foundSelection)).length +
                       accessories.filter((a) => foundSelection.includes(a)).length;
                     const isAllFound = allFound(selectedSession, foundSelection);
                     const reject = cashierRejectNotice(selectedSession);
@@ -970,6 +977,8 @@ export function StockWorkspace({
                             key={selectedSession.id}
                             session={selectedSession}
                             badge={itemBadge}
+                            picked={foundSelection}
+                            onPick={(itemId) => toggleFound(selectedSession, itemId)}
                             onSaved={(updated) => {
                               onUpdateSession(updated);
                               recordFoundIfComplete(updated, foundSelection);
@@ -995,7 +1004,7 @@ export function StockWorkspace({
                                     style={wrongBadge && !isFound ? { borderColor: '#ef4444', backgroundColor: '#fff5f5' } : undefined}
                                   >
                                     <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
-                                      <input type="checkbox" checked={isFound} onChange={() => toggleAccessory(selectedSession, name)} />
+                                      <input type="checkbox" checked={isFound} onChange={() => toggleFound(selectedSession, name)} />
                                       <span>
                                         <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน: {qty} ชิ้น)
                                       </span>
@@ -1019,8 +1028,8 @@ export function StockWorkspace({
                         )}
 
                         <p className="muted" style={{ margin: '12px 0 0', fontSize: '12px' }}>
-                          * สแกนครบทุกเครื่อง{accessories.length > 0 ? 'และติ๊กอุปกรณ์เสริมครบ' : ''} ระบบบันทึก "พบสินค้า" ให้เอง
-                          ตามเวลาที่หยิบชิ้นสุดท้าย ถ้าของไม่มี กด "แจ้งสินค้าไม่ครบ/หมด"
+                          * สแกนหรือติ๊ก "พบแล้ว" ครบทุกรายการ{accessories.length > 0 ? 'และติ๊กอุปกรณ์เสริมครบ' : ''} ระบบบันทึก "พบสินค้า"
+                          ให้เองตามเวลาที่หยิบชิ้นสุดท้าย ถ้าของไม่มี กด "แจ้งสินค้าไม่ครบ/หมด"
                         </p>
 
                         <div className={`stock-note-section ${isAllFound ? '' : 'has-missing'}`}>

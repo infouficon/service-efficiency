@@ -2175,30 +2175,6 @@ input[aria-invalid='true'] {
   background: #fef3c7;
   color: #92400e;
 }
-.fmp-units {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.fmp-units-list {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.fmp-units .link-button {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: #0d8a72;
-  font-size: 12px;
-  text-decoration: underline;
-  cursor: pointer;
-}
-button.serial-chip {
-  padding-right: 8px;
-  cursor: pointer;
-}
 .serial-chip.saving {
   padding-right: 8px;
   border-color: #e5e7eb;

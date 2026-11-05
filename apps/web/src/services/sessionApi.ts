@@ -508,22 +508,22 @@ export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
   return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
 
-/** D104: what FileMaker holds as ready for one model (live over the ERP); `status` off / unavailable when it cannot check. */
-export type FmpUnits =
+/** D104: one scanned serial against the stock data (warroom by default, FileMaker live once it has an index on the serial). */
+export type SerialCheck =
   | { status: 'off' | 'unavailable'; reason: string }
   | {
       status: 'ok';
-      checkedAt: string;
-      part: string;
-      upc: string;
-      branch: { code: string; erpBranchId: number };
-      here: string[];
-      elsewhere: { branchCode: string | null; erpBranchId: number | null; count: number }[];
-      sn?: { sn: string; verdict: 'here' | 'other-branch' | 'not-ready'; branchCode?: string | null; branchName?: string | null };
+      source: 'warroom' | 'fmp';
+      asOf: string | null;
+      sn: string;
+      verdict: 'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
+      branchCode?: string | null;
+      branchName?: string | null;
+      stockStatus?: string;
+      model?: string | null;
     };
 
-export async function fmpUnitsApi(part: string, sn?: string): Promise<FmpUnits> {
-  const query = new URLSearchParams(sn ? { part, sn } : { part });
-  return api<FmpUnits>(`/stock/fmp-units?${query}`);
+export async function serialCheckApi(sn: string, part?: string): Promise<SerialCheck> {
+  const query = new URLSearchParams(part ? { sn, part } : { sn });
+  return api<SerialCheck>(`/stock/serial-check?${query}`);
 }
-

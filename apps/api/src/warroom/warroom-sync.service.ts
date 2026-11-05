@@ -415,16 +415,17 @@ export function safeMessage(error: unknown): string {
 // ---------------------------------------------------------------------------
 // Warroom reader (read-only Postgres)
 // ---------------------------------------------------------------------------
-async function withWarroom<T>(
+export async function withWarroom<T>(
   url: string,
   work: (client: Client) => Promise<T>,
+  limits: { connectMs?: number; statementMs?: number; name?: string } = {},
 ): Promise<T> {
   const client = new Client({
     connectionString: url,
-    connectionTimeoutMillis: 10_000,
-    statement_timeout: 20_000,
-    query_timeout: 25_000,
-    application_name: 'ses-warroom-sync',
+    connectionTimeoutMillis: limits.connectMs ?? 10_000,
+    statement_timeout: limits.statementMs ?? 20_000,
+    query_timeout: (limits.statementMs ?? 20_000) + 5_000,
+    application_name: limits.name ?? 'ses-warroom-sync',
   });
   await client.connect();
   try {

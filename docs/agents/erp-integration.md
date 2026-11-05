@@ -208,12 +208,12 @@ in warroom: it is one small table, and putting ERP passwords into warroom's data
 
 ### 3.4 Design (D53/D54 decided; role table to be given by the owner later; the rest is the agreed proposal)
 
-**Live unit check (D104, 2026-11-05).** The stock screen asks the ERP what FileMaker holds as `ready` for one model:
-`GET /ProductStore_detail?$filter=product_upc eq '<upc>' and status eq 'ready'&$select=product_sn,BranchStore_id,status` (the UPC from SES's
-catalog, else once `GET /ProductStore?$filter=product_model eq '<part>'&$select=Product_upc&$top=1`). This is the only place SES sends a
-`$filter`, and only on the UPC: a filter on `product_sn` (no index) did not answer in 30 s on 2026-11-05 14:04. Guards in `fmp-units.service.ts`:
-one request at a time, 5 s timeout, no retry, a 10-minute pause after any failure, a one-minute cache per model, no request from 5 minutes before
-to 30 minutes after each warroom pull (`FMP_UNIT_CHECK_QUIET`), `FMP_UNIT_CHECK=off` switches it off.
+**Serial check (D104, 2026-11-05).** STOCK's scanned serial is checked against warroom's `mart.stock_current` by default (one
+`WHERE upper(product_sn) = $1 LIMIT 3`, read-only, 2 s; nothing reaches FileMaker). A live FileMaker mode (`SERIAL_CHECK=fmp`) asks
+`GET /ProductStore_detail?$filter=product_sn eq '<sn>'&$select=product_sn,BranchStore_id,status,product_upc&$top=3`, the only `$filter` SES
+would send, and only once `product_sn` is indexed: without the index that query did not answer in 30 s (2026-11-05 14:04), and a UPC +
+`status eq 'ready'` filter did not answer in 15 s (15:47). Guards: one request at a time, 5 s, no retry, a 10-minute pause after a failure,
+a one-minute cache per serial, nothing from 5 minutes before to 30 after each warroom pull (`SERIAL_CHECK_QUIET`).
 
 **Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status` (45 rows, ~0.05 s), keep `iStudio`/`U-Store`.
 Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password"`, `status`, `branch_id`, `position`, `name_first_th`, `name_last_th`,

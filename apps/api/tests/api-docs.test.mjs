@@ -40,7 +40,7 @@ test('API docs: all endpoints for ADMIN only; the U POS contract is public (D84)
 
     await t.test('the full docs need an ADMIN session', async () => {
       assert.equal((await request('/docs-json')).status, 401, 'no cookie');
-      for (const who of ['staff', 'stock', 'cashier', 'manager'])
+      for (const who of ['staff', 'stock', 'manager'])
         assert.equal((await request('/docs-json', 'GET', undefined, cookies[who])).status, 403, who);
       const base = await ctx.app.getUrl();
       assert.equal((await fetch(`${base}/api/docs`)).status, 401);

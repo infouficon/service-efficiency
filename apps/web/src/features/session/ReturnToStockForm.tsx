@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { Button } from '../../components/ui';
 import { rejectReasons } from '../../constants/options';
-import { itemLabel, itemName } from '../session/workflow';
+import { itemLabel, itemName } from './workflow';
 import type { MockSession } from '../../types/session';
 
-interface CashierRejectFormProps {
+/**
+ * F13/D105: the order goes back to stock because the wrong unit (or a damaged one) was picked. Since D105 STAFF fills it in (the
+ * cashiers work in U POS and tell the staff): which products are wrong, and why; stock sees both on its screen.
+ */
+interface ReturnToStockFormProps {
   session: MockSession;
   onSubmit: (
     reason: string,
@@ -13,16 +17,10 @@ interface CashierRejectFormProps {
     wrongItemIds?: string[],
     wrongItemDetails?: Record<string, { reason: string; note?: string }>,
   ) => void;
-  onRemoveDamaged?: (itemIds: string[], note?: string) => void;
   onBack: () => void;
 }
 
-export function CashierRejectForm({
-  session,
-  onSubmit,
-  onRemoveDamaged,
-  onBack,
-}: CashierRejectFormProps) {
+export function ReturnToStockForm({ session, onSubmit, onBack }: ReturnToStockFormProps) {
   const [selectedWrongIds, setSelectedWrongIds] = useState<string[]>([]);
   const [itemReasons, setItemReasons] = useState<Record<string, string>>({});
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
@@ -55,15 +53,6 @@ export function CashierRejectForm({
     }
     return true;
   };
-
-  const allSelectedAreDamaged =
-    selectedWrongIds.length > 0 &&
-    selectedWrongIds.every(
-      (id) => (itemReasons[id] || rejectReasons[0]) === 'สินค้าชำรุด/มีตำหนิ',
-    );
-
-  const isRemovingAll =
-    selectedWrongIds.length >= items.length + accessories.length;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -392,21 +381,6 @@ export function CashierRejectForm({
         <Button variant="secondary" onClick={onBack} type="button">
           กลับ
         </Button>
-        {allSelectedAreDamaged && onRemoveDamaged && (
-          <Button
-            type="button"
-            style={{
-              backgroundColor: '#d97706',
-              borderColor: '#b45309',
-              color: '#ffffff',
-            }}
-            onClick={() => onRemoveDamaged(selectedWrongIds, 'สินค้าชำรุด/มีตำหนิ')}
-          >
-            {isRemovingAll
-              ? 'ตัดชิ้นที่ชำรุดออก (ยกเลิกคิว)'
-              : 'ตัดชิ้นที่ชำรุดออกและดำเนินการต่อ'}
-          </Button>
-        )}
         <Button type="submit" disabled={!isFormValid()}>
           ยืนยันส่งกลับ Stock
         </Button>

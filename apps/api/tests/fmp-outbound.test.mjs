@@ -279,7 +279,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       await db.fmpOutbox.update({ where: { id: dead.id }, data: { nextAttemptAt: new Date(Date.now() - 1000) } });
       reset();
       assert.deepEqual(await fmp.tick(), { sent: 0, failed: 0 }, 'a failed message waits for an ADMIN');
-      for (const who of ['staff', 'stock', 'cashier', 'manager'])
+      for (const who of ['staff', 'stock', 'manager'])
         assert.equal((await app(`/admin/fmp/outbox/${dead.id}/retry`, 'POST', undefined, who)).status, 403, who);
       assert.equal((await app(`/admin/fmp/outbox/${dead.id}/retry`, 'POST', undefined, 'admin')).status, 201);
       assert.equal((await app('/admin/fmp/outbox/no-such-id/retry', 'POST', undefined, 'admin')).status, 404);
@@ -330,7 +330,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
     });
 
     await t.test('ADMIN can send an existing order again; the status page shows the queue and never a secret', async () => {
-      for (const who of ['staff', 'stock', 'cashier', 'manager'])
+      for (const who of ['staff', 'stock', 'manager'])
         assert.equal((await app('/admin/fmp/resend', 'POST', { reference: first.reference }, who)).status, 403, who);
       assert.equal((await app('/admin/fmp/resend', 'POST', { reference: 'SES-00000000-000000' }, 'admin')).status, 404);
       const res = await app('/admin/fmp/resend', 'POST', { reference: first.reference }, 'admin');
@@ -545,7 +545,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
 
     await t.test('the log is for ADMIN: newest first, no bodies in the list, filters and pages, one row opens with its bodies (D90)', async () => {
       const logs = (query = '', who = 'admin') => app(`/admin/fmp/logs${query}`, 'GET', undefined, who);
-      for (const who of ['staff', 'stock', 'cashier', 'manager']) assert.equal((await logs('', who)).status, 403, who);
+      for (const who of ['staff', 'stock', 'manager']) assert.equal((await logs('', who)).status, 403, who);
       assert.equal((await request('/admin/fmp/logs')).status, 401);
       const all = await logs('?take=200');
       assert.equal(all.status, 200, JSON.stringify(all.data));
@@ -613,7 +613,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       const recordsBefore = fm.records;
       const firstBody = JSON.parse(fm.bodies.get(firstRow.fmpRecordId));
       // the cashier sends it back, stock scans other units and sends again
-      assert.equal((await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'cashier')).status, 201);
+      assert.equal((await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'staff')).status, 201);
       for (const action of ['found', 'send']) assert.equal((await app(`/sessions/${s.id}/step`, 'POST', { action }, 'stock')).status, 201, action);
       reset();
       assert.deepEqual(await fmp.tick(), { sent: 1, failed: 0 });

@@ -58,12 +58,12 @@ test('a double click or a retry applies an action once: stock moves once, one ev
       assert.equal(await eventsOf(id, 'CUSTOMER_CANCELLED'), 1);
     });
 
-    await t.test('a cashier "send back to stock" clicked twice gives the units back once', async () => {
+    await t.test('a "send back to stock" clicked twice gives the units back once', async () => {
       const id = await toSearching();
       await app(`/sessions/${id}/step`, 'POST', { action: 'found' }, 'stock');
       await app(`/sessions/${id}/step`, 'POST', { action: 'send' }, 'stock');
       const before = await stockOf();
-      const rs = await twice(() => app(`/sessions/${id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'cashier'));
+      const rs = await twice(() => app(`/sessions/${id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'staff')); // D105: STAFF sends back
       assert.equal(rs.filter((r) => r.status === 201).length, 1, JSON.stringify(statuses(rs)));
       assert.equal(await stockOf(), before + 2, 'given back once');
       assert.equal(await eventsOf(id, 'CASHIER_REJECTED'), 1);

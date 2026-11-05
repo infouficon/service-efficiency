@@ -26,9 +26,7 @@ export const fmpPaymentTypes = [
   'บัตรเครดิต',
   'บัตรเงินผ่อน',
   'ใช้มัดจำ',
-  'Trade In',
   'U-Joy',
-  'Partner Mall',
   'อื่นๆ',
 ] as const;
 export const payments = [

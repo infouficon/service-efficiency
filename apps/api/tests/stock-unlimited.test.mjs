@@ -92,7 +92,7 @@ test('stock unlimited: one global ADMIN switch, on by default (D59)', async (t) 
     await t.test(
       'the switch is on by default and everybody can read it',
       async () => {
-        for (const who of ['staff', 'stock', 'cashier', 'manager', 'admin']) {
+        for (const who of ['staff', 'stock', 'manager', 'admin']) {
           const res = await request(
             '/settings',
             'GET',
@@ -118,7 +118,7 @@ test('stock unlimited: one global ADMIN switch, on by default (D59)', async (t) 
     );
 
     await t.test('only ADMIN switches it, with a real boolean', async () => {
-      for (const who of ['staff', 'stock', 'cashier', 'manager'])
+      for (const who of ['staff', 'stock', 'manager'])
         assert.equal((await setUnlimited(false, who)).status, 403, who);
       assert.equal(
         (await request('/settings', 'PUT', {}, cookies.admin)).status,

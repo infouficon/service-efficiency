@@ -42,7 +42,7 @@ test('ADMIN looks at what warroom holds per serial number: read-only, limited, t
     await t.test('ADMIN only; the branch and the part are required; not configured is said plainly', async () => {
       delete process.env.WARROOM_DATABASE_URL;
       assert.equal((await request('/admin/warroom-sync/serials?branch=A&part=B')).status, 401);
-      for (const who of ['staff', 'stock', 'cashier', 'manager']) assert.equal((await look(q('A', 'B'), who)).status, 403, who);
+      for (const who of ['staff', 'stock', 'manager']) assert.equal((await look(q('A', 'B'), who)).status, 403, who);
       for (const bad of ['', '?branch=A', '?part=B', '?branch=%20&part=B', `?branch=${'x'.repeat(65)}&part=B`])
         assert.equal((await look(bad)).status, 400, bad);
       const off = await look(q('A', 'B'));

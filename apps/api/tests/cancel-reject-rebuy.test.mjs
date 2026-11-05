@@ -90,11 +90,8 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           'search',
           'found',
           'send',
-          'receive',
-          'scan',
-          'bill',
         ];
-        const roles = ['staff', 'stock', 'cashier', 'manager', 'admin'];
+        const roles = ['staff', 'stock', 'manager', 'admin'];
         let n = 0;
         for (const stage of stages) {
           const who = roles[n++ % roles.length];
@@ -108,9 +105,9 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           assert.equal(res.data.outcome, 'CUSTOMER_CANCELLED');
           assert.equal(res.data.cancelledBy, world.staffIds[who]);
         }
-        // a brand-new walk-in can be cancelled by a cashier-only account too
+        // a brand-new walk-in can be cancelled by a stock-only account too
         const fresh = await driveTo('walkIn');
-        assert.equal((await cancel(fresh.id, 'cashier')).status, 201);
+        assert.equal((await cancel(fresh.id, 'stock')).status, 201);
         assert.equal(
           await stockOf(skuA),
           5,
@@ -166,7 +163,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
       'stock is told about a cancel after the request, until it says the goods are back (F12)',
       async () => {
         const found = await driveTo('found');
-        const cancelled = await cancel(found.id, 'cashier');
+        const cancelled = await cancel(found.id, 'manager');
         assert.equal(
           cancelled.data.stockAckAt,
           null,
@@ -185,7 +182,6 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           403,
           'only stock, a manager or an admin',
         );
-        assert.equal((await ack(found.id, 'cashier')).status, 403);
         const acked = await ack(found.id, 'stock');
         assert.equal(acked.status, 201, JSON.stringify(acked.data));
         assert.equal(acked.data.stockAckBy, world.staffIds.stock);
@@ -235,17 +231,17 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
     );
 
     await t.test(
-      'the cashier sends an order back to stock: units released, the stage restarts, history kept (F13)',
+      'staff send an order back to stock: units released, the stage restarts, history kept (F13, D105)',
       async () => {
-        for (const stage of ['send', 'receive', 'scan']) {
+        for (const stage of ['send']) {
           const session = await driveTo(stage);
           assert.equal(await stockOf(skuA), 3, 'FOUND took 2 of A');
-          const reject = (body, who = 'cashier') =>
+          const reject = (body, who = 'staff') =>
             call(`/sessions/${session.id}/cashier/reject`, 'POST', body, who);
           assert.equal(
-            (await reject({ reason: 'หยิบสินค้าผิด' }, 'staff')).status,
+            (await reject({ reason: 'หยิบสินค้าผิด' }, 'stock')).status,
             403,
-            'only the cashier',
+            'staff (the cashiers work in U POS)',
           );
           assert.equal((await reject({})).status, 400, 'a reason is required');
           assert.equal(
@@ -284,11 +280,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           assert.equal(event.metadata.reason, 'หยิบสินค้าผิด');
           assert.equal(
             event.metadata.fromState,
-            {
-              send: 'SENT_TO_CASHIER',
-              receive: 'CASHIER_RECEIVED',
-              scan: 'CASHIER_SCAN',
-            }[stage],
+            { send: 'SENT_TO_CASHIER' }[stage],
           );
           // stock finds again, and the order goes through
           const again = await call(
@@ -306,12 +298,12 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
               { action },
               'stock',
             );
-          for (const action of ['receive', 'scan', 'bill', 'complete']) {
+          for (const action of ['complete']) {
             const s = await call(
               `/sessions/${session.id}/step`,
               'POST',
               { action },
-              'cashier',
+              'admin',
             );
             assert.equal(s.status, 201, `${action}: ${JSON.stringify(s.data)}`);
           }
@@ -337,23 +329,27 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           `/sessions/${atFound.id}/cashier/reject`,
           'POST',
           { reason: 'หยิบสินค้าผิด' },
-          'cashier',
+          'staff',
         );
         assert.equal(
           notYet.status,
           400,
-          'the cashier has not received it yet (FOUND)',
+          'the goods have not left stock yet (FOUND)',
         );
-        const billed = await driveTo('bill');
+        const closed = await driveTo('complete');
         const late = await call(
-          `/sessions/${billed.id}/cashier/reject`,
+          `/sessions/${closed.id}/cashier/reject`,
           'POST',
           { reason: 'หยิบสินค้าผิด' },
-          'cashier',
+          'staff',
         );
-        assert.equal(late.status, 400, 'the bill is open: too late');
+        assert.equal(late.status, 400, 'the sale is closed: too late');
         await cancel(atFound.id, 'stock');
-        await cancel(billed.id, 'cashier');
+        // the closed sale kept its units: the next test starts from a full shelf again
+        await db.branchInventory.updateMany({
+          where: { branchId: branches.a.id, skuId: { in: [skuA.id, skuB.id] } },
+          data: { stock: 5 },
+        });
       },
     );
 
@@ -364,13 +360,13 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           await call('/customer-types', 'GET', undefined, 'staff')
         ).data.find((x) => x.letter === 'B');
         const old = await driveTo('found', { type: typeB.id });
-        const cancelled = await cancel(old.id, 'cashier', 'เปลี่ยนสี');
+        const cancelled = await cancel(old.id, 'manager', 'เปลี่ยนสี');
         assert.equal(cancelled.status, 201, JSON.stringify(cancelled.data));
         assert.equal(await stockOf(skuA), 5, 'the cancel put the units back');
         const rebuy = (id, who = 'staff') =>
           call(`/sessions/${id}/rebuy`, 'POST', undefined, who);
         assert.equal(
-          (await rebuy(old.id, 'cashier')).status,
+          (await rebuy(old.id, 'stock')).status,
           403,
           'a new purchase is a STAFF job',
         );
@@ -383,9 +379,10 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
         assert.equal(next.status, 201, JSON.stringify(next.data));
         const s = next.data;
         assert.notEqual(s.id, old.id);
-        assert.equal(s.queueLetter, 'B');
+        // the old letter and type: confirm matched the type again from the selection (D69), so not always the walk-in's B
+        assert.equal(s.queueLetter, old.queueLetter);
         assert.equal(s.queueNo, old.queueNo, 'the old queue number');
-        assert.equal(s.customerTypeId, typeB.id);
+        assert.equal(s.customerTypeId, old.customerTypeId);
         assert.equal(s.phone, old.phone);
         assert.equal(s.customerId, old.customerId);
         assert.equal(s.state, 'PRODUCT_SELECTION');
@@ -418,11 +415,12 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           s.points.map((o) => o.name),
           ['MCard'],
         );
+        // the same instant: their order is not defined
         assert.deepEqual(
-          s.events.map((e) => e.eventType),
-          ['SESSION_CREATED', 'PRODUCT_SELECTION_STARTED'],
+          s.events.map((e) => e.eventType).sort(),
+          ['PRODUCT_SELECTION_STARTED', 'SESSION_CREATED'],
         );
-        assert.equal(s.events[0].metadata.rebuyOf, old.reference);
+        assert.equal(s.events.find((e) => e.eventType === 'SESSION_CREATED').metadata.rebuyOf, old.reference);
         const oldAfter = (
           await call(`/sessions/${old.id}`, 'GET', undefined, 'staff')
         ).data;

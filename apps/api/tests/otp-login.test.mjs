@@ -287,7 +287,7 @@ test('SMS OTP login: request, verify, limits, 12-hour session, webhook and the a
     });
 
     await t.test('ADMIN sees the set-up and the latest codes (never a code or a full number); a test SMS can be sent', async () => {
-      for (const who of ['staff', 'stock', 'cashier', 'manager']) {
+      for (const who of ['staff', 'stock', 'manager']) {
         assert.equal((await request('/admin/otp', 'GET', undefined, cookies[who])).status, 403, who);
         assert.equal((await request('/admin/otp/test-sms', 'POST', { phone: phoneFor(9) }, cookies[who])).status, 403, who);
       }

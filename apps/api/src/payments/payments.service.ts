@@ -11,6 +11,7 @@ import { PrismaService } from '../prisma/prisma.service';
  * The payment types FileMaker knows (D89), in the FMP team's own words. A payment method (what staff pick in SES, e.g.
  * "PayNext") is filed under one of them so the FMP push can say `paymentTypes: ["บัตรเงินผ่อน"]` next to `payments`.
  * The web app lists the same strings (`fmpPaymentTypes` in `constants/options.ts`); a test keeps the two in step.
+ * D105: no "Trade In" (it is an On top item in SES) and no "Partner Mall" (not sold through SES), as the shops' team said.
  */
 export const FMP_PAYMENT_TYPES = [
   'เงินสด',
@@ -18,9 +19,7 @@ export const FMP_PAYMENT_TYPES = [
   'บัตรเครดิต',
   'บัตรเงินผ่อน',
   'ใช้มัดจำ',
-  'Trade In',
   'U-Joy',
-  'Partner Mall',
   'อื่นๆ',
 ] as const;
 /** What FileMaker is told for a method that has no type yet (or whose name SES no longer lists). */

@@ -17,8 +17,8 @@ test('each order carries its FileMaker side for the shop: delivery and FileMaker
     const id = s.data.id;
     await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: sku.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [] }, 'staff');
     await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
-    const one = async (who = 'cashier') => (await app(`/sessions/${id}`, 'GET', undefined, who)).data;
-    const inList = async (who = 'cashier') => (await app('/sessions', 'GET', undefined, who)).data.find((x) => x.id === id);
+    const one = async (who = 'staff') => (await app(`/sessions/${id}`, 'GET', undefined, who)).data;
+    const inList = async (who = 'staff') => (await app('/sessions', 'GET', undefined, who)).data.find((x) => x.id === id);
 
     assert.equal((await one()).fmp, null, 'nothing sent yet');
     assert.equal((await inList()).fmp, null);
@@ -31,7 +31,7 @@ test('each order carries its FileMaker side for the shop: delivery and FileMaker
 
     // a later message wins; FileMaker's answer is there; staff and stock see it too
     await db.fmpOutbox.create({ data: { ...base, id: randomUUID(), event: 'RESEND', status: 'sent', attempts: 1, sentAt: new Date(), ackStatus: 'error', ackMessage: 'SN_NOT_FOUND: SN X not found in stock', ackReceivedAt: new Date() } });
-    for (const who of ['cashier', 'staff', 'stock']) {
+    for (const who of ['staff', 'stock']) {
       v = await inList(who);
       assert.equal(v.fmp.ackStatus, 'error', who);
       assert.equal(v.fmp.ackMessage, 'SN_NOT_FOUND: SN X not found in stock');

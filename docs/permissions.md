@@ -1,5 +1,8 @@
 > **Superseded by D63 (2026-10-13):** any signed-in role of the branch can cancel any session that has not ended, at any stage. The cancellation cells below are the original, stage-based matrix.
 
+> **D105 (2026-11-05):** the SES cashier screen and the CASHIER role are retired: the cashiers work in U POS. A cashier-only account cannot sign in; CASHIER is never given; the CASHIER column below is history. Sending an order back to stock is STAFF's (while it waits for the till); closing a sale U POS did not report is ADMIN's (`complete`); changing a product is STAFF's while the order is with stock.
+
+
 # Phase 1 — Permissions
 
 Sources: requirements §§7–9, 25, 27, 32; decisions D1–4, D12, D21, D28; current Phase 1 request.

@@ -79,7 +79,7 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
     let first;
     await t.test('with all of them the order goes to the cashier; they are saved in the order scanned and trimmed', async () => {
       first = await toFound();
-      for (const who of ['staff', 'cashier']) assert.equal((await send(first, full(first, 10), who)).status, 403, who);
+      for (const who of ['staff', 'manager']) assert.equal((await send(first, full(first, 10), who)).status, 403, who);
       assert.equal(await stored(first), 0);
       const serials = full(first, 10);
       serials[0].sn[0] = `  ${serials[0].sn[0].toLowerCase()}\n`; // a scanner often adds a line break; typed in lower case
@@ -125,7 +125,7 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
       const s = await toFound();
       assert.equal((await send(s, full(s, 30))).status, 201);
       assert.equal(await stored(s), 3);
-      const back = await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'cashier');
+      const back = await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'staff');
       assert.equal(back.status, 201, JSON.stringify(back.data));
       assert.equal(await stored(s), 0, 'the units went back to the shelf, so their serials no longer stand');
       for (const action of ['found']) assert.equal((await app(`/sessions/${s.id}/step`, 'POST', { action }, 'stock')).status, 201);

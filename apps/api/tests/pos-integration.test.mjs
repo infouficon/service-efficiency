@@ -148,17 +148,21 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
       'the orders waiting for a bill, with their lines',
       async () => {
         const sent = await driveTo('send');
-        const scanned = await driveTo('scan');
+        const scanned = await driveTo('send'); // D105: no cashier steps in SES; a second order at the till
         await driveTo('found'); // not at the cashier yet
         const cancelled = await driveTo('send');
         await app(
           `/sessions/${cancelled.id}/cancel`,
           'POST',
           { reason: 'ลูกค้าเปลี่ยนใจ' },
-          'cashier',
+          'manager',
         );
-        const billed = await driveTo('bill'); // already billed: nothing left to prefill
-        assert.equal(billed.state, 'BILL_OPENED');
+        const billed = await driveTo('send'); // billed by U POS: nothing left to prefill
+        const billedRes = await call('/integrations/pos/bills', {
+          method: 'POST',
+          body: { reference: billed.reference, billNo: 'B-prefill', openedAt: new Date().toISOString() },
+        });
+        assert.equal(billedRes.data.state, 'BILL_OPENED');
 
         const list = await call(
           `/integrations/pos/orders?branch=${branches.a.code}`,
@@ -237,7 +241,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
     await t.test(
       'the bill opened in U POS moves the order on and records the real time',
       async () => {
-        const session = await driveTo('scan');
+        const session = await driveTo('send');
         // a time after the walk-in but well before "now": the real bill time is not the moment SES hears about it
         const openedAt = new Date(
           new Date(session.customerWalkInAt).getTime() + 1,
@@ -269,14 +273,20 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
         assert.equal(event.actorStaffId, 'U-POS');
         assert.equal(event.metadata.source, 'U-POS');
         assert.equal(event.metadata.billNo, 'INV-2026-000123');
-        // the cashier only has to complete the sale in SES
+        // D105: no cashier in SES; when U POS reports no payment, ADMIN closes the sale
+        for (const who of ['staff', 'stock', 'manager'])
+          assert.equal(
+            (await app(`/sessions/${session.id}/step`, 'POST', { action: 'complete' }, who)).status,
+            403,
+            who,
+          );
         assert.equal(
           (
             await app(
               `/sessions/${session.id}/step`,
               'POST',
               { action: 'complete' },
-              'cashier',
+              'admin',
             )
           ).status,
           201,
@@ -303,8 +313,10 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
           409,
         );
 
-        // from SENT_TO_CASHIER and CASHIER_RECEIVED too: the cashier did not have to press anything in SES
-        for (const stage of ['send', 'receive']) {
+        // the cashier's old steps are gone from SES (D105)
+        for (const action of ['receive', 'scan', 'bill'])
+          assert.equal((await app(`/sessions/${session.id}/step`, 'POST', { action }, 'admin')).status, 400, action);
+        for (const stage of ['send']) {
           const s = await driveTo(stage);
           const r = await bill({
             reference: s.reference,
@@ -324,42 +336,14 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
     );
 
     await t.test(
-      'when the cashier pressed first the SES time stays and the U POS bill is added beside it',
+      'ADMIN closed the sale first (U POS reported nothing): a later U POS bill is still added beside it (D105)',
       async () => {
-        const session = await driveTo('bill');
-        const clicked = session.billOpenedAt;
-        const openedAt = new Date(
-          new Date(session.customerWalkInAt).getTime() + 2,
-        ).toISOString();
-        const r = await call('/integrations/pos/bills', {
-          method: 'POST',
-          body: { reference: session.reference, billNo: 'B-late', openedAt },
-        });
-        assert.equal(r.status, 201, JSON.stringify(r.data));
-        const full = (
-          await app(`/sessions/${session.id}`, 'GET', undefined, 'staff')
-        ).data;
-        assert.equal(full.state, 'BILL_OPENED');
-        assert.equal(
-          full.billOpenedAt,
-          clicked,
-          'the SES milestone is not rewritten',
-        );
-        assert.equal(full.posBillNo, 'B-late');
-        assert.equal(new Date(full.posBillOpenedAt).toISOString(), openedAt);
-        assert.equal(
-          full.events.filter((e) => e.eventType === 'BILL_OPENED').length,
-          1,
-          'no second event',
-        );
-        // and a completed sale can still learn its bill number
-        await app(
-          `/sessions/${session.id}/step`,
-          'POST',
-          { action: 'complete' },
-          'cashier',
-        );
         const completed = await driveTo('complete');
+        assert.equal(completed.state, 'COMPLETED');
+        assert.equal(completed.billOpenedAt, null, 'nobody opened a bill in SES');
+        const done = completed.events.filter((e) => e.eventType === 'COMPLETED');
+        assert.equal(done.length, 1);
+        assert.equal(done[0].actorStaffId, world.staffIds.admin);
         const late = await call('/integrations/pos/bills', {
           method: 'POST',
           body: {
@@ -369,11 +353,9 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
           },
         });
         assert.equal(late.status, 201);
-        assert.equal(
-          (await app(`/sessions/${completed.id}`, 'GET', undefined, 'staff'))
-            .data.posBillNo,
-          'B-after',
-        );
+        const full = (await app(`/sessions/${completed.id}`, 'GET', undefined, 'staff')).data;
+        assert.equal(full.state, 'COMPLETED', 'the state stays');
+        assert.equal(full.posBillNo, 'B-after');
       },
     );
 

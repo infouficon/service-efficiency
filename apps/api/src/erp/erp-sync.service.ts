@@ -46,7 +46,7 @@ const HASH_CONCURRENCY = 4;
 export const POSITION_ROLE_RULES: { pattern: RegExp; roles: RoleCode[] }[] = [
   { pattern: /sale/i, roles: ['STAFF'] },
   { pattern: /store\s*manager/i, roles: ['STAFF'] },
-  { pattern: /cashier/i, roles: ['CASHIER'] },
+  // D105: cashiers work in U POS, not SES: a cashier position gets no SES account (the import lists them as unmapped)
   { pattern: /stock/i, roles: ['STOCK'] },
 ];
 

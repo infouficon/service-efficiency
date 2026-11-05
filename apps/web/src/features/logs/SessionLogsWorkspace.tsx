@@ -31,10 +31,13 @@ import {
   visitDuration,
 } from '../session/workflow';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
+import { advanceStepApi } from '../../services/sessionApi';
 
 interface SessionLogsWorkspaceProps {
   user: MockUser;
   sessions: MockSession[];
+  /** D105: ADMIN closes a sale U POS did not report. */
+  onUpdateSession?: (updated: MockSession) => void;
 }
 
 type StatusFilter =
@@ -817,7 +820,23 @@ function getRefFromHash(): string | null {
 export function SessionLogsWorkspace({
   user,
   sessions,
+  onUpdateSession,
 }: SessionLogsWorkspaceProps) {
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState('');
+  /** D105: the till is U POS; when it never reports the payment, ADMIN closes the sale here (step `complete`). */
+  const closeSale = async (session: MockSession) => {
+    if (!session.id) return;
+    setClosing(true);
+    setCloseError('');
+    try {
+      onUpdateSession?.(await advanceStepApi(session.id, 'complete'));
+    } catch (err) {
+      setCloseError(err instanceof Error ? err.message : 'ปิดการขายไม่สำเร็จ');
+    } finally {
+      setClosing(false);
+    }
+  };
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
@@ -1179,6 +1198,19 @@ export function SessionLogsWorkspace({
             <div className="session-summary-section">
               <Summary session={selectedSession} />
               {selectedSession.confirmed && <ReceiptPrint session={selectedSession} />}
+              {user.roles.includes('ADMIN') &&
+                !selectedSession.outcome &&
+                ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(selectedSession.state) && (
+                  <div style={{ marginTop: '12px' }}>
+                    <Notice>
+                      ออเดอร์นี้รอ U POS ถ้า U POS ไม่ได้แจ้งการชำระเงินมา ADMIN ปิดการขายแทนได้ (บันทึกเวลาตอนกด)
+                    </Notice>
+                    <Button variant="secondary" disabled={closing} onClick={() => closeSale(selectedSession)}>
+                      {closing ? 'กำลังปิดการขาย…' : 'ปิดการขาย (แทน U POS)'}
+                    </Button>
+                    {closeError && <Notice error>{closeError}</Notice>}
+                  </div>
+                )}
             </div>
           </Panel>
         ) : (

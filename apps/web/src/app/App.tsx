@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useMemo } from 'react';
 import {
   User as UserIcon,
   Package,
-  CreditCard,
   ShoppingBag,
   ClipboardList,
   ShieldCheck,
@@ -27,7 +26,6 @@ import type { AppView, MockSession, MockUser } from '../types/session';
 import type { Account } from '../types/accounts';
 import { StaffWorkspace } from '../features/session/StaffWorkspace';
 import { StockWorkspace } from '../features/stock/StockWorkspace';
-import { CashierWorkspace } from '../features/cashier/CashierWorkspace';
 import { ProductWorkspace } from '../features/products/ProductWorkspace';
 import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
 import { AdminHub, type AdminSubView } from '../features/admin/AdminHub';
@@ -52,7 +50,6 @@ function parseHashView(hash: string): AppView | null {
   const validViews: AppView[] = [
     'staff',
     'stock',
-    'cashier',
     'logs',
     'products',
     'admin',
@@ -63,7 +60,6 @@ function parseHashView(hash: string): AppView | null {
 function isViewAllowed(v: AppView, u: MockUser): boolean {
   if (v === 'staff') return u.roles.includes('STAFF');
   if (v === 'stock') return u.roles.includes('STOCK');
-  if (v === 'cashier') return u.roles.includes('CASHIER');
   if (v === 'products')
     return u.roles.includes('ADMIN') || u.roles.includes('MANAGER');
   if (v === 'admin')
@@ -75,7 +71,6 @@ function getDefaultView(u: MockUser): AppView {
   if (u.roles.includes('ADMIN') || u.roles.includes('MANAGER')) return 'logs';
   if (u.roles.includes('STAFF')) return 'staff';
   if (u.roles.includes('STOCK')) return 'stock';
-  if (u.roles.includes('CASHIER')) return 'cashier';
   return 'logs';
 }
 
@@ -184,7 +179,6 @@ export function App({
   // Permission checks
   const canAccessStaff = user.roles.includes('STAFF');
   const canAccessStock = user.roles.includes('STOCK');
-  const canAccessCashier = user.roles.includes('CASHIER');
   const canAccessAdmin =
     user.roles.includes('ADMIN') || user.roles.includes('MANAGER');
   const canAccessProducts =
@@ -203,18 +197,6 @@ export function App({
       !s.stockPendingReview &&
       isToday(s.timestamps.customer_walk_in_at) &&
       ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
-  ).length;
-
-  const cashierPendingCount = branchSessions.filter(
-    (s) =>
-      !s.outcome &&
-      isToday(s.timestamps.customer_walk_in_at) &&
-      [
-        'SENT_TO_CASHIER',
-        'CASHIER_RECEIVED',
-        'CASHIER_SCAN',
-        'BILL_OPENED',
-      ].includes(s.state),
   ).length;
 
   const isManagerOrAdmin =
@@ -349,18 +331,6 @@ export function App({
               <Package size={18} /> <span>คลังสินค้า (Stock)</span>
               {stockPendingCount > 0 && (
                 <span className="nav-counter">{stockPendingCount}</span>
-              )}
-            </button>
-          )}
-
-          {canAccessCashier && (
-            <button
-              className={view === 'cashier' ? 'nav-active' : ''}
-              onClick={() => handleSelectView('cashier')}
-            >
-              <CreditCard size={18} /> <span>แคชเชียร์ (Cashier)</span>
-              {cashierPendingCount > 0 && (
-                <span className="nav-counter">{cashierPendingCount}</span>
               )}
             </button>
           )}
@@ -753,14 +723,6 @@ export function App({
             />
           )}
 
-          {view === 'cashier' && canAccessCashier && (
-            <CashierWorkspace
-              user={user}
-              sessions={sessions}
-              onUpdateSession={handleUpdateSession}
-            />
-          )}
-
           {view === 'products' && canAccessProducts && (
             <ProductWorkspace
               user={user}
@@ -770,7 +732,7 @@ export function App({
           )}
 
           {view === 'logs' && (
-            <SessionLogsWorkspace user={user} sessions={sessions} />
+            <SessionLogsWorkspace user={user} sessions={sessions} onUpdateSession={handleUpdateSession} />
           )}
 
           {view === 'admin' && canAccessAdmin && (

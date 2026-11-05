@@ -60,7 +60,7 @@ function getWrongItemBadgeText(
     }
     return `⚠️ ${detail.reason}`;
   }
-  return '⚠️ แคชเชียร์แจ้งมีปัญหา';
+  return '⚠️ แจ้งว่ามีปัญหา';
 }
 
 interface StockWorkspaceProps {
@@ -573,7 +573,7 @@ export function StockWorkspace({
                           className="status-tag status-outcome"
                           style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}
                         >
-                          Cashier ส่งกลับ
+                          ส่งกลับ (หยิบผิด)
                         </span>
                       ) : s.stockPendingReview ? (
                         <span
@@ -741,11 +741,11 @@ export function StockWorkspace({
                             }}
                           >
                             <AlertTriangle size={16} />
-                            Cashier ส่งกลับ: {reject?.reason} — ค้นหา/หยิบสินค้าใหม่ให้ถูกต้อง
+                            ส่งกลับจากหน้าร้าน: {reject?.reason} — ค้นหา/หยิบสินค้าใหม่ให้ถูกต้อง
                           </span>
                           {wrongList && (
                             <div style={{ fontSize: '13px', marginTop: '2px' }}>
-                              <strong>สินค้าที่แคชเชียร์แจ้งมีปัญหา:</strong>{' '}
+                              <strong>สินค้าที่แจ้งว่ามีปัญหา:</strong>{' '}
                               <span style={{ color: '#b91c1c', fontWeight: 600 }}>
                                 {wrongList.join(', ')}
                               </span>

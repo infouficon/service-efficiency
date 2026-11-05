@@ -5,8 +5,9 @@ import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
 import type { ManagedBranch } from '../../types/accounts';
 
-type ExtraRole = 'STAFF' | 'STOCK' | 'CASHIER';
-const ROLES: ExtraRole[] = ['STAFF', 'STOCK', 'CASHIER'];
+// D105: no CASHIER (the cashiers work in U POS)
+type ExtraRole = 'STAFF' | 'STOCK';
+const ROLES: ExtraRole[] = ['STAFF', 'STOCK'];
 
 interface ErpCandidate {
   erpStaffId: number;

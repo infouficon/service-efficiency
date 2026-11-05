@@ -16,7 +16,7 @@ export const STAFF_SHEET_COLUMNS: SheetColumn[] = [
   { key: 'lastName', label: 'นามสกุล', importable: true, note: 'บัญชีที่ซิงก์จาก ERP แก้ที่ ERP เท่านั้น' },
   { key: 'branchCode', label: 'รหัสสาขา', importable: true, note: 'ต้องตรงกับรหัสสาขาใน SES; ADMIN ล้วนไม่มีสาขา (เว้นว่าง) บทบาทอื่นต้องมี 1 สาขา' },
   { key: 'branchName', label: 'ชื่อสาขา', importable: false, note: 'ดูอย่างเดียว' },
-  { key: 'roles', label: 'บทบาท', importable: true, note: 'คั่นด้วย , เช่น STAFF หรือ MANAGER,STAFF (ADMIN, MANAGER, STAFF, STOCK, CASHIER)' },
+  { key: 'roles', label: 'บทบาท', importable: true, note: 'คั่นด้วย , เช่น STAFF หรือ MANAGER,STAFF (ADMIN, MANAGER, STAFF, STOCK)' },
   { key: 'active', label: 'ใช้งานอยู่', importable: true, note: 'TRUE / FALSE (หรือ ใช้งาน / ปิดใช้งาน)' },
   { key: 'phone', label: 'เบอร์มือถือ (รับ OTP)', importable: true, note: 'เว้นว่าง = ไม่เปลี่ยน, ใส่ - = ลบเบอร์, ไม่งั้นต้องเป็นเบอร์มือถือไทย (0812345678 หรือ 081-234-5678) บัญชีที่ซิงก์จาก ERP แก้ที่ ERP (ฟิลด์ tel)' },
   { key: 'phoneSource', label: 'ที่มาของเบอร์', importable: false, note: 'ERP (tel) หรือ กรอกเอง; ว่าง = ไม่มีเบอร์' },

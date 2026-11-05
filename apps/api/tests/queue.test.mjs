@@ -112,9 +112,9 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
         assert.equal(res.data.state, 'PRODUCT_SELECTION');
         assert.ok(res.data.productSelectionStartAt);
         assert.match(res.data.reference, /^SES-\d{8}-\d{6}$/);
-        assert.equal(res.data.events.length, 2);
-        assert.equal(res.data.events[0].eventType, 'SESSION_CREATED');
-        assert.equal(res.data.events[1].eventType, 'PRODUCT_SELECTION_STARTED');
+        // both happen in the same instant (walk-in starts the selection, D70): same createdAt, so their order is not defined
+        assert.deepEqual(res.data.events.map((e) => e.eventType).sort(), ['PRODUCT_SELECTION_STARTED', 'SESSION_CREATED']);
+        assert.equal(res.data.events[0].createdAt, res.data.events[1].createdAt);
         const customer = await db.customer.findUnique({
           where: { phone: '0999900001' },
         });
@@ -219,7 +219,7 @@ test('walk-in starts at the phone number and takes a queue number (D56, D57)', a
         });
         assert.equal(gone.status, 400);
         assert.equal(
-          (await walkIn({ phone: '0999900010' }, 'cashier')).status,
+          (await walkIn({ phone: '0999900010' }, 'stock')).status,
           403,
         );
         assert.equal(
@@ -303,7 +303,7 @@ test('customer types: everyone reads, only ADMIN manages, letters fill A-Z in or
     await t.test(
       'any signed-in role reads the active types, in letter order',
       async () => {
-        for (const who of ['staff', 'stock', 'cashier', 'manager']) {
+        for (const who of ['staff', 'stock', 'manager']) {
           const res = await list(who);
           assert.equal(res.status, 200);
           assert.deepEqual(

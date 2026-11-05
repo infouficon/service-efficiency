@@ -19,12 +19,9 @@ test('position text maps to SES roles; ADMIN/MANAGER are never granted', () => {
   );
   assert.deepEqual(erp.rolesForPosition('Sale Supervisor'), ['STAFF']);
   assert.deepEqual(erp.rolesForPosition('Store Manager'), ['STAFF']);
-  assert.deepEqual(erp.rolesForPosition('Cashier'), ['CASHIER']);
+  assert.deepEqual(erp.rolesForPosition('Cashier'), [], 'D105: the cashiers work in U POS');
   assert.deepEqual(erp.rolesForPosition('In Store Stock'), ['STOCK']);
-  assert.deepEqual(erp.rolesForPosition('Cashier / Sale'), [
-    'STAFF',
-    'CASHIER',
-  ]);
+  assert.deepEqual(erp.rolesForPosition('Cashier / Sale'), ['STAFF']);
   assert.deepEqual(erp.rolesForPosition('Technician'), []);
   assert.deepEqual(erp.rolesForPosition(''), []);
   assert.deepEqual(erp.rolesForPosition(null), []);
@@ -76,7 +73,7 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
   const out = erp.parsePeople(
     [
       row(10),
-      row(11, { status: 'Active', position: 'Cashier', 'user name': '' }),
+      row(11, { status: 'Active', position: 'In Store Stock', 'user name': '' }),
       row(12, { branch_id: 2 }),
       row(13, { 'user password': '  ' }),
       row(14, { position: 'Housekeeper' }),
@@ -93,7 +90,7 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
     out.people.map((p) => [p.staffId, p.roles]),
     [
       ['10', ['STAFF']],
-      ['11', ['CASHIER']],
+      ['11', ['STOCK']],
       ['17', ['STAFF']],
     ],
   );
@@ -176,7 +173,7 @@ test('extra people picked by hand skip the branch-scope and position rules; they
     tel: '081-234-5678',
     ...o,
   });
-  const rows = [row(70), row(71, { status: 'resign' }), row(72, { 'user password': '' }), row(73, { branch_id: 1, position: 'Cashier' })];
+  const rows = [row(70), row(71, { status: 'resign' }), row(72, { 'user password': '' }), row(73, { branch_id: 1, position: 'In Store Stock' })];
   const none = erp.parsePeople(rows, branches);
   assert.deepEqual(none.people.map((p) => p.staffId), ['73'], 'without extras only the in-scope person comes in');
   const extras = new Map([
@@ -468,7 +465,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
     ];
     erpState.staff = [
       es(1),
-      es(2, { position: 'Cashier' }),
+      es(2, { position: 'In Store Stock' }),
       es(3, { position: 'In Store Stock', 'user name': '' }),
       es(4, { position: 'Technician' }),
       es(5, { 'user password': '' }),
@@ -531,7 +528,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         assert.ok(!one.passwordHash.includes('erp-pw-1'));
         assert.deepEqual(
           (await staffRow(2)).roles.map((r) => r.roleCode),
-          ['CASHIER'],
+          ['STOCK'],
         );
         assert.deepEqual(
           (await staffRow(3)).roles.map((r) => r.roleCode),
@@ -655,7 +652,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
             await request(
               `/staff/${sid(1)}`,
               'PUT',
-              { ...same, roles: ['CASHIER'] },
+              { ...same, roles: ['STOCK'] },
               adminCookie,
             )
           ).status,
@@ -760,7 +757,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         const same = {
           firstName: 'ชื่อ2',
           lastName: 'สกุล2',
-          roles: ['CASHIER'],
+          roles: ['STOCK'],
           branchId: a.id,
           active: true,
         };
@@ -1048,13 +1045,13 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         const handMade = await db.staff.create({ data: { staffId: sid(56), passwordHash: 'x', mustChangePassword: false } });
         assert.equal((await extra({ erpStaffId: n(56), roles: ['STAFF'], branchId: A.id })).status, 409, 'a hand-made account with that id is never touched');
         await db.staff.delete({ where: { staffId: handMade.staffId } });
-        const put = await extra({ erpStaffId: devNo, roles: ['STAFF', 'CASHIER'], branchId: A.id, note: 'dev' });
+        const put = await extra({ erpStaffId: devNo, roles: ['STAFF', 'STOCK'], branchId: A.id, note: 'dev' });
         assert.equal(put.status, 200, JSON.stringify(put.data));
         assert.equal((await request('/admin/erp-sync/extras', 'GET', undefined, '')).status, 401);
         const list = (await request('/admin/erp-sync/extras', 'GET', undefined, adminCookie)).data;
         assert.equal(list.length, 1);
         assert.equal(list[0].account, null, 'no account until the import runs');
-        assert.deepEqual(list[0].roles, ['STAFF', 'CASHIER']);
+        assert.deepEqual(list[0].roles, ['STAFF', 'STOCK']);
         // picked people no longer show in the search
         assert.equal((await request(`/admin/erp-sync/staff-search?q=${encodeURIComponent('ดีเวล')}`, 'GET', undefined, adminCookie)).data.length, 0);
         // a dry run shows the effect, a real run creates the account
@@ -1067,7 +1064,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         assert.ok(acc, 'the account exists');
         assert.equal(acc.erpStaffId, devNo);
         assert.equal(acc.branchId, A.id);
-        assert.deepEqual(acc.roles.map((r) => r.roleCode).sort(), ['CASHIER', 'STAFF']);
+        assert.deepEqual(acc.roles.map((r) => r.roleCode).sort(), ['STAFF', 'STOCK']);
         assert.equal(acc.phone, `08${String(20000055).slice(-8)}`, 'the phone comes from the ERP tel like everyone');
         assert.equal((await login(sid(55), 'dev-pw-55')).status, 201, 'password mode: the ERP password works');
         const after = (await request('/admin/erp-sync/extras', 'GET', undefined, adminCookie)).data;

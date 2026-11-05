@@ -10,6 +10,11 @@ The cashier opens the bill twice: "เปิดบิล" in SES and the real bi
 real bill time, so the KPI cannot be measured. The owner chose a **two-way** integration (D60): SES sends the order lines to U POS
 so the bill is pre-filled, and U POS reports back when the bill is really opened, so SES records the real time.
 
+**D105 (2026-11-05): U POS is the only till.** SES has no cashier screen any more: after STOCK sends the goods, the order waits for U POS,
+which opens the bill and reports the payment through `POST /integrations/pos/bills` (`openedAt`, `completedAt`). If U POS never reports
+the payment, an ADMIN closes the sale in SES ("ปิดการขาย (แทน U POS)"). A wrong unit found at the till is sent back to stock by the
+order's STAFF.
+
 ```text
 STOCK sends the goods ─▶ SES order at the cashier (SENT_TO_CASHIER)
 cashier in U POS ──GET /api/integrations/pos/orders?branch=<code>[&queue=A012]──▶ SES   (pick the order, the bill is pre-filled)

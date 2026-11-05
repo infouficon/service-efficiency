@@ -42,7 +42,16 @@ server {
         expires 1y;
         access_log off;
         add_header Cache-Control "public, immutable";
-        try_files $uri =404;
+        try_files $uri @asset_missing;
+    }
+
+    # A missing asset is 503 + no-store, never 404 (H-39). During a rolling deploy the new index.html can send a browser to the old
+    # container for a new file; Cloudflare caches a 404 under /assets for a long time (even with no-store) and every visitor then
+    # gets a blank page, but it never caches a 5xx. 2026-11-05: index-DVDPg1Dr.js stayed a cached 404 after the D103 deploy.
+    location @asset_missing {
+        add_header Cache-Control "no-store" always;
+        add_header Retry-After 5 always;
+        return 503;
     }
 
     # SPA Routing Fallback

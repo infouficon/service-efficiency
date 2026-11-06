@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { X } from 'lucide-react';
+import { Camera, Check, X } from 'lucide-react';
 import { Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
+import { CameraScan } from './CameraScan';
+import { SERIAL, createWedgeReader } from './scanning';
 
-/** What the server accepts as a serial number (D92): printable ASCII, no spaces, 1 to 64 characters. */
-const SERIAL = /^[\x21-\x7E]{1,64}$/;
+/** The camera needs a secure page and a browser that can reach it. */
+const canUseCamera = () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 
 type Scan = { itemId: string; sn: string };
 /** D104: the stock data's word on one scanned serial (null: the check is off or could not answer). */
@@ -51,6 +53,8 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
  * D102: while searching a product can also be ticked "found" without scanning; its serials are then scanned before "send".
  * D104: every saved serial is checked against the stock data (ready here / another branch / not ready / another model / not in
  * stock); it only informs, nothing waits for it.
+ * D108: the phone camera can read the label (📷 on each product), and a barcode scanner works without tapping a box first: a
+ * scan typed while nothing editable has the focus goes to the first product with units left.
  */
 export function SerialScan({
   session,
@@ -77,6 +81,9 @@ export function SerialScan({
   const [queued, setQueued] = useState<Scan[]>([]);
   const [removing, setRemoving] = useState(false);
   const [checks, setChecks] = useState<Record<string, StockCheck>>({});
+  const [cameraFor, setCameraFor] = useState<string | null>(null);
+  const [allDone, setAllDone] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
   const queue = useRef<Scan[]>([]);
   const draining = useRef(false);
@@ -132,9 +139,10 @@ export function SerialScan({
     draining.current = false;
   };
 
-  const submit = (item: SelectionItem) => {
+  /** One serial for one product, from the box, the camera or a scanner without focus: checked here, then queued for the server. */
+  const submit = (item: SelectionItem, raw: string) => {
     const itemId = item.id as string;
-    const sn = (values[itemId] ?? '').trim().toUpperCase();
+    const sn = raw.trim().toUpperCase();
     if (!sn) return;
     const problem = !SERIAL.test(sn)
       ? 'ใช้ตัวอักษร/ตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ไม่เกิน 64 ตัว'
@@ -158,6 +166,34 @@ export function SerialScan({
     void drain();
   };
 
+  // D108: a scanner used while no box has the focus; `scanAnywhere` always sees the latest state
+  const scanAnywhere = useRef<(text: string) => void>(() => undefined);
+  useEffect(() => {
+    scanAnywhere.current = (text: string) => {
+      const target = items.find((item) => item.id === firstOpen());
+      if (!target) {
+        setAllDone(`${text.trim().toUpperCase()}: ทุกเครื่องในออเดอร์นี้สแกนครบแล้ว`);
+        return;
+      }
+      setAllDone('');
+      submit(target, text);
+    };
+  });
+  useEffect(() => {
+    const read = createWedgeReader((text) => scanAnywhere.current(text));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || !rootRef.current?.offsetParent) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return; // that box takes the typing itself
+      if (read(e.key, e.timeStamp)) {
+        e.preventDefault(); // the scanner's Enter must not press a focused button
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, []);
+
   const remove = async (item: SelectionItem, serialId: string) => {
     if (!session.id) return;
     setRemoving(true);
@@ -175,15 +211,16 @@ export function SerialScan({
   const saved = items.reduce((sum, item) => sum + Math.min(item.quantity, item.serials?.length ?? 0), 0);
 
   return (
-    <div className="stock-note-section serial-scan">
+    <div className="stock-note-section serial-scan" ref={rootRef}>
       <strong>
         สแกน Serial Number เครื่องที่หยิบจริง ({saved}/{total})
       </strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
-        สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบจากชั้น (Mac/iPad ขึ้นต้นด้วย S, iPhone ใช้ IMEI) ระบบบันทึกทันทีพร้อมเวลา
-        สแกนผิดกด × แล้วสแกนใหม่
-        {onPick ? ' ยังไม่สะดวกสแกน ติ๊ก "พบแล้ว" ไปก่อนได้ แล้วสแกนให้ครบก่อนกดส่ง' : ' ต้องครบก่อนกดส่ง'}
+        สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบ (Mac/iPad ขึ้นต้น S, iPhone ใช้ IMEI) เครื่องสแกนยิงได้เลยไม่ต้องกดที่ช่อง
+        หรือกด 📷 ใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่
+        {onPick ? ' ยังไม่สะดวกสแกน กด "พบแล้ว" ไปก่อน แล้วสแกนให้ครบก่อนกดส่ง' : ' ต้องครบก่อนกดส่ง'}
       </p>
+      {allDone && <span className="serial-scan-problem">{allDone}</span>}
       {items.map((item) => {
         const itemId = item.id as string;
         const remaining = left(item);
@@ -197,13 +234,7 @@ export function SerialScan({
               <strong>{itemName(item)}</strong> <span className="muted">× {item.quantity}</span>
               <span className="product-sku-chip">{item.product.sku || '—'}</span>
               {badge?.(item)}
-              {onPick && !done && (
-                <label className="serial-scan-pick">
-                  <input type="checkbox" checked={isPicked} onChange={() => onPick(itemId)} />
-                  พบแล้ว
-                </label>
-              )}
-              <span className={`status-tag ${isPicked ? 'status-found' : 'status-searching'}`} style={{ marginLeft: onPick && !done ? undefined : 'auto' }}>
+              <span className={`status-tag ${isPicked ? 'status-found' : 'status-searching'}`} style={{ marginLeft: 'auto' }}>
                 {done ? 'ครบแล้ว' : `สแกนแล้ว ${item.serials?.length ?? 0}/${item.quantity}`}
               </span>
             </div>
@@ -234,30 +265,68 @@ export function SerialScan({
               </div>
             )}
             {remaining > 0 && (
-              <label className="serial-scan-box">
-                <span className="fine muted">
-                  เครื่องที่ {item.quantity - remaining + 1}/{item.quantity}
-                </span>
-                <input
-                  ref={(element) => {
-                    boxes.current[itemId] = element;
-                  }}
-                  value={values[itemId] ?? ''}
-                  maxLength={80}
-                  autoComplete="off"
-                  spellCheck={false}
-                  enterKeyHint="done"
-                  placeholder="สแกน SN"
-                  aria-label={`${itemName(item)} Serial Number เครื่องที่ ${item.quantity - remaining + 1}`}
-                  aria-invalid={Boolean(problem)}
-                  onChange={(e) => setValues((current) => ({ ...current, [itemId]: e.target.value.toUpperCase() }))}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter') return;
-                    e.preventDefault(); // a scanner ends with Enter: never submit anything by accident
-                    submit(item);
-                  }}
-                />
-              </label>
+              <div className="serial-scan-row">
+                <label className="serial-scan-box">
+                  <span className="fine muted">
+                    เครื่องที่ {item.quantity - remaining + 1}/{item.quantity}
+                  </span>
+                  <input
+                    ref={(element) => {
+                      boxes.current[itemId] = element;
+                    }}
+                    value={values[itemId] ?? ''}
+                    maxLength={80}
+                    autoComplete="off"
+                    spellCheck={false}
+                    enterKeyHint="done"
+                    placeholder="สแกน SN"
+                    aria-label={`${itemName(item)} Serial Number เครื่องที่ ${item.quantity - remaining + 1}`}
+                    aria-invalid={Boolean(problem)}
+                    onChange={(e) => setValues((current) => ({ ...current, [itemId]: e.target.value.toUpperCase() }))}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter') return;
+                      e.preventDefault(); // a scanner ends with Enter: never submit anything by accident
+                      submit(item, values[itemId] ?? '');
+                    }}
+                  />
+                </label>
+                <div className="serial-scan-actions">
+                  {canUseCamera() && (
+                    <button type="button" className="serial-scan-camera" onClick={() => setCameraFor(itemId)}>
+                      <Camera size={18} />
+                      กล้อง
+                    </button>
+                  )}
+                  {/* D102: found without scanning at the shelf (the serials are scanned before "send") */}
+                  {onPick && !done && (
+                    <button
+                      type="button"
+                      className={`serial-scan-found${isPicked ? ' on' : ''}`}
+                      aria-pressed={isPicked}
+                      onClick={() => onPick(itemId)}
+                    >
+                      <Check size={18} />
+                      พบแล้ว
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {onPick && !done && isPicked && (
+              <span className="serial-picked-note">พบแล้ว: สแกน SN ตอนยื่นของ (ต้องครบก่อนกดส่ง)</span>
+            )}
+            {cameraFor === itemId && (
+              <CameraScan
+                title={itemName(item)}
+                expect={remaining}
+                skip={[
+                  ...session.selection.items.flatMap((one) => (one.serials ?? []).map((serial) => serial.sn)),
+                  ...queued.map((scan) => scan.sn),
+                ]}
+                problem={problem}
+                onScan={(sn) => submit(item, sn)}
+                onClose={() => setCameraFor(null)}
+              />
             )}
             {problem && <span className="serial-scan-problem">{problem}</span>}
             {warned && (

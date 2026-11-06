@@ -1425,3 +1425,25 @@ tick boxes, the STOCK send button). Agreed plan, all three.
 3. **STOCK send button.** "ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)" named a SES cashier that no longer exists (D105) and showed a state
    code. It is now "ส่งให้แคชเชียร์ (U POS)"; while serials are missing it reads "สแกน SN อีก N เครื่อง" (still disabled) instead of only
    greying out. Nothing changes in the API or the data.
+
+## D108 — Scan with the phone camera, or with a scanner without tapping the box; "พบแล้ว" next to the box (2026-11-06)
+
+Owner, with two screenshots: "พบแล้ว" was small and far from the box ("ทำไมมันตัวเล็กและอยู่ไกล"), ticking it still asked for the serial
+("พอกดแล้วต้องแสกนใหม่อีกหรอ"), and "เราสามารถกดเปิดกล้องเพื่อ scan ได้หรือไม่ … รองรับการ scan โดยไม่ focus input ได้ด้วยไหม".
+
+1. **"พบแล้ว" (D102) is a big toggle button beside the box** (with "กล้อง"), not a small tick box at the far end of the product row. Once
+   pressed the row says "พบแล้ว: สแกน SN ตอนยื่นของ (ต้องครบก่อนกดส่ง)": it records when the unit was found, the serial is still needed
+   before "send" (FileMaker opens the bill by serial) or "ส่งโดย SN ยังไม่ครบ" (D103). Nothing changes in that rule.
+2. **Camera.** "กล้อง" on each product opens the back camera full screen (`CameraScan`). The browser's own barcode reader is used where it
+   reads Code 128 (Chrome on Android); elsewhere (Safari on iPhone) `barcode-detector` / `zxing-wasm`, loaded only when the camera opens
+   (a 43 kB chunk + a 0.9 MB `.wasm`, served from our own `/assets`, never from a CDN). Only a serial or an IMEI is taken
+   (`serialFromBarcode`: 15 digits = IMEI; 12/13/32 digits = UPC/EAN/EID and anything with "/" = part number are skipped; else 8 to 20
+   letters and digits), kept exactly as read so it equals what a scanner types. A serial the order already has is passed over. Several
+   candidates at once: STOCK taps the right one, the others are set aside. After each serial the camera holds until "สแกนเครื่องถัดไป"
+   and sets aside whatever else it reads meanwhile (an iPhone's IMEI2 must never become the next unit); it closes when the product has
+   all its serials. A refusal from the server (e.g. the unit is in another open order) shows in the overlay.
+3. **Scanner without focus.** While an order's scan panel is on screen, keys typed with nothing editable focused are read as a scan
+   when they come as a burst (≥ 6 characters, ≤ 100 ms between keys, ≤ 60 ms on average; Shift does not break it) ending with Enter
+   (`createWedgeReader`). The scan goes to the first product with units left; that Enter is swallowed so it never presses a focused
+   button (e.g. "ลูกค้ายกเลิก"). Slow typing is left alone; a focused box (the serial box, the note) takes the typing itself.
+4. nginx gzips `application/wasm` too. No API or data change.

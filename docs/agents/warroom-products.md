@@ -68,6 +68,14 @@ A category is a row of `Category` (Admin → หมวดหมู่สิน�
   `erpManaged` rows are updated; the sync never touches `active`. The sync never deletes anything (only the ADMIN clear action does, D73).
 - In mode `on`, `erpManaged` product/model/SKU names, codes, colours, storage and category are read-only in the admin UI and API
   (409); `active` can still be switched.
+- **Not for sale (D109):** parts whose `product_subcat` is `Whole Unit`, `Display`, `Back Glass`, `Connectivity Cards` or
+  `APPLE DEMO UNITS` (service parts, demo units), or whose `product_subsubcat` is `AC+ Incident` (AppleCare+ incident fees,
+  `ACSH…`), are never created (`skippedNotForSale` in the run summary; `notForSale()`). Migration `202611060001` switched off the ones
+  created before. A new such group (another sub-category text) shows up as its own product: ADMIN switches it off, and that sticks.
+- **Order of the staff's model list (D109):** models ADMIN pinned ("ปักหมุด" in จัดการสินค้า → แก้ไขสินค้า, `ProductModel.pinnedAt`)
+  first, the last pinned on top; then by the newest UPC of the model's SKUs (Apple numbers UPCs in launch order); then by name.
+  A model without a numeric UPC (a CTO Mac only) goes last. The first-seen date in SES was tried and is not a launch date (an old
+  model first stocked late jumped to the top).
 
 ## Safety
 

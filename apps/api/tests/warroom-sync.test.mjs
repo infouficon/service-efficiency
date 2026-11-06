@@ -265,6 +265,37 @@ test('catalog: one item per part, hierarchy from sub-categories, only a part wit
   );
 });
 
+test('not for sale: AppleCare+ incident fees, service parts and demo units never become catalog items (D109)', () => {
+  const row = (partNo, subcat, subsubcat, cat = 'iPhone') => ({
+    branchCode: 'B',
+    partNo,
+    upc: null,
+    productName: 'x',
+    cat,
+    subcat,
+    subsubcat,
+    capacity: null,
+    color: null,
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+  });
+  const { items, skippedNotForSale } = wr.buildCatalog([
+    row('ACSH0164', 'Display', 'AC+ Incident'),
+    row('ACSH0151', 'Other', 'AC+ Incident', 'Mac'),
+    row('TA661-22982', 'Whole Unit', 'iPhone 13'),
+    row('661-36910', 'Back Glass', 'iPhone 15 Pro Max'),
+    row('PA661-7481', 'Connectivity Cards', 'MacBook Air (13-inch, 2017)', 'Mac'),
+    row('3P877ZP/A', 'APPLE DEMO UNITS', 'APPLE DEMO UNITS'),
+    row('MK2D4ZP/A', 'iPhone Duo', 'iPhone Duo'),
+    row('MW0Y3TH/A', 'Studio Display', 'Studio Display', 'Mac'),
+  ]);
+  assert.deepEqual(items.map((i) => i.partNo), ['MK2D4ZP/A', 'MW0Y3TH/A'], 'a phone and a Studio Display stay');
+  assert.equal(skippedNotForSale, 6);
+  assert.equal(wr.notForSale(' whole UNIT ', null), true);
+  assert.equal(wr.notForSale('iPhone 17', 'iPhone 17'), false);
+});
+
 test('availability: ERP ready minus promised units; completed before the snapshot does not count; missing report wins', () => {
   const asOf = new Date('2026-10-12T05:00:00Z');
   const inv = {

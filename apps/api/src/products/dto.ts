@@ -56,6 +56,11 @@ export class ModelUpdateDto {
   @IsOptional()
   @IsBoolean()
   active?: boolean;
+
+  /** D109: pinned models come first in the staff's model list (the last pinned on top); false unpins. */
+  @IsOptional()
+  @IsBoolean()
+  pinned?: boolean;
 }
 
 export class SkuCreateDto {

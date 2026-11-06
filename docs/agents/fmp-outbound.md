@@ -145,7 +145,8 @@ to their last four digits; rows are kept 90 days.
 For the bill itself, FileMaker can tell SES it opened the bill through the U POS door, `POST /api/integrations/pos/bills
 {reference, billNo, openedAt}` with `Authorization: Bearer <POS_API_KEY>` (the order moves to BILL_OPENED), and that the customer paid,
 the same call with `completedAt` (the order is COMPLETED at that time, D101; [pos-integration.md](pos-integration.md); the ready-made
-`ses_report_bill` v2 sends both).
+`ses_report_bill` v2 sends both; FileMaker still ran v1 on 2026-11-06, opened only, so orders stop at BILL_OPENED until an
+ADMIN closes them, see [fmp-scripts/README.md](fmp-scripts/README.md)).
 
 Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet (a cashier reject clears the
 serial numbers in SES, the held bill in FileMaker stays). A damaged unit the cashier removes (D75) is not told either.

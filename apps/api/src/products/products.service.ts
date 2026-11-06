@@ -233,6 +233,8 @@ export class ProductsService implements OnModuleInit {
                 color: s.color,
                 storage: s.storage,
                 memory: s.memory,
+                /** D109: the newest UPC of a model puts it higher in the staff's model list */
+                upc: s.upc,
                 active: s.active,
                 erpManaged: s.erpManaged,
                 stock: available ?? inv?.stock ?? 0,
@@ -486,7 +488,7 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async updateModel(modelId: string, data: { name?: string; active?: boolean }) {
+  async updateModel(modelId: string, { pinned, ...data }: { name?: string; active?: boolean; pinned?: boolean }) {
     if (this.erpOn()) {
       const cur = await this.prisma.productModel.findUnique({
         where: { id: modelId },
@@ -498,7 +500,8 @@ export class ProductsService implements OnModuleInit {
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.productModel.update({
         where: { id: modelId },
-        data,
+        // D109: pinning stamps the time, so the last pinned model is on top
+        data: { ...data, ...(pinned !== undefined ? { pinnedAt: pinned ? new Date() : null } : {}) },
         include: { skus: true },
       });
 

@@ -1447,3 +1447,22 @@ Owner, with two screenshots: "พบแล้ว" was small and far from the box
    (`createWedgeReader`). The scan goes to the first product with units left; that Enter is swallowed so it never presses a focused
    button (e.g. "ลูกค้ายกเลิก"). Slow typing is left alone; a focused box (the serial box, the note) takes the typing itself.
 4. nginx gzips `application/wasm` too. No API or data change.
+
+## D109 — Not-for-sale ERP parts are left out; models are listed new to old, ADMIN pins a launch (2026-11-06)
+
+Owner, with a screenshot of the iPhone model list (D107): "ทำไม Apple Care + มาอยู่ในนี้ แล้วก็ อยากให้เรียงสินค้าใหม่ไปเก่าได้ไหม เช่นตอนนี้
+iphone duo ให้ขึ้นก่อน". Chosen: UPC order + ADMIN pin; demo units hidden too.
+
+1. **Why they were there.** The warroom sync files every part the ERP puts under a device category, including AppleCare+ incident
+   fees (`ACSH0164` "INCIDENT SERVICE FEE FOR IPHONE DISPLAY", model "AC+ Incident"), service parts (sub-categories Whole Unit, Display,
+   Back Glass, Connectivity Cards: `TA661-…`, `661-…`, `PA661-…`) and demo units (APPLE DEMO UNITS, `3P877ZP/A` "(Demo)"). They were in
+   the old dropdown too; the D107 list put them on top (name order).
+2. **Rule.** `notForSale(product_subcat, product_subsubcat)` in `buildCatalog`: those five sub-categories, or a model containing "AC+
+   Incident", are never created (`skippedNotForSale`; catalog rules version 5). Migration `202611060001_model_pin_and_not_for_sale`
+   switches off the ERP-made ones already created, the way ADMIN does (product or model, SKUs, branch rows); reversible. A rule by part
+   number was rejected: sellable CTO Macs (`Z1L000024`) do not look like `xxxxxZP/A` either.
+3. **Order.** Pinned models first (`ProductModel.pinnedAt`, set by "ปักหมุด" in จัดการสินค้า → แก้ไขสินค้า; the last pinned on top), then
+   the newest numeric UPC among the model's SKUs (Apple numbers UPCs in launch order; on prod this gives iPhone 18 Pro, 18 Pro Max, Duo,
+   17e, 17 …, iPad Air M4, Pro M5, A16, Air M3, mini, Pro M4), then the name; no UPC (a CTO-only model) goes last. The date a model
+   first appeared in SES was tried and rejected: an old model first stocked late jumped to the top. Apple assigns UPCs before a launch,
+   so the exact launch order ("Duo first") is ADMIN's pin. Same order in the change-item modal.

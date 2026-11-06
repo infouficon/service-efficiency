@@ -317,6 +317,8 @@ model ProductModel {
   name      String            @db.VarChar(191)
   active    Boolean           @default(true)
   erpManaged Boolean          @default(false)
+  /// D109: set by ADMIN ("ปักหมุด"); pinned models come first in the staff's model list, the last pinned on top
+  pinnedAt  DateTime?         @db.DateTime(3)
   skus      ProductSku[]
   sessions  CustomerSession[]
 

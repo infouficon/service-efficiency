@@ -12,10 +12,14 @@ export interface CatalogSku {
   stock?: number;
   stockSource?: 'unlimited' | 'erp' | 'manual';
   erpAsOf?: string | null;
+  /** Apple numbers its UPCs in launch order: the newest UPC of a model says how new it is (D109) */
+  upc?: string | null;
 }
 export interface CatalogModel {
   id: string;
   name: string;
+  /** D109: pinned by ADMIN to the top of the list (the last pinned first) */
+  pinnedAt?: string | null;
   skus: CatalogSku[];
 }
 export interface CatalogProduct {
@@ -38,6 +42,7 @@ export function toCatalog(data: unknown): CatalogProduct[] {
       id: string;
       name: string;
       active: boolean;
+      pinnedAt?: string | null;
       skus?: Array<CatalogSku & { active: boolean; branchActive?: boolean }>;
     }>;
   }>) {
@@ -48,7 +53,7 @@ export function toCatalog(data: unknown): CatalogProduct[] {
       const skus = (m.skus ?? []).filter(
         (s) => s.active && s.branchActive !== false,
       );
-      if (skus.length > 0) models.push({ id: m.id, name: m.name, skus });
+      if (skus.length > 0) models.push({ id: m.id, name: m.name, pinnedAt: m.pinnedAt ?? null, skus });
     }
     if (models.length > 0)
       out.push({ id: p.id, category: p.category, name: p.name, models });
@@ -71,7 +76,15 @@ export interface ModelChoice {
   sub?: string;
 }
 
-/** The models of one category with something to sell, in name order so a series stays together (iPad Air…, iPad Pro…). */
+/** The newest numeric UPC of a model (UPC-A / EAN / GTIN), as a number for ordering; 0 when it has none (e.g. a CTO Mac). */
+function newestUpc(model: CatalogModel): number {
+  return Math.max(0, ...model.skus.map((s) => (/^\d{12,14}$/.test(s.upc?.trim() ?? '') ? Number(s.upc) : 0)));
+}
+
+/**
+ * The models of one category with something to sell, new to old (D109): the ones ADMIN pinned first (the last pinned on top),
+ * then by the newest UPC (Apple numbers them in launch order), then by name.
+ */
 export function modelChoices(catalog: CatalogProduct[] | null, category: string): ModelChoice[] {
   if (!catalog || !category) return [];
   const list: ModelChoice[] = [];
@@ -81,8 +94,12 @@ export function modelChoices(catalog: CatalogProduct[] | null, category: string)
       if (m.skus.length > 0) list.push({ key: `${p.id}::${m.id}`, product: p, model: m });
     }
   }
-  list.sort((a, b) =>
-    a.model.name.localeCompare(b.model.name, 'en', { numeric: true, sensitivity: 'base' }),
+  const pinned = (c: ModelChoice) => (c.model.pinnedAt ? Date.parse(c.model.pinnedAt) || 0 : 0);
+  list.sort(
+    (a, b) =>
+      pinned(b) - pinned(a) ||
+      newestUpc(b.model) - newestUpc(a.model) ||
+      a.model.name.localeCompare(b.model.name, 'en', { numeric: true, sensitivity: 'base' }),
   );
   for (const choice of list) {
     const firstWord = choice.product.name.trim().split(/\s+/)[0]?.toLowerCase() ?? '';

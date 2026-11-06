@@ -3,6 +3,7 @@ import {
   ShoppingBag,
   Plus,
   Edit2,
+  Pin,
   Tag,
   Smartphone,
   Tablet,
@@ -65,6 +66,8 @@ export interface ModelItem {
   name: string;
   active: boolean;
   erpManaged?: boolean;
+  /** D109: pinned to the top of the staff's model list (the last pinned first); null = ordered by UPC */
+  pinnedAt?: string | null;
   skus: SkuItem[];
 }
 
@@ -445,6 +448,25 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       await loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึกสินค้าไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // D109: pin a model to the top of the staff's model list (a new launch), or unpin it
+  const handleTogglePin = async (model: ModelItem) => {
+    setBusy(true);
+    try {
+      const updated = (await api(`/products/models/${model.id}`, 'PUT', { pinned: !model.pinnedAt })) as ModelItem;
+      setProducts((current) =>
+        current.map((p) => ({
+          ...p,
+          models: p.models?.map((m) => (m.id === model.id ? { ...m, pinnedAt: updated.pinnedAt ?? null } : m)),
+        })),
+      );
+      toast.success(updated.pinnedAt ? `ปักหมุด ${model.name} ไว้บนสุดแล้ว` : `เลิกปักหมุด ${model.name}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ปักหมุดไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -1239,8 +1261,24 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                           <span className={`status-tag ${model.active ? 'status-found' : 'status-outcome'}`} style={{ marginLeft: '8px', fontSize: '0.75rem' }}>
                             {model.active ? 'ใช้งาน' : 'ปิด'}
                           </span>
+                          {model.pinnedAt && (
+                            <span className="status-tag status-searching" style={{ marginLeft: '6px', fontSize: '0.75rem' }}>
+                              ปักหมุด
+                            </span>
+                          )}
                         </div>
                         <div style={{ display: 'flex', gap: '4px' }}>
+                          {/* D109: a new launch goes first in the staff's model list */}
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            type="button"
+                            disabled={busy}
+                            title="รุ่นที่ปักหมุดขึ้นก่อนในหน้าเลือกสินค้า (ปักล่าสุดอยู่บนสุด) ที่เหลือเรียงใหม่ไปเก่าตาม UPC"
+                            onClick={() => handleTogglePin(model)}
+                          >
+                            <Pin size={13} /> {model.pinnedAt ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                          </Button>
                           <Button
                             size="sm"
                             variant="secondary"

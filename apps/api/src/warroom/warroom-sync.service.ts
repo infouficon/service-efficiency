@@ -118,6 +118,8 @@ export interface WarroomSummary {
     moved: number;
     /** parts with no category text in warroom at all */
     skippedNoCategory: number;
+    /** D109: parts SES does not sell (AppleCare+ incident fees, service parts, demo units), never created */
+    skippedNotForSale: number;
     /** parts of a category ADMIN has not switched on yet (D72): created when the category is opened */
     waitingForCategory: number;
     /** categories added to the SES list by this run (switched off) */
@@ -319,11 +321,22 @@ const clean = (v: string | null | undefined, max: number): string | null => {
   return t ? t.slice(0, max) : null;
 };
 
+/**
+ * D109: groups (warroom sub-category) the ERP files under a device category but SES does not sell: service parts and demo
+ * units. With the AppleCare+ incident fees (model "AC+ Incident", e.g. ACSH0164 "INCIDENT SERVICE FEE FOR IPHONE DISPLAY")
+ * they are left out of the catalog. A new such group shows up as its own product; ADMIN switches it off (that sticks).
+ */
+const NOT_FOR_SALE_GROUPS = ['whole unit', 'display', 'back glass', 'connectivity cards', 'apple demo units'];
+export function notForSale(group: string | null, model: string | null): boolean {
+  return NOT_FOR_SALE_GROUPS.includes((group ?? '').trim().toLowerCase()) || /\bac\+\s*incident\b/i.test(model ?? '');
+}
+
 /** One catalog item per part number from the warroom rows (first non-empty attribute wins). */
 export function buildCatalog(rows: WarroomRow[]): {
   items: CatalogItem[];
   categories: CategoryTally[];
   skippedNoCategory: number;
+  skippedNotForSale: number;
 } {
   const byPart = new Map<string, WarroomRow[]>();
   for (const r of rows) {
@@ -334,6 +347,7 @@ export function buildCatalog(rows: WarroomRow[]): {
   const tally = new Map<string, CategoryTally>();
   const items: CatalogItem[] = [];
   let skippedNoCategory = 0;
+  let skippedNotForSale = 0;
   const first = (rs: WarroomRow[], pick: (r: WarroomRow) => string | null) =>
     rs.map(pick).find((v) => (v ?? '').trim() !== '') ?? null;
   for (const [partNo, rs] of [...byPart.entries()].sort((a, b) =>
@@ -362,6 +376,10 @@ export function buildCatalog(rows: WarroomRow[]): {
     tally.set(key, t);
     if (!rule) {
       skippedNoCategory += 1;
+      continue;
+    }
+    if (notForSale(subcat, subsubcat)) {
+      skippedNotForSale += 1;
       continue;
     }
     const nameTexts = [
@@ -403,6 +421,7 @@ export function buildCatalog(rows: WarroomRow[]): {
     items,
     categories: [...tally.values()].sort((a, b) => b.parts - a.parts),
     skippedNoCategory,
+    skippedNotForSale,
   };
 }
 
@@ -531,7 +550,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 4;
+export const CATALOG_RULES_VERSION = 5;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still
@@ -782,7 +801,7 @@ export class WarroomSyncService
       rows[0]!.snapshotAt,
     );
     const parts = new Set(rows.map((r) => r.partNo));
-    const { items, categories, skippedNoCategory } = buildCatalog(rows);
+    const { items, categories, skippedNoCategory, skippedNotForSale } = buildCatalog(rows);
 
     // The SES category list (D72): a category's products are only created while it is switched on; the ones warroom has and
     // SES does not are added switched off. Names compare without regard to case, like the database.
@@ -901,6 +920,7 @@ export class WarroomSyncService
         updated: 0,
         moved: 0,
         skippedNoCategory,
+        skippedNotForSale,
         waitingForCategory: notYet.length - missing.length,
         newCategories: 0,
         collisions: 0,

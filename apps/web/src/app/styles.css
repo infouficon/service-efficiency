@@ -2121,14 +2121,6 @@ input[aria-invalid='true'] {
   flex-wrap: wrap;
   gap: 6px;
 }
-.serial-scan-pick {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: auto;
-  font-weight: 600;
-  cursor: pointer;
-}
 .serial-chips {
   display: flex;
   flex-wrap: wrap;
@@ -4349,5 +4341,171 @@ input[aria-invalid='true'] {
     width: 100%;
     min-width: 64px;
     height: 44px;
+  }
+}
+
+/* ---------- D108: scan row (box + camera + "พบแล้ว" side by side), camera overlay ---------- */
+.serial-scan-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.serial-scan-row .serial-scan-box input {
+  min-height: 44px;
+}
+.serial-scan-actions {
+  display: flex;
+  gap: 8px;
+}
+.serial-scan-camera,
+.serial-scan-found {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.serial-scan-camera {
+  border-color: var(--primary-border);
+  color: var(--primary-dark);
+}
+.serial-scan-found.on {
+  border: 2px solid var(--primary);
+  background: var(--primary-subtle);
+  color: var(--primary-darker);
+}
+.serial-picked-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-success, #0d8a72);
+}
+.camera-scan {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: #000;
+  color: #fff;
+}
+.camera-scan-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.camera-scan-guide {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 38%;
+  height: 22%;
+  border: 3px solid rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+.camera-scan-top,
+.camera-scan-bottom {
+  position: absolute;
+  left: 0;
+  right: 0;
+  padding: 14px 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.camera-scan-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: max(14px, env(safe-area-inset-top));
+}
+.camera-scan-top strong {
+  display: block;
+  font-size: 15px;
+}
+.camera-scan-top small {
+  font-size: 13px;
+  opacity: 0.85;
+}
+.camera-scan-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+}
+.camera-scan-bottom {
+  bottom: 0;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  font-size: 14px;
+  text-align: center;
+}
+.camera-scan-bottom p {
+  margin: 0 0 8px;
+}
+.camera-scan-error {
+  color: #fecaca;
+  font-weight: 600;
+}
+.camera-scan-got {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  opacity: 0.9;
+}
+.camera-scan-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.camera-scan-choices button {
+  min-height: 48px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  color: #0d3b39;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.camera-scan-choices button.action {
+  font-family: inherit;
+  font-size: 15px;
+}
+.camera-scan-choices button.secondary {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+@media (max-width: 768px) {
+  .serial-scan-row {
+    align-items: stretch;
+  }
+  .serial-scan-row .serial-scan-box {
+    flex: 1 1 100%;
+  }
+  .serial-scan-actions {
+    flex: 1 1 100%;
+  }
+  .serial-scan-actions > button {
+    flex: 1;
   }
 }

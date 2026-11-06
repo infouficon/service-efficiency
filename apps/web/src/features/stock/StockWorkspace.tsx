@@ -214,6 +214,11 @@ export function StockWorkspace({
       (user.roles.includes('ADMIN') || s.branchCode === (user.branchCode ?? '')),
   );
 
+  // on a phone the queue and the order take turns: an opened order starts at the top (its "back" button and banners)
+  useEffect(() => {
+    document.querySelector('main')?.scrollTo({ top: 0 });
+  }, [selectedRef]);
+
   const handleSelectCard = (reference: string) => {
     setSelectedRef(reference);
     setMobileShowDetail(true);

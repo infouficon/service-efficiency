@@ -517,6 +517,30 @@ export function App({
             >
               <Menu size={22} />
             </button>
+            {canAccessStaff && canAccessStock && (
+              // a phone switches between the floor and the stock room in one tap (every ERP account has both, D106)
+              <div className="mobile-view-switch only-mobile" role="tablist" aria-label="สลับหน้า">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'staff'}
+                  className={view === 'staff' ? 'active' : ''}
+                  onClick={() => handleSelectView('staff')}
+                >
+                  <UserIcon size={15} /> หน้าร้าน
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={view === 'stock'}
+                  className={view === 'stock' ? 'active' : ''}
+                  onClick={() => handleSelectView('stock')}
+                >
+                  <Package size={15} /> คลัง
+                  {stockPendingCount > 0 && <span className="nav-counter">{stockPendingCount}</span>}
+                </button>
+              </div>
+            )}
             <span className="branch-tag">
               <Building2 size={15} />
               <span>{user.branch}</span>
@@ -577,13 +601,13 @@ export function App({
               <div
                 style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}
               >
-                <div>
+                <div className="manager-alert-text">
                   <strong>แจ้งเตือน :</strong> มี{' '}
                   <strong>{managerAlertSessions.length}</strong>{' '}
                   รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก
                   เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่:
                 </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <div className="manager-alert-items" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {managerAlertSessions.map((s) => {
                     const missingText = getSessionMissingDescription(s);
                     const note = s.stockPendingReview?.stockNote;

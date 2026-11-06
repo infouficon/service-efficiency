@@ -3887,3 +3887,211 @@ input[aria-invalid='true'] {
   color: #9f1239;
 }
 
+
+/* ==========================================================================
+   MOBILE UX PASS (2026-11-06): phones only (≤ 768px); wider screens are unchanged.
+   Kept at the end of the file so it wins over the rules above.
+   ========================================================================== */
+.only-mobile {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .only-mobile {
+    display: revert;
+  }
+  .only-desktop {
+    display: none !important;
+  }
+
+  /* the closed menu drawer threw its shadow onto the left edge of every page */
+  .sidebar {
+    box-shadow: none;
+  }
+  .sidebar.sidebar-open {
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.4);
+  }
+
+  /* "back to the list": the desktop default further up hid it on phones too */
+  .mobile-back-to-queue-btn {
+    display: inline-flex;
+  }
+
+  /* one tap between the floor and the stock room (every ERP account has both, D106); the branch is on each page */
+  .mobile-view-switch {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    background: #e5ece7;
+    border-radius: 10px;
+  }
+  .mobile-view-switch button {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: #3d5a50;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .mobile-view-switch button.active {
+    background: white;
+    color: #0d423f;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  }
+  .mobile-view-switch .nav-counter {
+    margin-left: 2px;
+  }
+  .topbar-left:has(.mobile-view-switch) .branch-tag,
+  .topbar:has(.mobile-view-switch) .user-details {
+    display: none;
+  }
+
+  /* staff: the list and the open order take turns, like stock; the walk-in form comes first (the most common job) */
+  .staff-workspace[data-mobile-detail='true'] .workspace-header-bar,
+  .staff-workspace[data-mobile-detail='true'] .staff-sessions-sidebar {
+    display: none;
+  }
+  .staff-workspace[data-mobile-detail='false'] .staff-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .staff-workspace[data-mobile-detail='false'] .staff-main-panel {
+    order: -1;
+    width: 100%;
+  }
+  .staff-workspace[data-mobile-detail='false'] .workspace-header-bar > div:last-child {
+    display: none;
+  }
+
+  /* order lists: compact cards one under the other, instead of one card at a time sideways */
+  .staff-sessions-sidebar .queue-card-list,
+  .stock-queue-column .queue-card-list {
+    flex-direction: column;
+    overflow: visible;
+    gap: 8px;
+    padding-bottom: 0;
+  }
+  .staff-sessions-sidebar .queue-card,
+  .stock-queue-column .queue-card {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    padding: 10px 12px;
+  }
+  .queue-card .card-product {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  .queue-card .card-meta {
+    font-size: 11px;
+  }
+
+  /* the open order: a shorter header */
+  .session-strip {
+    padding: 12px 14px;
+    gap: 8px;
+  }
+  .session-strip h2.queue-title {
+    margin: 2px 0;
+    font-size: 28px;
+  }
+
+  /* product picker: two smaller tiles a row, so the model and colour fields stay near */
+  .wizard-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .wizard-tile {
+    min-height: 64px;
+    padding: 10px 8px;
+  }
+  .wizard-tile-category,
+  .picker-category-tiles .wizard-tile-category {
+    min-height: 76px;
+    font-size: 14px;
+  }
+  .picker-category-tiles .category-picture {
+    width: 36px;
+    height: 36px;
+  }
+
+  /* the phone number's digits are spaced out; its Thai placeholder is not */
+  .walkin-form .walkin-phone::placeholder {
+    letter-spacing: normal;
+    font-family: inherit;
+    font-size: 16px;
+  }
+
+  /* stock and history: the counts are on the tabs already; stock actions full width, within thumb reach */
+  .stock-workspace .stats-pills,
+  .session-logs-workspace .stats-pills {
+    display: none;
+  }
+  .stock-workspace .detail-actions-area .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .stock-workspace .detail-actions-area .actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+  .stock-workspace .product-highlight-box {
+    padding: 10px 12px;
+  }
+  .stock-workspace .product-highlight-box .product-title {
+    font-size: 15px;
+  }
+  .queue-card .card-actions .button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+  }
+  .serial-scan-box {
+    grid-template-columns: 1fr;
+  }
+  .serial-scan-box input {
+    width: 100%;
+    font-size: 16px; /* 16px: iOS does not zoom into the field */
+  }
+
+  /* order summary: the label above its value, instead of a squeezed two-line label */
+  .info-item-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  .info-item-row .info-item-value {
+    text-align: left !important;
+  }
+
+  /* manager alert: one line on a phone (the history page lists the orders) */
+  .manager-alert-banner {
+    padding: 8px 12px !important;
+  }
+  .manager-alert-banner .manager-alert-items {
+    display: none !important;
+  }
+  .manager-alert-banner > div:first-child {
+    min-width: 0 !important;
+  }
+
+  /* login: the brand (the side story is hidden on phones) */
+  .login-mobile-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 0 0 20px;
+    color: #0d423f;
+    font-weight: 700;
+  }
+}

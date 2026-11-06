@@ -156,6 +156,32 @@ export function itemLabel(item: SelectionItem): string {
   return `${itemName(item)} (x${item.quantity})`;
 }
 
+const STATE_LABELS: Record<WorkflowState, string> = {
+  WALK_IN: 'รับลูกค้า',
+  DEMO: 'ทดลองเครื่อง',
+  DECISION: 'ตัดสินใจ',
+  PRODUCT_SELECTION: 'เลือกสินค้า',
+  STOCK_REQUESTED: 'รอคลัง',
+  SEARCHING: 'คลังกำลังหา',
+  FOUND: 'คลังพบแล้ว',
+  SENT_TO_CASHIER: 'รอ U POS',
+  CASHIER_RECEIVED: 'ที่แคชเชียร์',
+  CASHIER_SCAN: 'ที่แคชเชียร์',
+  BILL_OPENED: 'เปิดบิลแล้ว',
+  COMPLETED: 'ขายแล้ว',
+};
+const OUTCOME_LABELS: Record<string, string> = {
+  CUSTOMER_CANCELLED: 'ยกเลิก',
+  NOT_BUY: 'ไม่ซื้อ',
+  OUT_OF_STOCK: 'สินค้าหมด',
+};
+
+/** Where an order is, in a few Thai words for a phone screen (the full state name stays on wider screens). */
+export function stateLabel(session: Pick<MockSession, 'state' | 'outcome'>): string {
+  if (session.outcome) return OUTCOME_LABELS[session.outcome] ?? session.outcome;
+  return STATE_LABELS[session.state] ?? session.state;
+}
+
 /** D101: how many units of a main product still wait for their serial number to be scanned. */
 export function serialsLeft(item: SelectionItem): number {
   return Math.max(0, item.quantity - (item.serials?.length ?? 0));

@@ -12,7 +12,6 @@ import {
   Watch,
   Box,
   ArrowRight,
-  ChevronDown,
   Headphones,
   BatteryCharging,
   Plus,
@@ -166,7 +165,6 @@ export function SelectionEditor({
   const [paymentMethods, setPaymentMethods] = useState<{ name: string; fmpType: string | null }[]>(
     () => payments.map((name) => ({ name, fmpType: null })),
   );
-  const [showOtherPayments, setShowOtherPayments] = useState(false);
   // D72: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
   const [open, setOpen] = useState(value.items.length === 0);
@@ -255,8 +253,8 @@ export function SelectionEditor({
     setOpen(false);
   };
 
-  // The methods with an FMP type come first; the rest fold under "ช่องทางอื่น" (ADMIN moves one up by giving it a type).
-  // A method switched off after it was picked on this session stays visible.
+  // The methods with an FMP type come first, the rest under the heading "ช่องทางอื่น", all always shown (D107; ADMIN moves one
+  // up by giving it a type). A method switched off after it was picked on this session stays visible.
   const typed = (m: { fmpType: string | null }) => Boolean(m.fmpType) && m.fmpType !== fmpPaymentTypeOther;
   const anyTyped = paymentMethods.some(typed);
   const mainPayments = [
@@ -264,8 +262,6 @@ export function SelectionEditor({
     ...value.payments.filter((p) => !paymentMethods.some((m) => m.name === p)),
   ];
   const otherPayments = anyTyped ? paymentMethods.filter((m) => !typed(m)).map((m) => m.name) : [];
-  const otherPicked = value.payments.some((p) => otherPayments.includes(p));
-  const otherPaymentsOpen = showOtherPayments || otherPicked;
 
   const allSkus = (catalog ?? []).flatMap((p) =>
     p.models.flatMap((m) => m.skus),
@@ -633,6 +629,7 @@ export function SelectionEditor({
         <legend>
           Payment <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
+        {otherPayments.length > 0 && <p className="choice-group-title">ช่องทางหลัก</p>}
         <Choices
           options={mainPayments}
           value={value.payments}
@@ -640,25 +637,12 @@ export function SelectionEditor({
         />
         {otherPayments.length > 0 && (
           <>
-            {/* with one of them picked the list stays open: nothing picked is ever hidden */}
-            {!otherPicked && (
-              <button
-                type="button"
-                className="more-choices"
-                aria-expanded={otherPaymentsOpen}
-                onClick={() => setShowOtherPayments((open) => !open)}
-              >
-                {otherPaymentsOpen ? 'ซ่อนช่องทางอื่น' : `ช่องทางอื่น (${otherPayments.length})`}
-                <ChevronDown size={14} className={otherPaymentsOpen ? 'flip' : undefined} />
-              </button>
-            )}
-            {otherPaymentsOpen && (
-              <Choices
-                options={otherPayments}
-                value={value.payments}
-                onChange={(payments) => onChange({ ...value, payments })}
-              />
-            )}
+            <p className="choice-group-title">ช่องทางอื่น</p>
+            <Choices
+              options={otherPayments}
+              value={value.payments}
+              onChange={(payments) => onChange({ ...value, payments })}
+            />
           </>
         )}
       </fieldset>

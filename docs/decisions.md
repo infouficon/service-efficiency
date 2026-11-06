@@ -1418,8 +1418,10 @@ tick boxes, the STOCK send button). Agreed plan, all three.
    too, which it skipped before) and chips for the device line.
 2. **Add-ons.** No "None / ล้างรายการ" buttons (tapping a ticked box again takes it off). Points and Burn Point share the same cards, so
    they are one table: a row per card, "สะสม" and "ใช้แต้ม (Burn)". Payment is marked optional; the methods with an FMP type other than
-   `อื่นๆ` come first, the rest fold under "ช่องทางอื่น (N)" (ADMIN moves one up by giving it a type, D89). A picked method is never hidden.
-   If no method has a type yet (or the list cannot be loaded), all are shown as before. On a phone the tick boxes are two to a row, 44 px.
+   `อื่นๆ` come first under "ช่องทางหลัก", the rest under "ช่องทางอื่น", **all always shown** (ADMIN moves one up by giving it a type,
+   D89). The first build folded the others under a "ช่องทางอื่น (N)" toggle; the owner could not find them ("ตัวเลือกอื่นๆหายไปไหน") and
+   the installment methods (UFund, Ulite, Kashjoy, S Leasing, PayNext) are used often, so nothing is folded. If no method has a type yet
+   (or the list cannot be loaded), all are shown in one group. On a phone the tick boxes are two to a row, 44 px.
 3. **STOCK send button.** "ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)" named a SES cashier that no longer exists (D105) and showed a state
    code. It is now "ส่งให้แคชเชียร์ (U POS)"; while serials are missing it reads "สแกน SN อีก N เครื่อง" (still disabled) instead of only
    greying out. Nothing changes in the API or the data.

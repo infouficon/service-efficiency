@@ -4314,22 +4314,14 @@ input[aria-invalid='true'] {
   font-weight: 500;
   color: var(--text-muted);
 }
-.more-choices {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin: 10px 0 8px;
-  padding: 6px 2px;
-  border: 0;
-  background: none;
-  color: var(--primary-dark);
-  font: inherit;
-  font-size: 13px;
+.choice-group-title {
+  margin: 12px 0 6px;
+  font-size: 12px;
   font-weight: 600;
-  cursor: pointer;
+  color: var(--text-muted);
 }
-.more-choices .flip {
-  transform: rotate(180deg);
+.choice-group-title:first-of-type {
+  margin-top: 0;
 }
 
 @media (max-width: 768px) {

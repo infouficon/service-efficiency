@@ -3,6 +3,7 @@ import {
   Package,
   Search,
   Check,
+  ScanLine,
   Send,
   Clock,
   Zap,
@@ -783,8 +784,8 @@ export function StockWorkspace({
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Check size={16} />
                         {serialsComplete(selectedSession)
-                          ? 'พบสินค้าครบแล้ว — กด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของให้แคชเชียร์'
-                          : 'พบสินค้าครบแล้ว — สแกน SN ให้ครบ แล้วกด "ส่งสินค้าไปที่แคชเชียร์" ตอนยื่นของ (สแกนไม่ได้: "ส่งโดย SN ยังไม่ครบ")'}
+                          ? 'พบสินค้าครบแล้ว — กด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของให้แคชเชียร์'
+                          : 'พบสินค้าครบแล้ว — สแกน SN ให้ครบ แล้วกด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของ (สแกนไม่ได้: "ส่งโดย SN ยังไม่ครบ")'}
                       </span>
                     </Notice>
                   )}
@@ -1106,10 +1107,20 @@ export function StockWorkspace({
                           <SerialScan key={selectedSession.id} session={selectedSession} focusKey={openCount} onSaved={onUpdateSession} />
                         )}
                         <div className="actions" style={{ marginTop: '12px' }}>
+                          {/* D107: while serials are missing the button says what is left instead of just greying out */}
                           <Button disabled={sending || missing > 0} onClick={() => handleAction(selectedSession, 'send')}>
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <Send size={16} />
-                              ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)
+                              {missing > 0 ? (
+                                <>
+                                  <ScanLine size={16} />
+                                  สแกน SN อีก {missing} เครื่อง
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={16} />
+                                  ส่งให้แคชเชียร์ (U POS)
+                                </>
+                              )}
                             </span>
                           </Button>
                           {missing > 0 && !asking && (

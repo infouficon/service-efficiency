@@ -12,6 +12,7 @@ import {
   Watch,
   Box,
   ArrowRight,
+  ChevronDown,
   Headphones,
   BatteryCharging,
   Plus,
@@ -20,24 +21,35 @@ import {
 import {
   accessories,
   deviceCategories,
+  fmpPaymentTypeOther,
   ontop,
   payments,
   points,
 } from '../../constants/options';
 import type { Category, Product, Selection } from '../../types/session';
-import { MultiSelect, Button, Notice } from '../../components/ui';
+import { Choices, MultiSelect, Button, Notice } from '../../components/ui';
 import {
   addItem,
-  distinct,
   itemName,
   itemsText,
   quantitiesAreValid,
   quantityIsValid,
-  settleChoice,
   stepAccessory,
   stepItem,
   toggleAccessory,
+  toggleOption,
 } from './workflow';
+import { SkuPicker } from './SkuPicker';
+import {
+  isOutOfStock,
+  isUnlimited,
+  modelChoices,
+  toCatalog,
+  type CatalogModel,
+  type CatalogProduct,
+  type CatalogSku,
+  type Picked,
+} from './catalog';
 import {
   fetchCategoriesApi,
   fetchPaymentMethodsApi,
@@ -81,62 +93,6 @@ function CategoryPicture({ cat, size = 48 }: { cat: string; size?: number }) {
   );
 }
 
-/** A SKU as the branch product list returns it (D41, D52, D59). */
-interface CatalogSku {
-  id: string;
-  sku: string;
-  name: string;
-  color?: string | null;
-  storage?: string | null;
-  /** memory (RAM) of a Mac, e.g. "16GB" (D79) */
-  memory?: string | null;
-  stock?: number;
-  stockSource?: 'unlimited' | 'erp' | 'manual';
-  erpAsOf?: string | null;
-}
-interface CatalogModel {
-  id: string;
-  name: string;
-  skus: CatalogSku[];
-}
-interface CatalogProduct {
-  id: string;
-  category: string;
-  name: string;
-  models: CatalogModel[];
-}
-
-/** The shape of `GET /products` for a branch user: only what the picker needs, inactive records already dropped. */
-function toCatalog(data: unknown): CatalogProduct[] {
-  if (!Array.isArray(data)) return [];
-  const out: CatalogProduct[] = [];
-  for (const p of data as Array<{
-    id: string;
-    category: string;
-    name: string;
-    active: boolean;
-    models?: Array<{
-      id: string;
-      name: string;
-      active: boolean;
-      skus?: Array<CatalogSku & { active: boolean; branchActive?: boolean }>;
-    }>;
-  }>) {
-    if (!p.active) continue;
-    const models: CatalogModel[] = [];
-    for (const m of p.models ?? []) {
-      if (!m.active) continue;
-      const skus = (m.skus ?? []).filter(
-        (s) => s.active && s.branchActive !== false,
-      );
-      if (skus.length > 0) models.push({ id: m.id, name: m.name, skus });
-    }
-    if (models.length > 0)
-      out.push({ id: p.id, category: p.category, name: p.name, models });
-  }
-  return out;
-}
-
 /** The catalog entry an item stands for (`id` = the SKU id). */
 function toProduct(p: CatalogProduct, m: CatalogModel, s: CatalogSku): Product {
   return {
@@ -151,12 +107,6 @@ function toProduct(p: CatalogProduct, m: CatalogModel, s: CatalogSku): Product {
     branchActive: true,
   };
 }
-
-/** No stock figure blocks a product while the ADMIN switch "stock unlimited" is on (D59). */
-const isUnlimited = (s: { stockSource?: string }) =>
-  s.stockSource === 'unlimited';
-const isOutOfStock = (s: CatalogSku) =>
-  !isUnlimited(s) && typeof s.stock === 'number' && s.stock <= 0;
 
 /** The line above the picker about how fresh the stock figures are (F16): unlimited, or the oldest warroom snapshot behind the numbers. */
 function stockInfoLine(skus: CatalogSku[]): string {
@@ -197,23 +147,6 @@ function StockBadge({ sku }: { sku: CatalogSku }) {
   );
 }
 
-function getSkuOptionLabel(s: CatalogSku): string {
-  if (s.color && s.name) {
-    if (s.name.toLowerCase().includes(s.color.toLowerCase())) {
-      return s.color;
-    }
-    return `${s.name} (${s.color})`;
-  }
-  return s.color || s.name || 'มาตรฐาน';
-}
-
-function getSkuStockText(s: CatalogSku): string {
-  if (isUnlimited(s)) return 'มีจำหน่าย';
-  if (isOutOfStock(s)) return 'สินค้าหมด';
-  if (typeof s.stock === 'number') return `คงเหลือ ${s.stock} ชิ้น`;
-  return 'พร้อมจำหน่าย';
-}
-
 /**
  * Choosing the main products (F2, F3, D72): cascading dropdowns (Category → Model → Capacity → Color)
  * that adds to a list, each product with a `−` / `+` quantity stepper. Several main products can be added.
@@ -229,20 +162,21 @@ export function SelectionEditor({
 }) {
   const [catalog, setCatalog] = useState<CatalogProduct[] | null>(null);
   const [loadError, setLoadError] = useState('');
-  // F6: the payment methods ADMIN keeps; the built-in list is the fallback when they cannot be loaded
-  const [paymentNames, setPaymentNames] = useState<readonly string[]>(payments);
+  // F6: the payment methods ADMIN keeps; the built-in list (no FMP types known) is the fallback when they cannot be loaded
+  const [paymentMethods, setPaymentMethods] = useState<{ name: string; fmpType: string | null }[]>(
+    () => payments.map((name) => ({ name, fmpType: null })),
+  );
+  const [showOtherPayments, setShowOtherPayments] = useState(false);
   // D72: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
   const [open, setOpen] = useState(value.items.length === 0);
   // with nothing chosen the picker is always open
   const formOpen = open || value.items.length === 0;
 
-  // Cascading dropdown states
+  // The device line (tiles), then SkuPicker for model / RAM / capacity / colour; `pickerRun` starts the picker over
   const [category, setCategory] = useState<string>('');
-  const [modelKey, setModelKey] = useState<string>('');
-  const [memory, setMemory] = useState<string>('');
-  const [storage, setStorage] = useState<string>('');
-  const [skuId, setSkuId] = useState<string>('');
+  const [picked, setPicked] = useState<Picked | null>(null);
+  const [pickerRun, setPickerRun] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -279,7 +213,7 @@ export function SelectionEditor({
     let active = true;
     fetchPaymentMethodsApi()
       .then((list) => {
-        if (active && list.length > 0) setPaymentNames(list.map((m) => m.name));
+        if (active && list.length > 0) setPaymentMethods(list);
       })
       .catch(() => {
         // keep the built-in list
@@ -298,144 +232,40 @@ export function SelectionEditor({
     [categoryList],
   );
 
-  // Available models for selected category
-  const availableModels = useMemo(() => {
-    if (!catalog || !category) return [];
-    const list: {
-      key: string;
-      product: CatalogProduct;
-      model: CatalogModel;
-      displayName: string;
-    }[] = [];
-    for (const p of catalog) {
-      if (p.category !== category) continue;
-      for (const m of p.models) {
-        if (!m.skus || m.skus.length === 0) continue;
-        const displayName =
-          p.name === m.name || m.name.toLowerCase().includes(p.name.toLowerCase())
-            ? m.name
-            : `${p.name} - ${m.name}`;
-        list.push({
-          key: `${p.id}::${m.id}`,
-          product: p,
-          model: m,
-          displayName,
-        });
-      }
-    }
-    return list;
-  }, [catalog, category]);
-
-  // Selected model object
-  const selectedModelObj = useMemo(() => {
-    return availableModels.find((m) => m.key === modelKey) ?? null;
-  }, [availableModels, modelKey]);
-
-  // The choices of the SKUs of the selected model, in the order the dropdowns come (D79): memory, capacity, colour
-  const modelSkus = useMemo(
-    () => selectedModelObj?.model.skus ?? [],
-    [selectedModelObj],
-  );
-  const availableMemories = useMemo(
-    () => distinct(modelSkus.map((s) => s.memory)),
-    [modelSkus],
-  );
-  const hasMemory = availableMemories.length > 0;
-  const memorySkus = useMemo(
-    () =>
-      hasMemory
-        ? modelSkus.filter((s) => (s.memory?.trim() || '') === memory)
-        : modelSkus,
-    [modelSkus, hasMemory, memory],
-  );
-  const availableStorages = useMemo(
-    () => distinct(memorySkus.map((s) => s.storage)),
-    [memorySkus],
-  );
-  const hasStorage = availableStorages.length > 0;
-
-  // Candidate SKUs for the selected memory and capacity
-  const candidateSkus = useMemo(() => {
-    if (!selectedModelObj) return [];
-    if (hasMemory && !memory) return [];
-    if (hasStorage && !storage) return [];
-    return hasStorage
-      ? memorySkus.filter((s) => (s.storage?.trim() || '') === storage)
-      : memorySkus;
-  }, [selectedModelObj, hasMemory, memory, hasStorage, storage, memorySkus]);
-
-  // Resolved selected SKU
-  const selectedSku = useMemo(() => {
-    if (!selectedModelObj || !skuId) return null;
-    return selectedModelObj.model.skus.find((s) => s.id === skuId) ?? null;
-  }, [selectedModelObj, skuId]);
-
-  // Two colours of one model can have the same label (a keyboard layout only in the part): the part number tells them apart
-  const optionLabels = useMemo(() => {
-    const labels = candidateSkus.map(getSkuOptionLabel);
-    return candidateSkus.map((s, i) =>
-      labels.filter((l) => l === labels[i]).length > 1
-        ? `${labels[i]} · ${s.sku}`
-        : labels[i],
-    );
-  }, [candidateSkus]);
+  const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
 
   const handleResetForm = () => {
     setCategory('');
-    setModelKey('');
-    setMemory('');
-    setStorage('');
-    setSkuId('');
+    setPicked(null);
+    setPickerRun((n) => n + 1);
   };
 
   const handleCategoryChange = (cat: string) => {
     setCategory(cat);
-    setModelKey('');
-    setMemory('');
-    setStorage('');
-    setSkuId('');
-  };
-
-  const applyChoice = (skus: CatalogSku[], mem: string, st: string) => {
-    const next = settleChoice(skus, mem, st);
-    setMemory(next.memory);
-    setStorage(next.storage);
-    setSkuId(next.skuId);
-  };
-
-  const handleModelChange = (key: string) => {
-    setModelKey(key);
-    const target = availableModels.find((m) => m.key === key);
-    applyChoice(target?.model.skus ?? [], '', '');
-  };
-
-  const handleMemoryChange = (newMemory: string) => applyChoice(modelSkus, newMemory, '');
-
-  const handleStorageChange = (newStorage: string) =>
-    applyChoice(modelSkus, memory, newStorage);
-
-  const handleSkuChange = (newSkuId: string) => {
-    setSkuId(newSkuId);
+    setPicked(null);
   };
 
   const handleAddItem = () => {
-    if (!selectedModelObj || !selectedSku) return;
-    if (isOutOfStock(selectedSku)) return;
-
+    if (!picked || isOutOfStock(picked.sku)) return;
     onChange({
       ...value,
-      items: addItem(
-        value.items,
-        toProduct(
-          selectedModelObj.product,
-          selectedModelObj.model,
-          selectedSku,
-        ),
-      ),
+      items: addItem(value.items, toProduct(picked.product, picked.model, picked.sku)),
     });
     handleResetForm();
     setOpen(false);
   };
+
+  // The methods with an FMP type come first; the rest fold under "ช่องทางอื่น" (ADMIN moves one up by giving it a type).
+  // A method switched off after it was picked on this session stays visible.
+  const typed = (m: { fmpType: string | null }) => Boolean(m.fmpType) && m.fmpType !== fmpPaymentTypeOther;
+  const anyTyped = paymentMethods.some(typed);
+  const mainPayments = [
+    ...paymentMethods.filter((m) => !anyTyped || typed(m)).map((m) => m.name),
+    ...value.payments.filter((p) => !paymentMethods.some((m) => m.name === p)),
+  ];
+  const otherPayments = anyTyped ? paymentMethods.filter((m) => !typed(m)).map((m) => m.name) : [];
+  const otherPicked = value.payments.some((p) => otherPayments.includes(p));
+  const otherPaymentsOpen = showOtherPayments || otherPicked;
 
   const allSkus = (catalog ?? []).flatMap((p) =>
     p.models.flatMap((m) => m.skus),
@@ -588,151 +418,37 @@ export function SelectionEditor({
                   );
                 })}
               </div>
-              <div className="product-picker-dropdowns">
-                {/* 2. Model (capacity is not part of it, D78) */}
-                <div className="picker-field">
-                  <label htmlFor="product-model-select">
-                    รุ่น <span className="required">*</span>
-                  </label>
-                  <select
-                    id="product-model-select"
-                    value={modelKey}
-                    onChange={(e) => handleModelChange(e.target.value)}
-                    disabled={!category || availableModels.length === 0}
-                  >
-                    <option value="">
-                      {!category
-                        ? '-- กรุณาเลือกประเภทอุปกรณ์ก่อน --'
-                        : availableModels.length === 0
-                          ? '-- ไม่มีรุ่นสินค้าในหมวดนี้ --'
-                          : '-- เลือกรุ่น --'}
-                    </option>
-                    {availableModels.map((m) => (
-                      <option key={m.key} value={m.key}>
-                        {m.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* 3. Memory (RAM, Macs only; skipped when the model has none) */}
-                {hasMemory && (
-                  <div className="picker-field">
-                    <label htmlFor="product-memory-select">
-                      RAM <span className="required">*</span>
-                    </label>
-                    <select
-                      id="product-memory-select"
-                      value={memory}
-                      onChange={(e) => handleMemoryChange(e.target.value)}
-                      disabled={!modelKey}
-                    >
-                      <option value="">
-                        {!modelKey ? '-- กรุณาเลือกรุ่นก่อน --' : '-- เลือก RAM --'}
-                      </option>
-                      {availableMemories.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* 4. Storage / Capacity (skipped if not applicable) */}
-                {hasStorage && (
-                  <div className="picker-field">
-                    <label htmlFor="product-storage-select">
-                      ความจุ <span className="required">*</span>
-                    </label>
-                    <select
-                      id="product-storage-select"
-                      value={storage}
-                      onChange={(e) => handleStorageChange(e.target.value)}
-                      disabled={!modelKey || (hasMemory && !memory)}
-                    >
-                      <option value="">
-                        {!modelKey
-                          ? '-- กรุณาเลือกรุ่นก่อน --'
-                          : hasMemory && !memory
-                            ? '-- กรุณาเลือก RAM ก่อน --'
-                            : '-- เลือกความจุ --'}
-                      </option>
-                      {availableStorages.map((st) => (
-                        <option key={st} value={st}>
-                          {st}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* 5. Colour */}
-                <div className="picker-field">
-                  <label htmlFor="product-color-select">
-                    สี{' '}
-                    {candidateSkus.length > 0 && (
-                      <span className="required">*</span>
-                    )}
-                  </label>
-                  <select
-                    id="product-color-select"
-                    value={skuId}
-                    onChange={(e) => handleSkuChange(e.target.value)}
-                    disabled={
-                      !modelKey || (hasMemory && !memory) || (hasStorage && !storage)
-                    }
-                  >
-                    <option value="">
-                      {!modelKey
-                        ? '-- กรุณาเลือกรุ่นก่อน --'
-                        : hasMemory && !memory
-                          ? '-- กรุณาเลือก RAM ก่อน --'
-                          : hasStorage && !storage
-                            ? '-- กรุณาเลือกความจุก่อน --'
-                          : candidateSkus.length === 0
-                            ? '-- ไม่มีตัวเลือกสี --'
-                            : '-- เลือกสี --'}
-                    </option>
-                    {candidateSkus.map((s, i) => {
-                      const out = isOutOfStock(s);
-                      const optLabel = optionLabels[i];
-                      const stockText = getSkuStockText(s);
-                      return (
-                        <option key={s.id} value={s.id} disabled={out}>
-                          {optLabel} ({stockText})
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-              </div>
+              {category ? (
+                <SkuPicker key={`${category}:${pickerRun}`} models={models} onPick={setPicked} />
+              ) : (
+                <p className="muted picker-hint">เลือกประเภทอุปกรณ์ด้านบนก่อน</p>
+              )}
 
               {/* Selected SKU summary preview */}
-              {selectedSku && selectedModelObj && (
+              {picked && (
                 <div className="picker-sku-summary">
                   <div className="picker-sku-info">
                     <div className="picker-sku-icon">
-                      <CategoryPicture cat={selectedModelObj.product.category} size={40} />
+                      <CategoryPicture cat={picked.product.category} size={40} />
                     </div>
                     <div className="picker-sku-details">
                       <div className="picker-sku-title">
-                        <strong>{selectedModelObj.model.name}</strong>
+                        <strong>{picked.model.name}</strong>
                         <span className="picker-sku-specs">
-                          {[selectedSku.memory, selectedSku.storage, selectedSku.color]
+                          {[picked.sku.memory, picked.sku.storage, picked.sku.color]
                             .filter(Boolean)
                             .join(' · ')}
                         </span>
                       </div>
                       <div className="picker-sku-meta">
                         <span className="picker-sku-code">
-                          {selectedSku.sku}
+                          {picked.sku.sku}
                         </span>
-                        <StockBadge sku={selectedSku} />
+                        <StockBadge sku={picked.sku} />
                       </div>
                     </div>
                   </div>
-                  {isOutOfStock(selectedSku) && (
+                  {isOutOfStock(picked.sku) && (
                     <div className="picker-stock-warning">
                       สินค้ารายการนี้หมดในสต็อก ไม่สามารถเพิ่มลงรายการได้
                     </div>
@@ -744,7 +460,7 @@ export function SelectionEditor({
               <div className="picker-actions">
                 <Button
                   variant="primary"
-                  disabled={!selectedSku || isOutOfStock(selectedSku)}
+                  disabled={!picked || isOutOfStock(picked.sku)}
                   onClick={handleAddItem}
                 >
                   <span
@@ -881,29 +597,71 @@ export function SelectionEditor({
         value={value.ontop}
         onChange={(ontop) => onChange({ ...value, ontop })}
       />
-      <MultiSelect
-        label="Points"
-        options={points}
-        value={value.points}
-        onChange={(points) => onChange({ ...value, points })}
-      />
-      <MultiSelect
-        label="Burn Point"
-        options={points}
-        value={value.burnPoints}
-        onChange={(burnPoints) => onChange({ ...value, burnPoints })}
-      />
-      <MultiSelect
-        label="Payment"
-        none={false}
-        options={[
-          ...paymentNames,
-          // a method that was switched off after it was picked on this session stays visible
-          ...value.payments.filter((p) => !paymentNames.includes(p)),
-        ]}
-        value={value.payments}
-        onChange={(payments) => onChange({ ...value, payments })}
-      />
+      {/* Points earned and points burned use the same cards: one table, a row per card */}
+      <fieldset>
+        <legend>Points</legend>
+        <table className="points-table">
+          <thead>
+            <tr>
+              <th scope="col"><span className="visually-hidden">บัตร</span></th>
+              <th scope="col">สะสม</th>
+              <th scope="col">ใช้แต้ม (Burn)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {points.map((card) => (
+              <tr key={card}>
+                <th scope="row">{card}</th>
+                {(['points', 'burnPoints'] as const).map((field) => (
+                  <td key={field}>
+                    <label className={`points-cell${value[field].includes(card) ? ' selected' : ''}`}>
+                      <input
+                        type="checkbox"
+                        aria-label={`${field === 'points' ? 'สะสมแต้ม' : 'ใช้แต้ม'} ${card}`}
+                        checked={value[field].includes(card)}
+                        onChange={() => onChange({ ...value, [field]: toggleOption(value[field], card) })}
+                      />
+                    </label>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </fieldset>
+      <fieldset>
+        <legend>
+          Payment <small className="legend-note">(ไม่บังคับ)</small>
+        </legend>
+        <Choices
+          options={mainPayments}
+          value={value.payments}
+          onChange={(payments) => onChange({ ...value, payments })}
+        />
+        {otherPayments.length > 0 && (
+          <>
+            {/* with one of them picked the list stays open: nothing picked is ever hidden */}
+            {!otherPicked && (
+              <button
+                type="button"
+                className="more-choices"
+                aria-expanded={otherPaymentsOpen}
+                onClick={() => setShowOtherPayments((open) => !open)}
+              >
+                {otherPaymentsOpen ? 'ซ่อนช่องทางอื่น' : `ช่องทางอื่น (${otherPayments.length})`}
+                <ChevronDown size={14} className={otherPaymentsOpen ? 'flip' : undefined} />
+              </button>
+            )}
+            {otherPaymentsOpen && (
+              <Choices
+                options={otherPayments}
+                value={value.payments}
+                onChange={(payments) => onChange({ ...value, payments })}
+              />
+            )}
+          </>
+        )}
+      </fieldset>
       <div className="actions">
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span

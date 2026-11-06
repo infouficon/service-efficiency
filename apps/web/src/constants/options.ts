@@ -29,6 +29,8 @@ export const fmpPaymentTypes = [
   'U-Joy',
   'อื่นๆ',
 ] as const;
+/** The type of a method FileMaker has no own label for; such methods are not offered first when picking (D107). */
+export const fmpPaymentTypeOther = 'อื่นๆ';
 export const payments = [
   'Cash',
   'Transfer',

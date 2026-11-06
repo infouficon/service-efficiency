@@ -219,9 +219,11 @@ export function StockWorkspace({
     document.querySelector('main')?.scrollTo({ top: 0 });
   }, [selectedRef]);
 
+  const [openCount, setOpenCount] = useState(0);
   const handleSelectCard = (reference: string) => {
     setSelectedRef(reference);
     setMobileShowDetail(true);
+    setOpenCount((n) => n + 1); // the scan box gets the focus again, also for the order a phone had open already
     setError('');
     setSuccessMessage('');
   };
@@ -987,6 +989,7 @@ export function StockWorkspace({
                           <SerialScan
                             key={selectedSession.id}
                             session={selectedSession}
+                            focusKey={openCount}
                             badge={itemBadge}
                             picked={foundSelection}
                             onPick={(itemId) => toggleFound(selectedSession, itemId)}
@@ -1100,7 +1103,7 @@ export function StockWorkspace({
                       <>
                         {/* D101: the serials are already saved; they can still be fixed until the goods leave stock */}
                         {selectedSession.id && (
-                          <SerialScan key={selectedSession.id} session={selectedSession} onSaved={onUpdateSession} />
+                          <SerialScan key={selectedSession.id} session={selectedSession} focusKey={openCount} onSaved={onUpdateSession} />
                         )}
                         <div className="actions" style={{ marginTop: '12px' }}>
                           <Button disabled={sending || missing > 0} onClick={() => handleAction(selectedSession, 'send')}>

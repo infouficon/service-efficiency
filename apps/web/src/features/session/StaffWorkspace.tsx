@@ -519,7 +519,7 @@ export function StaffWorkspace({
                     ผู้ดูแล: {s.staffId}
                     {s.queueNo != null && s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
                   </span>
-                  <span>{s.phone || 'ยังไม่มีเบอร์'}</span>
+                  {s.queueNo != null && <span>{s.phone || 'ยังไม่มีเบอร์'}</span>}
                 </div>
               </div>
             ))}
@@ -560,13 +560,15 @@ export function StaffWorkspace({
                       ซื้อใหม่ (ใช้คิวเดิม)
                     </span>
                   )}
-                  <span className="muted">
-                    {activeSession.queueNo != null && activeSession.customerTypeName
-                      ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
-                      : ''}
-                    Customer Phone ·{' '}
-                    {activeSession.phone || 'ไม่มีเบอร์โทร'}
-                  </span>
+                  {/* the phone is the title until the order gets its queue number: then it is shown here once */}
+                  {activeSession.queueNo != null && (
+                    <span className="muted">
+                      {activeSession.customerTypeName
+                        ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
+                        : ''}
+                      Customer Phone · {activeSession.phone || 'ไม่มีเบอร์โทร'}
+                    </span>
+                  )}
                 </div>
                 <span className={`state-pill ${finished ? 'terminal' : ''}`}>
                   <span className="only-desktop">{activeSession.outcome ?? activeSession.state}</span>

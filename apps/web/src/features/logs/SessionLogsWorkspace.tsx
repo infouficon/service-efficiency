@@ -18,6 +18,7 @@ import {
   CheckSquare,
   Square,
   RotateCcw,
+  SlidersHorizontal,
   Info,
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
@@ -846,6 +847,8 @@ export function SessionLogsWorkspace({
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedRef, setSelectedRef] = useState<string | null>(() => getRefFromHash());
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  // on a phone the dates, branch and "clear" fold away behind one button (search and status tabs stay)
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // Sync selectedRef with browser hash changes (Back/Forward buttons)
   useEffect(() => {
@@ -1297,7 +1300,7 @@ export function SessionLogsWorkspace({
       </div>
 
       {/* Filter Toolbar */}
-      <div className="logs-toolbar">
+      <div className="logs-toolbar" data-filters-open={filtersOpen ? 'true' : 'false'}>
         <div className="logs-filters-row">
           {/* Search Input */}
           <div className="logs-search-wrap">
@@ -1310,6 +1313,16 @@ export function SessionLogsWorkspace({
                 setCurrentPage(1);
               }}
             />
+            <button
+              type="button"
+              className="logs-filter-toggle only-mobile"
+              aria-expanded={filtersOpen}
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              <SlidersHorizontal size={15} /> ตัวกรอง
+              {(startDate || endDate ? 1 : 0) + (selectedBranch !== 'ALL' ? 1 : 0) > 0 &&
+                ` (${(startDate || endDate ? 1 : 0) + (selectedBranch !== 'ALL' ? 1 : 0)})`}
+            </button>
           </div>
 
           {/* Date Range Picker with Quick button */}

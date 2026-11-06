@@ -94,42 +94,49 @@ export function Panel({
     </section>
   );
 }
+/** Tick boxes for "any of these"; tapping a ticked one again takes it off. */
+export function Choices({
+  options,
+  value,
+  onChange,
+}: {
+  options: readonly string[];
+  value: string[];
+  onChange: (value: string[]) => void;
+}) {
+  return (
+    <div className="choices">
+      {options.map((option) => (
+        <label
+          className={`choice ${value.includes(option) ? 'selected' : ''}`}
+          key={option}
+        >
+          <input
+            type="checkbox"
+            checked={value.includes(option)}
+            onChange={() => onChange(toggleOption(value, option))}
+          />
+          <span>{option}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
 export function MultiSelect({
   label,
   options,
   value,
   onChange,
-  none = true,
 }: {
   label: string;
   options: readonly string[];
   value: string[];
   onChange: (value: string[]) => void;
-  none?: boolean;
 }) {
   return (
     <fieldset>
       <legend>{label}</legend>
-      <div className="choices">
-        {options.map((option) => (
-          <label
-            className={`choice ${value.includes(option) ? 'selected' : ''}`}
-            key={option}
-          >
-            <input
-              type="checkbox"
-              checked={value.includes(option)}
-              onChange={() => onChange(toggleOption(value, option))}
-            />
-            <span>{option}</span>
-          </label>
-        ))}
-        {none && (
-          <Button variant="secondary" size="sm" onClick={() => onChange([])}>
-            None / ล้างรายการ
-          </Button>
-        )}
-      </div>
+      <Choices options={options} value={value} onChange={onChange} />
     </fieldset>
   );
 }

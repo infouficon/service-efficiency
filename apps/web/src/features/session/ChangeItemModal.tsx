@@ -16,6 +16,15 @@ import {
   fetchProductsApi,
 } from '../../services/sessionApi';
 import type { Category, MockSession } from '../../types/session';
+import { Chips, SkuPicker } from './SkuPicker';
+import {
+  isOutOfStock,
+  isUnlimited,
+  modelChoices,
+  toCatalog,
+  type CatalogProduct,
+  type Picked,
+} from './catalog';
 
 function getCategoryIcon(cat: string, size = 16) {
   switch (cat) {
@@ -33,65 +42,6 @@ function getCategoryIcon(cat: string, size = 16) {
       return <Box size={size} />;
   }
 }
-
-interface CatalogSku {
-  id: string;
-  sku: string;
-  name: string;
-  color?: string | null;
-  storage?: string | null;
-  stock?: number;
-  stockSource?: 'unlimited' | 'erp' | 'manual';
-  erpAsOf?: string | null;
-}
-
-interface CatalogModel {
-  id: string;
-  name: string;
-  skus: CatalogSku[];
-}
-
-interface CatalogProduct {
-  id: string;
-  category: string;
-  name: string;
-  models: CatalogModel[];
-}
-
-function toCatalog(data: unknown): CatalogProduct[] {
-  if (!Array.isArray(data)) return [];
-  const out: CatalogProduct[] = [];
-  for (const p of data as Array<{
-    id: string;
-    category: string;
-    name: string;
-    active: boolean;
-    models?: Array<{
-      id: string;
-      name: string;
-      active: boolean;
-      skus?: Array<CatalogSku & { active: boolean; branchActive?: boolean }>;
-    }>;
-  }>) {
-    if (!p.active) continue;
-    const models: CatalogModel[] = [];
-    for (const m of p.models ?? []) {
-      if (!m.active) continue;
-      const skus = (m.skus ?? []).filter(
-        (s) => s.active && s.branchActive !== false,
-      );
-      if (skus.length > 0) models.push({ id: m.id, name: m.name, skus });
-    }
-    if (models.length > 0)
-      out.push({ id: p.id, category: p.category, name: p.name, models });
-  }
-  return out;
-}
-
-const isUnlimited = (s: { stockSource?: string }) =>
-  s.stockSource === 'unlimited';
-const isOutOfStock = (s: CatalogSku) =>
-  !isUnlimited(s) && typeof s.stock === 'number' && s.stock <= 0;
 
 const CHANGE_REASONS = [
   'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
@@ -128,11 +78,10 @@ export function ChangeItemModal({
     mainItems[0]?.product.id || '',
   );
 
-  // Cascading dropdown states for replacement SKU
+  // The replacement: a device line, then SkuPicker for model / RAM / capacity / colour
   const [category, setCategory] = useState<string>('');
-  const [modelKey, setModelKey] = useState<string>('');
-  const [storage, setStorage] = useState<string>('');
-  const [skuId, setSkuId] = useState<string>('');
+  const [picked, setPicked] = useState<Picked | null>(null);
+  const selectedSku = picked?.sku ?? null;
 
   // Reason & Note
   const [reason, setReason] = useState<string>(CHANGE_REASONS[0]);
@@ -175,113 +124,7 @@ export function ChangeItemModal({
     [categoryList],
   );
 
-  // Available models for selected category
-  const availableModels = useMemo(() => {
-    if (!catalog || !category) return [];
-    const list: {
-      key: string;
-      product: CatalogProduct;
-      model: CatalogModel;
-      displayName: string;
-    }[] = [];
-    for (const p of catalog) {
-      if (p.category !== category) continue;
-      for (const m of p.models) {
-        if (!m.skus || m.skus.length === 0) continue;
-        const displayName =
-          p.name === m.name || m.name.toLowerCase().includes(p.name.toLowerCase())
-            ? m.name
-            : `${p.name} - ${m.name}`;
-        list.push({
-          key: `${p.id}::${m.id}`,
-          product: p,
-          model: m,
-          displayName,
-        });
-      }
-    }
-    return list;
-  }, [catalog, category]);
-
-  const selectedModelObj = useMemo(() => {
-    return availableModels.find((m) => m.key === modelKey) ?? null;
-  }, [availableModels, modelKey]);
-
-  const availableStorages = useMemo(() => {
-    if (!selectedModelObj) return [];
-    const set = new Set<string>();
-    for (const s of selectedModelObj.model.skus) {
-      const st = s.storage?.trim();
-      if (st) set.add(st);
-    }
-    return Array.from(set);
-  }, [selectedModelObj]);
-
-  const hasStorage = availableStorages.length > 0;
-
-  const candidateSkus = useMemo(() => {
-    if (!selectedModelObj) return [];
-    if (hasStorage && !storage) return [];
-    if (hasStorage) {
-      return selectedModelObj.model.skus.filter(
-        (s) => (s.storage?.trim() || '') === storage,
-      );
-    }
-    return selectedModelObj.model.skus;
-  }, [selectedModelObj, hasStorage, storage]);
-
-  const selectedSku = useMemo(() => {
-    if (!selectedModelObj || !skuId) return null;
-    return selectedModelObj.model.skus.find((s) => s.id === skuId) ?? null;
-  }, [selectedModelObj, skuId]);
-
-  const handleCategoryChange = (cat: string) => {
-    setCategory(cat);
-    setModelKey('');
-    setStorage('');
-    setSkuId('');
-  };
-
-  const handleModelChange = (key: string) => {
-    setModelKey(key);
-    setStorage('');
-    setSkuId('');
-    if (!key) return;
-    const target = availableModels.find((m) => m.key === key);
-    if (!target) return;
-    const storages = Array.from(
-      new Set(
-        target.model.skus
-          .map((s) => s.storage?.trim())
-          .filter((st): st is string => Boolean(st)),
-      ),
-    );
-    if (storages.length === 0) {
-      if (target.model.skus.length === 1) {
-        setSkuId(target.model.skus[0].id);
-      }
-    } else if (storages.length === 1) {
-      setStorage(storages[0]);
-      const matchingSkus = target.model.skus.filter(
-        (s) => (s.storage?.trim() || '') === storages[0],
-      );
-      if (matchingSkus.length === 1) {
-        setSkuId(matchingSkus[0].id);
-      }
-    }
-  };
-
-  const handleStorageChange = (newStorage: string) => {
-    setStorage(newStorage);
-    setSkuId('');
-    if (!selectedModelObj || !newStorage) return;
-    const matchingSkus = selectedModelObj.model.skus.filter(
-      (s) => (s.storage?.trim() || '') === newStorage,
-    );
-    if (matchingSkus.length === 1) {
-      setSkuId(matchingSkus[0].id);
-    }
-  };
+  const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
 
   // Find currently selected old item
   const selectedOldItem = mainItems.find(
@@ -386,7 +229,7 @@ export function ChangeItemModal({
           </div>
         </div>
 
-        {/* 2. Pick replacement SKU with Cascading Dropdowns */}
+        {/* 2. Pick the replacement SKU */}
         <div>
           <label style={{ fontWeight: 600, display: 'block', marginBottom: '8px' }}>
             2. เลือกสินค้าชิ้นใหม่ที่ต้องการเปลี่ยน <span style={{ color: '#dc2626' }}>*</span>
@@ -395,127 +238,27 @@ export function ChangeItemModal({
           {catalog === null && !loadError ? (
             <p className="muted">กำลังโหลดรายการสินค้า…</p>
           ) : (
-            <div className="product-picker-dropdowns" style={{ margin: 0 }}>
-              {/* Category */}
-              <div className="picker-field">
-                <label htmlFor="change-category-select">
-                  ประเภทอุปกรณ์ <span className="required">*</span>
-                </label>
-                <select
-                  id="change-category-select"
-                  value={category}
-                  onChange={(e) => handleCategoryChange(e.target.value)}
-                >
-                  <option value="">-- เลือกประเภทอุปกรณ์ --</option>
-                  {categoryTiles.map((cat) => {
-                    const count = (catalog ?? []).filter(
-                      (p) => p.category === cat,
-                    ).length;
-                    return (
-                      <option key={cat} value={cat} disabled={count === 0}>
-                        {cat} {count === 0 ? '(ไม่มีสินค้า)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              {/* Model */}
-              <div className="picker-field">
-                <label htmlFor="change-model-select">
-                  รุ่น <span className="required">*</span>
-                </label>
-                <select
-                  id="change-model-select"
-                  value={modelKey}
-                  onChange={(e) => handleModelChange(e.target.value)}
-                  disabled={!category || availableModels.length === 0}
-                >
-                  <option value="">
-                    {!category
-                      ? '-- กรุณาเลือกประเภทอุปกรณ์ก่อน --'
-                      : availableModels.length === 0
-                        ? '-- ไม่มีรุ่นสินค้าในหมวดนี้ --'
-                        : '-- เลือกรุ่น --'}
-                  </option>
-                  {availableModels.map((m) => (
-                    <option key={m.key} value={m.key}>
-                      {m.displayName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Storage */}
-              {hasStorage && (
-                <div className="picker-field">
-                  <label htmlFor="change-storage-select">
-                    ความจุ <span className="required">*</span>
-                  </label>
-                  <select
-                    id="change-storage-select"
-                    value={storage}
-                    onChange={(e) => handleStorageChange(e.target.value)}
-                    disabled={!modelKey}
-                  >
-                    <option value="">
-                      {!modelKey ? '-- กรุณาเลือกรุ่นก่อน --' : '-- เลือกความจุ --'}
-                    </option>
-                    {availableStorages.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Color */}
-              <div className="picker-field">
-                <label htmlFor="change-color-select">
-                  สี{' '}
-                  {candidateSkus.length > 0 && (
-                    <span className="required">*</span>
-                  )}
-                </label>
-                <select
-                  id="change-color-select"
-                  value={skuId}
-                  onChange={(e) => setSkuId(e.target.value)}
-                  disabled={!modelKey || (hasStorage && !storage)}
-                >
-                  <option value="">
-                    {!modelKey
-                      ? '-- กรุณาเลือกรุ่นก่อน --'
-                      : hasStorage && !storage
-                        ? '-- กรุณาเลือกความจุก่อน --'
-                        : candidateSkus.length === 0
-                          ? '-- ไม่มีตัวเลือกสี --'
-                          : '-- เลือกสี --'}
-                  </option>
-                  {candidateSkus.map((s) => {
-                    const out = isOutOfStock(s);
-                    const label = s.color || s.name || s.sku;
-                    const stockText = isUnlimited(s)
-                      ? 'Stock ไม่จำกัด'
-                      : typeof s.stock === 'number'
-                        ? s.stock > 0
-                          ? `คงเหลือ ${s.stock}`
-                          : 'หมด'
-                        : 'มีสต็อก';
-                    return (
-                      <option key={s.id} value={s.id} disabled={out}>
-                        {label} ({stockText})
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
+            <div className="change-item-picker">
+              <Chips
+                label="ประเภทอุปกรณ์"
+                required
+                options={categoryTiles.map((cat) => ({
+                  value: cat,
+                  label: cat,
+                  disabled: !(catalog ?? []).some((p) => p.category === cat),
+                }))}
+                value={category}
+                onChange={(cat) => {
+                  setCategory(cat);
+                  setPicked(null);
+                }}
+              />
+              {category && <SkuPicker key={category} models={models} onPick={setPicked} />}
             </div>
           )}
 
           {/* New SKU preview & warnings */}
-          {selectedSku && selectedModelObj && (
+          {selectedSku && picked && (
             <div
               style={{
                 marginTop: '12px',
@@ -529,12 +272,12 @@ export function ChangeItemModal({
               }}
             >
               <div style={{ color: '#475569' }}>
-                {getCategoryIcon(selectedModelObj.product.category, 20)}
+                {getCategoryIcon(picked.product.category, 20)}
               </div>
               <div style={{ flex: 1 }}>
                 <strong style={{ display: 'block', color: '#0f172a' }}>
-                  {selectedModelObj.model.name}{' '}
-                  {[selectedSku.storage, selectedSku.color].filter(Boolean).join(' · ')}
+                  {picked.model.name}{' '}
+                  {[selectedSku.memory, selectedSku.storage, selectedSku.color].filter(Boolean).join(' · ')}
                 </strong>
                 <small style={{ color: '#64748b' }}>
                   รหัส SKU: {selectedSku.sku} ·{' '}

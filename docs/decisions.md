@@ -1403,3 +1403,23 @@ Owner: "user ใน ses erp ที่ login ses ต้องเปลี่ย�
 2. **Now, without waiting for the import.** Migration `202611050002_erp_accounts_staff_stock`: every account with an ERP id gets STAFF and STOCK and loses CASHIER; the extra people picked by hand (D87) are reset to STAFF + STOCK once (ADMIN can change them again). Hand-made accounts are untouched.
 3. **Effect.** Cashier-position staff can sign in to SES again (as STAFF + STOCK; the till stays in U POS); everyone on the floor sees both the staff and the stock screens.
 
+
+## D107 — Pickers made for a phone: models as a list, choices as chips, payments with an FMP type first (2026-11-06)
+
+Owner, with three phone screenshots: "สามารถทำให้ง่ายขึ้นหรือดีขึ้นได้ไหม" (the model dropdown, the Ontop / Points / Burn Point / Payment
+tick boxes, the STOCK send button). Agreed plan, all three.
+
+1. **Model, RAM, capacity, colour.** No native dropdowns (tiny on a phone, ~19 iPad models to scroll). `SkuPicker`
+   (`features/session/SkuPicker.tsx`, catalog helpers in `catalog.ts`) shows the models of the chosen device line as full-width buttons in
+   name order (a series stays together), only the model name (the product name underneath only where the model name does not say it, or two
+   models share a name), with a search box above more than 8 models (every word must match; `wi-fi` = `wifi`). A picked model folds into one
+   row with "เปลี่ยน". RAM, capacity and colour are chips; a colour chip shows the stock and is struck through when out of stock. A step
+   with one choice is still taken for the user (`settleChoice`). The change-item modal uses the same picker (it now asks for the RAM of a Mac
+   too, which it skipped before) and chips for the device line.
+2. **Add-ons.** No "None / ล้างรายการ" buttons (tapping a ticked box again takes it off). Points and Burn Point share the same cards, so
+   they are one table: a row per card, "สะสม" and "ใช้แต้ม (Burn)". Payment is marked optional; the methods with an FMP type other than
+   `อื่นๆ` come first, the rest fold under "ช่องทางอื่น (N)" (ADMIN moves one up by giving it a type, D89). A picked method is never hidden.
+   If no method has a type yet (or the list cannot be loaded), all are shown as before. On a phone the tick boxes are two to a row, 44 px.
+3. **STOCK send button.** "ส่งสินค้าไปที่แคชเชียร์ (SENT_TO_CASHIER)" named a SES cashier that no longer exists (D105) and showed a state
+   code. It is now "ส่งให้แคชเชียร์ (U POS)"; while serials are missing it reads "สแกน SN อีก N เครื่อง" (still disabled) instead of only
+   greying out. Nothing changes in the API or the data.

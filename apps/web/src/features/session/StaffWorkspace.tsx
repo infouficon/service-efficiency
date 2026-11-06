@@ -33,6 +33,7 @@ import {
   itemsText,
   phoneIsValid,
   progressIndex,
+  stateLabel,
   type StepAction,
 } from './workflow';
 import {
@@ -132,6 +133,11 @@ export function StaffWorkspace({
   );
 
   const progressContainerRef = useRef<HTMLOListElement>(null);
+
+  // on a phone the list and the order take turns: opening an order (or a new walk-in) starts at the top of the page
+  useEffect(() => {
+    document.querySelector('main')?.scrollTo({ top: 0 });
+  }, [activeSessionRef]);
 
   // Auto-scroll to progress stepper or top on stage change, form change, or session switch
   useEffect(() => {
@@ -386,7 +392,7 @@ export function StaffWorkspace({
   );
 
   return (
-    <div className="staff-workspace">
+    <div className="staff-workspace" data-mobile-detail={activeSession ? 'true' : 'false'}>
       <div className="workspace-header-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <UserIcon size={24} color="#0abab5" />
@@ -500,7 +506,8 @@ export function StaffWorkspace({
                     <span
                       className={`status-tag ${s.outcome ? 'status-outcome' : `status-${s.state.toLowerCase()}`}`}
                     >
-                      {s.outcome ?? s.state}
+                      <span className="only-desktop">{s.outcome ?? s.state}</span>
+                      <span className="only-mobile">{stateLabel(s)}</span>
                     </span>
                   )}
                 </div>
@@ -538,7 +545,7 @@ export function StaffWorkspace({
                     className="mobile-back-to-queue-btn"
                     onClick={() => setActiveSessionRef(null)}
                   >
-                    <ArrowLeft size={14} /> รายการ Session ({branchSessions.length})
+                    <ArrowLeft size={14} /> ลูกค้าวันนี้ ({branchSessions.length})
                   </button>
                   <span className="eyebrow">
                     {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
@@ -562,7 +569,8 @@ export function StaffWorkspace({
                   </span>
                 </div>
                 <span className={`state-pill ${finished ? 'terminal' : ''}`}>
-                  {activeSession.outcome ?? activeSession.state}
+                  <span className="only-desktop">{activeSession.outcome ?? activeSession.state}</span>
+                  <span className="only-mobile">{stateLabel(activeSession)}</span>
                 </span>
               </section>
 

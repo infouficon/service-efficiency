@@ -106,9 +106,12 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
           ของการบริการ
           <br /></em>
         </h1>
-        <p>Staff · Stock · Cashier</p>
+        <p>Staff · Stock</p>
       </div>
       <section className="login-form">
+        <p className="login-mobile-brand only-mobile">
+          <span className="brand-mark">S</span> Service Efficiency
+        </p>
         <h2>เข้าสู่ระบบ</h2>
         {otpAvailable === null && <Notice>กำลังโหลด…</Notice>}
         {otpAvailable === true && (

@@ -2,12 +2,16 @@
 # [SES v3] เครื่องอยู่ที่ร้านแล้วแต่ FMP ยังไม่อัปเดต (เช่น ยังไม่รับโอน: SN_WRONG_BRANCH) หรือ STOCK ยังสแกนไม่ได้: เปิดบิลพักได้
 # [SES v3] v3.1 (ตามทีม FMP 2026-11-05): เครื่องนั้น "ข้าม" ไม่เขียนบรรทัด (ช่อง SN เป็นช่องหลังบ้าน แคชเชียร์กรอกไม่ได้)
 # [SES v3] แคชเชียร์สแกนขายเครื่องนั้นเพิ่มในบิลตามปกติหน้าร้าน แทนการปฏิเสธทั้งออเดอร์
+# [SES v3.2] 2026-11-06 = ตัวที่ทีม FMP ใช้งานจริง (export 2026-11-06, สำเนา: ses_v3_live_from_fmp.txt) ทุกจุดที่ทีม FMP แก้เพิ่มมี [SES v3.2] นำหน้า
+# [SES v3.2] ต่างจากตัวที่ใช้งานจริงจุดเดียว: 3.3 Payments อ่าน "paymentTypes" (ตัวที่ใช้งานจริงยังอ่าน "payments" 3 ที่ ต้องแก้)
 # =====================================================================
 # Script : ses
 # เรียกโดย : FileMaker Data API พร้อม "script":"ses", "script.param":"<SES reference>"
 # Param  : SES ID (reference)
 # Result : JSON { ok, code, sesID, saleID, lines, message, warnings }
 # Version: v2 2026-11-03 แก้โดยทีม SES ให้ตรงกับข้อมูลที่ SES ส่งจริง ทุกจุดที่เปลี่ยนมี "[SES v2]" นำหน้า ที่เหลือคือของเดิม
+# Version: v3 2026-11-05 แก้โดยทีม SES เครื่องที่ยังไม่มี SN หรือ FMP ยังไม่มีในสาขานี้ ข้ามไม่เขียน พร้อมจำนวนเครื่องที่ข้ามและเหตุผล
+# Version: v3.2 2026-11-06 ตัวที่ทีม FMP ใช้งานจริง + แก้ 3.3 Payments ให้อ่าน "paymentTypes"
 # =====================================================================
 # 
 Set Error Capture [ On ]
@@ -170,6 +174,8 @@ Loop [ Flush: Minimum ]
 	# ----- 3.3 Payments -----
 	# [SES v2] อ่าน "paymentTypes" (ประเภทตามรายการของ FMP: เงินสด, โอนเงิน, บัตรเครดิต, บัตรเงินผ่อน, ใช้มัดจำ, Trade In, U-Joy, Partner Mall, อื่นๆ)
 	# แทน "payments" (ชื่อช่องทางใน SES เช่น 0% Credit Card, PayNext ซึ่ง ADMIN ของ SES เพิ่มได้เรื่อยๆ) ADMIN ของ SES เลือกประเภทให้ทุกช่องทางเอง
+	# [SES v3.2] ตัวที่ใช้งานจริง (export 2026-11-06) ยังอ่าน "payments" 3 ที่ในส่วนนี้ (If, $payCnt, $payby): เปลี่ยนเป็น "paymentTypes"
+	# [SES v3.2] "payments" คือชื่อช่องทางของ SES (Cash, Transfer, Full Credit Card…) ไม่ตรงกับ Substitute ภาษาไทยด้านล่าง PayBy จึงได้ชื่อดิบ
 	If [ JSONGetElementType ( $json ; "paymentTypes" ) ≠ JSONArray ]
 		Set Variable [ $errCode ; Value: "INVALID_PAYMENTS" ]
 		Set Variable [ $errMsg ; Value: "paymentTypes must be an array" ]
@@ -260,6 +266,8 @@ Loop [ Flush: Minimum ]
 			Set Variable [ $snModel ; Value: Trim ( GetValue ( $snRow ; 3 ) ) ]
 			Set Variable [ $snPrice ; Value: GetAsNumber ( GetValue ( $snRow ; 4 ) ) ]
 			Set Variable [ $snBranch ; Value: Trim ( GetValue ( $snRow ; 13 ) ) ]
+			# [SES v3.2] ทีม FMP เพิ่มคอลัมน์ที่ 14 = รหัสสาขาของ SN ใน SQL ของ $snRow (product_name ย้ายไปคอลัมน์ 15)
+			Set Variable [ $snBcode ; Value: Trim ( GetValue ( $snRow ; 14 ) ) ]
 			# 
 			# SN ว่าง
 			If [ IsEmpty ( $sn ) ]
@@ -280,7 +288,7 @@ Loop [ Flush: Minimum ]
 				# SN อยู่ในสต็อกของสาขาที่เปิดบิลไหม
 			Else If [ $snBranch ≠ $branchID ]
 				Set Variable [ $errCode ; Value: "SN_WRONG_BRANCH" ]
-				Set Variable [ $errMsg ; Value: "SN " & $sn & " is in branch " & $snBranch & ", not " & $branch & " (" & $branchID & ")" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " is in branch " & $snBcode & " (" & $snBranch & "), not " & $branch & " (" & $branchID & ")" ]
 				# SN สถานะเป็น ready ไหม
 			Else If [ $snStatus ≠ "ready" ]
 				Set Variable [ $errCode ; Value: "SN_NOT_READY_FOR_SALE" ]
@@ -368,98 +376,102 @@ When you assign a custom code and message within this range, FileMaker stops the
 	Set Variable [ $n ; Value: 1 ]
 	Loop [ Flush: Minimum ]
 		Exit Loop If [ $n > $line ]
-		New Record/Request
-		Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5002 ; Error Message: "Create line " & $n & " failed (SN " & $L_sn[$n] & ", err " & Get ( LastError ) & ")" ]
-		# 
-		Set Variable [ $r ; Value: $L_row[$n] ]
-		Set Variable [ $upc ; Value: Trim ( GetValue ( $r ; 1 ) ) ]
-		Set Variable [ $old_status ; Value: GetValue ( $r ; 2 ) ]
-		Set Variable [ $pdModel ; Value: GetValue ( $r ; 3 ) ]
-		Set Variable [ $stPrice ; Value: Let (   [ 	x = GetValue ( $r ; 4 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
-		Set Variable [ $cost_a ; Value: Let (   [ 	x = GetValue ( $r ; 5 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
-		Set Variable [ $cost_b ; Value: Let (   [ 	x = GetValue ( $r ; 6 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
-		Set Variable [ $vat ; Value: Let (   [ 	x = GetValue ( $r ; 7 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
-		Set Variable [ $inv ; Value: GetValue ( $r ; 8 ) ]
-		Set Variable [ $pdBrand ; Value: GetValue ( $r ; 9 ) ]
-		Set Variable [ $pdCat ; Value: GetValue ( $r ; 10 ) ]
-		Set Variable [ $pdSub ; Value: GetValue ( $r ; 11 ) ]
-		Set Variable [ $pdSubSub ; Value: GetValue ( $r ; 12 ) ]
-		Set Variable [ $pdName ; Value: GetValue ( $r ; 14) ]
-		# 
-		Set Variable [ $title ; Value: TextFormatRemove ( Case ( not IsEmpty ( $pdModel ) ; $pdModel & " " ; "" ) & Case ( not IsEmpty ( $pdName ) ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ; "" ) & ¶ & "SN: " & $L_sn[$n] ) ]
-		# 
-		Set Variable [ $isLuxury ; Value: "N" ]
-		If [ $pdCat = "iPad" ]
-			If [ $stPrice ≥ 40000 ]
-				Set Variable [ $isLuxury ; Value: "Y" ]
-			Else
-				Set Variable [ $isLuxury ; Value: "N" ]
-			End If
-		Else If [ $pdCat = "iPhone" ]
-			If [ $stPrice ≥ 40000 ]
-				Set Variable [ $isLuxury ; Value: "Y" ]
-			Else
-				Set Variable [ $isLuxury ; Value: "N" ]
-			End If
-		Else If [ $pdCat = "Watch" ]
-			If [ $stPrice ≥ 40000 ]
-				Set Variable [ $isLuxury ; Value: "Y" ]
-			Else
-				Set Variable [ $isLuxury ; Value: "N" ]
-			End If
-		Else If [ $pdCat = "Mac" ]
-			If [ PatternCount ( $pdSub ; "MACBOOK" ) ]
+		# [SES v3.2] ทีม FMP กันไว้อีกชั้น: เขียนเฉพาะบรรทัดที่มี SN (เครื่องที่ข้ามไม่ได้อยู่ใน $L_sn อยู่แล้ว)
+		If [ not IsEmpty ( $L_sn[$n] ) ]
+			New Record/Request
+			Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5002 ; Error Message: "Create line " & $n & " failed (SN " & $L_sn[$n] & ", err " & Get ( LastError ) & ")" ]
+			# 
+			Set Variable [ $r ; Value: $L_row[$n] ]
+			Set Variable [ $upc ; Value: Trim ( GetValue ( $r ; 1 ) ) ]
+			Set Variable [ $old_status ; Value: GetValue ( $r ; 2 ) ]
+			Set Variable [ $pdModel ; Value: GetValue ( $r ; 3 ) ]
+			Set Variable [ $stPrice ; Value: Let (   [ 	x = GetValue ( $r ; 4 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $cost_a ; Value: Let (   [ 	x = GetValue ( $r ; 5 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $cost_b ; Value: Let (   [ 	x = GetValue ( $r ; 6 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $vat ; Value: Let (   [ 	x = GetValue ( $r ; 7 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $inv ; Value: GetValue ( $r ; 8 ) ]
+			Set Variable [ $pdBrand ; Value: GetValue ( $r ; 9 ) ]
+			Set Variable [ $pdCat ; Value: GetValue ( $r ; 10 ) ]
+			Set Variable [ $pdSub ; Value: GetValue ( $r ; 11 ) ]
+			Set Variable [ $pdSubSub ; Value: GetValue ( $r ; 12 ) ]
+			Set Variable [ $pdName ; Value: GetValue ( $r ; 15) ]
+			# 
+			Set Variable [ $title ; Value: TextFormatRemove ( Case ( not IsEmpty ( $pdModel ) ; $pdModel & " " ; "" ) & Case ( not IsEmpty ( $pdName ) ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ; "" ) & ¶ & "SN: " & $L_sn[$n] ) ]
+			# 
+			Set Variable [ $isLuxury ; Value: "N" ]
+			If [ $pdCat = "iPad" ]
 				If [ $stPrice ≥ 40000 ]
 					Set Variable [ $isLuxury ; Value: "Y" ]
 				Else
 					Set Variable [ $isLuxury ; Value: "N" ]
 				End If
-			Else
-				If [ $stPrice ≥ 100000 ]
+			Else If [ $pdCat = "iPhone" ]
+				If [ $stPrice ≥ 40000 ]
 					Set Variable [ $isLuxury ; Value: "Y" ]
 				Else
 					Set Variable [ $isLuxury ; Value: "N" ]
 				End If
+			Else If [ $pdCat = "Watch" ]
+				If [ $stPrice ≥ 40000 ]
+					Set Variable [ $isLuxury ; Value: "Y" ]
+				Else
+					Set Variable [ $isLuxury ; Value: "N" ]
+				End If
+			Else If [ $pdCat = "Mac" ]
+				If [ PatternCount ( $pdSub ; "MACBOOK" ) ]
+					If [ $stPrice ≥ 40000 ]
+						Set Variable [ $isLuxury ; Value: "Y" ]
+					Else
+						Set Variable [ $isLuxury ; Value: "N" ]
+					End If
+				Else
+					If [ $stPrice ≥ 100000 ]
+						Set Variable [ $isLuxury ; Value: "Y" ]
+					Else
+						Set Variable [ $isLuxury ; Value: "N" ]
+					End If
+				End If
+			Else If [ $pdCat = "Apple Accy" or $pdCat = "Third Party Accy" ]
+				Set Variable [ $isLuxury ; Value: "N" ]
+			Else If [ PatternCount ( $pdCat ; "Speaker" ) ]
+				Set Variable [ $isLuxury ; Value: "N" ]
 			End If
-		Else If [ $pdCat = "Apple Accy" or $pdCat = "Third Party Accy" ]
-			Set Variable [ $isLuxury ; Value: "N" ]
-		Else If [ PatternCount ( $pdCat ; "Speaker" ) ]
-			Set Variable [ $isLuxury ; Value: "N" ]
+			# 
+			Set Field [ POS_front_sale_detail::PrimaryKey ; $priKey ]
+			Set Field [ POS_front_sale_detail::sortOrder ; $n ]
+			Set Field [ POS_front_sale_detail::mark_tmp ; "tmp" ]
+			Set Field [ POS_front_sale_detail::customer_id ; $customer ]
+			Set Field [ POS_front_sale_detail::product_sn ; $L_sn[$n] ]
+			Set Field [ POS_front_sale_detail::product_upc ; $upc ]
+			Set Field [ POS_front_sale_detail::vrt_isLuxury ; $isLuxury ]
+			Set Field [ POS_front_sale_detail::store_model ; $pdModel ]
+			Set Field [ POS_front_sale_detail::product_name ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ]
+			Set Field [ POS_front_sale_detail::store_name ; $pdName ]
+			Set Field [ POS_front_sale_detail::pd_Brand ; $pdBrand ]
+			Set Field [ POS_front_sale_detail::store_Brand ; $pdBrand ]
+			Set Field [ POS_front_sale_detail::pd_category ; $pdCat ]
+			Set Field [ POS_front_sale_detail::store_category ; $pdCat ]
+			Set Field [ POS_front_sale_detail::pd_SubCat ; If ( not IsEmpty ( $pdSub ) ; $pdSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::pd_SubSubCategory ; If ( not IsEmpty ( $pdSubSub ) ; 	$pdSubSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::store_SubCat ; If ( not IsEmpty ( $pdSub ) ; $pdSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::store_SubSubCat ; If ( not IsEmpty ( $pdSubSub ) ; 	$pdSubSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::product_oldStatus ; $old_status ]
+			Set Field [ POS_front_sale_detail::vat ; $vatSale ]
+			Set Field [ POS_front_sale_detail::vatType ; $vatType ]
+			Set Field [ POS_front_sale_detail::product costก่อนvat ; $cost_b ]
+			Set Field [ POS_front_sale_detail::cost_beforeVat ; $cost_b ]
+			Set Field [ POS_front_sale_detail::cost_afterVat ; $cost_a ]
+			Set Field [ POS_front_sale_detail::cost_vatValue ; $vat ]
+			Set Field [ POS_front_sale_detail::title ; $title ]
+			Set Field [ POS_front_sale_detail::po_inv ; $inv ]
+			Set Field [ POS_front_sale_detail::amount ; 1 ]
+			Set Field [ POS_front_sale_detail::Type ; "Sale" ]
+			Set Field [ POS_front_sale_detail::saleType ; "genSale" ]
+			Set Field [ POS_front_sale_detail::SellingPrice ; $stPrice ]
+			# 
+			Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5002 ; Error Message: "Create line " & $n & " failed (SN " & $L_sn[$n] & ", err " & Get ( LastError ) & ")" ]
 		End If
 		# 
-		Set Field [ POS_front_sale_detail::PrimaryKey ; $priKey ]
-		Set Field [ POS_front_sale_detail::sortOrder ; $n ]
-		Set Field [ POS_front_sale_detail::mark_tmp ; "tmp" ]
-		Set Field [ POS_front_sale_detail::customer_id ; $customer ]
-		Set Field [ POS_front_sale_detail::product_sn ; $L_sn[$n] ]
-		Set Field [ POS_front_sale_detail::product_upc ; $upc ]
-		Set Field [ POS_front_sale_detail::vrt_isLuxury ; $isLuxury ]
-		Set Field [ POS_front_sale_detail::store_model ; $pdModel ]
-		Set Field [ POS_front_sale_detail::product_name ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ]
-		Set Field [ POS_front_sale_detail::store_name ; $pdName ]
-		Set Field [ POS_front_sale_detail::pd_Brand ; $pdBrand ]
-		Set Field [ POS_front_sale_detail::store_Brand ; $pdBrand ]
-		Set Field [ POS_front_sale_detail::pd_category ; $pdCat ]
-		Set Field [ POS_front_sale_detail::store_category ; $pdCat ]
-		Set Field [ POS_front_sale_detail::pd_SubCat ; If ( not IsEmpty ( $pdSub ) ; $pdSub ; "" ) ]
-		Set Field [ POS_front_sale_detail::pd_SubSubCategory ; If ( not IsEmpty ( $pdSubSub ) ; 	$pdSubSub ; "" ) ]
-		Set Field [ POS_front_sale_detail::store_SubCat ; If ( not IsEmpty ( $pdSub ) ; $pdSub ; "" ) ]
-		Set Field [ POS_front_sale_detail::store_SubSubCat ; If ( not IsEmpty ( $pdSubSub ) ; 	$pdSubSub ; "" ) ]
-		Set Field [ POS_front_sale_detail::product_oldStatus ; $old_status ]
-		Set Field [ POS_front_sale_detail::vat ; $vatSale ]
-		Set Field [ POS_front_sale_detail::vatType ; $vatType ]
-		Set Field [ POS_front_sale_detail::product costก่อนvat ; $cost_b ]
-		Set Field [ POS_front_sale_detail::cost_beforeVat ; $cost_b ]
-		Set Field [ POS_front_sale_detail::cost_afterVat ; $cost_a ]
-		Set Field [ POS_front_sale_detail::cost_vatValue ; $vat ]
-		Set Field [ POS_front_sale_detail::title ; $title ]
-		Set Field [ POS_front_sale_detail::po_inv ; $inv ]
-		Set Field [ POS_front_sale_detail::amount ; 1 ]
-		Set Field [ POS_front_sale_detail::Type ; "Sale" ]
-		Set Field [ POS_front_sale_detail::saleType ; "genSale" ]
-		Set Field [ POS_front_sale_detail::SellingPrice ; $stPrice ]
-		# 
-		Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5002 ; Error Message: "Create line " & $n & " failed (SN " & $L_sn[$n] & ", err " & Get ( LastError ) & ")" ]
 		Set Variable [ $n ; Value: $n + 1 ]
 	End Loop
 	# 

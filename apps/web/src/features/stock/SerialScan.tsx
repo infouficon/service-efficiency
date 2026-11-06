@@ -58,8 +58,11 @@ export function SerialScan({
   picked,
   onPick,
   onSaved,
+  focusKey,
 }: {
   session: MockSession;
+  /** Changes every time the order is opened, so the scanner box gets the focus again (a phone keeps the panel mounted). */
+  focusKey?: number;
   /** Marks on a product row (sent back by the cashier, the new product of a swap). */
   badge?: (item: SelectionItem) => ReactNode;
   /** D102: the products ticked "found" without (all) their scans; with `onPick`, each row gets that tick box. */
@@ -86,13 +89,14 @@ export function SerialScan({
   const left = (item: SelectionItem) => Math.max(0, serialsLeft(item) - waiting(item.id as string));
   const firstOpen = (except?: string) => items.find((item) => item.id !== except && left(item) > 0)?.id;
 
-  // the first product with units left is ready for the scanner as soon as the panel opens
+  // the first product with units left is ready for the scanner as soon as the panel opens (and it is on screen)
   useEffect(() => {
     const target = firstOpen();
-    if (target) boxes.current[target]?.focus();
+    const box = target ? boxes.current[target] : null;
+    if (box?.offsetParent) box.focus();
     // only when the panel opens for this order
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session.id]);
+  }, [session.id, focusKey]);
 
   /** D104: asks about one serial; "off", "unavailable" or a failure only mean no mark. */
   const checkSerial = (part: string, sn: string) => {

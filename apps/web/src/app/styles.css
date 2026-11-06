@@ -4074,6 +4074,52 @@ input[aria-invalid='true'] {
     text-align: left !important;
   }
 
+  /* history: search and status tabs stay; dates, branch and "clear" fold away behind one button */
+  .logs-search-wrap {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+  .logs-search-wrap input {
+    flex: 1;
+    min-width: 0;
+  }
+  .logs-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 12px;
+    border: 1px solid #cfe2dc;
+    border-radius: 8px;
+    background: white;
+    color: #0d423f;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .logs-filter-toggle[aria-expanded='true'] {
+    background: #e6f6f4;
+    border-color: #0abab5;
+  }
+  .logs-toolbar[data-filters-open='false'] .logs-date-range-wrap,
+  .logs-toolbar[data-filters-open='false'] .logs-select-wrap,
+  .logs-toolbar[data-filters-open='false'] .clear-btn {
+    display: none !important;
+  }
+  .logs-toolbar .status-filter-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+  .logs-toolbar .status-filter-tabs .tab-btn {
+    white-space: nowrap;
+  }
+
   /* manager alert: one line on a phone (the history page lists the orders) */
   .manager-alert-banner {
     padding: 8px 12px !important;

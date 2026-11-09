@@ -52,8 +52,8 @@ export class QueueService {
   }
 
   /**
-   * The queue number for a session of `branchId`: one running number per branch, per Bangkok day (D83),
-   * prefixed with the customer type's letter (e.g. A001 -> B002 -> A003).
+   * The queue number for a session of `branchId`: one running number per branch, per Bangkok day (D83), shown without the
+   * customer type's letter since D110 (001 -> 002 -> 003); the type is still stored on the session for reports.
    * Without a `customerTypeId` the active type with the lowest letter is used.
    */
   async allocate(

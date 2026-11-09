@@ -89,6 +89,7 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
     [
       ['10', ['STAFF', 'STOCK']],
       ['11', ['STAFF', 'STOCK']],
+      ['14', ['STAFF', 'STOCK']], // D114: a position no rule names (Housekeeper) is still STAFF + STOCK
       ['17', ['STAFF', 'STOCK']],
     ],
   );
@@ -98,7 +99,6 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
   assert.deepEqual(out.skipped.map((s) => s.staffId).sort(), [
     '12',
     '13',
-    '14',
     '18',
     '18',
     '5000000000',
@@ -108,6 +108,20 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
       (p) => typeof p.password === 'string' && p.password.length > 0,
     ),
   );
+});
+
+test('registration URL: only a clean http(s) address that fits the column is taken as the ERP wrote it (D114)', () => {
+  const ok = 'http://www.uficon.com/register/index.php?branch_id=9';
+  assert.equal(erp.normalizeRegistrationUrl(ok), ok);
+  assert.equal(erp.normalizeRegistrationUrl(`  ${ok}  `), ok);
+  assert.equal(erp.normalizeRegistrationUrl('https://x.test/a'), 'https://x.test/a');
+  for (const bad of ['', null, undefined, 42, 'javascript:alert(1)', 'ftp://x.test/a', 'not a url', 'https://x.test/a b', `https://x.test/${'a'.repeat(520)}`])
+    assert.equal(erp.normalizeRegistrationUrl(bad), null, String(bad).slice(0, 30));
+  const branches = erp.parseBranches([
+    { branch_id: 9, branch_code: 'ISTA', branch_name: 'A', branch_tel: '', branch_group: 'iStudio', status: 'active', Branch_regist: ok },
+    { branch_id: 10, branch_code: 'ISXX', branch_name: 'B', branch_tel: '', branch_group: 'iStudio', status: 'active' },
+  ]).scope;
+  assert.deepEqual(branches.map((b) => [b.code, b.registrationUrl]), [['ISTA', ok], ['ISXX', null]]);
 });
 
 test('SMS OTP mode: the ERP password is not required, the tel becomes the phone, a missing one is a warning (D85)', () => {
@@ -362,6 +376,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
     branch_tel: '0212345678',
     branch_group: group,
     status,
+    Branch_regist: `http://www.uficon.com/register/index.php?branch_id=${id}`,
   });
   const es = (k, o = {}) => ({
     staff_id: n(k),
@@ -517,11 +532,12 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       assert.equal(res.status, 201, JSON.stringify(res.data));
       assert.equal(res.data.ok, true, res.data.error);
       assert.equal(res.data.dryRun, true);
-      assert.equal(res.data.summary.staff.created, 3);
+      assert.equal(res.data.summary.staff.created, 4, 'a Technician is created too (D114)');
       assert.equal(res.data.summary.branches.created, 1);
       assert.deepEqual(
-        res.data.summary.staff.skipped.map((s) => s.staffId).sort(),
-        [sid(4), sid(5)].sort(),
+        res.data.summary.staff.skipped.map((s) => s.staffId),
+        [sid(5)],
+        'only the one without an ERP password is skipped',
       );
       assert.equal(
         await db.staff.count({
@@ -549,10 +565,11 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       async () => {
         const res = await run();
         assert.equal(res.data.ok, true, res.data.error);
-        assert.equal(res.data.summary.staff.created, 3);
+        assert.equal(res.data.summary.staff.created, 4);
         const a = await db.branch.findFirst({ where: { erpBranchId: bidA } });
         assert.equal(a.code, codeA);
         assert.equal(a.active, true);
+        assert.equal(a.registrationUrl, `http://www.uficon.com/register/index.php?branch_id=${bidA}`, 'the ERP registration page (D114)');
         assert.equal(
           await db.branch.count({ where: { erpBranchId: bidB } }),
           0,
@@ -575,7 +592,11 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           (await staffRow(3)).roles.map((r) => r.roleCode).sort(),
           ['STAFF', 'STOCK'],
         );
-        assert.equal(await staffRow(4), null);
+        assert.deepEqual(
+          (await staffRow(4)).roles.map((r) => r.roleCode).sort(),
+          ['STAFF', 'STOCK'],
+          'a Technician has an account too, with the default roles (D114)',
+        );
         const ok = await login(sid(1), 'erp-pw-1-x');
         assert.equal(ok.status, 201);
         assert.equal(ok.data.erpManaged, true);
@@ -616,8 +637,26 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       assert.equal(res.data.summary.staff.created, 0);
       assert.equal(res.data.summary.staff.updated, 0);
       assert.equal(res.data.summary.staff.passwordChanged, 0);
-      assert.equal(res.data.summary.staff.unchanged, 3);
+      assert.equal(res.data.summary.staff.unchanged, 4);
       assert.equal(res.data.summary.branches.unchanged, 1);
+    });
+
+    await t.test('the ERP registration page fills an empty address but never overwrites one an ADMIN set (D114)', async () => {
+      const branch = () => db.branch.findFirst({ where: { erpBranchId: bidA } });
+      await db.branch.updateMany({ where: { erpBranchId: bidA }, data: { registrationUrl: 'https://admin.example/typed' } });
+      const next = `http://www.uficon.com/register/index.php?branch_id=${bidA}&v=2`;
+      erpState.branches[0].Branch_regist = next;
+      assert.equal((await run()).data.ok, true);
+      assert.equal((await branch()).registrationUrl, 'https://admin.example/typed', 'ADMIN\'s address stays');
+      await db.branch.updateMany({ where: { erpBranchId: bidA }, data: { registrationUrl: null } });
+      assert.equal((await run()).data.ok, true);
+      assert.equal((await branch()).registrationUrl, next, 'an empty address is filled from the ERP');
+      erpState.branches[0].Branch_regist = 'javascript:alert(1)';
+      await db.branch.updateMany({ where: { erpBranchId: bidA }, data: { registrationUrl: null } });
+      assert.equal((await run()).data.ok, true);
+      assert.equal((await branch()).registrationUrl, null, 'only http(s) addresses are taken');
+      erpState.branches[0].Branch_regist = `http://www.uficon.com/register/index.php?branch_id=${bidA}`;
+      assert.equal((await run()).data.ok, true);
     });
 
     await t.test(

@@ -469,13 +469,23 @@ export class SessionsService {
       include: sessionInclude,
       orderBy: { customerWalkInAt: 'asc' },
     });
-    const wanted = queue?.toUpperCase();
+    const rawWanted = queue?.trim();
+    const wanted = rawWanted?.toUpperCase();
+    const wantedPadded =
+      rawWanted && /^\d+$/.test(rawWanted) ? rawWanted.padStart(3, '0') : undefined;
     const paymentTypes = await loadPaymentTypes(this.prisma);
     return {
       branch: { code: branch.code, name: branch.name },
       orders: sessions
         .map((s) => orderView(s, paymentTypes))
-        .filter((order) => !wanted || order.queue === wanted),
+        .filter((order) => {
+          if (!wanted) return true;
+          return (
+            order.queue === wanted ||
+            (wantedPadded !== undefined && order.queue === wantedPadded) ||
+            order.reference === wanted
+          );
+        }),
     };
   }
 

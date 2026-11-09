@@ -5,14 +5,14 @@ import { cleanup, seedWorld, startApi } from './support.mjs';
 const { bangkokDay, formatQueue, QueueService } =
   await import('../dist/queue/queue.service.js');
 
-test('queue label and Bangkok day helpers', () => {
-  assert.equal(formatQueue('A', 12), 'A012');
-  assert.equal(formatQueue('B', 1), 'B001');
-  assert.equal(formatQueue('A', 1000), 'A1000', 'four digits after 999');
+test('queue label and Bangkok day helpers (D110: three digits without letter)', () => {
+  assert.equal(formatQueue('A', 12), '012');
+  assert.equal(formatQueue('B', 1), '001');
+  assert.equal(formatQueue('A', 1000), '1000', 'four digits after 999');
   assert.equal(
     formatQueue(null, 7),
     '007',
-    'sessions from before D57 have no letter',
+    'three digits without letter',
   );
   // Bangkok is UTC+7: 16:59:59Z is still the same day there, 17:00:00Z is the next one
   assert.equal(bangkokDay(new Date('2026-03-01T16:59:59Z')), '2026-03-01');
@@ -20,7 +20,7 @@ test('queue label and Bangkok day helpers', () => {
   assert.equal(bangkokDay(new Date('2026-12-31T17:00:00Z')), '2027-01-01');
 });
 
-test('QueueService.allocate shares one running number per branch and Bangkok day across customer types (D83)', async () => {
+test('QueueService.allocate shares one running number per branch and Bangkok day across customer types (D83, D110)', async () => {
   const counters = new Map();
   const types = new Map([
     ['type-a', { id: 'type-a', letter: 'A', active: true }],
@@ -42,22 +42,22 @@ test('QueueService.allocate shares one running number per branch and Bangkok day
 
   const day1 = new Date('2026-10-16T03:00:00Z');
   const q1 = await svc.allocate(tx, 'branch-1', 'type-a', day1);
-  assert.equal(formatQueue(q1.queueLetter, q1.queueNo), 'A001');
+  assert.equal(formatQueue(q1.queueLetter, q1.queueNo), '001');
 
   const q2 = await svc.allocate(tx, 'branch-1', 'type-b', day1);
-  assert.equal(formatQueue(q2.queueLetter, q2.queueNo), 'B002');
+  assert.equal(formatQueue(q2.queueLetter, q2.queueNo), '002');
 
   const q3 = await svc.allocate(tx, 'branch-1', 'type-a', day1);
-  assert.equal(formatQueue(q3.queueLetter, q3.queueNo), 'A003');
+  assert.equal(formatQueue(q3.queueLetter, q3.queueNo), '003');
 
   // Another branch starts at 001 on the same day
   const qBranch2 = await svc.allocate(tx, 'branch-2', 'type-b', day1);
-  assert.equal(formatQueue(qBranch2.queueLetter, qBranch2.queueNo), 'B001');
+  assert.equal(formatQueue(qBranch2.queueLetter, qBranch2.queueNo), '001');
 
   // Next Bangkok day resets branch-1 back to 001
   const day2 = new Date('2026-10-16T17:00:00Z');
   const qNextDay = await svc.allocate(tx, 'branch-1', 'type-b', day2);
-  assert.equal(formatQueue(qNextDay.queueLetter, qNextDay.queueNo), 'B001');
+  assert.equal(formatQueue(qNextDay.queueLetter, qNextDay.queueNo), '001');
 });
 
 test('walk-in starts at the phone number and takes a queue number (D56, D57)', async (t) => {

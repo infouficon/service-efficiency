@@ -1466,3 +1466,20 @@ iphone duo ให้ขึ้นก่อน". Chosen: UPC order + ADMIN pin; de
    17e, 17 …, iPad Air M4, Pro M5, A16, Air M3, mini, Pro M4), then the name; no UPC (a CTO-only model) goes last. The date a model
    first appeared in SES was tried and rejected: an old model first stocked late jumped to the top. Apple assigns UPCs before a launch,
    so the exact launch order ("Duo first") is ADMIN's pin. Same order in the change-item modal.
+
+## D110 — Queue numbers run sequentially as three digits without A/B prefix; customer type kept for reporting & export (2026-11-09)
+
+Owner instruction via `/grill-me`: "แก้ไขการแสดงคิวให้เป็นการรันคิวเลย ไม่ต้องมี A B เก็บข้อมูลเป็นประเภทลูกค้าเลย", "เก็บไว้ให้สามารถ export data ออกมาแล้วมีข้อมูล ประเภทลูกค้า". Amends D57, D70, and D83.
+
+1. **Queue Number Formatting (`formatQueue`):**
+   - The queue display is formatted as a 3-digit zero-padded running number (`001`, `002`, `003`...; 4 digits after 999) without any letter prefix (`A`, `B`, etc.).
+   - The shared running counter per branch and Bangkok day (`DailyCounter` scope `queue:<branchId>`, D83) continues unchanged.
+   - Applies across all operational screens (Staff Workspace, Stock, Cashier, Receipt, logs, order views) and applies to both new and historical sessions.
+2. **Customer Type Data & Classification:**
+   - Sessions continue to store `customerTypeId` and auto-classify (e.g. Type A "ลูกค้าทั่วไป", Type B "ลูกค้าใช้เวลานาน") based on payment methods, Ontop, and burn points criteria (D69, D70).
+   - `CustomerType` retains its letter (`A`, `B`) and name in the database and back-office admin.
+   - **Operational screens (Staff, Stock, Cashier):** Do not display customer type tags; only the queue number and customer phone number are shown.
+   - **CSV / Excel Export & Session Logs:** The "ประเภทลูกค้า" column outputs the full format `{letter} - {name}` (e.g. `A - ลูกค้าทั่วไป`, `B - ลูกค้าใช้เวลานาน`) for reporting.
+3. **Queue Lookup & Search:**
+   - Session lookup / POS filter accepts both padded (e.g. `001`) and unpadded digits (e.g. `1`), matching against `order.queue`.
+

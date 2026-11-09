@@ -25,12 +25,12 @@ export function bangkokDay(date: Date): string {
   }).format(date);
 }
 
-/** "A012": the type letter plus at least three digits ("A1000" after 999). Sessions from before D57 have no letter ("012"). */
+/** "012": at least three digits ("1000" after 999). Without letter prefix (D110). */
 export function formatQueue(
-  letter: string | null | undefined,
+  _letter: string | null | undefined,
   no: number,
 ): string {
-  return `${letter ?? ''}${String(no).padStart(3, '0')}`;
+  return String(no).padStart(3, '0');
 }
 
 /** Customer types (D57) and the running numbers that make queue numbers and session references. */

@@ -179,7 +179,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
         );
         assert.equal(
           order.queue,
-          `${sent.queueLetter}${String(sent.queueNo).padStart(3, '0')}`,
+          String(sent.queueNo).padStart(3, '0'),
         );
         assert.equal(order.state, 'SENT_TO_CASHIER');
         assert.equal(order.customerPhone, sent.phone);
@@ -207,6 +207,14 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
         assert.ok(byQueue.data.orders.every((o) => o.queue === order.queue));
         assert.ok(
           byQueue.data.orders.some((o) => o.reference === sent.reference),
+        );
+
+        // D110: lookup also works with unpadded number
+        const byUnpadded = await call(
+          `/integrations/pos/orders?branch=${branches.a.code}&queue=${sent.queueNo}`,
+        );
+        assert.ok(
+          byUnpadded.data.orders.some((o) => o.reference === sent.reference),
         );
         assert.equal(
           (await call('/integrations/pos/orders')).status,

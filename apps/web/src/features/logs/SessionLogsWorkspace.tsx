@@ -227,9 +227,9 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         key: 'customerType',
         label: 'ประเภทลูกค้า',
         getValue: (s) =>
-          s.customerTypeLetter
-            ? `${s.customerTypeLetter}${s.customerTypeName ? ` - ${s.customerTypeName}` : ''}`
-            : '',
+          s.customerTypeLetter && s.customerTypeName
+            ? `${s.customerTypeLetter} - ${s.customerTypeName}`
+            : (s.customerTypeName || s.customerTypeLetter || ''),
       },
       {
         key: 'walkInAt',

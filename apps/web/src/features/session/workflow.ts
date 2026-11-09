@@ -225,12 +225,12 @@ export function stepItem(
   });
 }
 
-/** "A012": the type letter plus at least three digits ("A1000" after 999). Mirrors `formatQueue` in the API. */
+/** "012": at least three digits ("1000" after 999). Without letter prefix (D110). Mirrors `formatQueue` in the API. */
 export function formatQueue(
-  letter: string | null | undefined,
+  _letter: string | null | undefined,
   no: number,
 ): string {
-  return `${letter ?? ''}${String(no).padStart(3, '0')}`;
+  return String(no).padStart(3, '0');
 }
 
 export function phoneIsValid(phone: string): boolean {

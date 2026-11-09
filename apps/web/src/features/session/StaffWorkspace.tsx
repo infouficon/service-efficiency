@@ -515,10 +515,7 @@ export function StaffWorkspace({
                   {itemsText(s.selection.items) || 'ยังไม่ระบุสินค้า'}
                 </div>
                 <div className="card-meta">
-                  <span>
-                    ผู้ดูแล: {s.staffId}
-                    {s.queueNo != null && s.customerTypeLetter ? ` · ประเภท ${s.customerTypeLetter}` : ''}
-                  </span>
+                  <span>ผู้ดูแล: {s.staffId}</span>
                   {s.queueNo != null && <span>{s.phone || 'ยังไม่มีเบอร์'}</span>}
                 </div>
               </div>
@@ -563,9 +560,6 @@ export function StaffWorkspace({
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}
                   {activeSession.queueNo != null && (
                     <span className="muted">
-                      {activeSession.customerTypeName
-                        ? `ประเภท ${activeSession.customerTypeLetter} · ${activeSession.customerTypeName} · `
-                        : ''}
                       Customer Phone · {activeSession.phone || 'ไม่มีเบอร์โทร'}
                     </span>
                   )}

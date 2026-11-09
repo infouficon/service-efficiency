@@ -26,6 +26,7 @@ import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { CategoriesPanel } from './CategoriesPanel';
 import { OtpPanel } from './OtpPanel';
+import { AttentionPanel } from './AttentionPanel';
 import { FmpPanel } from './FmpPanel';
 import { ErpExtrasPanel } from './ErpExtrasPanel';
 import { StaffSheetTools } from './StaffSheetTools';
@@ -230,7 +231,10 @@ export function AdminHub({
       ) : admin && subTab === 'otp' ? (
         <OtpPanel />
       ) : admin && subTab === 'fmp' ? (
-        <FmpPanel />
+        <>
+          <AttentionPanel />
+          <FmpPanel />
+        </>
       ) : (
         <>
           {error && (

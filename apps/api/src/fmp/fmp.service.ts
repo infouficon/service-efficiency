@@ -620,6 +620,105 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     };
   }
 
+  /**
+   * SES-10 (D116): what needs a person. `waiting` = orders SES sent on that U POS / FileMaker has not opened a bill for in `openMinutes`
+   * (default 30), or opened but not paid in `payMinutes` (default 240). `problems` = orders whose LATEST message to FileMaker failed,
+   * is still waiting to go after `stuckMinutes` (default 10), or got an error answer from the `ses` script (the bill was not opened).
+   * Only orders of the last 14 days, newest problems first; a later good message for the same order clears the problem.
+   */
+  async attention(options: { openMinutes?: number; payMinutes?: number; stuckMinutes?: number } = {}) {
+    const clamp = (value: number | undefined, fallback: number, min: number, max: number) =>
+      Math.min(max, Math.max(min, Number.isFinite(value) ? (value as number) : fallback));
+    const openMinutes = clamp(options.openMinutes, 30, 5, 24 * 60);
+    const payMinutes = clamp(options.payMinutes, 240, 30, 7 * 24 * 60);
+    const stuckMinutes = clamp(options.stuckMinutes, 10, 2, 24 * 60);
+    const now = Date.now();
+    const since = new Date(now - 14 * 24 * 3600_000);
+
+    const sessions = await this.prisma.customerSession.findMany({
+      where: { state: { in: ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'] }, customerWalkInAt: { gte: since } },
+      select: {
+        id: true,
+        reference: true,
+        state: true,
+        queueNo: true,
+        posBillNo: true,
+        posBillOpenedAt: true,
+        billOpenedAt: true,
+        stockFoundAt: true,
+        branch: { select: { code: true, name: true } },
+        events: { where: { eventType: 'STOCK_SENT_TO_CASHIER' }, orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
+      },
+      take: 500,
+    });
+    const outboxRows = await this.prisma.fmpOutbox.findMany({
+      where: { createdAt: { gte: since } },
+      orderBy: { createdAt: 'desc' },
+      take: 1000,
+      select: { id: true, sessionId: true, reference: true, event: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, scriptResult: true, createdAt: true, sentAt: true },
+    });
+    const latest = new Map<string, (typeof outboxRows)[number]>();
+    for (const row of outboxRows) if (!latest.has(row.reference)) latest.set(row.reference, row);
+
+    const waiting = sessions
+      .map((x) => {
+        const billOpen = x.state === 'BILL_OPENED';
+        const waitingSince = billOpen ? (x.posBillOpenedAt ?? x.billOpenedAt) : (x.events[0]?.createdAt ?? x.stockFoundAt);
+        const minutes = waitingSince ? Math.floor((now - waitingSince.getTime()) / 60_000) : null;
+        const late = minutes !== null && minutes >= (billOpen ? payMinutes : openMinutes);
+        const out = latest.get(x.reference);
+        return {
+          late,
+          item: {
+            sessionId: x.id,
+            reference: x.reference,
+            branch: x.branch.name,
+            branchCode: x.branch.code,
+            queueNo: x.queueNo,
+            stage: billOpen ? 'bill-open' : 'no-bill',
+            since: waitingSince?.toISOString() ?? null,
+            minutes,
+            posBillNo: x.posBillNo,
+            fmp: out ? { status: out.status, error: out.status === 'sent' ? null : out.lastError, ackStatus: out.ackStatus, ackMessage: out.ackMessage } : null,
+          },
+        };
+      })
+      .filter((x) => x.late)
+      .map((x) => x.item)
+      .sort((a, b) => (b.minutes ?? 0) - (a.minutes ?? 0))
+      .slice(0, 100);
+
+    const problems = [...latest.values()]
+      .map((row) => {
+        const age = Math.floor((now - row.createdAt.getTime()) / 60_000);
+        const kind =
+          row.status === 'failed'
+            ? ('failed' as const)
+            : (row.status === 'pending' || row.status === 'sending') && age >= stuckMinutes
+              ? ('stuck' as const)
+              : row.ackStatus === 'error'
+                ? ('ack-error' as const)
+                : null;
+        return kind
+          ? {
+              outboxId: row.id,
+              reference: row.reference,
+              event: row.event,
+              kind,
+              attempts: row.attempts,
+              message: row.ackStatus === 'error' ? (row.ackMessage ?? row.scriptResult) : row.lastError,
+              at: row.createdAt.toISOString(),
+              minutes: age,
+            }
+          : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => a.minutes - b.minutes)
+      .slice(0, 100);
+
+    return { thresholds: { openMinutes, payMinutes, stuckMinutes }, waiting, problems, total: waiting.length + problems.length };
+  }
+
   /** A failed (or waiting) message goes again at once. `by` is the ADMIN who asked, for the log. */
   async retry(id: string, by = 'ADMIN') {
     const row = await this.prisma.fmpOutbox.findUnique({ where: { id } });

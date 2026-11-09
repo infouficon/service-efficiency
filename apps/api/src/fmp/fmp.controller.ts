@@ -50,6 +50,23 @@ export class FmpController {
   }
 
   /**
+   * SES-10 (D116): what needs a person: orders waiting too long for a bill to be opened (`openMinutes`, default 30) or paid
+   * (`payMinutes`, default 240), and orders whose latest message to FileMaker failed, is stuck (`stuckMinutes`, default 10) or got
+   * an error answer. Last 14 days.
+   */
+  @Get('attention')
+  async attention(
+    @Req() req: Request,
+    @Query('openMinutes') openMinutes?: string,
+    @Query('payMinutes') payMinutes?: string,
+    @Query('stuckMinutes') stuckMinutes?: string,
+  ) {
+    await this.admin(req);
+    const num = (v?: string) => (v === undefined || v === '' ? undefined : Number(v));
+    return this.fmp.attention({ openMinutes: num(openMinutes), payMinutes: num(payMinutes), stuckMinutes: num(stuckMinutes) });
+  }
+
+  /**
    * D90: the log of everything between SES and FileMaker, newest first, no bodies. `reference` (part of it) narrows to one
    * order, `direction` is OUT (SES calls FileMaker) / IN (FileMaker calls back) / SES (SES's own steps), `problems=true`
    * keeps only what went wrong, `after` is the `next` of the previous page.

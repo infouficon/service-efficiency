@@ -296,6 +296,56 @@ test('not for sale: AppleCare+ incident fees, service parts and demo units never
   assert.equal(wr.notForSale('iPhone 17', 'iPhone 17'), false);
 });
 
+test('AirPods, Apple TV, HomePod and AirTag leave the accessories for a category each; their look-alikes stay (D112)', () => {
+  // the groups and names as the ERP spells them on prod (2026-11-09)
+  const row = (partNo, subcat, subsubcat, name, o = {}) => ({
+    branchCode: 'B',
+    partNo,
+    upc: null,
+    productName: `Apple ${partNo} ${name}`,
+    cat: 'Apple Accy',
+    subcat,
+    subsubcat,
+    capacity: null,
+    color: null,
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+    ...o,
+  });
+  const { items } = wr.buildCatalog([
+    row('MXP93ZA/A', 'Airpods 4', 'AirPods 4 ANC', 'AirPods 4 with Active Noise Cancellation'),
+    row('MKFT4ZA/A', 'Airpods 5', 'airpods 5 With Wireless Charging Case', 'AirPods 5 with Wireless Charging Case'),
+    row('MHWM4ZA/A', 'Airpods Max 2', 'AirPods Max 2', 'AirPods Max 2 - Blue', { color: 'Blue' }),
+    row('MN873TH/A', 'Storages & Networking', 'Apple TV', 'TV 4K WiFi 64GB  (Late 2022)', { capacity: '64GB' }),
+    row('MQJ73TH/A', 'Headphones and Speakers', 'Speakers', 'HomePod - Midnight', { color: 'Midnight' }),
+    row('MFE94TH/A', 'Lifestyle & Gadgets', 'AirTag', 'AirTag (2nd Generation) (1 Pack)'),
+    // look-alikes that stay accessories
+    row('Z661-35399', 'Earbud', 'AirPods Pro 2nd Gen', 'AirPods Pro 2nd gen USB-C, Left, CI/AR, INT'),
+    row('923-08171', 'Accessories', 'AirPods Pro 2nd Gen', 'AirPods Pro 2nd generation, Ear Tips, Medium'),
+    row('MX4F2FE/A', 'Device Protectors for Apple Devices', 'AirTag Case', 'AirTag Loop - White'),
+    row('MW5G3ZA/A', 'Lifestyle & Gadgets', 'TV Remote', 'Siri Remote'),
+    row('MWTY3ZA/A', 'Headphones and Speakers', 'Headphones', 'EarPods (Lightning Connector)'),
+    row('S9066ZX/A', 'Software & Care', 'APPLE Care for AIRPODS', 'AppleCare+ for AirPods'),
+    // another brand's AirPods case is not Apple's accessory line at all
+    row('3P-AIRPODS-CASE', 'Airpods Case', 'Airpods Case', 'Airpods Case', { cat: 'Third Party Accy' }),
+  ]);
+  const by = Object.fromEntries(items.map((i) => [i.partNo, [i.category, i.isAccessory, i.productName, i.modelName]]));
+  assert.deepEqual(by['MXP93ZA/A'], ['AirPods', false, 'AirPods 4', 'AirPods 4 ANC']);
+  assert.deepEqual(by['MKFT4ZA/A'], ['AirPods', false, 'AirPods 5', 'AirPods 5 With Wireless Charging Case'], 'the spelling is mended');
+  assert.deepEqual(by['MHWM4ZA/A'], ['AirPods', false, 'AirPods Max 2', 'AirPods Max 2']);
+  assert.deepEqual(by['MN873TH/A'], ['Apple TV', false, 'Apple TV', 'Apple TV']);
+  assert.equal(items.find((i) => i.partNo === 'MN873TH/A').storage, '64GB', 'the capacity is still a choice');
+  assert.deepEqual(by['MQJ73TH/A'], ['HomePod', false, 'HomePod', 'HomePod']);
+  assert.equal(items.find((i) => i.partNo === 'MQJ73TH/A').color, 'Midnight');
+  assert.deepEqual(by['MFE94TH/A'], ['AirTag', false, 'AirTag', 'AirTag']);
+  for (const part of ['Z661-35399', '923-08171', 'MX4F2FE/A', 'MW5G3ZA/A', 'MWTY3ZA/A', 'S9066ZX/A'])
+    assert.equal(by[part][0], 'Accessories', part);
+  assert.equal(by['3P-AIRPODS-CASE'][0], 'Third Party Accy');
+  assert.deepEqual(wr.deviceLineOf('Headphones and Speakers', 'Speakers', 'HomePod mini - Blue'), { category: 'HomePod', productName: 'HomePod', modelName: 'HomePod mini' });
+  assert.equal(wr.deviceLineOf('Lifestyle & Gadgets', 'AirTag Case', 'AirTag FineWoven Key Ring - Black'), null);
+});
+
 test('availability: ERP ready minus promised units; completed before the snapshot does not count; missing report wins', () => {
   const asOf = new Date('2026-10-12T05:00:00Z');
   const inv = {

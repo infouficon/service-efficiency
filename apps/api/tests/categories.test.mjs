@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cleanup, seedWorld, startApi } from './support.mjs';
 
-const APPLE = ['iPhone', 'iPad', 'Mac', 'Watch', 'Accessories'];
+const APPLE = ['iPhone', 'iPad', 'Mac', 'Watch', 'AirPods', 'Apple TV', 'HomePod', 'AirTag', 'Accessories']; // D72, D112
 
 test('product categories are a list ADMIN keeps; staff only see products of an active one (D72)', async (t) => {
   const ctx = await startApi(t);
@@ -18,15 +18,15 @@ test('product categories are a list ADMIN keeps; staff only see products of an a
       (await list(who, query)).data.map((c) => c.name);
 
     await t.test(
-      'the migration seeds the five Apple categories, in order; only Accessories is accessory-like',
+      'the migrations seed the Apple categories, in order (D112: AirPods, Apple TV, HomePod, AirTag after Watch); only Accessories is accessory-like',
       async () => {
         const all = (await list('admin', '?all=true')).data;
-        assert.deepEqual(all.slice(0, 5).map((c) => c.name), APPLE);
+        assert.deepEqual(all.slice(0, APPLE.length).map((c) => c.name), APPLE);
         assert.deepEqual(
-          all.slice(0, 5).map((c) => c.isAccessory),
-          [false, false, false, false, true],
+          all.slice(0, APPLE.length).map((c) => c.isAccessory),
+          APPLE.map((name) => name === 'Accessories'),
         );
-        assert.ok(all.slice(0, 5).every((c) => c.active));
+        assert.ok(all.slice(0, APPLE.length).every((c) => c.active));
         for (const who of ['staff', 'stock', 'manager', 'admin'])
           assert.equal((await list(who)).status, 200, who);
         assert.equal((await request('/categories', 'GET')).status, 401);

@@ -6,17 +6,11 @@ import watchIcon from '../../assets/category-icons/watch.png';
 import accessoriesIcon from '../../assets/category-icons/accessories.png';
 import batteryIcon from '../../assets/category-icons/battery.png';
 import {
-  Smartphone,
-  Tablet,
-  Laptop,
-  Watch,
-  Box,
   ArrowRight,
-  Headphones,
-  BatteryCharging,
   Plus,
   X,
 } from 'lucide-react';
+import { CategoryIcon } from '../../components/CategoryIcon';
 import {
   accessories,
   deviceCategories,
@@ -55,25 +49,6 @@ import {
   fetchProductsApi,
 } from '../../services/sessionApi';
 
-function getCategoryIcon(cat: string, size = 16) {
-  switch (cat) {
-    case 'iPhone':
-      return <Smartphone size={size} />;
-    case 'iPad':
-      return <Tablet size={size} />;
-    case 'Mac':
-      return <Laptop size={size} />;
-    case 'Watch':
-      return <Watch size={size} />;
-    case 'Accessories':
-      return <Headphones size={size} />;
-    case 'Battery':
-      return <BatteryCharging size={size} />;
-    default:
-      return <Box size={size} />;
-  }
-}
-
 /** Product pictures of the category tiles (Icons8, see D79 for the licence); a category without one gets a plain icon. */
 const CATEGORY_PICTURES: Record<string, string> = {
   iPhone: iphoneIcon,
@@ -88,7 +63,7 @@ function CategoryPicture({ cat, size = 48 }: { cat: string; size?: number }) {
   return src ? (
     <img src={src} width={size} height={size} alt="" className="category-picture" />
   ) : (
-    getCategoryIcon(cat, size * 0.7)
+    <CategoryIcon category={cat} size={size * 0.7} />
   );
 }
 
@@ -293,7 +268,7 @@ export function SelectionEditor({
               <li key={item.product.id} className="chosen-item">
                 <span className="chosen-item-name">
                   <span className="chosen-item-category">
-                    {getCategoryIcon(item.product.category, 15)}
+                    <CategoryIcon category={item.product.category} size={15} />
                   </span>
                   <span>
                     <strong>{itemName(item)}</strong>

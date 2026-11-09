@@ -1,5 +1,6 @@
 export const categories = ['iPhone', 'iPad', 'Mac', 'Watch', 'Accessories'] as const;
-export const deviceCategories = ['iPhone', 'iPad', 'Mac', 'Watch'] as const;
+/** The main-product lines when the category list cannot be loaded (D72; D112 adds the four devices that left the accessories). */
+export const deviceCategories = ['iPhone', 'iPad', 'Mac', 'Watch', 'AirPods', 'Apple TV', 'HomePod', 'AirTag'] as const;
 export const accessories = [
   'Apple Pencil',
   'Apple Keyboard',

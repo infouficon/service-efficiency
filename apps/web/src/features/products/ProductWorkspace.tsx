@@ -5,11 +5,6 @@ import {
   Edit2,
   Pin,
   Tag,
-  Smartphone,
-  Tablet,
-  Laptop,
-  Watch,
-  Box,
   Check,
   X,
   ArrowLeft,
@@ -19,8 +14,8 @@ import {
   Building2,
   AlertCircle,
   Save,
-  Headphones,
 } from 'lucide-react';
+import { CategoryIcon } from '../../components/CategoryIcon';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { StockUnlimitedBanner } from '../admin/StockUnlimitedPanel';
@@ -534,24 +529,6 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     }
   };
 
-  // Helper icons
-  const getCategoryIcon = (cat: string) => {
-    switch (cat) {
-      case 'iPhone':
-        return <Smartphone size={15} />;
-      case 'iPad':
-        return <Tablet size={15} />;
-      case 'Mac':
-        return <Laptop size={15} />;
-      case 'Watch':
-        return <Watch size={15} />;
-      case 'Accessories':
-        return <Headphones size={15} />;
-      default:
-        return <Box size={15} />;
-    }
-  };
-
   // The tabs: every active category, plus a switched-off one that still has products (so the back office can find them).
   const tabCategories = useMemo(() => {
     const names = categories
@@ -691,7 +668,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 onClick={() => setCategoryTab(cat)}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
               >
-                {getCategoryIcon(cat)}
+                <CategoryIcon category={cat} size={15} />
                 {cat === 'ALL' ? 'ทั้งหมด' : cat}
                 {cat !== 'ALL' && categories.some((c) => c.name === cat && !c.active) && (
                   <span className="muted fine">(ปิด)</span>
@@ -805,7 +782,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                               fontWeight: 600,
                             }}
                           >
-                            {getCategoryIcon(prod.category)}
+                            <CategoryIcon category={prod.category} size={15} />
                             {prod.category}
                           </span>
                         </td>

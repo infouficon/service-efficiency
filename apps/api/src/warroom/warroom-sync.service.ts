@@ -331,6 +331,37 @@ export function notForSale(group: string | null, model: string | null): boolean 
   return NOT_FOR_SALE_GROUPS.includes((group ?? '').trim().toLowerCase()) || /\bac\+\s*incident\b/i.test(model ?? '');
 }
 
+/** D112: the Apple devices the ERP files with the accessories that the shops sell as main products. */
+export const DEVICE_LINES = ['AirPods', 'Apple TV', 'HomePod', 'AirTag'] as const;
+export type DeviceLine = (typeof DEVICE_LINES)[number];
+
+/**
+ * D112: an Apple accessory part that is really a device sold as a main product (one serial per unit, a line of the FileMaker
+ * bill): AirPods, Apple TV, HomePod and AirTag get a category each. Read from warroom's groups and names as the ERP spells them
+ * (2026-11-09): AirPods = a sub-category starting "AirPods" ("Airpods 4", "Airpods Max 2"), so neither the "Earbud" spare buds
+ * nor the ear tips; Apple TV = the model group "Apple TV" (the "TV Remote" group stays an accessory); HomePod = a part named
+ * "HomePod …" (filed under "Speakers"); AirTag = the model group "AirTag" ("AirTag Case": key rings and loops stay accessories).
+ * Null for anything else.
+ */
+export function deviceLineOf(
+  group: string | null,
+  model: string | null,
+  itemName: string | null,
+): { category: DeviceLine; productName: string; modelName: string } | null {
+  const g = (group ?? '').trim();
+  const m = (model ?? '').trim();
+  const n = (itemName ?? '').trim();
+  const airPods = (text: string) => text.replace(/\bair\s*pods\b/gi, 'AirPods');
+  if (/^air\s*pods\b/i.test(g)) return { category: 'AirPods', productName: airPods(g), modelName: airPods(m || g) };
+  if (/^apple\s*tv$/i.test(m)) return { category: 'Apple TV', productName: 'Apple TV', modelName: 'Apple TV' };
+  if (/^home\s*pod\b/i.test(n)) {
+    const modelName = (n.split(/\s+[-–]\s+/)[0] ?? n).replace(/^home\s*pod/i, 'HomePod').trim();
+    return { category: 'HomePod', productName: 'HomePod', modelName };
+  }
+  if (/^air\s*tag$/i.test(m)) return { category: 'AirTag', productName: 'AirTag', modelName: 'AirTag' };
+  return null;
+}
+
 /** One catalog item per part number from the warroom rows (first non-empty attribute wins). */
 export function buildCatalog(rows: WarroomRow[]): {
   items: CatalogItem[];
@@ -391,18 +422,21 @@ export function buildCatalog(rows: WarroomRow[]): {
     const capacity = storageOf(nameTexts, memory, first(rs, (r) => r.capacity));
     const productName =
       clean(modelNameOf(subcat, capacity), 191) ?? clean(cat, 191) ?? 'ไม่ระบุ';
+    const skuName = shortName(name, partNo).slice(0, 191);
+    // D112: AirPods, Apple TV, HomePod and AirTag leave the accessories for a main-product category of their own
+    const line = rule.name === 'Accessories' ? deviceLineOf(subcat, subsubcat, skuName) : null;
     items.push({
       partNo,
-      category: rule.name,
-      isAccessory: rule.isAccessory,
+      category: line?.category ?? rule.name,
+      isAccessory: line ? false : rule.isAccessory,
       upc: clean(
         first(rs, (r) => r.upc),
         64,
       ),
-      productName,
-      modelName: clean(modelNameOf(subsubcat, capacity), 191) ?? productName,
+      productName: line ? clean(line.productName, 191) ?? productName : productName,
+      modelName: (line ? clean(line.modelName, 191) : clean(modelNameOf(subsubcat, capacity), 191)) ?? productName,
       memory,
-      skuName: shortName(name, partNo).slice(0, 191),
+      skuName,
       color: clean(
         colorOf(first(rs, (r) => r.color)),
         64,
@@ -550,7 +584,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 5;
+export const CATALOG_RULES_VERSION = 6;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still

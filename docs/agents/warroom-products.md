@@ -49,12 +49,18 @@ Admin → "ซิงก์ ERP" shows both syncs (staff/branch and products/stoc
 
 ## Categories (D72)
 
-A category is a row of `Category` (Admin → หมวดหมู่สินค้า). The migration seeds iPhone, iPad, Mac, Watch, Accessories (active). The sync maps each warroom `product_cat` like this:
+A category is a row of `Category` (Admin → หมวดหมู่สินค้า). The migrations seed iPhone, iPad, Mac, Watch, AirPods, Apple TV, HomePod, AirTag, Accessories (active). The sync maps each warroom `product_cat` like this:
 
 - Apple words → the five categories ("Apple Accy" → Accessories; accessory words win over device words: "iPhone Case" is an accessory).
 - Anything else, and any other brand ("HUAWEI Phone", "Third Party Accy"), → a category **named exactly as warroom spells it**, added **switched off** (`erpManaged`, `isAccessory` guessed from "accy"/"accessor").
 - A part whose category is off is **not created** (`waitingForCategory` in the run summary) and staff see nothing of it. Open the category, then "ซิงก์ตอนนี้": its products are created on that run. A part with no category text at all is skipped (`skippedNoCategory`).
 - Batteries (a sub-category starting with "Battery") go to a `Battery` category, added switched off like any new category (D78).
+- **D112:** four Apple devices the ERP files under "Apple Accy" are main products with a category each (seeded switched on, after
+  Watch): **AirPods** (a sub-category starting "AirPods": "Airpods 4", "Airpods Max 2"; not the "Earbud" spare buds nor ear tips),
+  **Apple TV** (the model group "Apple TV"; "TV Remote" stays an accessory), **HomePod** (a part named "HomePod …", filed under
+  "Speakers") and **AirTag** (the model group "AirTag"; "AirTag Case" key rings and loops stay accessories). `deviceLineOf` in
+  `warroom-sync.service.ts`; product = the AirPods group or the device name, model = the AirPods model group / "HomePod mini" /
+  the device name. Catalog rules version 6 re-files the SKUs the sync made earlier on its next scheduled check.
 - The memory ("Ram 16") is read into `ProductSku.memory` and, with a trailing "Eng" marker, removed from the model name; names that differ only in case are one model (D79).
 - The capacity is taken out of the product and model names ("iPhone 18 Pro Max 1TB" → "iPhone 18 Pro Max") so one model holds all its capacities (D78).
 - Only the SKU **part number** (`product_model`) identifies a part; `product_upc` is stored in `ProductSku.upc`.

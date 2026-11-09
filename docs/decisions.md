@@ -1510,3 +1510,30 @@ Amends D101 (FOUND by itself), D102 (the "found" tick), D103 and D104.
 5. **Accessories skip the serial (owner: "อุปกรณ์เสริม บางครั้งอยู่หน้าร้าน in store stock อาจจะยิงไม่ได้ … Part นี้ข้าม SN").** They are listed
    for STOCK to pick and never hold up "send". STOCK ticks one "ขาด/หมด" only to report it ("แจ้งสินค้าไม่ครบ/หมด"); a main product not fully
    scanned counts as missing in that report, as before.
+
+## D112 — AirPods, Apple TV, HomePod and AirTag are main products, a category each (2026-11-09)
+
+Owner (WorkTrack SES-9, from SES-7's list): "แก้หน้าเลือกสินค้าหลักที่หายไปเช่น Apple TV, AirPod, อื่นๆ"; asked to choose, he took four categories
+(AirPods, Apple TV, HomePod, AirTag) over two ("AirPods" + "Apple TV & Home") or a catch-all "อื่นๆ". The warroom sync had filed them under
+Accessories (D72's accessory words include airpods / apple tv / homepod / airtag), and the main-product tiles leave accessory-like
+categories out, so staff could only name them as a free accessory (no SKU, no serial, not on the FileMaker bill, D97).
+
+1. **Categories.** A migration adds AirPods, Apple TV, HomePod, AirTag: switched on, not accessory-like, right after Watch (the later ones
+   move down four places). Like iPhone they are SES's own (`erpManaged` false).
+2. **Which parts.** `deviceLineOf` (warroom sync) takes an "Apple Accy" part out of Accessories when: AirPods = its sub-category starts
+   with "AirPods" ("Airpods 4", "Airpods 5", "Airpods Max", "Airpods Max 2", "Airpods Pro 3"); Apple TV = its model group is "Apple TV";
+   HomePod = its name starts with "HomePod" (the ERP files it under "Headphones and Speakers" → "Speakers"); AirTag = its model group is
+   "AirTag". What stays an accessory: the "Earbud" spare buds and ear tips, "TV Remote", EarPods, AppleCare+ for AirPods, "AirTag Case"
+   key rings and loops, and every other brand's part (read from prod on 2026-11-09).
+3. **Names.** AirPods: product = the group, model = the model group, with "Airpods"/"airpods" spelt "AirPods". Apple TV: product and model
+   "Apple TV" (capacity stays a choice). HomePod: product "HomePod", model "HomePod" / "HomePod mini" (colour stays a choice). AirTag:
+   product and model "AirTag" (the packs are told apart by the SKU name). Two SKUs of one model with the same colour show their part
+   number (already so, D107).
+4. **Moving what exists.** Catalog rules version 6: on its next scheduled check after the deploy, the sync re-files the SKUs it made earlier
+   (with their branch stock) into the new categories and drops the emptied ERP products/models (D78). ADMIN pins on the old AirPods models
+   do not follow (D109).
+5. **What it changes for the shop.** These are now picked like an iPhone (model, then capacity/colour), STOCK scans their serial (D111) and
+   FileMaker gets them as bill lines. Not verified: whether FileMaker keeps a serial for every AirTag pack (if not, its `ses` script
+   leaves the unit out of the held bill and the cashier scans it in, D103/D111).
+6. **Icons.** One `CategoryIcon` for every screen (was three copies): AirPods headphones, Apple TV a TV, HomePod a speaker, AirTag a pin;
+   Accessories now a cable. No product pictures for the four yet.

@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
-  Box,
   Check,
-  Headphones,
-  Laptop,
-  Smartphone,
-  Tablet,
-  Watch,
 } from 'lucide-react';
+import { CategoryIcon } from '../../components/CategoryIcon';
 import { Button, Modal, Notice } from '../../components/ui';
 import { deviceCategories } from '../../constants/options';
 import {
@@ -25,23 +20,6 @@ import {
   type CatalogProduct,
   type Picked,
 } from './catalog';
-
-function getCategoryIcon(cat: string, size = 16) {
-  switch (cat) {
-    case 'iPhone':
-      return <Smartphone size={size} />;
-    case 'iPad':
-      return <Tablet size={size} />;
-    case 'Mac':
-      return <Laptop size={size} />;
-    case 'Watch':
-      return <Watch size={size} />;
-    case 'Accessories':
-      return <Headphones size={size} />;
-    default:
-      return <Box size={size} />;
-  }
-}
 
 const CHANGE_REASONS = [
   'ลูกค้าเปลี่ยนใจ (ความจุ/สี/รุ่น)',
@@ -212,7 +190,7 @@ export function ChangeItemModal({
                   />
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                     <span style={{ color: '#4b5563' }}>
-                      {getCategoryIcon(item.product.category, 16)}
+                      <CategoryIcon category={item.product.category} size={16} />
                     </span>
                     <span>
                       <strong style={{ display: 'block', color: '#111827' }}>
@@ -272,7 +250,7 @@ export function ChangeItemModal({
               }}
             >
               <div style={{ color: '#475569' }}>
-                {getCategoryIcon(picked.product.category, 20)}
+                <CategoryIcon category={picked.product.category} size={20} />
               </div>
               <div style={{ flex: 1 }}>
                 <strong style={{ display: 'block', color: '#0f172a' }}>

@@ -300,12 +300,9 @@ export function saveCustomerTypeApi(
       });
 }
 
-/**
- * `send` takes the serial numbers STOCK already scanned one by one (D101); the server refuses it until they are complete,
- * unless `serialsLater` (D103): the missing units are then scanned in FileMaker.
- */
-export async function advanceStepApi(id: string, action: string, options: { serialsLater?: boolean } = {}): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action, ...options });
+/** `send` takes the serial numbers STOCK already scanned one by one (D101); the server refuses it until they are complete (D111). */
+export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
+  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action });
   return mapApiSessionToMockSession(data);
 }
 
@@ -495,19 +492,18 @@ export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
   return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
 
-/** D104: one scanned serial against the stock data (warroom by default, FileMaker live once it has an index on the serial). */
+/** D104: one scanned serial against FileMaker live (only with `SERIAL_CHECK=fmp`; off by default since D111). */
 export type SerialCheck =
   | { status: 'off' | 'unavailable'; reason: string }
   | {
       status: 'ok';
-      source: 'warroom' | 'fmp';
+      source: 'fmp';
       asOf: string | null;
       sn: string;
       verdict: 'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
       branchCode?: string | null;
       branchName?: string | null;
       stockStatus?: string;
-      model?: string | null;
     };
 
 export async function serialCheckApi(sn: string, part?: string): Promise<SerialCheck> {

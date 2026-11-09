@@ -208,8 +208,8 @@ in warroom: it is one small table, and putting ERP passwords into warroom's data
 
 ### 3.4 Design (D53/D54 decided; role table to be given by the owner later; the rest is the agreed proposal)
 
-**Serial check (D104, 2026-11-05).** STOCK's scanned serial is checked against warroom's `mart.stock_current` by default (one
-`WHERE upper(product_sn) = $1 LIMIT 3`, read-only, 2 s; nothing reaches FileMaker). A live FileMaker mode (`SERIAL_CHECK=fmp`) asks
+**Serial check (D104, 2026-11-05; D111, 2026-11-09).** Off by default: FileMaker's `ses` script checks the serials when STOCK sends (the
+one check; the warroom lookup D104 started with is gone, its picture was hours old). A live FileMaker mode (`SERIAL_CHECK=fmp`) asks
 `GET /ProductStore_detail?$filter=product_sn eq '<sn>'&$select=product_sn,BranchStore_id,status,product_upc&$top=3`, the only `$filter` SES
 would send, and only once `product_sn` is indexed: without the index that query did not answer in 30 s (2026-11-05 14:04), and a UPC +
 `status eq 'ready'` filter did not answer in 15 s (15:47). Guards: one request at a time, 5 s, no retry, a 10-minute pause after a failure,

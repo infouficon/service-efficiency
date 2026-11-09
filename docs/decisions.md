@@ -1617,3 +1617,19 @@ Owner (2026-11-10), after D114: pull more of the ERP people into SES, "เอา
 5. **Effect (computed from the real ERP, 2026-11-10 01:41, nothing written):** accounts from the import 85 (after D114) → **162** (85 shop + 77 HO);
    57 active people stay out (Huawei Store 14, iMedic 14, no group 25, others 4); 12 of the 162 have neither a mobile number nor a LINE userId
    (warned); 26 have a LINE userId. Takes effect at the next scheduled import (10:00) or "ซิงก์ตอนนี้".
+
+## D116 — "ออเดอร์ที่ต้องดู": orders stuck at the cashier or failing towards FileMaker, in the ADMIN FileMaker page (SES-10, 2026-11-10)
+
+Owner (WorkTrack SES-10, "เชื่อมเวลาทำงานจาก FMP … + แจ้งเตือนออเดอร์ค้าง"): on 2026-11-09 no order had ever got a bill number back from FileMaker, so every order sat at "sent to cashier" with nothing telling anyone. The FileMaker side (`ses_report_bill` v2) is FMP's work; this is the SES side. Asked how to be told, the owner chose the ADMIN page only (no message to anybody).
+
+1. **Where.** Admin → ส่งไป FileMaker: a new panel "ออเดอร์ที่ต้องดู (n)" above the existing one; `GET /api/admin/fmp/attention` (ADMIN only). It reloads itself every minute.
+2. **Waiting for a bill.** Orders sent to the cashier (`SENT_TO_CASHIER` and the retired cashier states) with **no bill after 30 minutes** (counted from the real
+   STOCK_SENT_TO_CASHIER event), and orders with a bill open but **not paid after 4 hours** (counted from the bill's real open time). Each row shows branch, queue,
+   how long, and the FileMaker side of the order (not sent / failed / FMP error / received). Longest wait first.
+3. **Trouble towards FileMaker.** For each order the LATEST message to FileMaker decides: `failed` (gave up after the attempts), `stuck` (still pending or sending
+   after 10 minutes), `ack-error` (sent, but the `ses` script answered with an error, e.g. SN_WRONG_BRANCH: the held bill was not opened). A later good message for
+   the same order clears it. The row has "ส่งซ้ำ" (the existing retry) or, for an error answer, "ส่งออเดอร์ซ้ำ" (the existing resend).
+4. **Limits.** Last 14 days, at most 100 rows of each kind. The three limits are query parameters (`openMinutes` 30, `payMinutes` 240, `stuckMinutes` 10, kept
+   within 5 min–24 h, 30 min–7 days, 2 min–24 h) so they can be tuned without a release; the panel shows the ones in force.
+5. **What it does not do.** No LINE or e-mail. If FileMaker never reports a bill the ADMIN can still close an order by hand (D105, "ปิดการขาย (แทน U POS)").
+   When LINE is on (D113) a push to ADMIN is a small step if the owner wants it, with the question of how often.

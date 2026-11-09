@@ -150,3 +150,7 @@ ADMIN closes them, see [fmp-scripts/README.md](fmp-scripts/README.md)).
 
 Only "order at the cashier" is sent. An order cancelled or sent back to stock later is not reported yet (a cashier reject clears the
 serial numbers in SES, the held bill in FileMaker stays). A damaged unit the cashier removes (D75) is not told either.
+
+## Orders that need a person (D116, SES-10)
+
+`GET /api/admin/fmp/attention` (ADMIN) lists orders with no bill 30 min after they were sent (or an open bill unpaid after 4 h) and orders whose latest message to FileMaker failed, is stuck or got an error answer from the `ses` script; shown at the top of Admin → ส่งไป FileMaker. Limits are the query parameters `openMinutes`, `payMinutes`, `stuckMinutes`.

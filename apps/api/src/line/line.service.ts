@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 const DEFAULT_API_URL = 'https://api.line.me';
-const TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
 
 /** A LINE Messaging API userId: "U" and 32 hex digits. Anything else (an old LINE Notify token, a typo) is not one. */
 export function normalizeLineUserId(value: unknown): string | null {
@@ -23,8 +23,10 @@ export interface LineTarget {
  * through. Push only: SES never receives the OA's webhook (UFHR owns it). Off until `LINE_CHANNEL_ACCESS_TOKEN` is set.
  *
  * Who is who on LINE is kept by UFHR (`staff::line_uid`, linked by each person in the OA). With `UFHR_API_BASE` and
- * `UFHR_API_KEY` set, UFHR's `GET /staff-contacts?ids=` is asked first; otherwise, or when UFHR has nothing, the copy the
- * ERP import stored (`Staff.lineUserId`, FileMaker's `line_user_id`) is used. The token and the key are never logged.
+ * `UFHR_API_KEY` set, UFHR's `GET /staff-contacts?ids=` decides: its answer is final, so a person HR has unlinked (or
+ * who is no longer active there) gets no LINE code even if an older copy is stored. Only when UFHR is not set up or does
+ * not answer is the copy the ERP import stored (`Staff.lineUserId`, FileMaker's `line_user_id`) used. The token and the
+ * key are never logged.
  */
 @Injectable()
 export class LineService {
@@ -43,15 +45,19 @@ export class LineService {
     return this.env('UFHR_API_BASE').length > 0 && this.env('UFHR_API_KEY').length > 0;
   }
 
-  /** The LINE userId to send to: UFHR's when it has one, else the ERP copy. Never throws. */
+  /**
+   * The LINE userId to send to: UFHR's answer when UFHR is set up and answers (no LINE there = no LINE code, the code goes
+   * by SMS), else the ERP copy. Never throws.
+   */
   async target(staff: { erpStaffId: number | null; lineUserId: string | null }): Promise<LineTarget> {
     const stored = normalizeLineUserId(staff.lineUserId);
     let note = 'ไม่มี LINE userId ใน ERP';
     if (this.ufhrConfigured() && staff.erpStaffId !== null) {
       try {
         const fromHr = await this.askUfhr(staff.erpStaffId);
-        if (fromHr) return { userId: fromHr, source: 'ufhr' };
-        note = 'UFHR ไม่มี LINE ของคนนี้ (ยังไม่ผูก LINE หรือไม่ได้ active ใน HR)';
+        return fromHr
+          ? { userId: fromHr, source: 'ufhr' }
+          : { userId: null, source: null, note: 'UFHR ไม่มี LINE ของคนนี้ (ยังไม่ผูก LINE, เลิกผูก หรือไม่ได้ active ใน HR)' };
       } catch (error) {
         note = error instanceof Error ? error.message : 'ถาม UFHR ไม่สำเร็จ';
       }
@@ -89,27 +95,42 @@ export class LineService {
     );
   }
 
+  /** Milliseconds to wait for a whole answer (headers and body); `LINE_TIMEOUT_MS` exists for the tests only. */
+  private timeoutMs(): number {
+    const n = Number(this.env('LINE_TIMEOUT_MS'));
+    return Number.isFinite(n) && n > 0 ? n : DEFAULT_TIMEOUT_MS;
+  }
+
   private async call(url: string, init: RequestInit, who: 'LINE' | 'UFHR'): Promise<unknown> {
+    const limit = this.timeoutMs();
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-    let response: Response;
+    const timer = setTimeout(() => controller.abort(), limit);
+    let ok: boolean;
+    let status: number;
+    let data: { message?: unknown } | null;
     try {
-      response = await fetch(url, { ...init, signal: controller.signal });
+      const response = await fetch(url, { ...init, signal: controller.signal });
+      ok = response.ok;
+      status = response.status;
+      // the deadline runs until the body is read too: a server that sends headers and then stalls must not hold a code back
+      data = (await response.json().catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'AbortError') throw error;
+        return null;
+      })) as { message?: unknown } | null;
     } catch (error) {
       // never echo error.message: some runtimes quote the URL or headers in it
       throw new Error(
         error instanceof Error && error.name === 'AbortError'
-          ? `${who} ไม่ตอบภายใน ${TIMEOUT_MS / 1000} วินาที`
+          ? `${who} ไม่ตอบภายใน ${limit / 1000} วินาที`
           : `เชื่อมต่อ ${who} ไม่สำเร็จ`,
       );
     } finally {
       clearTimeout(timer);
     }
-    const data = (await response.json().catch(() => null)) as { message?: unknown } | null;
-    if (!response.ok) {
+    if (!ok) {
       const reason = typeof data?.message === 'string' ? data.message.slice(0, 120) : '';
-      this.log.error(`${who} ${response.status} ${reason}`.trim());
-      throw new Error(`${who} ปฏิเสธ (${response.status}${reason ? ` ${reason}` : ''})`);
+      this.log.error(`${who} ${status} ${reason}`.trim());
+      throw new Error(`${who} ปฏิเสธ (${status}${reason ? ` ${reason}` : ''})`);
     }
     return data;
   }

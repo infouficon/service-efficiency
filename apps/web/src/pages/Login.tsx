@@ -96,7 +96,9 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
       setWait(RESEND_SECONDS);
       toast.info(
         channels.includes('line')
-          ? 'ส่งรหัส OTP แล้ว ดูใน LINE UFiconStaff (ถ้ายังไม่ได้ผูก LINE จะมาเป็น SMS)'
+          ? channels.includes('sms')
+            ? 'ส่งรหัส OTP แล้ว ดูใน LINE UFiconStaff (ถ้ายังไม่ได้ผูก LINE จะมาเป็น SMS)'
+            : 'ส่งรหัส OTP แล้ว ดูใน LINE UFiconStaff (ต้องผูก LINE กับระบบ HR ไว้แล้ว)'
           : 'ส่งรหัส OTP แล้ว ถ้ามีบัญชีนี้และมีเบอร์โทรในระบบ',
       );
       setTimeout(() => codeInput.current?.focus(), 50);

@@ -1551,10 +1551,12 @@ runs the staff's clock-in menu (UFHR) and sends UFPOS's own login code.
 2. **Who is who on LINE.** UFHR keeps it (`staff::line_uid`; a person links their LINE from the OA's clock-in menu with staff id + ID card).
    FileMaker gets a copy in `staff.line_user_id` from UFHR's `staff_send_to_ufservice` script, but the copy is incomplete: 45 rows on
    2026-11-09 (11 of SES's 72 accounts; the owner, who links through UFHR, had none). So:
-   - with `UFHR_API_BASE` + `UFHR_API_KEY`, UFHR's `GET /staff-contacts?ids=<ERP staff id>` (active staff only, ~3 s) is asked first,
-     the way UFPOS does it;
-   - otherwise, or when UFHR has nothing for the person or does not answer, the ERP import's copy is used: the import now reads
-     `line_user_id` into `Staff.lineUserId` (only a real userId, `U` + 32 lower-case hex). All 45 copies answered LINE's profile check.
+   - with `UFHR_API_BASE` + `UFHR_API_KEY`, UFHR's `GET /staff-contacts?ids=<ERP staff id>` (active staff only, ~3 s) decides, the
+     way UFPOS does it, and **its answer is final**: when HR answers and has no LINE for the person (never linked, unlinked, or no
+     longer active) the code goes by SMS, not to an older copy (an unlinked LINE account must stop receiving codes);
+   - only when UFHR is not set up, or does not answer (error, 10 s without a complete answer), is the ERP import's copy used: the import
+     reads `line_user_id` into `Staff.lineUserId` (only a real userId, `U` + 32 lower-case hex; a new valid value replaces it, an empty
+     ERP field clears it). All 45 copies answered LINE's profile check.
    UFHR only lets in callers it holds a key for (`ufservice`, `tradein`), so SES needs its own key added there (UFHR's team).
 3. **Who can ask.** Reachable = an SMS phone (SMS on), or a stored LINE userId, or (UFHR on) an ERP staff id. The answer is still always
    `{ ok: true }`; limits, 5 minutes, 5 tries, the daily cap and the 12-hour session are D85's and count LINE codes too.
@@ -1568,3 +1570,12 @@ runs the staff's clock-in menu (UFHR) and sends UFPOS's own login code.
 7. **Open.** UFHR to add a `ses` caller key for `/staff-contacts` (ideally answering only `staffId` + `lineUid` for it). Until then only
    the 11 with an ERP copy get LINE; the rest still depend on SMS. The OA's long-lived token was pasted in chat on 2026-11-09: reissuing it
    also cuts off UFHR/UFPOS, so it is a joint decision.
+8. **Review (2026-11-10, Codex, then checked against the code).** Fixed: UFHR's "no LINE" is final (above); the 10-second limit on LINE and UFHR
+   calls now covers reading the answer body too (a server that sent headers and stalled used to hold the code back for good; `LINE_TIMEOUT_MS`
+   exists for tests); the ERP "cannot get a code" warning counts a contact only when its channel is on (SMS only: a LINE userId alone is
+   warned; LINE only: a phone alone is warned); the login toast no longer promises SMS when only LINE is set up. Known and kept:
+   (a) setting only the LINE token turns OTP mode on for everybody, as setting the SMS key always did (D85): before running LINE alone
+   (no SMS, no UFHR) check the ADMIN page's "บัญชี ERP ที่มี LINE" count, because ERP accounts without a LINE userId then have no way in
+   but an ADMIN's Reset; production has SMS set, so adding LINE removes nobody's route; (b) the response time of `auth/otp/request` differs a
+   little between an account that can get a code and one that cannot (D85 already did this for phones; LINE adds enrolment to it); the answer
+   body is identical and the staff ids are not secret, a fully uniform boundary is left for later.

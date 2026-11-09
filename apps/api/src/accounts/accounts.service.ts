@@ -113,6 +113,11 @@ export class AccountsService {
     return this.sms.configured() || this.line.configured();
   }
 
+  /** Which contact a person needs to receive a code: a mobile number (SMS on), a LINE userId (LINE on, or UFHR can be asked). */
+  otpRoutes(): { sms: boolean; line: boolean } {
+    return { sms: this.sms.configured(), line: this.line.configured() };
+  }
+
   /** Starts a login session (12 h, D85) and sweeps the expired ones. Runs inside the caller's transaction. */
   async createSession(tx: Tx, staffId: string): Promise<string> {
     const token = randomBytes(32).toString('hex');

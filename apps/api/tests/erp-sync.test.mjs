@@ -189,6 +189,14 @@ test('OTP mode reads the ERP line_user_id; a LINE userId alone is enough to need
   );
   assert.deepEqual(out.warnings.map((w) => w.staffId), ['4', '5'], 'no phone and no LINE: warned; either one is enough');
   assert.match(out.warnings[0].reason, /line_user_id/);
+  // the warning follows the channels in force: a contact for a channel that is off does not count
+  const names = (routes) =>
+    erp
+      .parsePeople([row(1, { line_user_id: uid }), row(3, { tel: '0812345678' }), row(5)], branches, new Set(), false, new Map(), routes)
+      .warnings.map((w) => w.staffId);
+  assert.deepEqual(names({ sms: true, line: false }), ['1', '5'], 'SMS only: a LINE userId alone cannot get a code');
+  assert.deepEqual(names({ sms: false, line: true }), ['3', '5'], 'LINE only: a phone alone cannot get a code');
+  assert.deepEqual(names({ sms: true, line: true }), ['5']);
 });
 
 test('extra people picked by hand skip the branch-scope and position rules; they still need to be active in the ERP (D87)', () => {
@@ -1143,8 +1151,8 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           assert.match(staffCall.url, /[,=]line_user_id[,&]/, 'and the LINE userId (D113)');
           assert.equal((await staffRow(51)).lineUserId, lineUid, 'the ERP line_user_id is stored on the account');
           assert.ok(
-            !res.data.summary.staff.warnings.some((w) => w.staffId === sid(51)),
-            'a LINE userId without a phone is no reason to warn',
+            res.data.summary.staff.warnings.some((w) => w.staffId === sid(51)),
+            'only SMS is set up: a LINE userId without a phone cannot get a code, so it is warned (D113)',
           );
           const one = await staffRow(1);
           assert.equal(one.passwordHash, 'otp:only', 'the stored ERP password copy is gone');
@@ -1165,7 +1173,23 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           // a second run changes nothing
           const again = await run();
           assert.equal(again.data.summary.staff.passwordChanged, 0);
+          // with LINE set up too, a LINE userId is a route: no warning for 51, still one for 50
+          process.env.LINE_CHANNEL_ACCESS_TOKEN = 't';
+          const withLine = await run();
+          assert.equal(withLine.data.ok, true, withLine.data.error);
+          const warned = withLine.data.summary.staff.warnings.map((w) => w.staffId);
+          assert.ok(!warned.includes(sid(51)), 'LINE is on: a LINE userId is enough');
+          assert.ok(warned.includes(sid(50)), 'nothing at all is still a warning');
+          // a new valid userId replaces the stored one; an empty ERP field clears it
+          const other = `U${'0c'.repeat(16)}`;
+          erpState.staff.find((r) => r.staff_id === n(51)).line_user_id = other;
+          assert.equal((await run()).data.ok, true);
+          assert.equal((await staffRow(51)).lineUserId, other, 'replaced');
+          erpState.staff.find((r) => r.staff_id === n(51)).line_user_id = '';
+          assert.equal((await run()).data.ok, true);
+          assert.equal((await staffRow(51)).lineUserId, null, 'cleared when the ERP field is emptied');
         } finally {
+          delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
           delete process.env.THAIBULKSMS_API_KEY;
           delete process.env.THAIBULKSMS_API_SECRET;
         }

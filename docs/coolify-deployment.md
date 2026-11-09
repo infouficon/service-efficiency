@@ -116,7 +116,7 @@
 
 | ตัวแปร | ความหมาย |
 | --- | --- |
-| `LINE_CHANNEL_ACCESS_TOKEN` | Channel access token (long-lived) ของ LINE OA **UFiconStaff** (Messaging API) ตั้งเป็น **Sensitive** ตั้งแล้ว = รหัส OTP ไปทาง LINE ก่อน ส่งไม่ได้ค่อยใช้ SMS (ถ้าตั้ง SMS ไว้) ตั้งตัวเดียวก็เปิดโหมด OTP แล้ว token ตัวนี้ UFHR / UFPOS ใช้ร่วมกัน ห้าม reissue โดยไม่บอกทีมนั้น |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Channel access token (long-lived) ของ LINE OA **UFiconStaff** (Messaging API) ตั้งเป็น **Sensitive** ตั้งแล้ว = รหัส OTP ไปทาง LINE ก่อน ส่งไม่ได้ค่อยใช้ SMS (ถ้าตั้ง SMS ไว้) ตั้งตัวเดียวก็เปิดโหมด OTP แล้ว (ถ้าไม่ตั้ง SMS และ UFHR ด้วย บัญชี ERP ที่ไม่มี `line_user_id` จะไม่มีทางเข้านอกจาก ADMIN กด Reset: ดูตัวเลข "บัญชี ERP ที่มี LINE" ในหน้า Admin ก่อน) token ตัวนี้ UFHR / UFPOS ใช้ร่วมกัน ห้าม reissue โดยไม่บอกทีมนั้น |
 | `UFHR_API_BASE` | เช่น `https://hrm.uficon.com/api/external` ใช้ถาม LINE userId ล่าสุดจาก UFHR (`/staff-contacts`) ก่อนทุกครั้ง |
 | `UFHR_API_KEY` | key ของ SES ที่ทีม UFHR ออกให้ (UFHR ต้องเพิ่ม caller `ses` ก่อน) ตั้งเป็น **Sensitive** ไม่ตั้ง = ใช้ `line_user_id` ที่ซิงก์จาก ERP อย่างเดียว |
 | `LINE_API_URL` | ใช้เฉพาะทดสอบ (ค่าเริ่มต้น `https://api.line.me`) |

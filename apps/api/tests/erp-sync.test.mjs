@@ -156,6 +156,41 @@ test('SMS OTP mode: the ERP password is not required, the tel becomes the phone,
   assert.deepEqual(old.skipped.map((x) => x.staffId), ['8']);
 });
 
+test('OTP mode reads the ERP line_user_id; a LINE userId alone is enough to need no warning (D113)', () => {
+  const branches = [{ erpBranchId: 1, code: 'A1', name: 'A1', phone: '', active: true }];
+  const uid = `U${'a1'.repeat(16)}`;
+  const row = (id, o = {}) => ({
+    staff_id: id,
+    'user name': String(id),
+    status: 'active',
+    branch_id: 1,
+    position: 'Sale Representative',
+    name_first_th: 'ก',
+    name_last_th: 'ข',
+    tel: '',
+    ...o,
+  });
+  const out = erp.parsePeople(
+    [
+      row(1, { line_user_id: uid }),
+      row(2, { line_user_id: ` ${uid} ` }),
+      row(3, { line_user_id: 'not-a-line-id', tel: '0812345678' }),
+      row(4, { line_user_id: uid.toUpperCase() }),
+      row(5),
+    ],
+    branches,
+    new Set(),
+    false,
+  );
+  assert.deepEqual(
+    out.people.map((p) => [p.staffId, p.lineUserId]),
+    [['1', uid], ['2', uid], ['3', null], ['4', null], ['5', null]],
+    'only a real LINE userId (U + 32 lower-case hex) is kept',
+  );
+  assert.deepEqual(out.warnings.map((w) => w.staffId), ['4', '5'], 'no phone and no LINE: warned; either one is enough');
+  assert.match(out.warnings[0].reason, /line_user_id/);
+});
+
 test('extra people picked by hand skip the branch-scope and position rules; they still need to be active in the ERP (D87)', () => {
   const branches = [{ erpBranchId: 1, code: 'A1', name: 'A1', phone: '', active: true }];
   const row = (id, o = {}) => ({
@@ -1097,12 +1132,20 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         process.env.THAIBULKSMS_API_SECRET = 's';
         try {
           erpState.staff.push(es(50, { 'user password': '', tel: '' }));
+          const lineUid = `U${'0b'.repeat(16)}`;
+          erpState.staff.push(es(51, { 'user password': '', tel: '', line_user_id: lineUid }));
           const res = await run();
           assert.equal(res.data.ok, true, res.data.error);
           const staffCall = erpState.requests.find((r) => r.url.includes('/staff'));
           assert.ok(staffCall, 'the staff table was read');
           assert.ok(!/user%20password/i.test(staffCall.url), 'no password field is requested');
           assert.match(staffCall.url, /[,=]tel[,&]/, 'the tel is');
+          assert.match(staffCall.url, /[,=]line_user_id[,&]/, 'and the LINE userId (D113)');
+          assert.equal((await staffRow(51)).lineUserId, lineUid, 'the ERP line_user_id is stored on the account');
+          assert.ok(
+            !res.data.summary.staff.warnings.some((w) => w.staffId === sid(51)),
+            'a LINE userId without a phone is no reason to warn',
+          );
           const one = await staffRow(1);
           assert.equal(one.passwordHash, 'otp:only', 'the stored ERP password copy is gone');
           const fifty = await staffRow(50);

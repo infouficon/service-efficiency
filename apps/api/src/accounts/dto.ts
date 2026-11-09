@@ -94,6 +94,10 @@ export class OtpVerifyDto {
   @IsString() @MinLength(1) @MaxLength(64) staffId!: string;
   @IsString() @Matches(/^\d{6}$/, { message: 'รหัส OTP ต้องเป็นตัวเลข 6 หลัก' }) code!: string;
 }
+/** ADMIN: a test LINE message to the person with this Staff ID (D113) */
+export class LineTestDto {
+  @IsString() @MinLength(1) @MaxLength(64) staffId!: string;
+}
 export class SmsTestDto {
   @IsString() @Matches(PHONE_PATTERN, { message: 'เบอร์โทรต้องเป็นเบอร์มือถือ 10 หลัก' }) phone!: string;
 }

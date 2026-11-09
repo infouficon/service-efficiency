@@ -159,6 +159,9 @@ model Staff {
   // ERP staff_id when the account is created and kept in sync by the ERP import (D54); null for hand-made accounts
   // 10-digit Thai mobile (0812345678): where the login OTP goes. From the ERP `tel` for ERP accounts (D85), set by ADMIN otherwise
   phone              String?           @db.VarChar(20)
+  // D113: LINE userId (U + 32 hex) of this person on the UFiconStaff LINE OA, where the login OTP goes first. ERP accounts get
+  // it from the ERP `line_user_id` (FileMaker's copy of UFHR's line_uid); UFHR itself is asked first when UFHR_API_* is set
+  lineUserId         String?           @db.VarChar(64)
   erpStaffId         Int?              @unique
   // D86: when the row was made / last changed here (rows older than the migration carry the migration time), and the last sign-in
   createdAt          DateTime          @default(now()) @db.DateTime(3)
@@ -209,6 +212,8 @@ model LoginOtp {
   expiresAt    DateTime  @db.DateTime(3)
   attempts     Int       @default(0)
   consumedAt   DateTime? @db.DateTime(3)
+  // D113: how the code went out: 'line' (UFiconStaff LINE OA) or 'sms'. smsStatus/smsError hold the delivery result of either
+  channel      String    @default("sms") @db.VarChar(8)
   smsStatus    String    @default("pending") @db.VarChar(32)
   smsMessageId String?   @db.VarChar(64)
   smsError     String?   @db.VarChar(255)

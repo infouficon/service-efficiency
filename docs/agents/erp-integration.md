@@ -215,7 +215,7 @@ would send, and only once `product_sn` is indexed: without the index that query 
 `status eq 'ready'` filter did not answer in 15 s (15:47). Guards: one request at a time, 5 s, no retry, a 10-minute pause after a failure,
 a one-minute cache per serial, nothing from 5 minutes before to 30 after each warroom pull (`SERIAL_CHECK_QUIET`).
 
-**Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status` (45 rows, ~0.05 s), keep `iStudio`/`U-Store`.
+**Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status,Branch_regist` (45 rows, ~0.1 s), keep `iStudio`/`U-Store`. `Branch_regist` (the branch's customer registration page) fills an empty `Branch.registrationUrl` (D114); the table also has `Branch_URL` (FileMaker WebDirect), `Branch_feedback`, `TV_URL` and a per-branch `line_token` that SES never reads.
 Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password"`, `status`, `branch_id`, `position`, `name_first_th`, `name_last_th`,
 `_ModificationTimestamp` (never the personal/payroll fields). Run branch first, then staff. Credentials from env only:
 `ERP_ODATA_BASE_URL`, `ERP_ODATA_USER`, `ERP_ODATA_PASS` (Coolify), plus `ERP_SYNC_TIMES=10:00`. Temporarily the shared `dashboard` account, later a dedicated one.
@@ -230,7 +230,7 @@ Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password
 | `active` | `status` active (ignore case) AND the branch is active |
 | `passwordHash` | scrypt of `user password`, recomputed only when the stored hash no longer verifies (≈ 90 hashes, a few seconds; compute **before** taking the `AccountLock`, see H-02) |
 | `mustChangePassword` | `false`: the ERP owns the password, so SES change/reset-password is refused for synced accounts with a Thai message |
-| roles | **D106 (2026-11-05):** every shop-floor position (`sale`, `store manager`, `cashier`, `stock`, normalised, contains) → **STAFF + STOCK**; CASHIER is never given (the till is U POS, D105) and an old CASHIER role is dropped at the next run; other positions (technician, housekeeper, …) get no account. `ADMIN`/`MANAGER` are never granted or removed by the sync |
+| roles | **D106 (2026-11-05):** every shop-floor position (`sale`, `store manager`, `cashier`, `stock`, normalised, contains) → **STAFF + STOCK**; CASHIER is never given (the till is U POS, D105) and an old CASHIER role is dropped at the next run; other positions (technician, housekeeper, no position, …) get **STAFF + STOCK too (D114)**. `ADMIN`/`MANAGER` are never granted or removed by the sync |
 
 **Never touched:** any account the sync did not create (existing/test users, `0001`). Track it with an additive column (for example
 `Staff.erpStaffId Int? @unique` plus `erpSyncedAt`); an ERP `user name` equal to an existing SES `staffId` is skipped and reported, never adopted.
@@ -240,8 +240,7 @@ only after its synced staff were deactivated in the same run (D39 order).
 
 **Built as follows (differences from the first proposal).** No `$filter` (see §0); manual runs return at once and the panel polls `status` (an awaited run would hit
 the 60 s proxy timeout of the web container); a closed ERP branch that SES never had is not created; an ERP-linked branch is read-only in SES (409 on `PUT /branches/:id`);
-a mass-deactivation guard aborts a run that would deactivate more than max(5, 30%) of the synced accounts unless `force=true`; positions that map to no role get **no account**
-(an account without a role could still read the branch's session list, H-06); since D106 "Store Manager" is STAFF + STOCK like the other shop-floor positions.
+a mass-deactivation guard aborts a run that would deactivate more than max(5, 30%) of the synced accounts unless `force=true`; positions that map to no role get **STAFF + STOCK** (D114; they got no account before, H-06 is why a role is always set); since D106 "Store Manager" is STAFF + STOCK like the other shop-floor positions.
 
 **Job.** A tick every 30 s in the API process (no scheduler dependency today), a DB row per `(kind, slot)` claimed with `INSERT … ON CONFLICT`
 (the warroom `claimSlot` pattern) so two containers or a restart run a slot once, a 60-minute catch-up window, and a new table `ErpSyncRun`

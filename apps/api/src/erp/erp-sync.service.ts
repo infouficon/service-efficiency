@@ -52,8 +52,7 @@ const noOtpRoute = (routes: OtpRoutes) =>
 
 /**
  * Provisional mapping from the ERP `position` text to SES roles (owner will send corrections, D54).
- * Roles are the union of every matching rule. A position that matches nothing gets no account
- * (least privilege: an account without a role can still read the branch's session list).
+ * Roles are the union of every matching rule. A position that matches nothing gets DEFAULT_ERP_ROLES (D114; it got no account before).
  * ADMIN and MANAGER are never granted here; "Store Manager" works the floor and the stock room like the others (D106).
  */
 export const POSITION_ROLE_RULES: { pattern: RegExp; roles: RoleCode[] }[] = [
@@ -64,6 +63,13 @@ export const POSITION_ROLE_RULES: { pattern: RegExp; roles: RoleCode[] }[] = [
   { pattern: /cashier/i, roles: ['STAFF', 'STOCK'] },
   { pattern: /stock/i, roles: ['STAFF', 'STOCK'] },
 ];
+
+/**
+ * D114 (owner, 2026-11-10: "ดึงทั้งหมดมาเลย ยศค่อยแก้ทีหลัง แต่หลักๆ เป็น staff + stock"): a person whose position matches none of the
+ * rules above (technician, housekeeper, trainer, no position at all) is still imported, as STAFF + STOCK, instead of being skipped (D106).
+ * The rules stay as the list of positions the owner has named; a person can be narrowed by an ADMIN afterwards.
+ */
+export const DEFAULT_ERP_ROLES: RoleCode[] = ['STAFF', 'STOCK'];
 
 export function rolesForPosition(
   position: string | null | undefined,
@@ -89,6 +95,8 @@ export interface ErpBranch {
   name: string;
   phone: string;
   active: boolean;
+  /** ERP `Branch_regist` (the customer registration page of the branch), or null when it is not a usable http(s) address (D114) */
+  registrationUrl: string | null;
 }
 export interface ErpPerson {
   erpStaffId: number;
@@ -182,6 +190,18 @@ class DryRunRollback extends Error {
 // ---------------------------------------------------------------------------
 // Pure helpers (unit tested without a database)
 // ---------------------------------------------------------------------------
+/** An http(s) address that fits the `Branch.registrationUrl` column, as the ERP wrote it; null for anything else. */
+export function normalizeRegistrationUrl(value: unknown): string | null {
+  const url = text(value).trim();
+  if (!url || url.length > 512 || /\s/.test(url)) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 const asRow = (value: unknown): Row | null =>
   value && typeof value === 'object' ? (value as Row) : null;
 const text = (value: unknown): string =>
@@ -231,6 +251,7 @@ export function parseBranches(rows: unknown[]): {
       name: (text(row.branch_name).trim() || code).slice(0, 191),
       phone: text(row.branch_tel).trim().slice(0, 64),
       active: text(row.status).trim().toLowerCase() === 'active',
+      registrationUrl: normalizeRegistrationUrl(row.Branch_regist),
     });
   }
   const count = <K>(key: (b: ErpBranch) => K) => {
@@ -352,14 +373,8 @@ export function parsePeople(
       skipped.push({ staffId, reason: 'รหัสผ่านใน ERP ยาวเกิน 128 ตัวอักษร' });
       continue;
     }
-    const roles = rolesForPosition(text(row.position));
-    if (!roles.length) {
-      skipped.push({
-        staffId,
-        reason: `ตำแหน่ง "${text(row.position).trim() || 'ไม่ระบุ'}" ยังไม่ได้กำหนดสิทธิ์ใน SES`,
-      });
-      continue;
-    }
+    const named = rolesForPosition(text(row.position));
+    const roles = named.length ? named : DEFAULT_ERP_ROLES; // D114: no position rule, still STAFF + STOCK
     const userName = text(row['user name']).trim();
     if (userName && userName !== staffId)
       warnings.push({
@@ -453,7 +468,7 @@ export function nextRunAt(now: Date, times: number[]): string | null {
 // ERP OData client
 // ---------------------------------------------------------------------------
 // FileMaker rejects `+` for a space and a percent-encoded `$`; quoted field names must use %20 (see ODATA_FINDINGS).
-const BRANCH_QUERY = `$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status&$top=${MAX_ROWS}`;
+const BRANCH_QUERY = `$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status,Branch_regist&$top=${MAX_ROWS}`;
 // No `$filter`: filtering on `status` can force FileMaker to evaluate the whole table, and a filtered query was
 // followed by an OData hang on 2026-10-12. The narrow `$select` alone took 0.3 s for all 713 rows; filter here instead.
 /** The staff fields the import needs. With SMS OTP login on (D85) the plaintext ERP password is not even requested. */
@@ -913,6 +928,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
             phone: erp.phone,
             active: true,
             erpBranchId: erp.erpBranchId,
+            registrationUrl: erp.registrationUrl,
           },
         });
         summary.branches.created += 1;
@@ -924,6 +940,8 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
       if (found.code !== erp.code) data.code = erp.code;
       if (found.name !== erp.name) data.name = erp.name;
       if (found.phone !== erp.phone) data.phone = erp.phone;
+      // D114: the ERP's registration page fills an empty address; one an ADMIN typed (F10) is never overwritten
+      if (!found.registrationUrl && erp.registrationUrl) data.registrationUrl = erp.registrationUrl;
       if (erp.active && !found.active) data.active = true;
       if (!erp.active && found.active)
         toDeactivate.push({ id: found.id, code: erp.code });

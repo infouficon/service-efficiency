@@ -1399,7 +1399,7 @@ The shops' team, on the cashier screen: "Cashier เอาออกทั้ง�
 
 Owner: "user ใน ses erp ที่ login ses ต้องเปลี่ยนให้ทุกคนเป็น stock + cashier + staff … ปรับ role ที่มาจาก erp ทุก account". CASHIER has no screen since D105, so the owner chose STAFF + STOCK for everyone, for the shop-floor positions only.
 
-1. **Rule.** The ERP import maps `sale`, `store manager`, `cashier` and `stock` positions to **STAFF + STOCK** (`POSITION_ROLE_RULES`). Other positions (technician, housekeeper, …) still get no account. CASHIER is never given; an old CASHIER role on an ERP account is dropped at the next run. ADMIN / MANAGER stay hand-managed (D54).
+1. **Rule.** The ERP import maps `sale`, `store manager`, `cashier` and `stock` positions to **STAFF + STOCK** (`POSITION_ROLE_RULES`). Other positions (technician, housekeeper, …) still get no account. (Superseded by D114: they get STAFF + STOCK too.) CASHIER is never given; an old CASHIER role on an ERP account is dropped at the next run. ADMIN / MANAGER stay hand-managed (D54).
 2. **Now, without waiting for the import.** Migration `202611050002_erp_accounts_staff_stock`: every account with an ERP id gets STAFF and STOCK and loses CASHIER; the extra people picked by hand (D87) are reset to STAFF + STOCK once (ADMIN can change them again). Hand-made accounts are untouched.
 3. **Effect.** Cashier-position staff can sign in to SES again (as STAFF + STOCK; the till stays in U POS); everyone on the floor sees both the staff and the stock screens.
 
@@ -1579,3 +1579,21 @@ runs the staff's clock-in menu (UFHR) and sends UFPOS's own login code.
    but an ADMIN's Reset; production has SMS set, so adding LINE removes nobody's route; (b) the response time of `auth/otp/request` differs a
    little between an account that can get a code and one that cannot (D85 already did this for phones; LINE adds enrolment to it); the answer
    body is identical and the staff ids are not secret, a fully uniform boundary is left for later.
+
+## D114 — Everyone in an imported branch gets an account (STAFF + STOCK), and each branch's registration page comes from the ERP (2026-11-10)
+
+Owner (WorkTrack SES-7 follow-up, 2026-11-10): the ERP users in SES are incomplete ("user ใน erp ยังขาดหลายท่าน", the test team's k.mild was missing), so "ดึงทั้งหมดมาเลย … ยศค่อยแก้ทีหลัง แต่หลักๆ เป็น staff + stock"; and the per-branch QR address should come from the ERP if it has it.
+
+1. **Positions no longer filter people (reverses D106 item 1's "other positions get no account").** A person in an imported branch whose `position`
+   matches none of the rules (technician, housekeeper, trainer, no position at all) is now imported as **STAFF + STOCK** (`DEFAULT_ERP_ROLES`),
+   like the shop-floor positions. On 2026-11-10 that was 14 of the 15 people the import had skipped. ADMIN narrows anybody afterwards (an ADMIN's
+   change to roles on an ERP account still follows the existing D54 rules). ADMIN / MANAGER / CASHIER are still never given by the import.
+2. **Registration page per branch from the ERP.** The ERP `branch` table keeps it in `Branch_regist` (`http://www.uficon.com/register/index.php?branch_id=<id>`,
+   which answers 301 → https; `Branch_URL` is FileMaker's own WebDirect `scan_qr` page, not used). The import reads it and **fills an empty
+   `Branch.registrationUrl`; an address an ADMIN typed (F10) is never overwritten.** Only a clean http(s) address that fits the column is taken, as written.
+   A branch whose ERP field is empty keeps what it has.
+3. **Not changed here.** The branch-group scope (`iStudio`, `U-Store`) is as before, so people of the other groups (HO, Huawei Store, iMedic, no
+   group: 134 of the 220 active ERP people on 2026-11-10) still get no account until the owner says which SES branch they belong to.
+4. **Effect (computed from the real ERP, 2026-11-10 01:32, nothing written):** accounts from the import 72 → **85**, all STAFF + STOCK; 4 of them
+   have neither a mobile number nor a LINE userId (warned); 1 skipped (a branch closed in the ERP). It lands with the next scheduled import
+   (10:00) or "ซิงก์ตอนนี้".

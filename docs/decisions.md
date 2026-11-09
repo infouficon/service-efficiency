@@ -1537,3 +1537,34 @@ categories out, so staff could only name them as a free accessory (no SKU, no se
    leaves the unit out of the held bill and the cashier scans it in, D103/D111).
 6. **Icons.** One `CategoryIcon` for every screen (was three copies): AirPods headphones, Apple TV a TV, HomePod a speaker, AirTag a pin;
    Accessories now a cable. No product pictures for the four yet.
+
+## D113 — Login codes go to the staff member's LINE (UFiconStaff OA) first, SMS second (2026-11-09)
+
+Owner (WorkTrack SES-8, SES-7's list): "แก้ขอ OTP ผ่าน LineOA Staff", the OA "UFicon Staff" the FMP team uses. On 2026-11-09 every SMS
+code failed (`ERROR_SENDER_NOT_FOUND`, D85), so the 72 ERP accounts could not sign in. Checked that day: the OA is **UFiconStaff
+(@926vbvae)**, Messaging API quota 35,000 messages a month (3,134 used in November); a test push to the owner arrived. The same OA already
+runs the staff's clock-in menu (UFHR) and sends UFPOS's own login code.
+
+1. **Order.** A code goes to the person's LINE on that OA; when LINE is not set up, has no userId for them, or refuses (quota, blocked),
+   it goes by SMS to the phone on the account as before (D85). Push only: SES never takes the OA's webhook (UFHR owns it; repointing it
+   would break clock-in). OTP login is on when either LINE (`LINE_CHANNEL_ACCESS_TOKEN`) or ThaiBulkSMS is set up.
+2. **Who is who on LINE.** UFHR keeps it (`staff::line_uid`; a person links their LINE from the OA's clock-in menu with staff id + ID card).
+   FileMaker gets a copy in `staff.line_user_id` from UFHR's `staff_send_to_ufservice` script, but the copy is incomplete: 45 rows on
+   2026-11-09 (11 of SES's 72 accounts; the owner, who links through UFHR, had none). So:
+   - with `UFHR_API_BASE` + `UFHR_API_KEY`, UFHR's `GET /staff-contacts?ids=<ERP staff id>` (active staff only, ~3 s) is asked first,
+     the way UFPOS does it;
+   - otherwise, or when UFHR has nothing for the person or does not answer, the ERP import's copy is used: the import now reads
+     `line_user_id` into `Staff.lineUserId` (only a real userId, `U` + 32 lower-case hex). All 45 copies answered LINE's profile check.
+   UFHR only lets in callers it holds a key for (`ufservice`, `tradein`), so SES needs its own key added there (UFHR's team).
+3. **Who can ask.** Reachable = an SMS phone (SMS on), or a stored LINE userId, or (UFHR on) an ERP staff id. The answer is still always
+   `{ ok: true }`; limits, 5 minutes, 5 tries, the daily cap and the 12-hour session are D85's and count LINE codes too.
+4. **Recorded.** `LoginOtp.channel` = `line` / `sms`; `smsStatus` / `smsError` hold the result of either. A LINE miss followed by a
+   working SMS stays as a note on the row ("LINE: UFHR ไม่มี LINE ของคนนี้ …"), so ADMIN sees who still has to link. The ERP import warns
+   only when a person has neither a mobile number nor a LINE userId.
+5. **ADMIN.** The OTP page shows the LINE set-up (token, UFHR, how many ERP accounts have a LINE userId from the ERP), a "ส่ง LINE ทดสอบ"
+   to a Staff ID (says whether the userId came from UFHR or the ERP), and the channel of every code.
+6. **Login page.** The tab and button say "OTP ทาง LINE / SMS"; the hint after sending points to LINE UFiconStaff and, for anyone who never
+   linked, to the clock-in menu.
+7. **Open.** UFHR to add a `ses` caller key for `/staff-contacts` (ideally answering only `staffId` + `lineUid` for it). Until then only
+   the 11 with an ERP copy get LINE; the rest still depend on SMS. The OA's long-lived token was pasted in chat on 2026-11-09: reissuing it
+   also cuts off UFHR/UFPOS, so it is a joint decision.

@@ -93,7 +93,7 @@ test('SMS OTP login: request, verify, limits, 12-hour session, webhook and the a
 
     await t.test('off until ThaiBulkSMS is configured: password login as before', async () => {
       clearEnv();
-      assert.deepEqual((await request('/auth/config')).data, { otp: false });
+      assert.deepEqual((await request('/auth/config')).data, { otp: false, channels: [] });
       assert.equal((await requestOtp(id('erp'))).status, 400);
       assert.equal((await verify(id('erp'), '123456')).status, 400);
       assert.equal(sms.calls.length, 0);
@@ -102,7 +102,7 @@ test('SMS OTP login: request, verify, limits, 12-hour session, webhook and the a
     setEnv();
 
     await t.test('on once configured; ERP accounts lose password login, hand-made accounts keep it', async () => {
-      assert.deepEqual((await request('/auth/config')).data, { otp: true });
+      assert.deepEqual((await request('/auth/config')).data, { otp: true, channels: ['sms'] });
       await db.staff.update({
         where: { staffId: id('erp') },
         data: { passwordHash: await hashPassword(PASSWORD) },

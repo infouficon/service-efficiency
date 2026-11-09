@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Send } from 'lucide-react';
+import { MessageCircle, RefreshCw, Send } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
@@ -11,10 +11,14 @@ interface OtpRow {
   createdAt: string;
   consumedAt: string | null;
   attempts: number;
+  channel: 'line' | 'sms';
   smsStatus: string;
   smsError: string | null;
 }
 interface OtpStatus {
+  otp: boolean;
+  /** D113: the UFiconStaff LINE OA, and how many active ERP accounts the ERP import gave a LINE userId */
+  line: { configured: boolean; ufhrConfigured: boolean; erpActive: number; erpWithLine: number };
   configured: boolean;
   sender: string | null;
   webhookConfigured: boolean;
@@ -43,14 +47,16 @@ const fmt = (iso: string) =>
   });
 
 /**
- * ADMIN view of the SMS OTP login (D85): is ThaiBulkSMS configured, the webhook address to give it, a test SMS, and the latest
- * login codes with how their SMS went (never the code, never the full number).
+ * ADMIN view of the OTP login: LINE first (D113: the UFiconStaff OA, LINE userIds from UFHR or the ERP), then SMS (D85: is
+ * ThaiBulkSMS configured, the webhook address to give it), a test message on each, and the latest login codes with the channel
+ * they went on and how it went (never the code, never the full number).
  */
 export function OtpPanel() {
   const toast = useToast();
   const [status, setStatus] = useState<OtpStatus | null>(null);
   const [error, setError] = useState('');
   const [phone, setPhone] = useState('');
+  const [lineStaffId, setLineStaffId] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -79,16 +85,82 @@ export function OtpPanel() {
   return (
     <>
       {error && <Notice error>{error}</Notice>}
+      {status && (
+        <Panel title="เข้าสู่ระบบด้วย OTP ทาง LINE (UFiconStaff)">
+          <dl className="erp-sync-facts">
+            <div>
+              <dt>การเข้าสู่ระบบ</dt>
+              <dd>
+                {!status.otp
+                  ? 'รหัสผ่านแบบเดิม (ยังไม่ตั้งค่า LINE หรือ SMS)'
+                  : status.line.configured && status.configured
+                    ? 'OTP ทาง LINE ก่อน ถ้าส่งไม่ได้ใช้ SMS'
+                    : status.line.configured
+                      ? 'OTP ทาง LINE เท่านั้น'
+                      : 'OTP ทาง SMS เท่านั้น'}
+              </dd>
+            </div>
+            <div>
+              <dt>LINE channel access token</dt>
+              <dd>{status.line.configured ? 'ตั้งค่าแล้ว' : 'ยังไม่ได้ตั้งค่า'}</dd>
+            </div>
+            <div>
+              <dt>ถาม LINE จาก UFHR</dt>
+              <dd>{status.line.ufhrConfigured ? 'ตั้งค่าแล้ว (ถาม UFHR ก่อนทุกครั้ง)' : 'ยังไม่ได้ตั้งค่า (ใช้ LINE จาก ERP อย่างเดียว)'}</dd>
+            </div>
+            <div>
+              <dt>บัญชี ERP ที่มี LINE ใน ERP</dt>
+              <dd>
+                {status.line.erpWithLine.toLocaleString('th-TH')} / {status.line.erpActive.toLocaleString('th-TH')}
+              </dd>
+            </div>
+          </dl>
+          {!status.line.configured && (
+            <Notice>
+              ตั้ง <code>LINE_CHANNEL_ACCESS_TOKEN</code> (OA UFiconStaff) ใน Coolify ของ api แล้ว restart รหัสจะไปทาง LINE ก่อน
+              ส่วนคนที่ไม่มี LINE ยังได้ SMS ตามเดิม
+            </Notice>
+          )}
+          <p className="fine">
+            LINE userId มาจาก UFHR (ระบบ HR ที่พนักงานผูก LINE ตอนลงเวลา) เมื่อตั้ง <code>UFHR_API_BASE</code> กับ{' '}
+            <code>UFHR_API_KEY</code> ถ้าไม่ได้ตั้งหรือ UFHR ไม่มี ใช้ <code>line_user_id</code> ที่ซิงก์จาก ERP แทน
+          </p>
+          <form
+            className="payment-add-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setBusy(true);
+              api<{ source: 'ufhr' | 'erp' }>('/admin/otp/test-line', 'POST', { staffId: lineStaffId.trim() })
+                .then((res) => {
+                  toast.success(`ส่ง LINE ทดสอบแล้ว (LINE userId จาก ${res.source === 'ufhr' ? 'UFHR' : 'ERP'})`, 6000);
+                  return load();
+                })
+                .catch((err: unknown) => toast.error(err instanceof Error ? err.message : 'ส่ง LINE ไม่สำเร็จ', 8000))
+                .finally(() => setBusy(false));
+            }}
+          >
+            <input
+              required
+              maxLength={64}
+              placeholder="Staff ID สำหรับส่ง LINE ทดสอบ"
+              value={lineStaffId}
+              onChange={(e) => setLineStaffId(e.target.value)}
+            />
+            <Button type="submit" disabled={busy || !status.line.configured || !lineStaffId.trim()}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <MessageCircle size={15} />
+                ส่ง LINE ทดสอบ
+              </span>
+            </Button>
+          </form>
+        </Panel>
+      )}
       <Panel title="เข้าสู่ระบบด้วย OTP ทาง SMS (ThaiBulkSMS)">
         {!status ? (
           <Notice>กำลังโหลด…</Notice>
         ) : (
           <>
             <dl className="erp-sync-facts">
-              <div>
-                <dt>การเข้าสู่ระบบ</dt>
-                <dd>{status.configured ? 'OTP ทาง SMS' : 'รหัสผ่านแบบเดิม (ยังไม่ตั้งค่า SMS)'}</dd>
-              </div>
               <div>
                 <dt>ThaiBulkSMS key / secret</dt>
                 <dd>{status.configured ? 'ตั้งค่าแล้ว' : 'ยังไม่ได้ตั้งค่า'}</dd>
@@ -115,7 +187,7 @@ export function OtpPanel() {
             {!status.configured && (
               <Notice>
                 ตั้ง <code>THAIBULKSMS_API_KEY</code> และ <code>THAIBULKSMS_API_SECRET</code> ใน Coolify ของ api แล้ว restart
-                ระบบจะสลับมาใช้ OTP เอง (พนักงานที่ซิงก์จาก ERP จะเข้าด้วยรหัสผ่านไม่ได้อีก)
+                เพื่อใช้ SMS (ถ้ายังไม่ได้ตั้ง LINE ด้วย ระบบจะสลับมาใช้ OTP เอง และพนักงานที่ซิงก์จาก ERP จะเข้าด้วยรหัสผ่านไม่ได้อีก)
               </Notice>
             )}
             <p className="fine">
@@ -176,8 +248,9 @@ export function OtpPanel() {
                   <tr>
                     <th>เวลา</th>
                     <th>Staff ID</th>
+                    <th>ช่องทาง</th>
                     <th>เบอร์ (4 ตัวท้าย)</th>
-                    <th>SMS</th>
+                    <th>ผลการส่ง</th>
                     <th>ใช้แล้ว</th>
                     <th>ลองผิด</th>
                   </tr>
@@ -189,7 +262,8 @@ export function OtpPanel() {
                       <tr key={row.id}>
                         <td>{fmt(row.createdAt)}</td>
                         <td>{row.staffId}</td>
-                        <td>••••{row.phoneLast4}</td>
+                        <td>{row.channel === 'line' ? 'LINE' : 'SMS'}</td>
+                        <td>{row.phoneLast4 ? `••••${row.phoneLast4}` : '—'}</td>
                         <td>
                           <span className={`status-tag ${s.cls}`} title={row.smsError ?? undefined}>
                             {s.label}

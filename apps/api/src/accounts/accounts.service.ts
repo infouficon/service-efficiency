@@ -19,6 +19,7 @@ import {
   tokenHash,
   verifyPassword,
 } from './password';
+import { LineService } from '../line/line.service';
 import { SmsService } from '../sms/sms.service';
 import { BranchDto, StaffCreateDto, StaffUpdateDto } from './dto';
 import {
@@ -104,11 +105,12 @@ export class AccountsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly sms: SmsService,
+    private readonly line: LineService,
   ) {}
 
-  /** Login switches to SMS OTP once ThaiBulkSMS is configured (D85); until then everything works as before. */
+  /** Login switches to OTP once a way to send codes is configured: ThaiBulkSMS (D85) or the UFiconStaff LINE OA (D113). */
   otpEnabled(): boolean {
-    return this.sms.configured();
+    return this.sms.configured() || this.line.configured();
   }
 
   /** Starts a login session (12 h, D85) and sweeps the expired ones. Runs inside the caller's transaction. */
@@ -208,7 +210,7 @@ export class AccountsService {
         (account.lockedUntil && account.lockedUntil > new Date())
       )
         return null;
-      // With SMS OTP on, ERP accounts sign in by OTP only: their ERP password is not accepted (nor even kept, D85).
+      // With OTP on, ERP accounts sign in by OTP only: their ERP password is not accepted (nor even kept, D85).
       if (this.otpEnabled() && account.erpStaffId !== null) {
         await hashPassword(password);
         return null;
@@ -236,7 +238,7 @@ export class AccountsService {
     if (!result)
       throw new UnauthorizedException(
         this.otpEnabled()
-          ? 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน (พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยรหัส OTP ทาง SMS)'
+          ? 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน (พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยรหัส OTP ทาง LINE หรือ SMS)'
           : 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน',
       );
     return result;

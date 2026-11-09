@@ -13,6 +13,7 @@ import {
   AccountsService,
 } from '../accounts/accounts.service';
 import { hashPassword, OTP_ONLY_HASH, verifyPassword } from '../accounts/password';
+import { normalizeLineUserId } from '../line/line.service';
 import { normalizeThaiMobile } from '../sms/sms.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -36,6 +37,9 @@ const RETRY_AFTER_MS = 10 * 60_000;
 const ABANDON_AFTER_MS = 20 * 60_000;
 const MAX_ATTEMPTS = 3;
 const HASH_CONCURRENCY = 4;
+/** D85/D113: OTP mode, and the ERP holds neither a mobile number nor a LINE userId for the person (UFHR may still know the LINE) */
+const NO_OTP_ROUTE =
+  'ไม่มีเบอร์มือถือ (tel) และไม่มี LINE (line_user_id) ใน ERP: ถ้า UFHR ไม่มี LINE ของคนนี้ด้วย จะเข้าระบบด้วย OTP ไม่ได้';
 
 /**
  * Provisional mapping from the ERP `position` text to SES roles (owner will send corrections, D54).
@@ -89,6 +93,8 @@ export interface ErpPerson {
   password: string;
   /** ERP `tel` as 10 digits, or null when it is empty / not a Thai mobile (D85) */
   phone: string | null;
+  /** ERP `line_user_id` (FileMaker's copy of UFHR's LINE link), or null when it is not a LINE userId (D113) */
+  lineUserId: string | null;
 }
 export interface BranchNote {
   code: string;
@@ -277,11 +283,8 @@ export function parsePeople(
         continue;
       }
       const phone = normalizeThaiMobile(row.tel);
-      if (!requirePassword && !phone)
-        warnings.push({
-          staffId,
-          reason: 'ไม่มีเบอร์มือถือที่ใช้ได้ใน ERP (tel) จึงเข้าระบบด้วย OTP ไม่ได้ จนกว่า ERP จะแก้',
-        });
+      const lineUserId = normalizeLineUserId(row.line_user_id);
+      if (!requirePassword && !phone && !lineUserId) warnings.push({ staffId, reason: NO_OTP_ROUTE });
       candidates.push({
         erpStaffId: extraId,
         staffId,
@@ -292,6 +295,7 @@ export function parsePeople(
         roles: extra.roles,
         password,
         phone,
+        lineUserId,
       });
       continue;
     }
@@ -351,11 +355,8 @@ export function parsePeople(
         reason: `user name ใน ERP (${userName}) ไม่ตรงกับ staff_id ใช้ staff_id เป็นรหัสเข้าระบบ`,
       });
     const phone = normalizeThaiMobile(row.tel);
-    if (!requirePassword && !phone)
-      warnings.push({
-        staffId,
-        reason: 'ไม่มีเบอร์มือถือที่ใช้ได้ใน ERP (tel) จึงเข้าระบบด้วย OTP ไม่ได้ จนกว่า ERP จะแก้',
-      });
+    const lineUserId = normalizeLineUserId(row.line_user_id);
+    if (!requirePassword && !phone && !lineUserId) warnings.push({ staffId, reason: NO_OTP_ROUTE });
     candidates.push({
       erpStaffId,
       staffId,
@@ -365,6 +366,7 @@ export function parsePeople(
       roles,
       password,
       phone,
+      lineUserId,
     });
   }
   const seen = new Map<number, number>();
@@ -443,7 +445,7 @@ const BRANCH_QUERY = `$select=branch_id,branch_code,branch_name,branch_tel,branc
 // followed by an OData hang on 2026-10-12. The narrow `$select` alone took 0.3 s for all 713 rows; filter here instead.
 /** The staff fields the import needs. With SMS OTP login on (D85) the plaintext ERP password is not even requested. */
 const staffQuery = (otp: boolean) =>
-  `$select=staff_id,%22user%20name%22,${otp ? '' : '%22user%20password%22,'}status,branch_id,position,name_first_th,name_last_th,tel` +
+  `$select=staff_id,%22user%20name%22,${otp ? '' : '%22user%20password%22,'}status,branch_id,position,name_first_th,name_last_th,tel,line_user_id` +
   `&$top=${MAX_ROWS}`;
 // eslint-disable-next-line no-control-regex
 const RAW_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
@@ -995,6 +997,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
               lastName: person.lastName,
               passwordHash: plan.hashes.get(person.erpStaffId) ?? '',
               phone: person.phone,
+              lineUserId: person.lineUserId,
               branchId: sb.id,
               active: true,
               mustChangePassword: false,
@@ -1030,6 +1033,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
         data.firstName = person.firstName;
       if (match.lastName !== person.lastName) data.lastName = person.lastName;
       if (match.phone !== person.phone) data.phone = person.phone;
+      if (match.lineUserId !== person.lineUserId) data.lineUserId = person.lineUserId;
       if (match.branchId !== sb.id) data.branch = { connect: { id: sb.id } };
       if (!match.active) {
         data.active = true;

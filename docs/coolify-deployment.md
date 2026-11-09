@@ -112,6 +112,17 @@
 
 ขั้นตอนเปิดใช้: (1) deploy (2) ตั้ง env ข้างบน แล้ว Restart api (3) Admin → "เข้าสู่ระบบด้วย OTP" กด "ส่ง SMS ทดสอบ" ไปที่เบอร์ตัวเองก่อน (4) กด "ซิงก์ตอนนี้" ที่ ซิงก์ ERP เพื่อให้เบอร์ `tel` และตัวทำเครื่องหมายแทนรหัสผ่าน ERP เข้าฐาน (5) ลองเข้าด้วย OTP ด้วย Staff ID ตัวเอง ก่อนบอกพนักงาน เบอร์ของบัญชีที่ซิงก์จาก ERP มาจากฟิลด์ `tel` ใน ERP ใครไม่มีเบอร์ต้องแก้ที่ ERP ย้อนกลับ: ลบ `THAIBULKSMS_API_KEY` / `THAIBULKSMS_API_SECRET` แล้ว Restart (ซิงก์ ERP รอบถัดไปคืนรหัสผ่านให้บัญชี ERP)
 
+#### Environment ของ OTP ทาง LINE (D113)
+
+| ตัวแปร | ความหมาย |
+| --- | --- |
+| `LINE_CHANNEL_ACCESS_TOKEN` | Channel access token (long-lived) ของ LINE OA **UFiconStaff** (Messaging API) ตั้งเป็น **Sensitive** ตั้งแล้ว = รหัส OTP ไปทาง LINE ก่อน ส่งไม่ได้ค่อยใช้ SMS (ถ้าตั้ง SMS ไว้) ตั้งตัวเดียวก็เปิดโหมด OTP แล้ว token ตัวนี้ UFHR / UFPOS ใช้ร่วมกัน ห้าม reissue โดยไม่บอกทีมนั้น |
+| `UFHR_API_BASE` | เช่น `https://hrm.uficon.com/api/external` ใช้ถาม LINE userId ล่าสุดจาก UFHR (`/staff-contacts`) ก่อนทุกครั้ง |
+| `UFHR_API_KEY` | key ของ SES ที่ทีม UFHR ออกให้ (UFHR ต้องเพิ่ม caller `ses` ก่อน) ตั้งเป็น **Sensitive** ไม่ตั้ง = ใช้ `line_user_id` ที่ซิงก์จาก ERP อย่างเดียว |
+| `LINE_API_URL` | ใช้เฉพาะทดสอบ (ค่าเริ่มต้น `https://api.line.me`) |
+
+ขั้นตอนเปิดใช้: (1) deploy (migration เพิ่มคอลัมน์ `Staff.lineUserId`, `LoginOtp.channel`) (2) ตั้ง `LINE_CHANNEL_ACCESS_TOKEN` แล้ว Restart api (3) กด "ซิงก์ตอนนี้" ที่ ซิงก์ ERP ให้ `line_user_id` เข้าฐาน (4) Admin → "เข้าสู่ระบบด้วย OTP" กด "ส่ง LINE ทดสอบ" ด้วย Staff ID ที่มี LINE (5) ลองเข้าระบบด้วย OTP เอง ย้อนกลับ: ลบ `LINE_CHANNEL_ACCESS_TOKEN` แล้ว Restart (กลับไปใช้ SMS ตามเดิม)
+
 #### Environment ของการเชื่อม U POS (D60, F17)
 
 | ตัวแปร | ความหมาย |

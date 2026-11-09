@@ -215,7 +215,7 @@ would send, and only once `product_sn` is indexed: without the index that query 
 `status eq 'ready'` filter did not answer in 15 s (15:47). Guards: one request at a time, 5 s, no retry, a 10-minute pause after a failure,
 a one-minute cache per serial, nothing from 5 minutes before to 30 after each warroom pull (`SERIAL_CHECK_QUIET`).
 
-**Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status,Branch_regist` (45 rows, ~0.1 s), keep `iStudio`/`U-Store`. `Branch_regist` (the branch's customer registration page) fills an empty `Branch.registrationUrl` (D114); the table also has `Branch_URL` (FileMaker WebDirect), `Branch_feedback`, `TV_URL` and a per-branch `line_token` that SES never reads.
+**Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status,Branch_regist` (45 rows, ~0.1 s), keep `iStudio`/`U-Store` (D115: staff of group `HO` also get accounts, on the SES branch coded `HO`; Huawei Store, iMedic and no-group people stay out). `Branch_regist` (the branch's customer registration page) fills an empty `Branch.registrationUrl` (D114); the table also has `Branch_URL` (FileMaker WebDirect), `Branch_feedback`, `TV_URL` and a per-branch `line_token` that SES never reads.
 Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password"`, `status`, `branch_id`, `position`, `name_first_th`, `name_last_th`,
 `_ModificationTimestamp` (never the personal/payroll fields). Run branch first, then staff. Credentials from env only:
 `ERP_ODATA_BASE_URL`, `ERP_ODATA_USER`, `ERP_ODATA_PASS` (Coolify), plus `ERP_SYNC_TIMES=10:00`. Temporarily the shared `dashboard` account, later a dedicated one.

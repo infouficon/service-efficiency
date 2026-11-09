@@ -1597,3 +1597,23 @@ Owner (WorkTrack SES-7 follow-up, 2026-11-10): the ERP users in SES are incomple
 4. **Effect (computed from the real ERP, 2026-11-10 01:32, nothing written):** accounts from the import 72 → **85**, all STAFF + STOCK; 4 of them
    have neither a mobile number nor a LINE userId (warned); 1 skipped (a branch closed in the ERP). It lands with the next scheduled import
    (10:00) or "ซิงก์ตอนนี้".
+
+## D115 — The head-office group joins the import, on the SES HO branch (2026-11-10)
+
+Owner (2026-11-10), after D114: pull more of the ERP people into SES, "เอาเฉพาะ iStudio, U-Store, HO" (not Huawei Store). On 2026-11-10 the ERP had
+220 active people: iStudio 72, U-Store 18, HO 77, Huawei Store 14, iMedic 14, no group 25.
+
+1. **Scope.** The import now covers three ERP `branch_group`s: iStudio and U-Store (their branches are SES branches, D53) and **HO**. Huawei Store,
+   iMedic and people with no group stay out, as before.
+2. **Where HO people go.** SES keeps one hand-made branch with code `HO` (สำนักงานใหญ่). Every active ERP person whose `staff.branch_group` is `HO`
+   (their ERP branch is not an imported one) gets an account on that branch, STAFF + STOCK like everybody (D106/D114), no matter the position.
+   Nothing else about them is special: OTP sign-in (D85/D113), name, phone and LINE from the ERP, deactivated when the ERP says they left.
+   No new SES branches are made. They see HO's own (empty) queue, never a shop's.
+3. **Safety.** There must be exactly one active SES branch coded `HO`; with none or several the run adds a branch note ("ไม่พบสาขา HO …") and the
+   HO people are neither created nor deactivated (accounts that already exist are kept as they are). A hand-made account whose id is also an ERP id
+   (for example 576, the k.mild ADMIN account) is left alone with the existing "สร้างเองใน SES จึงไม่แตะ" note: its roles and branch do not change.
+4. **Picked-by-hand people (D87)** are unchanged; a picked HO person who is taken off the list now stays as an ordinary HO person instead of being
+   deactivated.
+5. **Effect (computed from the real ERP, 2026-11-10 01:41, nothing written):** accounts from the import 85 (after D114) → **162** (85 shop + 77 HO);
+   57 active people stay out (Huawei Store 14, iMedic 14, no group 25, others 4); 12 of the 162 have neither a mobile number nor a LINE userId
+   (warned); 26 have a LINE userId. Takes effect at the next scheduled import (10:00) or "ซิงก์ตอนนี้".

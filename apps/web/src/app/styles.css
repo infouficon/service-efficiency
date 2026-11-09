@@ -4358,8 +4358,7 @@ input[aria-invalid='true'] {
   display: flex;
   gap: 8px;
 }
-.serial-scan-camera,
-.serial-scan-found {
+.serial-scan-camera {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4378,16 +4377,6 @@ input[aria-invalid='true'] {
 .serial-scan-camera {
   border-color: var(--primary-border);
   color: var(--primary-dark);
-}
-.serial-scan-found.on {
-  border: 2px solid var(--primary);
-  background: var(--primary-subtle);
-  color: var(--primary-darker);
-}
-.serial-picked-note {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-success, #0d8a72);
 }
 .camera-scan {
   position: fixed;

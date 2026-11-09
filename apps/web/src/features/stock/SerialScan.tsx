@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Camera, Check, X } from 'lucide-react';
+import { Camera, X } from 'lucide-react';
 import { Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
@@ -11,18 +11,13 @@ import { SERIAL, createWedgeReader } from './scanning';
 const canUseCamera = () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
 
 type Scan = { itemId: string; sn: string };
-/** D104: the stock data's word on one scanned serial (null: the check is off or could not answer). */
+/** D104: FileMaker's word on one scanned serial (null: the check is off, the default since D111, or could not answer). */
 type StockCheck = Extract<SerialCheck, { status: 'ok' }> | null;
-
-const asOfText = (check: Extract<SerialCheck, { status: 'ok' }>) =>
-  check.source === 'fmp'
-    ? 'FileMaker ตอนนี้'
-    : `ข้อมูลสต็อก warroom ${check.asOf ? new Date(check.asOf).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' }) : ''}`;
 
 /** D104: the little stock mark next to a saved serial. */
 function StockMark({ check }: { check: StockCheck | undefined }) {
   if (!check) return null;
-  const title = asOfText(check);
+  const title = 'FileMaker ตอนนี้';
   if (check.verdict === 'here')
     return (
       <span className="fmp-mark ok" title={`${title}: ready ที่สาขานี้`}>
@@ -35,7 +30,7 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
       : check.verdict === 'not-ready'
         ? `สถานะ ${check.stockStatus || '-'}`
         : check.verdict === 'other-model'
-          ? `รุ่นไม่ตรง${check.model ? ` (${check.model})` : ''}`
+          ? 'รุ่นไม่ตรง'
           : 'ไม่พบในสต็อก';
   return (
     <span className="fmp-mark warn" title={title}>
@@ -50,17 +45,15 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
  * the number and presses Enter. The box clears straight away and the scans are saved in order behind it, so a fast scanner
  * never types into a box still waiting for the server. A wrong scan is taken back with ×. The server checks everything again
  * (the unit is in no other open order, no repeat, not more than the quantity).
- * D102: while searching a product can also be ticked "found" without scanning; its serials are then scanned before "send".
- * D104: every saved serial is checked against the stock data (ready here / another branch / not ready / another model / not in
- * stock); it only informs, nothing waits for it.
+ * D111: there is no "found" tick any more (D102 is gone): a main product is found when all its units are scanned, and "send" needs that.
+ * D104: with `SERIAL_CHECK=fmp` every saved serial is checked against FileMaker (ready here / another branch / not ready / another
+ * model / not in stock); it only informs, nothing waits for it. D111: off by default; FileMaker checks the serials when STOCK sends.
  * D108: the phone camera can read the label (📷 on each product), and a barcode scanner works without tapping a box first: a
  * scan typed while nothing editable has the focus goes to the first product with units left.
  */
 export function SerialScan({
   session,
   badge,
-  picked,
-  onPick,
   onSaved,
   focusKey,
 }: {
@@ -69,9 +62,6 @@ export function SerialScan({
   focusKey?: number;
   /** Marks on a product row (sent back by the cashier, the new product of a swap). */
   badge?: (item: SelectionItem) => ReactNode;
-  /** D102: the products ticked "found" without (all) their scans; with `onPick`, each row gets that tick box. */
-  picked?: string[];
-  onPick?: (itemId: string) => void;
   /** The order as the server has it after each saved or removed scan. */
   onSaved: (updated: MockSession) => void;
 }) {
@@ -217,15 +207,13 @@ export function SerialScan({
       </strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
         สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบ (Mac/iPad ขึ้นต้น S, iPhone ใช้ IMEI) เครื่องสแกนยิงได้เลยไม่ต้องกดที่ช่อง
-        หรือกด 📷 ใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่
-        {onPick ? ' ยังไม่สะดวกสแกน กด "พบแล้ว" ไปก่อน แล้วสแกนให้ครบก่อนกดส่ง' : ' ต้องครบก่อนกดส่ง'}
+        หรือกด 📷 ใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่ ต้องครบทุกเครื่องก่อนกดส่ง (อุปกรณ์เสริมไม่ต้องสแกน)
       </p>
       {allDone && <span className="serial-scan-problem">{allDone}</span>}
       {items.map((item) => {
         const itemId = item.id as string;
         const remaining = left(item);
         const done = serialsLeft(item) === 0;
-        const isPicked = done || Boolean(picked?.includes(itemId));
         const problem = problems[itemId];
         const warned = (item.serials ?? []).map((serial) => checks[serial.sn]).find((check) => check && check.verdict !== 'here');
         return (
@@ -234,7 +222,7 @@ export function SerialScan({
               <strong>{itemName(item)}</strong> <span className="muted">× {item.quantity}</span>
               <span className="product-sku-chip">{item.product.sku || '—'}</span>
               {badge?.(item)}
-              <span className={`status-tag ${isPicked ? 'status-found' : 'status-searching'}`} style={{ marginLeft: 'auto' }}>
+              <span className={`status-tag ${done ? 'status-found' : 'status-searching'}`} style={{ marginLeft: 'auto' }}>
                 {done ? 'ครบแล้ว' : `สแกนแล้ว ${item.serials?.length ?? 0}/${item.quantity}`}
               </span>
             </div>
@@ -297,23 +285,8 @@ export function SerialScan({
                       กล้อง
                     </button>
                   )}
-                  {/* D102: found without scanning at the shelf (the serials are scanned before "send") */}
-                  {onPick && !done && (
-                    <button
-                      type="button"
-                      className={`serial-scan-found${isPicked ? ' on' : ''}`}
-                      aria-pressed={isPicked}
-                      onClick={() => onPick(itemId)}
-                    >
-                      <Check size={18} />
-                      พบแล้ว
-                    </button>
-                  )}
                 </div>
               </div>
-            )}
-            {onPick && !done && isPicked && (
-              <span className="serial-picked-note">พบแล้ว: สแกน SN ตอนยื่นของ (ต้องครบก่อนกดส่ง)</span>
             )}
             {cameraFor === itemId && (
               <CameraScan
@@ -334,8 +307,7 @@ export function SerialScan({
               <span className="serial-pending">
                 {warned.verdict === 'other-model'
                   ? 'SN นี้เป็นรุ่นอื่น: หยิบผิด → ลบแล้วสแกนเครื่องที่ถูกรุ่น'
-                  : 'ตามข้อมูลสต็อก เครื่องนี้ยังไม่ ready ที่สาขานี้: หยิบผิด → ลบแล้วสแกนเครื่องอื่น · เครื่องโอนมายังไม่รับโอน → แจ้งรับโอนใน FileMaker'}
-                {warned.source === 'warroom' && ' (ข้อมูล warroom อาจช้ากว่าจริงได้หลายชั่วโมง)'}
+                  : 'ตาม FileMaker เครื่องนี้ยังไม่ ready ที่สาขานี้: หยิบผิด → ลบแล้วสแกนเครื่องอื่น · เครื่องโอนมายังไม่รับโอน → แจ้งรับโอนใน FileMaker'}
               </span>
             )}
           </div>

@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PublicAccount } from '../accounts/accounts.service';
 import { erpConfigFrom, odataRows, type ErpConfig } from '../erp/erp-sync.service';
-import { withWarroom } from './warroom-sync.service';
 
 /**
  * Warroom pulls the whole stock from the ERP at these Bangkok times (erp-integration.md); a FileMaker check stays off the ERP
@@ -17,35 +16,33 @@ const CACHE_MS = 60_000;
 const FMP_TIMEOUT_MS = 5_000;
 const PAUSE_MS = 10 * 60_000;
 
-/** Where a serial is, as one source sees it. */
-type Found = { branchCode: string | null; branchName: string | null; status: string; model: string | null; upc: string | null };
+/** Where a serial is, as FileMaker sees it. */
+type Found = { branchCode: string | null; branchName: string | null; status: string; upc: string | null };
 
 export type SerialVerdict = 'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
 export type SerialCheckAnswer =
   | { status: 'off' | 'unavailable'; reason: string }
   | {
       status: 'ok';
-      source: 'warroom' | 'fmp';
-      /** How old the source's picture is (warroom's last snapshot; FileMaker: now). */
+      source: 'fmp';
+      /** When FileMaker was asked. */
       asOf: string | null;
       sn: string;
       verdict: SerialVerdict;
       branchCode?: string | null;
       branchName?: string | null;
       stockStatus?: string;
-      model?: string | null;
     };
 
 /**
- * D104: STOCK scans a serial; SES says at once whether the stock data has that very unit ready in this branch, in another branch
+ * D104: STOCK scans a serial; SES says at once whether FileMaker has that very unit ready in this branch, in another branch
  * (e.g. a transfer not received yet), not ready, under another model (a wrong pick) or not at all. It only warns: scanning and
  * sending never wait for it. One serial per question, nothing else.
  *
- * Source (`SERIAL_CHECK`): `warroom` (default) reads warroom's `mart.stock_current` (current stock only, ~88k rows; nothing reaches
- * FileMaker; up to ~3 h behind, 12.5 h overnight, so the answer carries its snapshot time). `fmp` asks the ERP's OData live for the
- * one serial; only once FileMaker has an index on `ProductStore_detail::product_sn` (without it one such query did not answer in 30 s,
- * 2026-11-05), and even then one request at a time, 5 s, no retry, a 10-minute pause after a failure, never around warroom's pulls.
- * `off` switches it off.
+ * Source (`SERIAL_CHECK`): `off` (default since D111: FileMaker's `ses` script, run when STOCK sends, is the one check; warroom is
+ * no longer asked, its picture was hours old). `fmp` asks the ERP's OData live for the one serial; only once FileMaker has an index
+ * on `ProductStore_detail::product_sn` (without it one such query did not answer in 30 s, 2026-11-05), and even then one request at
+ * a time, 5 s, no retry, a 10-minute pause after a failure, never around warroom's pulls.
  */
 @Injectable()
 export class SerialCheckService {
@@ -59,9 +56,8 @@ export class SerialCheckService {
     private readonly config: ConfigService,
   ) {}
 
-  private source(): 'warroom' | 'fmp' | 'off' {
-    const value = (this.config.get<string>('SERIAL_CHECK') ?? 'warroom').trim().toLowerCase();
-    return value === 'fmp' || value === 'off' ? value : 'warroom';
+  private enabled(): boolean {
+    return (this.config.get<string>('SERIAL_CHECK') ?? '').trim().toLowerCase() === 'fmp';
   }
 
   async check(user: PublicAccount, snRaw: string, partRaw?: string, branchCode?: string): Promise<SerialCheckAnswer> {
@@ -80,22 +76,21 @@ export class SerialCheckService {
         : null;
     if (!branch) throw new BadRequestException('ไม่พบสาขา');
 
-    const source = this.source();
-    if (source === 'off') return { status: 'off', reason: 'ไม่ได้เปิดการตรวจ SN กับสต็อก' };
+    if (!this.enabled()) return { status: 'off', reason: 'ไม่ได้เปิดการตรวจ SN กับ FileMaker (FileMaker ตรวจตอนส่ง)' };
 
     let looked: { found: Found[]; asOf: string | null };
     try {
-      looked = source === 'warroom' ? await this.fromWarroom(sn) : await this.fromFmp(sn);
+      looked = await this.fromFmp(sn);
     } catch (error) {
       return { status: 'unavailable', reason: error instanceof Error ? error.message : 'ตรวจกับสต็อกไม่ได้ตอนนี้' };
     }
 
     // the unit in this branch if the source has it there, else anywhere
     const mine = looked.found.find((f) => f.branchCode === branch.code) ?? looked.found[0];
-    const base = { status: 'ok' as const, source, asOf: looked.asOf, sn };
+    const base = { status: 'ok' as const, source: 'fmp' as const, asOf: looked.asOf, sn };
     if (!mine) return { ...base, verdict: 'not-in-stock' };
     if (part && !(await this.sameModel(part, mine)))
-      return { ...base, verdict: 'other-model', model: mine.model, branchCode: mine.branchCode };
+      return { ...base, verdict: 'other-model', branchCode: mine.branchCode };
     if (mine.branchCode !== branch.code)
       return { ...base, verdict: 'other-branch', branchCode: mine.branchCode, branchName: mine.branchName, stockStatus: mine.status };
     return mine.status.toLowerCase() === 'ready'
@@ -103,9 +98,8 @@ export class SerialCheckService {
       : { ...base, verdict: 'not-ready', stockStatus: mine.status };
   }
 
-  /** The part number scanned against the unit's model (warroom) or its barcode (FileMaker: the UPC of SES's catalog). */
+  /** The part number scanned against the unit's barcode (the UPC of SES's catalog). */
   private async sameModel(part: string, unit: Found): Promise<boolean> {
-    if (unit.model) return unit.model.toLowerCase() === part.toLowerCase();
     if (!unit.upc) return true;
     const sku = await this.prisma.productSku.findFirst({ where: { sku: part, upc: { not: null } }, select: { upc: true } });
     return !sku?.upc || sku.upc.trim() === unit.upc;
@@ -114,48 +108,6 @@ export class SerialCheckService {
   private cached(key: string) {
     const hit = this.cache.get(key);
     return hit && Date.now() - hit.at < CACHE_MS ? hit : null;
-  }
-
-  /** Warroom: one indexed-or-not lookup in a table of current stock only (tens of ms), read-only, 3 s at most. */
-  private async fromWarroom(sn: string) {
-    const key = `warroom:${sn}`;
-    const hit = this.cached(key);
-    if (hit) return hit;
-    const url = (this.config.get<string>('WARROOM_DATABASE_URL') ?? '').trim();
-    if (!url) throw new Error('ยังไม่ได้ตั้งค่า WARROOM_DATABASE_URL');
-    const out = await withWarroom(
-      url,
-      async (client) => {
-        const rows = await client.query<{ branch_code: string | null; branch_name: string | null; status: string | null; product_model: string | null }>(
-          'SELECT branch_code, branch_name, status, product_model FROM mart.stock_current WHERE upper(product_sn) = $1 LIMIT 3',
-          [sn],
-        );
-        let asOf: string | null = null;
-        try {
-          const fresh = await client.query<{ at: Date | null }>('SELECT max(snapshot_at) AS at FROM mart.stock_mv');
-          const at = fresh.rows[0]?.at;
-          asOf = at instanceof Date ? at.toISOString() : null;
-        } catch {
-          // the snapshot time is a nicety; the lookup above already answered
-        }
-        return {
-          asOf,
-          found: rows.rows.map((r) => ({
-            branchCode: r.branch_code,
-            branchName: r.branch_name,
-            status: r.status ?? '',
-            model: r.product_model,
-            upc: null,
-          })),
-        };
-      },
-      { connectMs: 3_000, statementMs: 2_000, name: 'ses-serial-check' },
-    ).catch((error: unknown) => {
-      this.log.warn(`warroom lookup failed: ${error instanceof Error ? error.name : 'error'}`);
-      throw new Error('ตรวจกับข้อมูลสต็อก (warroom) ไม่ได้ตอนนี้');
-    });
-    this.cache.set(key, { at: Date.now(), ...out });
-    return out;
   }
 
   /** FileMaker live (only with an index on product_sn): one serial, four columns, under every ERP guard. */
@@ -177,7 +129,6 @@ export class SerialCheckService {
           branchCode: b?.code ?? (u.BranchStore_id == null ? null : `#${String(u.BranchStore_id)}`),
           branchName: b?.name ?? null,
           status: String(u.status ?? ''),
-          model: null,
           upc: u.product_upc == null ? null : String(u.product_upc).trim(),
         };
       }),

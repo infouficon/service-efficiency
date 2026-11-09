@@ -82,8 +82,10 @@ const STEPS: Record<
     eventType: 'STOCK_FOUND',
     requiredRole: 'STOCK',
   },
+  // D111: straight from SEARCHING once every unit is scanned (found + send in one step); FOUND still sends (an order the customer
+  // accepted short, D73, or a screen open from before)
   send: {
-    from: 'FOUND',
+    from: ['SEARCHING', 'FOUND'],
     to: 'SENT_TO_CASHIER',
     eventType: 'STOCK_SENT_TO_CASHIER',
     requiredRole: 'STOCK',
@@ -624,24 +626,30 @@ export class SessionsService {
     // the serials STOCK scanned one by one while searching are used (checked again inside the transaction)
     const useSaved = dto.action === 'send' && dto.serials === undefined;
     const serials = dto.action === 'send' && !useSaved ? this.checkSerials(session.items, dto.serials) : [];
-    if (dto.serialsLater && !useSaved)
-      throw new BadRequestException('serialsLater is only for "send" with the serials STOCK already scanned (no list in the body)');
+    // D111: every unit leaves stock with its serial; "send with serials missing" (D103) is gone. An old screen still open may ask.
+    if (dto.serialsLater)
+      throw new BadRequestException('ต้องสแกน Serial Number ให้ครบทุกเครื่องก่อนส่ง (ไม่มี "ส่งโดย SN ยังไม่ครบ" แล้ว) กรุณารีเฟรชหน้าจอ');
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       await this.claim(tx, session.id, Prisma.sql`state IN (${Prisma.join(from)}) AND outcome IS NULL`); // H-01
       if (dto.action === 'send' && !useSaved) await this.saveSerials(tx, session, serials);
-      if (useSaved && !dto.serialsLater) await this.assertSerialsComplete(tx, session.items);
-      // D103: how many units leave without a serial (scanned in FileMaker later); kept on the event, FileMaker gets `snMissing`
-      const serialsMissing = dto.serialsLater ? await this.countMissingSerials(tx, session.items) : 0;
+      if (useSaved) await this.assertSerialsComplete(tx, session.items);
+      // D111: sent straight from SEARCHING, the goods were found when the last unit was scanned: FOUND is recorded at that real
+      // time (D101), with the shelf deduction, before the hand-over
+      const foundOnSend = dto.action === 'send' && session.state === 'SEARCHING';
+      const foundAt = foundOnSend ? await this.lastScanAt(tx, session.items, session.stockStartedAt, now) : null;
       const deducted =
-        dto.action === 'found'
+        dto.action === 'found' || foundOnSend
           ? await this.takeItemsFromShelf(tx, session.branchId, session.items)
           : undefined;
-      const metadata = {
-        ...(deducted === undefined ? {} : { deducted }),
-        ...(serialsMissing > 0 ? { serialsMissing } : {}),
+      const metadata = deducted === undefined || foundOnSend ? {} : { deducted };
+      const event = {
+        eventType: step.eventType,
+        actorStaffId: user.staffId,
+        createdAt: now,
+        ...(Object.keys(metadata).length ? { metadata } : {}),
       };
 
       const updated = await tx.customerSession.update({
@@ -649,13 +657,14 @@ export class SessionsService {
         data: {
           state: step.to,
           ...(step.timestampField ? { [step.timestampField]: now } : {}),
+          ...(foundAt ? { stockFoundAt: foundAt } : {}),
           events: {
-            create: {
-              eventType: step.eventType,
-              actorStaffId: user.staffId,
-              createdAt: now,
-              ...(Object.keys(metadata).length ? { metadata } : {}),
-            },
+            create: foundAt
+              ? [
+                  { eventType: 'STOCK_FOUND', actorStaffId: user.staffId, createdAt: foundAt, metadata: { deducted: deducted ?? 0 } },
+                  event,
+                ]
+              : event,
           },
         },
         include: sessionInclude,
@@ -746,11 +755,12 @@ export class SessionsService {
     }
   }
 
-  /** D103: the units of the order's main products that have no scanned serial. */
-  private async countMissingSerials(tx: Prisma.TransactionClient, items: { id: string; quantity: number }[]) {
-    let missing = 0;
-    for (const item of items) missing += Math.max(0, item.quantity - (await tx.sessionItemSerial.count({ where: { sessionItemId: item.id } })));
-    return missing;
+  /** D111: when the last unit of the order was scanned (never before STOCK took the job, never after now); now without serials. */
+  private async lastScanAt(tx: Prisma.TransactionClient, items: { id: string }[], startedAt: Date | null, now: Date): Promise<Date> {
+    const last = await tx.sessionItemSerial.aggregate({ where: { sessionItemId: { in: items.map((i) => i.id) } }, _max: { createdAt: true } });
+    const at = last._max.createdAt ?? now;
+    if (startedAt && at < startedAt) return startedAt;
+    return at > now ? now : at;
   }
 
   /** D95/D101: a serial number as FileMaker keeps it: trimmed, in capitals, printable ASCII without spaces, 1–64 characters. */

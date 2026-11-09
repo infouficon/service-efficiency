@@ -75,13 +75,11 @@ export function StockWorkspace({
   sessions,
   onUpdateSession,
 }: StockWorkspaceProps) {
-  const [filter, setFilter] = useState<
-    'ALL' | 'REQUESTED' | 'SEARCHING' | 'FOUND'
-  >('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'REQUESTED' | 'SEARCHING'>('ALL');
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [mobileShowDetail, setMobileShowDetail] = useState(false);
-  const [stockNote, setStockNote] = useState('');
-  const [foundSelection, setFoundSelection] = useState<string[]>([]);
+  /** The note and the accessories marked missing belong to the order they were typed on; another order starts empty. */
+  const [draft, setDraft] = useState<{ ref: string | null; note: string; missing: string[] }>({ ref: null, note: '', missing: [] });
   const [cancellingSession, setCancellingSession] =
     useState<MockSession | null>(null);
   const [error, setError] = useState('');
@@ -115,8 +113,8 @@ export function StockWorkspace({
 
   const filteredQueue = stockQueue.filter((s) => {
     if (filter === 'REQUESTED') return s.state === 'STOCK_REQUESTED';
-    if (filter === 'SEARCHING') return s.state === 'SEARCHING';
-    if (filter === 'FOUND') return s.state === 'FOUND';
+    // D111: no "found" stage any more; an order at FOUND (the customer accepted what stock had, D73) waits here to be sent
+    if (filter === 'SEARCHING') return s.state === 'SEARCHING' || s.state === 'FOUND';
     return true;
   });
 
@@ -126,87 +124,12 @@ export function StockWorkspace({
     (mobileShowDetail ? null : filteredQueue[0]) ||
     null;
 
-  const lastRejectTimestamp =
-    [...(selectedSession?.events ?? [])].reverse().find(
-      (e) => e.eventType === 'CASHIER_REJECTED',
-    )?.createdAt ?? null;
-
-  const lastItemChangeTimestamp =
-    [...(selectedSession?.events ?? [])].reverse().find(
-      (e) => e.eventType === 'ITEM_CHANGED',
-    )?.createdAt ?? null;
-
-  useEffect(() => {
-    if (!selectedSession) {
-      setFoundSelection([]);
-      setStockNote('');
-      return;
-    }
-    if (selectedSession.stockPendingReview) {
-      setStockNote(selectedSession.stockPendingReview.stockNote || '');
-    } else {
-      setStockNote('');
-    }
-
-    const itemChange = itemChangeNotice(selectedSession);
-    const reject = cashierRejectNotice(selectedSession);
-
-    if (itemChange) {
-      if (itemChange.changedByRole === 'CASHIER') {
-        // D78/D82: Pre-select items that were not changed only when the change comes from Cashier
-        const preSelected: string[] = [];
-        for (const item of selectedSession.selection.items) {
-          const itemId = item.id ?? item.product.id;
-          const isNewItem =
-            item.product.id === itemChange.newSkuId ||
-            item.product.sku === itemChange.newSku;
-          if (!isNewItem) {
-            preSelected.push(itemId);
-          }
-        }
-        Object.entries(selectedSession.selection.accessories).forEach(([name]) => {
-          preSelected.push(name);
-        });
-        setFoundSelection(preSelected);
-      } else {
-        setFoundSelection([]);
-      }
-    } else if (reject && (reject.wrongItemIds?.length || reject.wrongItems?.length)) {
-      const wrongIds = new Set(reject.wrongItemIds ?? []);
-      const wrongNames = new Set(reject.wrongItems ?? []);
-      const preSelected: string[] = [];
-
-      for (const item of selectedSession.selection.items) {
-        const itemId = item.id ?? item.product.id;
-        const label = itemLabel(item);
-        const isWrong =
-          wrongIds.has(itemId) ||
-          wrongNames.has(label) ||
-          [...wrongNames].some((w) => w.startsWith(label));
-        if (!isWrong) {
-          preSelected.push(itemId);
-        }
-      }
-
-      Object.entries(selectedSession.selection.accessories).forEach(
-        ([name, qty]) => {
-          const label = `${name} (x${qty})`;
-          const isWrong =
-            wrongIds.has(name) ||
-            wrongNames.has(label) ||
-            wrongNames.has(name) ||
-            [...wrongNames].some((w) => w.startsWith(label) || w.startsWith(name));
-          if (!isWrong) {
-            preSelected.push(name);
-          }
-        },
-      );
-
-      setFoundSelection(preSelected);
-    } else {
-      setFoundSelection([]);
-    }
-  }, [selectedSession?.id, selectedSession?.state, lastRejectTimestamp, lastItemChangeTimestamp]);
+  const ownDraft = draft.ref !== null && draft.ref === selectedSession?.reference;
+  const stockNote = ownDraft ? draft.note : '';
+  const missingAccessories = ownDraft ? draft.missing : [];
+  const setStockNote = (note: string) =>
+    setDraft({ ref: selectedSession?.reference ?? null, note, missing: missingAccessories });
+  const clearDraft = () => setDraft({ ref: null, note: '', missing: [] });
 
   // F12: every cancel after the stock request that stock has not acknowledged, whatever day it was (not only today)
   const cancelledAlertSessions = sessions.filter(
@@ -230,22 +153,15 @@ export function StockWorkspace({
   };
 
   const [sending, setSending] = useState(false);
-  /** D103: the order whose "send without all serials" waits for STOCK to confirm. */
-  const [confirmLater, setConfirmLater] = useState<string | null>(null);
-  const handleAction = async (
-    session: MockSession,
-    action: 'search' | 'found' | 'send',
-    options: { serialsLater?: boolean } = {},
-  ) => {
+  const handleAction = async (session: MockSession, action: 'search' | 'found' | 'send') => {
     setError('');
     setSuccessMessage('');
     if (session.id) {
       setSending(true);
       try {
-        const updated = await advanceStepApi(session.id, action, options);
+        const updated = await advanceStepApi(session.id, action);
         onUpdateSession(updated);
-        setFoundSelection([]);
-        setStockNote('');
+        clearDraft();
         return;
       } catch (err: unknown) {
         console.error('Failed to advance stock step:', err);
@@ -261,42 +177,22 @@ export function StockWorkspace({
       ...updated,
       stockPendingReview: undefined,
     });
-    setFoundSelection([]);
-    setStockNote('');
+    clearDraft();
   };
 
-  /** D101/D102: a main product is found once all its units are scanned or it is ticked "found" (scanned later, before "send"). */
-  const itemFound = (item: SelectionItem, selection: string[]) =>
-    !item.id || serialsLeft(item) === 0 || selection.includes(item.id);
+  /** D111: a main product is found when all its units are scanned; there is no "found" tick. Units still to scan in the order. */
+  const unitsLeft = (session: MockSession) =>
+    session.selection.items.reduce((sum, item) => sum + (item.id ? serialsLeft(item) : 0), 0);
 
-  /** Every main product found and every accessory ticked. */
-  const allFound = (session: MockSession, selection: string[]) => {
-    const accessories = Object.keys(session.selection.accessories);
-    return (
-      session.selection.items.length + accessories.length > 0 &&
-      session.selection.items.every((item) => itemFound(item, selection)) &&
-      accessories.every((name) => selection.includes(name))
-    );
+  /** D111: accessories have no serial and never hold up "send"; STOCK marks one missing only to report it. */
+  const toggleMissingAccessory = (session: MockSession, name: string) => {
+    const missing = missingAccessories.includes(name)
+      ? missingAccessories.filter((one) => one !== name)
+      : [...missingAccessories, name];
+    setDraft({ ref: session.reference, note: stockNote, missing });
   };
 
-  /**
-   * D101: the moment the last unit is scanned (or the last product or accessory ticked) is the moment STOCK found everything, so FOUND is
-   * recorded then, without another tap; stock_found_at is the real time. Not while a step is on its way (the server refuses a
-   * second one anyway); the "found" button stays for a retry when it fails.
-   */
-  const recordFoundIfComplete = (session: MockSession, selection: string[]) => {
-    if (sending || !session.id || session.state !== 'SEARCHING' || session.stockPendingReview) return;
-    if (allFound(session, selection)) void handleAction(session, 'found');
-  };
-
-  /** Ticks a main product (by item id, D102) or an accessory (by name) found, or takes the tick back. */
-  const toggleFound = (session: MockSession, key: string) => {
-    const next = foundSelection.includes(key) ? foundSelection.filter((one) => one !== key) : [...foundSelection, key];
-    setFoundSelection(next);
-    recordFoundIfComplete(session, next);
-  };
-
-  /** F3/D101/D102: a main product counts as found once scanned or ticked; the rest are reported by id, accessories by name. */
+  /** F3/D111: a main product not fully scanned is missing (reported by id); accessories marked missing are reported by name. */
   const handleSendToStaff = async (session: MockSession) => {
     setError('');
     if (!session.id) return;
@@ -305,7 +201,7 @@ export function StockWorkspace({
     const foundNames: string[] = [];
 
     for (const item of session.selection.items) {
-      if (item.id && itemFound(item, foundSelection)) {
+      if (item.id && serialsLeft(item) === 0) {
         foundNames.push(itemLabel(item));
       } else {
         missingItems.push(itemLabel(item));
@@ -314,10 +210,10 @@ export function StockWorkspace({
     }
 
     Object.entries(session.selection.accessories).forEach(([acc, qty]) => {
-      if (foundSelection.includes(acc)) {
-        foundNames.push(`${acc} (x${qty})`);
-      } else {
+      if (missingAccessories.includes(acc)) {
         missingItems.push(`${acc} (x${qty})`);
+      } else {
+        foundNames.push(`${acc} (x${qty})`);
       }
     });
 
@@ -337,8 +233,7 @@ export function StockWorkspace({
       onUpdateSession(updated);
       setSelectedRef(null);
       setMobileShowDetail(false);
-      setFoundSelection([]);
-      setStockNote('');
+      clearDraft();
       setSuccessMessage(
         `ส่งเรื่องให้ Staff เรียบร้อยแล้ว (คิว ${session.queue || session.reference} ถูกส่งกลับไปให้ Staff ดำเนินการต่อ)`,
       );
@@ -405,10 +300,6 @@ export function StockWorkspace({
           <span className="stat-badge active">
             กำลังค้นหา:{' '}
             {stockQueue.filter((s) => s.state === 'SEARCHING').length}
-          </span>
-          <span className="stat-badge ready">
-            พร้อมส่งแคชเชียร์:{' '}
-            {stockQueue.filter((s) => s.state === 'FOUND').length}
           </span>
         </div>
       </div>
@@ -537,13 +428,7 @@ export function StockWorkspace({
                 onClick={() => setFilter('SEARCHING')}
               >
                 กำลังหา (
-                {stockQueue.filter((s) => s.state === 'SEARCHING').length})
-              </button>
-              <button
-                className={`tab-btn ${filter === 'FOUND' ? 'active' : ''}`}
-                onClick={() => setFilter('FOUND')}
-              >
-                พบแล้ว ({stockQueue.filter((s) => s.state === 'FOUND').length})
+                {stockQueue.filter((s) => s.state === 'SEARCHING' || s.state === 'FOUND').length})
               </button>
             </div>
 
@@ -600,7 +485,7 @@ export function StockWorkspace({
                         >
                           {s.state === 'STOCK_REQUESTED' && 'รอค้นหา'}
                           {s.state === 'SEARCHING' && 'กำลังค้นหา'}
-                          {s.state === 'FOUND' && 'พบสินค้าแล้ว'}
+                          {s.state === 'FOUND' && 'รอส่ง'}
                         </span>
                       )}
                     </div>
@@ -775,7 +660,7 @@ export function StockWorkspace({
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Search size={16} />
-                        กำลังค้นหา: สแกน SN เครื่องที่หยิบจริง หรือติ๊ก "พบแล้ว" ครบเมื่อไรระบบบันทึก "พบ" เอง
+                        กำลังค้นหา: สแกน SN สินค้าหลักทุกเครื่อง แล้วกด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของ (อุปกรณ์เสริมไม่ต้องสแกน)
                       </span>
                     </Notice>
                   )}
@@ -784,8 +669,8 @@ export function StockWorkspace({
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Check size={16} />
                         {serialsComplete(selectedSession)
-                          ? 'พบสินค้าครบแล้ว — กด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของให้แคชเชียร์'
-                          : 'พบสินค้าครบแล้ว — สแกน SN ให้ครบ แล้วกด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของ (สแกนไม่ได้: "ส่งโดย SN ยังไม่ครบ")'}
+                          ? 'รอส่ง — กด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของให้แคชเชียร์'
+                          : 'รอส่ง — สแกน SN ให้ครบทุกเครื่อง แล้วกด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของ'}
                       </span>
                     </Notice>
                   )}
@@ -954,12 +839,9 @@ export function StockWorkspace({
                   )}
 
                   {selectedSession.state === 'SEARCHING' && (() => {
-                    const accessories = Object.keys(selectedSession.selection.accessories);
-                    const totalCount = selectedSession.selection.items.length + accessories.length;
-                    const foundCount =
-                      selectedSession.selection.items.filter((item) => itemFound(item, foundSelection)).length +
-                      accessories.filter((a) => foundSelection.includes(a)).length;
-                    const isAllFound = allFound(selectedSession, foundSelection);
+                    const accessories = Object.entries(selectedSession.selection.accessories);
+                    const left = unitsLeft(selectedSession);
+                    const anyMissing = left > 0 || missingAccessories.length > 0;
                     const reject = cashierRejectNotice(selectedSession);
                     const itemChange = itemChangeNotice(selectedSession);
                     const itemBadge = (item: SelectionItem) => {
@@ -992,34 +874,28 @@ export function StockWorkspace({
                             session={selectedSession}
                             focusKey={openCount}
                             badge={itemBadge}
-                            picked={foundSelection}
-                            onPick={(itemId) => toggleFound(selectedSession, itemId)}
-                            onSaved={(updated) => {
-                              onUpdateSession(updated);
-                              recordFoundIfComplete(updated, foundSelection);
-                            }}
+                            onSaved={onUpdateSession}
                           />
                         )}
 
                         {accessories.length > 0 && (
                           <div style={{ marginTop: '12px' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#496357' }}>
-                              ติ๊กอุปกรณ์เสริมที่หยิบแล้ว (ชิ้นที่ไม่ได้ติ๊ก จะถือว่าไม่พบ/ของขาด):
+                              อุปกรณ์เสริมที่ต้องหยิบ (ไม่ต้องสแกน SN ไม่ต้องติ๊ก · ของไม่มีเท่านั้น ติ๊ก "ขาด/หมด" แล้วกดแจ้ง Staff):
                             </h4>
                             <div className="accessory-list">
-                              {Object.entries(selectedSession.selection.accessories).map(([name, qty]) => {
-                                const isFound = foundSelection.includes(name);
+                              {accessories.map(([name, qty]) => {
+                                const isMissing = missingAccessories.includes(name);
                                 const wrongBadge =
                                   getWrongItemBadgeText(reject, name, `${name} (x${qty})`) ||
                                   getWrongItemBadgeText(reject, name, name);
                                 return (
                                   <div
                                     key={name}
-                                    className={`accessory-item ${isFound ? '' : 'out-of-stock-item'}`}
-                                    style={wrongBadge && !isFound ? { borderColor: '#ef4444', backgroundColor: '#fff5f5' } : undefined}
+                                    className={`accessory-item ${isMissing ? 'out-of-stock-item' : ''}`}
+                                    style={wrongBadge ? { borderColor: '#ef4444', backgroundColor: '#fff5f5' } : undefined}
                                   >
-                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
-                                      <input type="checkbox" checked={isFound} onChange={() => toggleFound(selectedSession, name)} />
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                       <span>
                                         <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน: {qty} ชิ้น)
                                       </span>
@@ -1028,13 +904,18 @@ export function StockWorkspace({
                                           {wrongBadge}
                                         </span>
                                       )}
-                                      <span
-                                        className={`status-tag ${isFound ? 'status-found' : 'status-searching'}`}
-                                        style={{ marginLeft: 'auto' }}
+                                      {/* D111: the box only marks a missing accessory for the report; picking needs no tick */}
+                                      <label
+                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', margin: '0 0 0 auto', fontWeight: 600, color: isMissing ? '#b91c1c' : '#496357' }}
                                       >
-                                        {isFound ? 'พบแล้ว' : 'ยังไม่พบ'}
-                                      </span>
-                                    </label>
+                                        <input
+                                          type="checkbox"
+                                          checked={isMissing}
+                                          onChange={() => toggleMissingAccessory(selectedSession, name)}
+                                        />
+                                        ขาด/หมด
+                                      </label>
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -1042,22 +923,11 @@ export function StockWorkspace({
                           </div>
                         )}
 
-                        <p className="muted" style={{ margin: '12px 0 0', fontSize: '12px' }}>
-                          * สแกนหรือติ๊ก "พบแล้ว" ครบทุกรายการ{accessories.length > 0 ? 'และติ๊กอุปกรณ์เสริมครบ' : ''} ระบบบันทึก "พบสินค้า"
-                          ให้เองตามเวลาที่หยิบชิ้นสุดท้าย ถ้าของไม่มี กด "แจ้งสินค้าไม่ครบ/หมด"
-                        </p>
-
-                        <div className={`stock-note-section ${isAllFound ? '' : 'has-missing'}`}>
+                        <div className={`stock-note-section ${missingAccessories.length > 0 ? 'has-missing' : ''}`}>
                           <label>
-                            {isAllFound
-                              ? 'หมายเหตุเพิ่มเติม (ถ้ามี)'
-                              : 'หมายเหตุการค้นหา / รายละเอียดสินค้าที่ไม่พบ (Note)'}
+                            หมายเหตุ (ถ้ามี) / รายละเอียดสินค้าที่ไม่พบ
                             <input
-                              placeholder={
-                                isAllFound
-                                  ? 'ระบุหมายเหตุเพิ่มเติม (ถ้ามี)'
-                                  : 'ระบุสาเหตุ เช่น สินค้าหมดสต็อก, ชำรุด, รอเติมของ'
-                              }
+                              placeholder="เช่น สินค้าหมดสต็อก, ชำรุด, รอเติมของ"
                               value={stockNote}
                               onChange={(e) => setStockNote(e.target.value)}
                             />
@@ -1065,15 +935,31 @@ export function StockWorkspace({
                         </div>
 
                         <div className="actions" style={{ marginTop: '16px' }}>
-                          {isAllFound ? (
-                            // normally recorded on its own after the last scan; this is for a retry, or an order coming back complete
-                            <Button disabled={sending} onClick={() => handleAction(selectedSession, 'found')}>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                <Check size={16} />
-                                {sending ? 'กำลังบันทึกพบสินค้า…' : `พบสินค้าครบ (${foundCount}/${totalCount}) → บันทึก FOUND`}
-                              </span>
-                            </Button>
-                          ) : (
+                          {/* D111: one tap at the hand-over: found (time of the last scan) + send + FileMaker's script */}
+                          <Button
+                            disabled={sending || left > 0 || missingAccessories.length > 0}
+                            onClick={() => handleAction(selectedSession, 'send')}
+                          >
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              {left > 0 ? (
+                                <>
+                                  <ScanLine size={16} />
+                                  สแกน SN อีก {left} เครื่อง
+                                </>
+                              ) : missingAccessories.length > 0 ? (
+                                <>
+                                  <AlertTriangle size={16} />
+                                  ติ๊ก "ขาด/หมด" อยู่: แจ้ง Staff หรือเอาติ๊กออก
+                                </>
+                              ) : (
+                                <>
+                                  <Send size={16} />
+                                  {sending ? 'กำลังส่ง…' : 'ส่งให้แคชเชียร์ (U POS)'}
+                                </>
+                              )}
+                            </span>
+                          </Button>
+                          {anyMissing && (
                             <Button variant="secondary" onClick={() => handleSendToStaff(selectedSession)}>
                               <span
                                 style={{
@@ -1085,7 +971,7 @@ export function StockWorkspace({
                                 }}
                               >
                                 <AlertTriangle size={16} />
-                                แจ้งสินค้าไม่ครบ/หมด ({foundCount}/{totalCount}) → ส่งเรื่องให้ Staff
+                                แจ้งสินค้าไม่ครบ/หมด → ส่งเรื่องให้ Staff
                               </span>
                             </Button>
                           )}
@@ -1099,7 +985,6 @@ export function StockWorkspace({
 
                   {selectedSession.state === 'FOUND' && (() => {
                     const missing = selectedSession.selection.items.reduce((sum, item) => sum + (item.id ? serialsLeft(item) : 0), 0);
-                    const asking = missing > 0 && confirmLater === selectedSession.id;
                     return (
                       <>
                         {/* D101: the serials are already saved; they can still be fixed until the goods leave stock */}
@@ -1123,40 +1008,10 @@ export function StockWorkspace({
                               )}
                             </span>
                           </Button>
-                          {missing > 0 && !asking && (
-                            // D103: the unit is here but has no serial FileMaker accepts yet (e.g. a transfer not received)
-                            <Button variant="secondary" disabled={sending} onClick={() => setConfirmLater(selectedSession.id ?? null)}>
-                              ส่งโดย SN ยังไม่ครบ ({missing} เครื่อง)
-                            </Button>
-                          )}
                           <Button variant="danger" onClick={() => setCancellingSession(selectedSession)}>
                             ลูกค้ายกเลิก
                           </Button>
                         </div>
-                        {asking && (
-                          <div className="stock-note-section has-missing" role="alert">
-                            <strong>ส่งไปแคชเชียร์โดยยังไม่มี SN {missing} เครื่อง?</strong>
-                            <p style={{ margin: '4px 0 10px' }}>
-                              ใช้เมื่อเครื่องอยู่ที่ร้านจริง แต่สแกนไม่ได้หรือ FileMaker ยังไม่อัปเดต (เช่น สินค้าโอนมายังไม่ได้รับโอน) บิลพักใน
-                              FileMaker จะมีเฉพาะเครื่องที่มี SN เครื่องที่ไม่มี SN แคชเชียร์สแกนขายเพิ่มในบิลตามปกติ (เครื่องที่โอนมา: รับโอนใน
-                              FileMaker ก่อน)
-                            </p>
-                            <div className="actions">
-                              <Button
-                                disabled={sending}
-                                onClick={() => {
-                                  setConfirmLater(null);
-                                  void handleAction(selectedSession, 'send', { serialsLater: true });
-                                }}
-                              >
-                                ยืนยัน ส่งโดย SN ยังไม่ครบ
-                              </Button>
-                              <Button variant="secondary" onClick={() => setConfirmLater(null)}>
-                                กลับไปสแกน
-                              </Button>
-                            </div>
-                          </div>
-                        )}
                       </>
                     );
                   })()}

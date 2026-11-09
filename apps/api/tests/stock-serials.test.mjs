@@ -110,7 +110,7 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
       clash[1].sn[0] = snOf(12).toLowerCase(); // the unit first holds, typed in lower case
       const res = await send(other, clash);
       assert.equal(res.status, 409, JSON.stringify(res.data));
-      assert.match(res.data.message, new RegExp(`${snOf(12)}.*${first.queue ?? first.queueLetter}`, 'i'));
+      assert.match(res.data.message, new RegExp(`${snOf(12)}.*${String(first.queueNo).padStart(3, '0')}`, 'i'), 'D110: the queue without a letter');
       assert.equal(await stateOf(other), 'FOUND');
       assert.equal(await stored(other), 0, 'nothing saved by a refused send');
 

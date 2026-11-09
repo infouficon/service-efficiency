@@ -1483,3 +1483,30 @@ Owner instruction via `/grill-me`: "แก้ไขการแสดงคิ�
 3. **Queue Lookup & Search:**
    - Session lookup / POS filter accepts both padded (e.g. `001`) and unpadded digits (e.g. `1`), matching against `order.queue`.
 
+
+## D111 — Scan every unit, then send: no "found" stage, no send without serials; FileMaker is the one serial check (2026-11-09)
+
+Owner, WorkTrack SES-7 "ระบบส่ง SN บังคับกรอก + ส่งเช็ค FMP": "แก้หน้า stock เวลาส่งให้ส่ง SN ไปเลยแล้วเช็ค FMP ขาเดียว"; asked to choose, he took
+"SN required + FileMaker checks once" over a live FileMaker check per scan (blocked on FileMaker's missing index, D104) and over keeping D103's button.
+Amends D101 (FOUND by itself), D102 (the "found" tick), D103 and D104.
+
+1. **SN required.** "ส่งโดย SN ยังไม่ครบ" (D103) is gone from the stock screen. `send` needs every main-product unit scanned (400
+   "สแกน Serial Number แล้ว n จาก q เครื่อง" as D101). `{action:'send', serialsLater:true}` is refused with a Thai 400 asking to scan all
+   and refresh (the field stays in the DTO only for a screen left open from before). Ticking "พบแล้ว" without scanning (D102) is unchanged:
+   the serials are still due before "send".
+2. **One check, at FileMaker.** The per-scan serial check no longer reads warroom (hours behind, so its yellow marks misled). `SERIAL_CHECK`
+   is off by default; `fmp` (live FileMaker, D104) stays possible once the FMP team indexes `ProductStore_detail::product_sn`; any other value
+   is off. FileMaker's `ses` script checks every serial when STOCK sends and its answer shows on the order (D100).
+3. **Unchanged.** SES's own guards stay: a serial repeated in the order (400) or in another open order (409). The `ses` v3.1 script still leaves
+   out a unit FileMaker does not have in the branch yet (`SN_NOT_FOUND`, `SN_WRONG_BRANCH`, `SN_NOT_READY_FOR_SALE`, e.g. a transfer not
+   received): `CREATED_SN_LATER`, the cashier scans it in. `items[].snMissing` stays in the message and is 0 on new orders.
+4. **No "found" stage (owner, same day: "เราจะไม่มีการ พบแล้ว จะเป็นการส่งไปแล้วรัน script ของ fmp แล้วก็บังคับกรอก").** The stock flow is
+   "รับงาน" → scan every main-product unit → "ส่งให้แคชเชียร์ (U POS)". The "พบแล้ว" tick (D102), the automatic FOUND on the last scan and the
+   "พบสินค้าครบ → บันทึก FOUND" button (D101) are gone, and the "พบแล้ว" queue tab with them. `send` now also runs from SEARCHING and does in
+   one transaction what `found` did: the shelf deduction (D61) and `stockFoundAt` = the time the last unit was scanned (D101's real time, kept
+   between `stockStartedAt` and now; a STOCK_FOUND event at that time), then SENT_TO_CASHIER and the FileMaker message (its `ses` script checks
+   the serials and opens the held bill). An order at FOUND (the customer accepted what stock had, D73, or one from before) is listed under
+   "กำลังหา" as "รอส่ง" and is sent the same way; the `found` step stays in the API for a screen open from before.
+5. **Accessories skip the serial (owner: "อุปกรณ์เสริม บางครั้งอยู่หน้าร้าน in store stock อาจจะยิงไม่ได้ … Part นี้ข้าม SN").** They are listed
+   for STOCK to pick and never hold up "send". STOCK ticks one "ขาด/หมด" only to report it ("แจ้งสินค้าไม่ครบ/หมด"); a main product not fully
+   scanned counts as missing in that report, as before.

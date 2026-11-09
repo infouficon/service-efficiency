@@ -198,7 +198,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.deepEqual(sentAccessories, [], 'FileMaker gets no accessory lines (its script refuses them; the shop adds them by hand)');
       assert.deepEqual(accessoriesForCashier, doorAccessories, 'they are still there to read');
       assert.deepEqual(accessoriesForCashier, [{ name: 'Case', quantity: 1 }]);
-      assert.match(order.queue, /^[A-Z]\d{3,4}$/);
+      assert.match(order.queue, /^\d{3,4}$/, 'D110: digits only');
       assert.equal(order.items.length, 2);
       assert.equal(order.items[0].quantity, 2);
       assert.deepEqual(order.payments.sort(), ['Cash', 'Transfer']);

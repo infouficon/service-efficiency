@@ -86,8 +86,8 @@ export class AdvanceStepDto {
   serials?: StepSerialsDto[];
 
   /**
-   * D103: for `send` with the saved serials: send even when some units have no serial yet (the unit is in the shop but FileMaker
-   * does not have it here yet, e.g. a transfer not received). The missing ones are scanned in FileMaker later.
+   * Retired by D111 (was D103 "send with serials missing"): always refused with a Thai message. Kept in the DTO only so a stock
+   * screen left open from before the change gets that message instead of the validator's "property should not exist".
    */
   @IsOptional()
   @IsBoolean()

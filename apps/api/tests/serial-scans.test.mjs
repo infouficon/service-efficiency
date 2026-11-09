@@ -114,34 +114,35 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
       assert.equal(itemOf(changed.data, skuA).serials.length, 1);
     });
 
-    await t.test('"scan later": STOCK sends with units still missing their serial; the event and FileMaker say how many (D103)', async () => {
+    await t.test('every unit needs its serial; "scan later" is gone; sent straight from SEARCHING, FOUND is the last scan (D111)', async () => {
       const s = await toSearching();
       await step(s, 'search');
-      const a1 = sn();
-      await scan(s, itemOf(s, skuA), a1);
-      await step(s, 'found');
-      assert.equal((await step(s, 'send')).status, 400, 'without serialsLater an incomplete set is refused');
-      assert.equal((await step(s, 'send', { serialsLater: true, serials: [] })).status, 400, 'not with a list');
-      assert.equal((await step(s, 'search', { serialsLater: true })).status, 400, 'only for send');
-      const sent = await step(s, 'send', { serialsLater: true });
+      await scan(s, itemOf(s, skuA), sn());
+      assert.equal((await step(s, 'send')).status, 400, 'an incomplete set is refused');
+      const later = await step(s, 'send', { serialsLater: true });
+      assert.equal(later.status, 400, 'an old screen asking to send with serials missing is refused');
+      assert.match(later.data.message, /ครบทุกเครื่อง/);
+      assert.equal((await step(s, 'search', { serialsLater: true })).status, 400);
+      assert.equal((await db.customerSession.findUnique({ where: { id: s.id } })).state, 'SEARCHING', 'nothing moved');
+      // complete serials: one tap sends from SEARCHING; FOUND is recorded at the moment the last unit was scanned
+      await scan(s, itemOf(s, skuA), sn());
+      await scan(s, itemOf(s, skuB), sn());
+      const last = await db.sessionItemSerial.aggregate({ where: { item: { sessionId: s.id } }, _max: { createdAt: true } });
+      const sent = await step(s, 'send');
       assert.equal(sent.status, 201, JSON.stringify(sent.data));
       assert.equal(sent.data.state, 'SENT_TO_CASHIER');
-      const ev = await db.sessionEvent.findFirst({ where: { sessionId: s.id, eventType: 'STOCK_SENT_TO_CASHIER' } });
-      assert.deepEqual(ev.metadata, { serialsMissing: 2 }, 'A: 1 of 2, B: 0 of 1');
-      // the FileMaker message is the same order view the POS door serves (one function, D88)
+      const row = await db.customerSession.findUnique({ where: { id: s.id } });
+      assert.equal(row.stockFoundAt.toISOString(), last._max.createdAt.toISOString(), 'found = the last scan, not the hand-over');
+      const events = await db.sessionEvent.findMany({
+        where: { sessionId: s.id, eventType: { in: ['STOCK_FOUND', 'STOCK_SENT_TO_CASHIER'] } },
+        orderBy: { createdAt: 'asc' },
+      });
+      assert.deepEqual(events.map((e) => e.eventType), ['STOCK_FOUND', 'STOCK_SENT_TO_CASHIER']);
+      assert.equal(typeof events[0].metadata.deducted, 'number', 'the shelf deduction is on the FOUND event');
+      assert.equal(events[1].metadata, null);
       const door = await fetch(`${base}/api/integrations/pos/orders?branch=${encodeURIComponent(sent.data.branch.code)}`, { headers: { Authorization: `Bearer ${POS_KEY}` } }).then((r) => r.json());
       const items = door.orders.find((o) => o.reference === s.reference).items;
-      const a = items.find((i) => i.partNo === skuA.sku);
-      assert.deepEqual([a.sn, a.snMissing], [[a1], 1]);
-      assert.equal(items.find((i) => i.partNo === skuB.sku).snMissing, 1);
-      // complete serials with serialsLater: nothing is missing, nothing is noted
-      const full = await toSearching();
-      await step(full, 'search');
-      for (const [sku, n] of [[skuA, 2], [skuB, 1]]) for (let k = 0; k < n; k++) await scan(full, itemOf(full, sku), sn());
-      await step(full, 'found');
-      assert.equal((await step(full, 'send', { serialsLater: true })).status, 201);
-      const ev2 = await db.sessionEvent.findFirst({ where: { sessionId: full.id, eventType: 'STOCK_SENT_TO_CASHIER' } });
-      assert.equal(ev2.metadata, null);
+      assert.deepEqual(items.map((i) => i.snMissing), [0, 0]);
     });
 
     await t.test('the POS closes the sale with its real time: bill and payment in one call or two, repeats are fine (D101)', async () => {

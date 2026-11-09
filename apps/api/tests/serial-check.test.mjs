@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, test } from 'node:test';
-import pg from 'pg';
 import { cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
 
-const PG_URL = process.env.WARROOM_TEST_PG_URL ?? 'postgres://postgres@127.0.0.1:5498/warroom_stub';
-process.env.WARROOM_SYNC_MINUTES = '0'; // no background sync against the stub while this test runs
+process.env.WARROOM_SYNC_MINUTES = '0'; // no background warroom sync while this test runs
 process.env.ERP_SYNC_TIMES = ''; // no scheduled ERP import against the fake below
 process.env.SERIAL_CHECK_QUIET = ''; // the warroom windows are tested on their own
 
@@ -39,22 +37,9 @@ test('FileMaker is left alone around warroom pulls: 5 minutes before to 30 after
   assert.equal(quietWindow(at('15:15'), ''), null);
 });
 
-test('one scanned serial against the stock: warroom by default, FileMaker live when switched to it (D104)', async (t) => {
-  const url = new URL(PG_URL);
-  if (!['127.0.0.1', 'localhost'].includes(url.hostname) || url.pathname !== '/warroom_stub')
-    throw new Error('the Postgres stub must be a local database named warroom_stub');
-  const stub = new pg.Client({ connectionString: PG_URL, connectionTimeoutMillis: 3000 });
-  try {
-    await stub.connect();
-  } catch {
-    t.skip('Postgres stub (warroom) not reachable, skipping');
-    return;
-  }
+test('one scanned serial: off by default (FileMaker checks at send), FileMaker live when switched to it (D104, D111)', async (t) => {
   const ctx = await startApi(t);
-  if (!ctx) {
-    await stub.end();
-    return;
-  }
+  if (!ctx) return;
   const { db, request } = ctx;
   let world;
   try {
@@ -64,16 +49,6 @@ test('one scanned serial against the stock: warroom by default, FileMaker live w
     const ask = (query, who = 'stock') => request(`/stock/serial-check?${new URLSearchParams(query)}`, 'GET', undefined, cookies[who]);
     const tag = prefix.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
     const sn = (n) => `${tag}SN${n}`;
-    process.env.WARROOM_DATABASE_URL = PG_URL;
-    await stub.query(`CREATE SCHEMA IF NOT EXISTS mart; DROP TABLE IF EXISTS mart.stock_current; DROP TABLE IF EXISTS mart.stock_mv;
-      CREATE TABLE mart.stock_mv (snapshot_at timestamptz); CREATE TABLE mart.stock_current (product_sn text, status text, branch_code text, branch_name text, product_model text);`);
-    await stub.query(`INSERT INTO mart.stock_mv VALUES ('2026-11-05T08:31:00Z')`);
-    const unit = (s, status, branch, model = sku.sku) =>
-      stub.query('INSERT INTO mart.stock_current VALUES ($1, $2, $3, $4, $5)', [s, status, branch.code ?? branch, branch.name ?? 'ไกลออกไป', model]);
-    await unit(sn(1), 'ready', branches.a);
-    await unit(sn(2).toLowerCase(), 'ready', branches.b);
-    await unit(sn(3), 'transfer', branches.a);
-    await unit(sn(4), 'ready', branches.a, 'OTHER/A');
 
     await t.test('only STOCK, STAFF and ADMIN; a serial is required and checked', async () => {
       assert.equal((await ask({ sn: sn(1) }, 'manager')).status, 403);
@@ -82,24 +57,15 @@ test('one scanned serial against the stock: warroom by default, FileMaker live w
       assert.equal((await ask({ sn: sn(1), part: "x' or 1" })).status, 400);
     });
 
-    await t.test('warroom: here, in another branch, not ready, another model, not in stock; with the snapshot time', async () => {
-      const here = await ask({ sn: sn(1).toLowerCase(), part: sku.sku });
-      assert.equal(here.status, 200, JSON.stringify(here.data));
-      assert.deepEqual(here.data, { status: 'ok', source: 'warroom', asOf: '2026-11-05T08:31:00.000Z', sn: sn(1), verdict: 'here' });
-      const moved = (await ask({ sn: sn(2), part: sku.sku })).data;
-      assert.deepEqual([moved.verdict, moved.branchCode, moved.branchName], ['other-branch', branches.b.code, branches.b.name]);
-      assert.deepEqual([(await ask({ sn: sn(3) })).data.verdict, (await ask({ sn: sn(3) })).data.stockStatus], ['not-ready', 'transfer']);
-      const wrong = (await ask({ sn: sn(4), part: sku.sku })).data;
-      assert.deepEqual([wrong.verdict, wrong.model], ['other-model', 'OTHER/A']);
-      assert.equal((await ask({ sn: sn(9) })).data.verdict, 'not-in-stock');
-      assert.equal(seen.length, 0, 'FileMaker is never asked in warroom mode');
-    });
-
-    await t.test('switched off: it says so', async () => {
-      process.env.SERIAL_CHECK = 'off';
-      const res = await ask({ sn: sn(1) });
+    await t.test('off unless SERIAL_CHECK=fmp; warroom is no longer a source; FileMaker is not asked', async () => {
       delete process.env.SERIAL_CHECK;
+      const res = await ask({ sn: sn(1), part: sku.sku });
+      assert.equal(res.status, 200, JSON.stringify(res.data));
       assert.equal(res.data.status, 'off');
+      process.env.SERIAL_CHECK = 'warroom';
+      assert.equal((await ask({ sn: sn(1) })).data.status, 'off', 'the old default is now off');
+      delete process.env.SERIAL_CHECK;
+      assert.equal(seen.length, 0);
     });
 
     await t.test('FileMaker live: one serial, four columns, branch by ERP id, model by the catalog UPC; cached; a failure pauses it', async () => {
@@ -129,8 +95,6 @@ test('one scanned serial against the stock: warroom by default, FileMaker live w
       delete process.env.SERIAL_CHECK;
     });
   } finally {
-    await stub.query('DROP TABLE IF EXISTS mart.stock_current; DROP TABLE IF EXISTS mart.stock_mv').catch(() => undefined);
-    await stub.end();
     await cleanup(ctx, world);
   }
 });

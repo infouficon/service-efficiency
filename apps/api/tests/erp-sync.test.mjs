@@ -110,6 +110,53 @@ test('staff eligibility: active, in an imported branch, has password and a mappe
   );
 });
 
+test('people of the ERP head-office group go to the SES HO branch; Huawei Store, iMedic and people with no group stay out (D115)', () => {
+  const branches = [{ erpBranchId: 1, code: 'A1', name: 'A1', phone: '', active: true, registrationUrl: null }];
+  const row = (id, o = {}) => ({
+    staff_id: id,
+    'user name': String(id),
+    'user password': `pw${id}`,
+    status: 'active',
+    branch_id: 11,
+    branch_group: 'HO',
+    position: 'Area Manager',
+    name_first_th: 'ก',
+    name_last_th: 'ข',
+    tel: '0812345678',
+    ...o,
+  });
+  const rows = [
+    row(1),
+    row(2, { position: null }),
+    row(3, { branch_id: null }), // an HO person without a branch row in the ERP
+    row(4, { branch_group: 'Huawei Store', branch_id: 77 }),
+    row(5, { branch_group: 'iMedic', branch_id: 60 }),
+    row(6, { branch_group: null, branch_id: null }),
+    row(7, { branch_id: 1, branch_group: 'iStudio' }), // an imported branch as before
+    row(8, { status: 'resign' }),
+  ];
+  const out = erp.parsePeople(rows, branches, new Set(), true, new Map(), { sms: true, line: true }, 'ho-branch-id');
+  assert.deepEqual(
+    out.people.map((p) => [p.staffId, p.sesBranchId ?? null, p.erpBranchId, p.roles.join('+')]),
+    [
+      ['1', 'ho-branch-id', 0, 'STAFF+STOCK'],
+      ['2', 'ho-branch-id', 0, 'STAFF+STOCK'],
+      ['3', 'ho-branch-id', 0, 'STAFF+STOCK'],
+      ['7', null, 1, 'STAFF+STOCK'],
+    ],
+  );
+  assert.equal(out.outOfScope, 3, 'Huawei Store, iMedic and no group: out of scope');
+  // without an HO branch (null) the HO people stay out, and are kept (not deactivated) if they already have an account
+  const none = erp.parsePeople(rows, branches, new Set(), true);
+  assert.deepEqual(none.people.map((p) => p.staffId), ['7']);
+  assert.equal(none.outOfScope, 6, 'HO (3) + Huawei Store, iMedic, no group (3)');
+  assert.deepEqual([...none.retain].sort(), ['1', '2', '3', '7'].map(Number), 'HO people are retained, the other groups are not');
+  // a broken ERP branch row still keeps the account and does not move it to HO
+  const broken = erp.parsePeople([row(9, { branch_id: 500 })], branches, new Set([500]), true, new Map(), { sms: true, line: true }, 'ho-branch-id');
+  assert.deepEqual(broken.people, []);
+  assert.deepEqual([...broken.retain], [9]);
+});
+
 test('registration URL: only a clean http(s) address that fits the column is taken as the ERP wrote it (D114)', () => {
   const ok = 'http://www.uficon.com/register/index.php?branch_id=9';
   assert.equal(erp.normalizeRegistrationUrl(ok), ok);
@@ -1102,7 +1149,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       'extra people: search the ERP, pick one with roles and a branch, the import brings them in, taking them away deactivates (D87)',
       async () => {
         const devNo = n(55);
-        const dev = es(55, { branch_id: 999_000_001, branch_group: 'HO', position: 'Developer', 'user password': 'dev-pw-55', name_first_th: 'ดีเวลลอปเปอร์', name_last_th: `ทดสอบ${prefix.slice(-4)}` });
+        const dev = es(55, { branch_id: 999_000_001, branch_group: 'iMedic', position: 'Developer', 'user password': 'dev-pw-55', name_first_th: 'ดีเวลลอปเปอร์', name_last_th: `ทดสอบ${prefix.slice(-4)}` });
         erpState.staff.push(dev);
         const A = await db.branch.findFirst({ where: { erpBranchId: bidA } });
         const extra = (body, cookie = adminCookie) => request('/admin/erp-sync/extras', 'PUT', body, cookie);
@@ -1113,7 +1160,7 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         const found = await request(`/admin/erp-sync/staff-search?q=${encodeURIComponent('ดีเวล')}`, 'GET', undefined, adminCookie);
         assert.equal(found.status, 200, JSON.stringify(found.data));
         assert.equal(found.data.length, 1);
-        assert.deepEqual(found.data[0], { erpStaffId: devNo, name: `ดีเวลลอปเปอร์ ทดสอบ${prefix.slice(-4)}`, branchGroup: 'HO', position: 'Developer', duplicate: false });
+        assert.deepEqual(found.data[0], { erpStaffId: devNo, name: `ดีเวลลอปเปอร์ ทดสอบ${prefix.slice(-4)}`, branchGroup: 'iMedic', position: 'Developer', duplicate: false });
         const call = erpState.requests.find((r) => r.url.includes('/staff'));
         assert.ok(call && !/password|tel|email/i.test(call.url), 'the lookup asks for no password and no phone');
         const byId = await request(`/admin/erp-sync/staff-search?q=${String(devNo).slice(0, 6)}`, 'GET', undefined, adminCookie);
@@ -1239,6 +1286,46 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
         assert.equal((await login(sid(1), 'erp-new-1')).status, 201);
       },
     );
+
+    await t.test('head-office people go to the SES HO branch; other groups stay out; a missing HO branch keeps what exists (D115)', async (tt) => {
+      const existing = await db.branch.findMany({ where: { code: 'HO' } });
+      if (existing.length > 1 || (existing.length === 1 && !existing[0].active)) return tt.skip('the test database has its own HO branch(es)');
+      const created = existing.length === 0 ? await db.branch.create({ data: { code: 'HO', name: 'สำนักงานใหญ่ (test)', phone: '0' } }) : null;
+      const hoId = (created ?? existing[0]).id;
+      const hoPerson = es(40, { branch_id: 888_000_001, branch_group: 'HO', position: 'Area Manager', 'user password': 'ho-pw-40' });
+      erpState.staff.push(
+        hoPerson,
+        es(41, { branch_id: 888_000_002, branch_group: 'Huawei Store' }),
+        es(42, { branch_id: 888_000_003, branch_group: 'iMedic' }),
+        es(43, { branch_id: null, branch_group: null }),
+      );
+      try {
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        const ho = await staffRow(40);
+        assert.ok(ho, 'the HO person has an account');
+        assert.equal(ho.branchId, hoId);
+        assert.deepEqual(ho.roles.map((r) => r.roleCode).sort(), ['STAFF', 'STOCK']);
+        for (const k of [41, 42, 43]) assert.equal(await staffRow(k), null, `staff ${k}: not in an imported group`);
+        assert.ok(res.data.summary.staff.outOfScope >= 3);
+        assert.equal((await login(sid(40), 'ho-pw-40')).status, 201, 'signs in like any ERP account');
+        // the HO branch gone: a note, and the account is kept as it is
+        await db.branch.update({ where: { id: hoId }, data: { active: false } });
+        const missing = await run();
+        assert.equal(missing.data.ok, true, missing.data.error);
+        assert.ok(missing.data.summary.branches.notes.some((x) => x.code === 'HO' && /ไม่พบสาขา HO/.test(x.reason)));
+        assert.equal((await staffRow(40)).active, true, 'not deactivated because the HO branch was switched off');
+        await db.branch.update({ where: { id: hoId }, data: { active: true } });
+      } finally {
+        erpState.staff = erpState.staff.filter((r) => ![n(40), n(41), n(42), n(43)].includes(r.staff_id));
+        if (created) {
+          await db.loginSession.deleteMany({ where: { staffId: sid(40) } });
+          await db.staffRole.deleteMany({ where: { staffId: sid(40) } });
+          await db.staff.deleteMany({ where: { staffId: sid(40) } });
+          await db.branch.delete({ where: { id: created.id } }).catch(() => undefined);
+        }
+      }
+    });
   } finally {
     const ids = [...staffIds(), adminId, outsiderId, manualId];
     await db.erpExtraStaff.deleteMany({ where: { erpStaffId: { in: Array.from({ length: 60 }, (_, k) => n(k)) } } });

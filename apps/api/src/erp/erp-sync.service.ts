@@ -37,6 +37,10 @@ const RETRY_AFTER_MS = 10 * 60_000;
 const ABANDON_AFTER_MS = 20 * 60_000;
 const MAX_ATTEMPTS = 3;
 const HASH_CONCURRENCY = 4;
+/** D115: the hand-made SES branch (สำนักงานใหญ่) that takes the active ERP people of the head-office group */
+const HO_BRANCH_CODE = 'HO';
+/** D115: ERP `branch_group` of the people who go to that branch (Huawei Store, iMedic and people with no group stay out, owner 2026-11-10) */
+export const ERP_HO_PERSON_GROUPS = ['HO'];
 /** Which contacts can receive a login code with the sending set-up in force (D113): SMS needs a mobile number, LINE a userId */
 export interface OtpRoutes {
   sms: boolean;
@@ -287,6 +291,11 @@ export function parsePeople(
   extras: Map<number, { roles: RoleCode[]; branchId: string }> = new Map(),
   /** D113: the channels codes go out on, to word the "cannot get a code" warning (default: both) */
   routes: OtpRoutes = { sms: true, line: true },
+  /**
+   * D115: the SES branch (HO) for the active people of the ERP head-office group (their branch is not an imported one).
+   * null, or any other group (Huawei Store, iMedic, none) = out of scope, as before.
+   */
+  hoBranchId: string | null = null,
 ): {
   people: ErpPerson[];
   skipped: StaffNote[];
@@ -334,17 +343,30 @@ export function parsePeople(
     }
     const erpBranchId = integer(row.branch_id);
     const branch = erpBranchId === null ? undefined : byId.get(erpBranchId);
+    let atHo = false;
     if (!branch || erpBranchId === null) {
       const sid = integer(row.staff_id);
-      if (erpBranchId !== null && dropped.has(erpBranchId) && sid !== null) {
+      if (
+        hoBranchId &&
+        sid !== null &&
+        sid >= 1 &&
+        ERP_HO_PERSON_GROUPS.includes(text(row.branch_group).trim()) &&
+        !(erpBranchId !== null && dropped.has(erpBranchId))
+      ) {
+        atHo = true; // D115: head office: the account goes to the SES HO branch
+      } else if (erpBranchId !== null && dropped.has(erpBranchId) && sid !== null) {
         // The ERP branch row is broken, not closed: keep the account, do not lock the person out for it.
         retain.add(sid);
         skipped.push({
           staffId: String(sid),
           reason: 'ข้อมูลสาขาของคนนี้ใน ERP ไม่สมบูรณ์ จึงยังไม่เปลี่ยนบัญชี',
         });
-      } else outOfScope += 1;
-      continue;
+      } else {
+        outOfScope += 1;
+        // D115: head-office people while SES has no single active HO branch: keep what exists, do not mass-deactivate them
+        if (sid !== null && ERP_HO_PERSON_GROUPS.includes(text(row.branch_group).trim())) retain.add(sid);
+      }
+      if (!atHo) continue;
     }
     const erpStaffId = integer(row.staff_id);
     if (erpStaffId === null || erpStaffId < 1) {
@@ -355,7 +377,7 @@ export function parsePeople(
       continue;
     }
     const staffId = String(erpStaffId);
-    if (!branch.active) {
+    if (branch && !branch.active) {
       skipped.push({
         staffId,
         reason: `สาขา ${branch.code} ปิดแล้วใน ERP จึงไม่มีบัญชี`,
@@ -390,7 +412,8 @@ export function parsePeople(
       staffId,
       firstName: text(row.name_first_th).trim().slice(0, 100),
       lastName: text(row.name_last_th).trim().slice(0, 100),
-      erpBranchId,
+      erpBranchId: atHo ? 0 : (erpBranchId as number),
+      ...(atHo ? { sesBranchId: hoBranchId as string } : {}),
       roles,
       password,
       phone,
@@ -473,7 +496,7 @@ const BRANCH_QUERY = `$select=branch_id,branch_code,branch_name,branch_tel,branc
 // followed by an OData hang on 2026-10-12. The narrow `$select` alone took 0.3 s for all 713 rows; filter here instead.
 /** The staff fields the import needs. With SMS OTP login on (D85) the plaintext ERP password is not even requested. */
 const staffQuery = (otp: boolean) =>
-  `$select=staff_id,%22user%20name%22,${otp ? '' : '%22user%20password%22,'}status,branch_id,position,name_first_th,name_last_th,tel,line_user_id` +
+  `$select=staff_id,%22user%20name%22,${otp ? '' : '%22user%20password%22,'}status,branch_id,branch_group,position,name_first_th,name_last_th,tel,line_user_id` +
   `&$top=${MAX_ROWS}`;
 // eslint-disable-next-line no-control-regex
 const RAW_CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g;
@@ -800,7 +823,20 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
         'ไม่พบสาขากลุ่ม iStudio/U-Store ใน ERP จึงยกเลิกการซิงก์',
       );
     const extras = await this.extraMap();
-    const parsed = parsePeople(staffRows, scope, dropped, !otp, extras, this.accounts.otpRoutes());
+    const ho = await this.prisma.branch.findMany({ where: { code: HO_BRANCH_CODE, active: true }, select: { id: true } });
+    const hoPeople = staffRows.some((r) => {
+      const row = asRow(r);
+      return !!row && text(row.status).trim().toLowerCase() === 'active' && ERP_HO_PERSON_GROUPS.includes(text(row.branch_group).trim());
+    });
+    if (hoPeople && ho.length !== 1)
+      notes.push({
+        code: HO_BRANCH_CODE,
+        reason:
+          ho.length === 0
+            ? 'ไม่พบสาขา HO (ที่ใช้งานอยู่) ใน SES จึงไม่นำเข้าพนักงานกลุ่ม HO'
+            : 'มีสาขา HO ซ้ำกันใน SES จึงไม่นำเข้าพนักงานกลุ่ม HO',
+      });
+    const parsed = parsePeople(staffRows, scope, dropped, !otp, extras, this.accounts.otpRoutes(), ho.length === 1 ? ho[0].id : null);
     const plan: Plan = {
       branches: scope,
       branchNotes: notes,

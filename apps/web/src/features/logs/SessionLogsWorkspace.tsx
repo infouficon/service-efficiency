@@ -31,6 +31,7 @@ import {
   stepDurations,
   visitDuration,
 } from '../session/workflow';
+import { formatDisplayPhone } from '../../utils/phone';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
 import { advanceStepApi } from '../../services/sessionApi';
 
@@ -240,7 +241,7 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       { key: 'branchCode', label: 'รหัสสาขา (Branch Code)', getValue: (s) => s.branchCode },
       { key: 'branchName', label: 'ชื่อสาขา', getValue: (s) => s.branchName || '' },
       { key: 'staffId', label: 'ผู้ดูแล (Staff ID)', getValue: (s) => s.staffId },
-      { key: 'phone', label: 'เบอร์โทรศัพท์ลูกค้า', getValue: (s) => s.phone || '' },
+      { key: 'phone', label: 'เบอร์โทรศัพท์ลูกค้า', getValue: (s) => formatDisplayPhone(s.phone) || '' },
       // The queue number repeats (per branch, type and day); this key is unique, so rows can still be joined.
       { key: 'reference', label: 'รหัสอ้างอิงระบบ (ไม่ซ้ำ)', getValue: (s) => s.reference },
     ],
@@ -923,7 +924,10 @@ export function SessionLogsWorkspace({
         const matchRef =
           s.queue.toLowerCase().includes(q) ||
           s.reference.toLowerCase().includes(q);
-        const matchPhone = s.phone?.toLowerCase().includes(q) || false;
+        const matchPhone =
+          s.phone?.toLowerCase().includes(q) ||
+          formatDisplayPhone(s.phone).toLowerCase().includes(q) ||
+          false;
         const matchStaff = s.staffId?.toLowerCase().includes(q) || false;
         const matchProduct = (s.selection?.items ?? []).some(
           (i) =>
@@ -1081,7 +1085,7 @@ export function SessionLogsWorkspace({
                   {detailStatusLabel}
                 </strong>
                 {selectedSession.phone &&
-                  ` · เบอร์โทรลูกค้า: ${selectedSession.phone}`}
+                  ` · เบอร์โทรลูกค้า: ${formatDisplayPhone(selectedSession.phone)}`}
                 {` · ผู้ดูแล: ${selectedSession.staffId}`}
                 {` · สาขา: ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''}`}
               </Notice>
@@ -1493,7 +1497,7 @@ export function SessionLogsWorkspace({
                         color: s.phone ? '#103836' : '#94a3b8',
                       }}
                     >
-                      <Phone size={13} /> {s.phone || '—'}
+                      <Phone size={13} /> {formatDisplayPhone(s.phone) || '—'}
                     </span>
                   </td>
                   <td>
@@ -1604,7 +1608,7 @@ export function SessionLogsWorkspace({
               <div className="mobile-log-meta">
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Phone size={12} /> {s.phone || 'ไม่มีเบอร์'}
+                    <Phone size={12} /> {formatDisplayPhone(s.phone) || 'ไม่มีเบอร์'}
                   </span>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                     <UserIcon size={12} /> {s.staffId}

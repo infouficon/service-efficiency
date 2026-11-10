@@ -13,6 +13,8 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
+import { PhoneInput } from '../../components/PhoneInput';
+import { formatDisplayPhone } from '../../utils/phone';
 import {
   cancelReasons,
   changeReasons,
@@ -362,13 +364,12 @@ export function StaffWorkspace({
     }
   };
 
-  const handleUpdatePhone = async (rawInput: string) => {
+  const handleUpdatePhone = async (cleanPhone: string, isValid: boolean) => {
     if (!activeSession) return;
-    const cleanPhone = rawInput.replace(/\D/g, '').slice(0, 10);
     setPhoneDrafts((prev) => ({ ...prev, [activeSession.reference]: cleanPhone }));
     setPhoneAttempted((prev) => ({ ...prev, [activeSession.reference]: false }));
     onUpdateSession({ ...activeSession, phone: cleanPhone });
-    if (activeSession.id && cleanPhone.length === 10) {
+    if (activeSession.id && isValid) {
       try {
         const updated = await updateSelectionApi(
           activeSession.id,
@@ -450,7 +451,7 @@ export function StaffWorkspace({
                     </>
                   ) : (
                     <>
-                      <strong>{ps.phone || ps.reference}</strong>
+                      <strong>{formatDisplayPhone(ps.phone) || ps.reference}</strong>
                     </>
                   )}{' '}
                   ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
@@ -489,7 +490,7 @@ export function StaffWorkspace({
               >
                 <div className="card-top">
                   <span className="card-ref">
-                    {s.queueNo != null ? `${s.queue}` : `${s.phone || s.reference}`}
+                    {s.queueNo != null ? `${s.queue}` : `${formatDisplayPhone(s.phone) || s.reference}`}
                   </span>
                   {s.stockPendingReview ? (
                     <span
@@ -516,7 +517,7 @@ export function StaffWorkspace({
                 </div>
                 <div className="card-meta">
                   <span>ผู้ดูแล: {s.staffId}</span>
-                  {s.queueNo != null && <span>{s.phone || 'ยังไม่มีเบอร์'}</span>}
+                  {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
                 </div>
               </div>
             ))}
@@ -550,7 +551,7 @@ export function StaffWorkspace({
                   <h2 className="queue-title">
                     {activeSession.queueNo != null
                       ? `${activeSession.queue}`
-                      : `${activeSession.phone || activeSession.reference}`}
+                      : `${formatDisplayPhone(activeSession.phone) || activeSession.reference}`}
                   </h2>
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>
@@ -560,7 +561,7 @@ export function StaffWorkspace({
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}
                   {activeSession.queueNo != null && (
                     <span className="muted">
-                      Customer Phone · {activeSession.phone || 'ไม่มีเบอร์โทร'}
+                      Customer Phone · {formatDisplayPhone(activeSession.phone) || 'ไม่มีเบอร์โทร'}
                     </span>
                   )}
                 </div>
@@ -749,28 +750,16 @@ export function StaffWorkspace({
                               >
                                 <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
                                   เบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
-                                  <input
-                                    type="tel"
-                                    inputMode="numeric"
-                                    autoComplete="off"
-                                    placeholder="เบอร์โทรศัพท์ 10 หลัก (0-9)"
-                                    value={currentPhone}
-                                    onChange={(e) => handleUpdatePhone(e.target.value)}
-                                    style={{
-                                      marginTop: '6px',
-                                      width: '100%',
-                                      maxWidth: '320px',
-                                      display: 'block',
-                                      padding: '8px 12px',
-                                      borderRadius: '6px',
-                                      border: '1px solid #cbd5e1',
-                                      fontSize: '14px',
-                                    }}
-                                  />
                                 </label>
+                                <div style={{ maxWidth: '360px', marginTop: '6px' }}>
+                                  <PhoneInput
+                                    value={currentPhone}
+                                    onChange={(newPhone, valid) => handleUpdatePhone(newPhone, valid)}
+                                  />
+                                </div>
                                 {currentPhone && !phoneIsValid(currentPhone) && (
                                   <p className="field-error" style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
-                                    กรุณากรอกตัวเลข 0–9 ให้ครบ 10 หลัก (ขณะนี้ {currentPhone.length}/10)
+                                    กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (เบอร์ไทยไม่ต้องใส่ 0 นำหน้า หรือเลือกประเทศสำหรับเบอร์ต่างประเทศ)
                                   </p>
                                 )}
                               </div>

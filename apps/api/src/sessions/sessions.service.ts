@@ -8,6 +8,7 @@ import {
 import type { PublicAccount } from '../accounts/accounts.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
+import { isValidPhone, normalizePhone } from '../common/phone.util';
 import { loadPaymentTypes, orderView } from './order-view';
 import { FmpService } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
@@ -398,10 +399,12 @@ export class SessionsService {
       const now = new Date();
       const day = bangkokDay(now);
 
-      // D56: a walk-in starts at the phone number, so the Customer exists from the first moment.
+      const normalizedPhone = normalizePhone(dto.phone) ?? dto.phone;
+
+      // D56, D120: a walk-in starts at the phone number, so the Customer exists from the first moment.
       const customer = await tx.customer.upsert({
-        where: { phone: dto.phone },
-        create: { phone: dto.phone },
+        where: { phone: normalizedPhone },
+        create: { phone: normalizedPhone },
         update: {},
       });
       if (dto.customerTypeId) {
@@ -422,7 +425,7 @@ export class SessionsService {
           branchId: targetBranch.id,
           staffId: user.staffId,
           customerId: customer.id,
-          phone: dto.phone,
+          phone: normalizedPhone,
           customerTypeId: null,
           queueLetter: null,
           queueNo: null,
@@ -436,7 +439,7 @@ export class SessionsService {
                 actorStaffId: user.staffId,
                 createdAt: now,
                 metadata: {
-                  phone: dto.phone,
+                  phone: normalizedPhone,
                 },
               },
               {
@@ -864,16 +867,21 @@ export class SessionsService {
       throw new BadRequestException('Purchase data is locked and cannot be edited');
     }
 
-    if (dto.phone && !/^[0-9]{10}$/.test(dto.phone)) {
-      throw new BadRequestException('Phone number must contain exactly 10 digits (0-9)');
+    let normalizedPhone: string | undefined;
+    if (dto.phone) {
+      const normalized = normalizePhone(dto.phone);
+      if (!normalized) {
+        throw new BadRequestException('Phone number must be a valid phone number (Thai or international)');
+      }
+      normalizedPhone = normalized;
     }
 
     return this.prisma.$transaction(async (tx) => {
       let customerId = session.customerId;
-      if (dto.phone) {
+      if (normalizedPhone) {
         const customer = await tx.customer.upsert({
-          where: { phone: dto.phone },
-          create: { phone: dto.phone },
+          where: { phone: normalizedPhone },
+          create: { phone: normalizedPhone },
           update: {},
         });
         customerId = customer.id;
@@ -1036,7 +1044,7 @@ export class SessionsService {
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
-          phone: dto.phone ?? session.phone,
+          phone: normalizedPhone ?? session.phone,
           customerId,
           customerTypeId: nextCustomerTypeId,
         },
@@ -1053,8 +1061,8 @@ export class SessionsService {
       throw new BadRequestException('Session is already confirmed or cannot be confirmed');
     }
 
-    if (!session.phone || !/^[0-9]{10}$/.test(session.phone)) {
-      throw new BadRequestException('Valid customer phone number (10 digits) is required to confirm purchase');
+    if (!session.phone || !isValidPhone(session.phone)) {
+      throw new BadRequestException('Valid customer phone number is required to confirm purchase');
     }
 
     if (session.items.length === 0) {

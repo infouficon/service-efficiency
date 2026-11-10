@@ -96,19 +96,29 @@ test('confirmation cannot be repeated or applied after terminal outcome', () => 
   assert.equal(confirmSelection(cancelled, 'bad'), cancelled);
 });
 
-test('phone accepts exactly ten ASCII digits without a prefix rule', () => {
-  for (const phone of ['0123456789', '1234567890', '9999999999'])
-    assert.equal(phoneIsValid(phone), true);
+test('phone accepts Thai mobile, Thai 9-digit company numbers, leading 0 strip, and international numbers (D120)', () => {
+  for (const phone of [
+    '0812345678', // 10-digit mobile
+    '812345678',  // 9-digit mobile without leading 0
+    '021234567',  // 9-digit company
+    '21234567',   // 8-digit company without leading 0
+    '+66812345678',
+    '+6621234567',
+    '+819012345678',
+    '+14155552671',
+  ])
+    assert.equal(phoneIsValid(phone), true, `expected ${phone} to be valid`);
+
   for (const phone of [
     '',
-    '123456789',
-    '12345678901',
-    '123-456789',
+    '123',
+    '12345',
+    'abc',
     '123456789a',
-    ' 1234567890',
     '๐๑๒๓๔๕๖๗๘๙',
+    '+9991234567890123456',
   ])
-    assert.equal(phoneIsValid(phone), false);
+    assert.equal(phoneIsValid(phone), false, `expected ${phone} to be invalid`);
 });
 test('accessory quantity is a positive integer and resets on deselection', () => {
   for (const quantity of ['1', '2', '100'])

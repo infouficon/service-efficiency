@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+import { IsCustomerPhone } from '../common/phone.util';
 import {
   ArrayMaxSize,
   IsArray,
@@ -35,11 +36,9 @@ export class CreateSessionDto {
   @IsString()
   branchId?: string;
 
-  /** D56: a walk-in starts at the customer's phone number: exactly 10 ASCII digits. */
+  /** D56, D120: a walk-in starts at the customer's phone number. Supports Thai mobile, 9-digit company, and international (E.164). */
   @IsString()
-  @Matches(/^[0-9]{10}$/, {
-    message: 'Phone number must contain exactly 10 digits (0-9)',
-  })
+  @IsCustomerPhone()
   phone!: string;
 
   /** D57: the customer type picked at the phone step. Left out, the active type with the lowest letter is used. */
@@ -190,6 +189,7 @@ export class SessionItemDto {
 export class UpdateSelectionDto {
   @IsOptional()
   @IsString()
+  @IsCustomerPhone()
   phone?: string;
 
   /** The main products as a whole list; left out, the current ones stay. An empty list clears them. */

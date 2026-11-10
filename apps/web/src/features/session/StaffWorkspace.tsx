@@ -517,9 +517,11 @@ export function StaffWorkspace({
                 </div>
                 <div className="card-meta">
                   <span>ผู้ดูแล: {s.staffId}</span>
-                  {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
-                  {(s.taxInvoice ?? s.selection?.taxInvoice) && <span style={{ color: '#1d4ed8', fontWeight: 600 }}>🧾 Tax</span>}
-                  {(s.vatRefund ?? s.selection?.vatRefund) && <span style={{ color: '#b45309', fontWeight: 600 }}>✈️ VAT</span>}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                    {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
+                    {(s.taxInvoice ?? s.selection?.taxInvoice) && <span style={{ color: '#1d4ed8', fontWeight: 600 }}>🧾 Tax</span>}
+                    {(s.vatRefund ?? s.selection?.vatRefund) && <span style={{ color: '#b45309', fontWeight: 600 }}>✈️ VAT</span>}
+                  </div>
                 </div>
               </div>
             ))}

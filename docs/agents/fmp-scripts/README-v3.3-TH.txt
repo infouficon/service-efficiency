@@ -75,14 +75,17 @@ ses_report_bill v3  (ไฟล์ ses_report_bill_v3.txt)
 
 
 =====================================================================
-ses_report_cancel v1  (ไฟล์ ses_report_cancel_v1.txt) — ใหม่ 2026-11-10
+ses_report_cancel v1.1  (ไฟล์ ses_report_cancel_v1.txt) — ใหม่ 2026-11-10
 =====================================================================
 คุณกบถาม: ถ้ายกเลิกบิลจากฝั่ง FMP ต้องส่งอะไรหา SES ไหม -> ส่ง (สคริปต์นี้)
 เหตุผล: ถ้าไม่แจ้ง SES จะยังเข้าใจว่าบิลพักเปิดอยู่ (หรือขายไปแล้ว ถ้ายกเลิกหลังชำระ) ไม่มีใครรู้ว่าต้องส่งออเดอร์ใหม่
 
 เรียกที่ไหน: ท้ายสคริปต์ยกเลิกบิลพักของ FMP เฉพาะบิลที่ pos_front_sale_tmp::ses_id ไม่ว่าง (หลังคืน SN ให้สแกนใหม่ได้แล้ว)
-param: JSONSetElement ( "{}" ; [ "sesID" ; pos_front_sale_tmp::ses_id ; JSONString ] ; [ "saleID" ; <เลขบิลพัก> ; JSONString ] ;
+param: JSONSetElement ( "{}" ; [ "sesID" ; pos_front_sale_tmp::ses_id ; JSONString ] ;
        [ "reason" ; <เหตุผลที่ยกเลิก> ; JSONString ] ; [ "paid" ; <1 ถ้าชำระแล้ว ไม่งั้น 0> ; JSONNumber ] )
+       ยกเลิกบิลที่ชำระแล้ว (paid = 1) ใส่ [ "billNo" ; <เลขที่บิล> ; JSONString ] เพิ่ม
+v1.1 (คุณกบแจ้ง): บิลพักยังไม่มีเลขที่บิล -> ไม่ต้องส่ง saleID อ้างอิงด้วย sesID อย่างเดียว
+       สคริปต์อ่าน key บิลพัก (ses::sale_id) เองแล้วส่งให้ SES ลง log
 
 สคริปต์ทำ 2 อย่าง
 1) ล้าง ses::ses_status และ ses::sale_id ของ sesID นั้น (เขียนเหตุผลไว้ใน ses::ses_error)
@@ -91,7 +94,7 @@ param: JSONSetElement ( "{}" ; [ "sesID" ; pos_front_sale_tmp::ses_id ; JSONStri
    ยกเลิกหลังชำระ (paid = 1) ไม่ล้าง เพราะ SES ปิดการขายไปแล้ว
 2) ยิง callback  POST https://ses.uficon.com/api/integrations/fmp/callback
    ใช้คีย์ FMP_CALLBACK_KEY ตัวเดียวกับที่ยิงทดสอบเมื่อ 31 ต.ค. (อ่านจากฟิลด์ที่จำกัดสิทธิ์)
-   body {"reference": <sesID>, "status": "error", "message": "CANCELLED saleID <เลขบิลพัก>: <เหตุผล>", "time": <เวลายกเลิก +07:00>}
+   body {"reference": <sesID>, "status": "error", "message": "CANCELLED (บิลพัก): <เหตุผล>", "time": <เวลายกเลิก +07:00>}
    ได้ 200 = SES รับแล้ว
 
 ผลฝั่ง SES (ไม่ต้องแก้อะไรเพิ่ม)

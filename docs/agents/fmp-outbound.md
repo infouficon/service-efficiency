@@ -107,7 +107,12 @@ stores it in `FmpOutbox.snCheck`, shows it per serial in the admin table and fla
 **D121 (cancel in FileMaker, 2026-11-10):** when a held bill from SES is cancelled in FileMaker, the script `ses_report_cancel` v1
 clears `ses::ses_status` / `ses::sale_id` (so a resend opens a new bill instead of `ALREADY_DONE`) and calls the callback below with the
 `reference`, `status: "error"` and a message starting `CANCELLED`. SES shows it in "ออเดอร์ที่ต้องดู" with the resend button. A cancel in
-SES is not pushed to FileMaker yet: the cashier cancels the held bill there by hand.
+SES is pushed since D123 (below).
+
+**D123 (release and revision, script v3.4):** besides `SENT_TO_CASHIER` / `RESEND`, SES sends `RETURNED_TO_STOCK` (an order sent back
+to stock) and `CANCELLED` (`state: "CANCELLED"`) for an order FileMaker already got; the script takes the held bill away and frees the
+serials. Every message has `revision` (times STOCK sent the order) and `revisionNote`; the bill gets `ses_note` ("แก้ไขครั้งที่ N").
+New answers: `RELEASED`, `NOTHING_TO_RELEASE`, `STALE`, `ORDER_CANCELLED` (ok) and `BILL_IN_USE`, `RELEASE_FAILED` (error).
 
 ## Reporting back: the callback door (D90)
 

@@ -183,8 +183,11 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(payload.event, 'SENT_TO_CASHIER');
       assert.equal(payload.outboxId, row.id, 'FileMaker can dedupe by outboxId');
       assert.deepEqual(payload.branch, { code: branches.a.code, name: branches.a.name });
-      const { source, event, outboxId, queuedAt, branch, version, test, createdAt, ...order } = payload;
+      const { source, event, outboxId, queuedAt, branch, version, test, createdAt, revision, revisionNote, ...order } = payload;
       assert.ok(queuedAt && source && event && outboxId && branch);
+      // D123: the first send is revision 1, with no reason
+      assert.equal(revision, 1);
+      assert.equal(revisionNote, null);
       // D92: what the FileMaker `ses` script checks before it opens a bill
       assert.equal(version, 1);
       assert.equal(test, false);
@@ -616,18 +619,19 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal((await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'หยิบสินค้าผิด' }, 'staff')).status, 201);
       for (const action of ['found', 'send']) assert.equal((await app(`/sessions/${s.id}/step`, 'POST', { action }, 'stock')).status, 201, action);
       reset();
-      assert.deepEqual(await fmp.tick(), { sent: 1, failed: 0 });
+      // D123: the send-back went too (it takes the held bill away), before the new send
+      assert.deepEqual(await fmp.tick(), { sent: 2, failed: 0 });
       assert.equal(fm.records, recordsBefore, 'no second record');
       const patch = fm.calls.find((c) => c.method === 'PATCH');
       assert.ok(patch, 'the record was updated');
       assert.equal(patch.path, `/fmi/data/vLatest/databases/UFService/layouts/ses/records/${firstRow.fmpRecordId}`);
       const rows = await db.fmpOutbox.findMany({ where: { reference: s.reference }, orderBy: { createdAt: 'asc' } });
-      assert.equal(rows.length, 2);
-      assert.equal(rows[1].fmpRecordId, firstRow.fmpRecordId, 'the second message names the same record');
+      assert.deepEqual(rows.map((r) => r.event), ['SENT_TO_CASHIER', 'RETURNED_TO_STOCK', 'SENT_TO_CASHIER']);
+      assert.ok(rows.slice(1).every((r) => r.fmpRecordId === firstRow.fmpRecordId), 'the later messages name the same record');
       const nowBody = JSON.parse(fm.bodies.get(firstRow.fmpRecordId));
       assert.notDeepEqual(nowBody.items.flatMap((i) => i.sn), firstBody.items.flatMap((i) => i.sn), 'FileMaker now holds the serials scanned last');
-      assert.equal(nowBody.outboxId, rows[1].id);
-      assert.equal((await logsOf({ reference: s.reference, kind: 'update' })).length, 1);
+      assert.equal(nowBody.outboxId, rows[2].id);
+      assert.equal((await logsOf({ reference: s.reference, kind: 'update' })).length, 2);
 
       // an ADMIN's resend updates the same record too
       reset();
@@ -635,6 +639,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       await fmp.tick();
       assert.equal(fm.records, recordsBefore);
       assert.equal(fm.calls.filter((c) => c.method === 'PATCH').length, 1);
+      assert.equal((await rowOf(s.reference)).event, 'RESEND', 'an order at the cashier is resent as it is');
 
       // a record FileMaker deleted is created anew
       fm.gone.add(firstRow.fmpRecordId);
@@ -647,6 +652,54 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(latest.fmpRecordId, String(fm.records));
       assert.equal((await logsOf({ reference: s.reference, kind: 'record-gone' })).length, 1);
       reset();
+    });
+
+    await t.test('a send-back and a cancel take the held bill away in FileMaker; the next send is revision 2 with the reason (D123)', async () => {
+      reset();
+      const s = await driveTo('send');
+      await fmp.tick();
+      // the order goes back to stock: FileMaker is told with the revision it takes away and why
+      assert.equal((await app(`/sessions/${s.id}/cashier/reject`, 'POST', { reason: 'อื่น ๆ', otherReason: 'หยิบผิดสี' }, 'staff')).status, 201);
+      const back = await rowOf(s.reference, 'RETURNED_TO_STOCK');
+      assert.ok(back, 'queued with the send-back');
+      const backBody = JSON.parse(back.payload);
+      assert.equal(backBody.state, 'SEARCHING');
+      assert.equal(backBody.revision, 1);
+      assert.equal(backBody.revisionNote, 'หยิบผิดสี', '"อื่น ๆ" alone says nothing: the text staff typed');
+      assert.deepEqual(backBody.items.flatMap((i) => i.sn), [], 'the serials were given back');
+      // STOCK scans again and sends: revision 2, with the reason
+      for (const action of ['found', 'send']) assert.equal((await app(`/sessions/${s.id}/step`, 'POST', { action }, 'stock')).status, 201, action);
+      const again = JSON.parse((await rowOf(s.reference, 'SENT_TO_CASHIER')).payload);
+      assert.equal(again.state, 'SENT_TO_CASHIER');
+      assert.equal(again.revision, 2);
+      assert.equal(again.revisionNote, 'หยิบผิดสี');
+      reset();
+      process.env.FMP_SCRIPT = 'ses';
+      fm.script = { result: JSON.stringify({ ok: true, code: 'RELEASED', sesID: s.reference, lines: 3 }), error: '0' };
+      assert.deepEqual(await fmp.tick(), { sent: 2, failed: 0 });
+      delete process.env.FMP_SCRIPT;
+      const order = fm.calls.filter((c) => c.method === 'PATCH').map((c) => JSON.parse(c.body.fieldData.ses_body).event);
+      assert.deepEqual(order, ['RETURNED_TO_STOCK', 'SENT_TO_CASHIER'], 'the release goes first');
+      assert.equal((await db.fmpOutbox.findUnique({ where: { id: back.id } })).ackStatus, 'success', 'RELEASED is a success');
+
+      // the customer cancels: FileMaker is told, and the order says CANCELLED from now on
+      assert.equal((await app(`/sessions/${s.id}/cancel`, 'POST', { reason: 'ลูกค้าเปลี่ยนใจ' }, 'staff')).status, 201);
+      const cancel = JSON.parse((await rowOf(s.reference, 'CANCELLED')).payload);
+      assert.equal(cancel.state, 'CANCELLED');
+      assert.equal(cancel.revision, 2);
+      assert.equal(cancel.revisionNote, 'ลูกค้าเปลี่ยนใจ');
+      // a resend of an ended order is a release too, never a bill
+      assert.equal((await app('/admin/fmp/resend', 'POST', { reference: s.reference }, 'admin')).status, 201);
+      const resent = await rowOf(s.reference);
+      assert.equal(resent.event, 'CANCELLED');
+      assert.equal(JSON.parse(resent.payload).state, 'CANCELLED');
+
+      // an order SES never sent to FileMaker queues nothing when it is cancelled
+      const never = await driveTo('found');
+      assert.equal((await app(`/sessions/${never.id}/cancel`, 'POST', { reason: 'ลูกค้าเปลี่ยนใจ' }, 'staff')).status, 201);
+      assert.equal(await db.fmpOutbox.count({ where: { reference: never.reference } }), 0);
+      reset();
+      await fmp.tick();
     });
 
     await t.test('a retry after FileMaker made the record but SES did not hear back finds that record instead of making a second (D96)', async () => {

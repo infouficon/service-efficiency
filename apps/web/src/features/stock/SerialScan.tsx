@@ -5,7 +5,7 @@ import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
 import { CameraScan } from './CameraScan';
-import { SERIAL, createWedgeReader } from './scanning';
+import { createWedgeReader, serialProblem } from './scanning';
 
 /** The camera needs a secure page and a browser that can reach it. */
 const canUseCamera = () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
@@ -134,8 +134,8 @@ export function SerialScan({
     const itemId = item.id as string;
     const sn = raw.trim().toUpperCase();
     if (!sn) return;
-    const problem = !SERIAL.test(sn)
-      ? 'ใช้ตัวอักษร/ตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ไม่เกิน 64 ตัว'
+    const problem = serialProblem(sn) // D124: also an IMEI that is not 15 digits with a valid check digit
+      ? serialProblem(sn)
       : session.selection.items.some((one) => one.serials?.some((serial) => serial.sn === sn)) ||
           queue.current.some((scan) => scan.sn === sn)
         ? 'สแกนเครื่องนี้ไปแล้วในออเดอร์นี้'

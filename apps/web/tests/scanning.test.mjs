@@ -5,7 +5,7 @@ import { createWedgeReader, serialFromBarcode } from '../src/features/stock/scan
 test('only a serial or an IMEI is taken from an Apple box label (D108)', () => {
   assert.equal(serialFromBarcode('SC02XK1ABCD12'), 'SC02XK1ABCD12', 'Mac / iPad: "S" + the serial');
   assert.equal(serialFromBarcode(' sh7q2lp4xyz '), 'SH7Q2LP4XYZ', 'trimmed, upper case like the box');
-  assert.equal(serialFromBarcode('356789012345678'), '356789012345678', 'IMEI: 15 digits');
+  assert.equal(serialFromBarcode('356789012345672'), '356789012345672', 'IMEI: 15 digits with a valid check digit (D124)');
   assert.equal(serialFromBarcode('194253433309'), null, 'UPC');
   assert.equal(serialFromBarcode('1942534333091'), null, 'EAN');
   assert.equal(serialFromBarcode('89049032005008882600012345678901'), null, 'EID');
@@ -48,4 +48,16 @@ test('a scanner typing without a focused box is told from a person (D108)', () =
   type('GH', 15070, 10);
   assert.equal(read('Enter', 15095), false);
   assert.deepEqual(scans, ['SC02XK1ABCD']);
+});
+
+test('D124: an IMEI must be 15 digits with a valid check digit; the MEID and the UPC are not serials', async () => {
+  const { serialProblem, luhnOk } = await import('../src/features/stock/scanning.ts');
+  assert.equal(luhnOk('355713696420008'), true);
+  assert.equal(serialProblem('355713696420008'), '', 'a real IMEI');
+  assert.equal(serialProblem('SMG92W35604'), '', 'an Apple serial is not checked for digits');
+  assert.match(serialProblem('35571369420008'), /MEID/, '14 digits = the MEID (2026-11-10: the iPhone FileMaker could not find)');
+  assert.match(serialProblem('355713696420007'), /เลขตรวจ/, 'one digit wrong');
+  assert.match(serialProblem('195951413723'), /12 หลัก/, 'the UPC');
+  assert.equal(serialFromBarcode('355713696420007'), null, 'the camera ignores a misread IMEI');
+  assert.equal(serialFromBarcode('355713696420008'), '355713696420008');
 });

@@ -60,6 +60,14 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
       assert.equal((await scan(s, a, sn())).status, 400, 'A needs 2: a third is refused');
       assert.equal((await scan(s, { id: 'nope' }, sn())).status, 400);
       for (const bad of ['', '   ', 'AB CD', 'ซีเรียล', 'X'.repeat(65)]) assert.equal((await scan(s, b, bad)).status, 400, JSON.stringify(bad));
+      // D124: digits only = an iPhone IMEI: 15 digits with a valid check digit (the MEID, a mistyped IMEI and the UPC are refused)
+      for (const bad of ['35571369420008', '355713696420007', '195951413723']) {
+        const res = await scan(s, b, bad);
+        assert.equal(res.status, 400, bad);
+        assert.match(res.data.message, /MEID|เลขตรวจ|ไม่ใช่ IMEI/, bad);
+      }
+      const sent = await step(s, 'send', { serials: [{ itemId: a.id, sn: [x, '35571369420008'] }, { itemId: b.id, sn: [sn()] }] });
+      assert.equal(sent.status, 400, 'a send with a list is checked the same way');
       const other = await toSearching();
       await step(other, 'search');
       const clash = await scan(other, itemOf(other, skuA), x);

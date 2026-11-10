@@ -20,6 +20,8 @@ export interface OrderViewSource {
   points: { name: string }[];
   burnPoints: { name: string }[];
   posBillNo: string | null;
+  vatRefund?: boolean | null;
+  taxInvoice?: boolean | null;
 }
 
 /** payment method name (lower case, the database compares without regard to case) -> its FMP payment type */
@@ -76,5 +78,7 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
     points: s.points.map((p) => p.name),
     burnPoints: s.burnPoints.map((b) => b.name),
     posBillNo: s.posBillNo,
+    vatRefund: Boolean(s.vatRefund),
+    taxInvoice: Boolean(s.taxInvoice),
   };
 }

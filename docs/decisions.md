@@ -1705,4 +1705,17 @@ Customer phone numbers at walk-in and confirmation previously required exactly 1
 3. **Display.** Friendly formatting throughout the UI (queue lists, staff workspace, logs): Thai numbers display in standard local format (`081-234-5678` or `02-123-4567`); foreign numbers display with country code (`+81 90 1234 5678`).
 4. **Outbound Compatibility (POS & FileMaker).** In `orderView` / outbound payloads (`customerPhone`), Thai numbers starting with `+66` are converted back to standard local format with a leading `0` (`0812345678` or `021234567`) so legacy POS and FileMaker `cust_tel` queries continue matching customer records without modification. Foreign numbers are sent as E.164 strings.
 
+## D121 — Customer tax document requests: VAT refund and full tax invoice (2026-11-10)
+
+Cashiers previously had to ask every customer at the till whether they needed a VAT refund or a full tax invoice. To streamline the cashier handoff and bill opening:
+
+1. **Input (UI).** In product selection (`SelectionEditor`), immediately following the payment methods, an optional section "เอกสารภาษี / Tax Documents" allows staff to toggle two independent flags:
+   - **ต้องการใบกำกับภาษี (Tax Invoice):** for Thai residents / registered companies requiring a full tax invoice.
+   - **ต้องการ VAT Refund:** for foreign tourists requesting the PP10 VAT refund form.
+   Both default to `false` (neither required).
+2. **Persistence.** `vatRefund` and `taxInvoice` boolean columns on `CustomerSession` (migration `202611100003_vat_refund_tax_invoice`). A re-bought session copies both flags from the previous session.
+3. **Outbound (`orderView`).** `orderView` includes `vatRefund: boolean` and `taxInvoice: boolean`. Both the U POS door and the FileMaker outbound message carry these flags so the cashier / POS can prepare the document before or at billing.
+4. **Visibility.** Prominently displayed on the order summary (`Summary.tsx`) with badges (`🧾 ใบกำกับภาษี`, `✈️ VAT Refund`) and in the staff queue cards and logs.
+
+
 

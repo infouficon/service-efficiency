@@ -569,3 +569,16 @@ test('a main product is found once every unit has a saved serial; browser-only i
   assert.equal(serialsComplete(session([item('a', 2, ['S1']), item('b', 1, ['S3'])])), false);
   assert.equal(serialsComplete(session([{ product: { id: 'x' }, quantity: 1 }])), true, 'not on the server yet');
 });
+
+test('selection keeps optional vatRefund and taxInvoice flags (D121)', () => {
+  const s = {
+    ...fixture(),
+    selection: {
+      ...fixture().selection,
+      vatRefund: true,
+      taxInvoice: true,
+    },
+  };
+  assert.equal(s.selection.vatRefund, true);
+  assert.equal(s.selection.taxInvoice, true);
+});

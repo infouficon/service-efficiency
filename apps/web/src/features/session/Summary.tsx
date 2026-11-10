@@ -9,6 +9,7 @@ import {
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
 import { itemName } from './workflow';
+import { formatDisplayPhone } from '../../utils/phone';
 
 interface SummaryProps {
   session: MockSession;
@@ -62,7 +63,7 @@ export function Summary({
               <span className="info-item-value" style={{ letterSpacing: '0.5px' }}>
                 {session.phone ? (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Phone size={13} color="#0abab5" /> {session.phone}
+                    <Phone size={13} color="#0abab5" /> {formatDisplayPhone(session.phone)}
                   </span>
                 ) : (
                   '—'
@@ -177,6 +178,49 @@ export function Summary({
                 )}
               </div>
             </div>
+            {(s?.taxInvoice || s?.vatRefund || session.taxInvoice || session.vatRefund) && (
+              <div className="info-item-row">
+                <span className="info-item-label">เอกสารภาษี:</span>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {(s?.taxInvoice ?? session.taxInvoice) && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: '#eff6ff',
+                        color: '#1d4ed8',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        border: '1px solid #bfdbfe',
+                      }}
+                    >
+                      🧾 ใบกำกับภาษี
+                    </span>
+                  )}
+                  {(s?.vatRefund ?? session.vatRefund) && (
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: '#fef3c7',
+                        color: '#b45309',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        border: '1px solid #fde68a',
+                      }}
+                    >
+                      ✈️ VAT Refund
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             {session.fmp && (
               <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
                 <span className="info-item-label">FileMaker:</span>

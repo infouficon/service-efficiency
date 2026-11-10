@@ -41,6 +41,8 @@ export interface ApiSession {
   stockAckBy?: string | null;
   posBillNo?: string | null;
   posBillOpenedAt?: string | null;
+  vatRefund?: boolean | null;
+  taxInvoice?: boolean | null;
   fmp?: FmpStatus | null;
   rebuyOf?: { id: string; reference: string } | null;
   rebuiltAs?: { id: string; reference: string } | null;
@@ -146,6 +148,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     cancelledBy: s.cancelledBy || undefined,
     posBillNo: s.posBillNo || undefined,
     posBillOpenedAt: s.posBillOpenedAt || undefined,
+    vatRefund: Boolean(s.vatRefund),
+    taxInvoice: Boolean(s.taxInvoice),
     fmp: s.fmp ?? null,
     stockAckAt: s.stockAckAt || undefined,
     stockAckBy: s.stockAckBy || undefined,
@@ -170,6 +174,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       points: s.points ? s.points.map((p) => p.name) : [],
       burnPoints: s.burnPoints ? s.burnPoints.map((b) => b.name) : [],
       payments: s.payments ? s.payments.map((p) => p.method) : [],
+      vatRefund: Boolean(s.vatRefund),
+      taxInvoice: Boolean(s.taxInvoice),
     },
     stockPendingReview: s.stockReview
       ? {
@@ -343,6 +349,8 @@ export async function updateSelectionApi(
     points: selection.points,
     burnPoints: selection.burnPoints,
     payments: selection.payments,
+    vatRefund: Boolean(selection.vatRefund),
+    taxInvoice: Boolean(selection.taxInvoice),
     // F3: the main products as a whole list (SKU id + quantity)
     items: selection.items.map((item) => ({
       skuId: item.product.id,

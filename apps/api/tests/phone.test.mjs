@@ -8,6 +8,8 @@ const {
   toOutboundCustomerPhone,
 } = await import('../dist/common/phone.util.js');
 
+const { orderView } = await import('../dist/sessions/order-view.js');
+
 test('D120: Thai mobile normalization (10-digit with 0, 9-digit without 0)', () => {
   assert.equal(normalizePhone('0812345678'), '+66812345678');
   assert.equal(normalizePhone('812345678'), '+66812345678');
@@ -55,4 +57,76 @@ test('D120: Outbound customerPhone for FileMaker & POS compatibility', () => {
   assert.equal(toOutboundCustomerPhone('+819012345678'), '+819012345678');
   assert.equal(toOutboundCustomerPhone('+14155552671'), '+14155552671');
   assert.equal(toOutboundCustomerPhone(null), null);
+});
+
+test('D121: orderView carries vatRefund and taxInvoice flags', () => {
+  const v1 = orderView(
+    {
+      reference: 'SES-TAX-1',
+      queueLetter: 'A',
+      queueNo: 1,
+      state: 'SENT_TO_CASHIER',
+      phone: null,
+      staffId: 's',
+      productSelectionConfirmedAt: null,
+      items: [],
+      accessories: [],
+      payments: [],
+      ontop: [],
+      points: [],
+      burnPoints: [],
+      posBillNo: null,
+      vatRefund: true,
+      taxInvoice: false,
+    },
+    new Map(),
+  );
+  assert.equal(v1.vatRefund, true);
+  assert.equal(v1.taxInvoice, false);
+
+  const v2 = orderView(
+    {
+      reference: 'SES-TAX-2',
+      queueLetter: 'A',
+      queueNo: 2,
+      state: 'SENT_TO_CASHIER',
+      phone: null,
+      staffId: 's',
+      productSelectionConfirmedAt: null,
+      items: [],
+      accessories: [],
+      payments: [],
+      ontop: [],
+      points: [],
+      burnPoints: [],
+      posBillNo: null,
+      vatRefund: false,
+      taxInvoice: true,
+    },
+    new Map(),
+  );
+  assert.equal(v2.vatRefund, false);
+  assert.equal(v2.taxInvoice, true);
+
+  const v3 = orderView(
+    {
+      reference: 'SES-TAX-3',
+      queueLetter: 'A',
+      queueNo: 3,
+      state: 'SENT_TO_CASHIER',
+      phone: null,
+      staffId: 's',
+      productSelectionConfirmedAt: null,
+      items: [],
+      accessories: [],
+      payments: [],
+      ontop: [],
+      points: [],
+      burnPoints: [],
+      posBillNo: null,
+    },
+    new Map(),
+  );
+  assert.equal(v3.vatRefund, false);
+  assert.equal(v3.taxInvoice, false);
 });

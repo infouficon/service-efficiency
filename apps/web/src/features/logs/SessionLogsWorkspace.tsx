@@ -311,6 +311,16 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         label: 'ช่องทางการชำระเงิน',
         getValue: (s) => (s.selection?.payments || []).join('; '),
       },
+      {
+        key: 'taxInvoice',
+        label: 'ขอใบกำกับภาษี',
+        getValue: (s) => ((s.taxInvoice ?? s.selection?.taxInvoice) ? 'ใช่' : 'ไม่ใช่'),
+      },
+      {
+        key: 'vatRefund',
+        label: 'ขอ VAT Refund',
+        getValue: (s) => ((s.vatRefund ?? s.selection?.vatRefund) ? 'ใช่' : 'ไม่ใช่'),
+      },
     ],
   },
   {

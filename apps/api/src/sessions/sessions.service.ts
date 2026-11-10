@@ -1047,6 +1047,8 @@ export class SessionsService {
           phone: normalizedPhone ?? session.phone,
           customerId,
           customerTypeId: nextCustomerTypeId,
+          vatRefund: dto.vatRefund ?? session.vatRefund,
+          taxInvoice: dto.taxInvoice ?? session.taxInvoice,
         },
         include: sessionInclude,
       });
@@ -1551,6 +1553,8 @@ export class SessionsService {
             decisionAt: now,
             productSelectionStartAt: started,
             rebuyOfId: old.id,
+            vatRefund: old.vatRefund,
+            taxInvoice: old.taxInvoice,
             items: {
               create: old.items.map((item, index) => ({
                 skuId: item.skuId,

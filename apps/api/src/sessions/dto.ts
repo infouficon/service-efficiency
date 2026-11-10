@@ -225,6 +225,16 @@ export class UpdateSelectionDto {
   @IsArray()
   @IsString({ each: true })
   payments?: string[];
+
+  /** D121: customer requests VAT refund (tourists). */
+  @IsOptional()
+  @IsBoolean()
+  vatRefund?: boolean;
+
+  /** D121: customer requests full tax invoice. */
+  @IsOptional()
+  @IsBoolean()
+  taxInvoice?: boolean;
 }
 
 export class ReportStockMissingDto {

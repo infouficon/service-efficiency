@@ -1,0 +1,57 @@
+# =====================================================================
+# [SES v4] 2026-11-10 ชุด v4: เนื้อหาเหมือน ses_report_bill v3 ทุกบรรทัด (เรียกครั้งเดียวตอนชำระ "paid": 1 + "openedAt")
+# Script : ses_report_bill   (v2 2026-11-04 เขียนโดยทีม SES · v1 2026-11-03)
+# สถานะ   : 2026-11-06 ทีม FMP ยังใช้ v1 (ไม่มี "paid") ให้แทนด้วยตัวนี้ ใช้บรรทัด $key เดิมของ FMP ได้ แต่ควรย้ายคีย์ไปเก็บในฟิลด์ที่จำกัดสิทธิ์
+# หน้าที่ : แจ้ง SES ด้วยเวลาจริงของ FMP ว่า (ก) เปิดบิลของออเดอร์นี้แล้ว และ/หรือ (ข) ลูกค้าชำระเงินเสร็จแล้ว
+#           (ก) → ออเดอร์ใน SES เป็น "เปิดบิลแล้ว" (BILL_OPENED) และแสดงเลขบิล
+#           (ข) → [SES v2] ออเดอร์ใน SES "ปิดการขาย" (COMPLETED) ตามเวลาที่ชำระ แคชเชียร์ไม่ต้องกดอะไรใน SES
+# เรียกเมื่อ: บิลพักที่มาจาก SES (pos_front_sale_tmp::ses_id ไม่ว่าง)
+#   ก. ตอนแคชเชียร์เปิดบิลพักนั้นขึ้นมาทำรายการ                 → param ไม่ต้องมี "paid"
+#   ข. ตอนรับชำระเงิน/ออกใบเสร็จของบิลนั้นเสร็จ (ท้ายสคริปต์ออกใบเสร็จ) → param ใส่ "paid": 1
+#   ถ้าเรียกได้จุดเดียว ให้เรียกที่ ข. SES จะบันทึกเปิดบิลและปิดการขายเป็นเวลาเดียวกัน (เวลาที่ชำระ)
+# Param  : { "sesID": "SES-20261103-000001", "billNo": "<เลขที่บิลใน FMP>", "paid": 1, "openedAt": <timestamp เปิดบิลพัก> }
+#          [SES v3] เรียกครั้งเดียวตอนชำระเสร็จ (FMP ได้เลขบิลตอนชำระ) "paid": 1 ทุกครั้ง
+#          เวลาที่ส่งคือเวลาเซิร์ฟเวอร์ FMP ตอนสคริปต์รัน: ต้องเรียกทันทีที่เกิดเหตุการณ์ ห้ามเก็บไว้เรียกย้อนหลังเป็นชุด
+# Result : JSON { ok, status, paid, body }
+# =====================================================================
+#
+Set Error Capture [ On ]
+Allow User Abort [ Off ]
+#
+Set Variable [ $p ; Value: Get ( ScriptParameter ) ]
+Set Variable [ $sesID ; Value: Trim ( JSONGetElement ( $p ; "sesID" ) ) ]
+Set Variable [ $billNo ; Value: Trim ( JSONGetElement ( $p ; "billNo" ) ) ]
+# [SES v2] 1 = ชำระเงินเสร็จแล้ว (ว่างหรือ 0 = แค่เปิดบิล)
+Set Variable [ $paid ; Value: GetAsBoolean ( JSONGetElement ( $p ; "paid" ) ) ]
+# [SES v3] 2026-11-10 FMP มีเลขบิลตอนชำระเงินเท่านั้น: เรียกสคริปต์นี้ครั้งเดียวตอนชำระเสร็จ ใส่ "paid": 1 ทุกครั้ง
+# [SES v3] openedAt = เวลาที่เปิดบิลพัก (ไม่ใช่เวลาตอนเรียก) ส่งมาใน param "openedAt" เป็น timestamp ของ FMP เช่น ses::processed_at
+# [SES v3]   (เวลาที่สคริปต์ ses เปิดบิลพักให้) หรือเวลาสร้างบิลพักในตารางบิล ถ้าว่าง ใช้เวลาตอนเรียกแทน
+Set Variable [ $openedTs ; Value: GetAsTimestamp ( JSONGetElement ( $p ; "openedAt" ) ) ]
+If [ IsEmpty ( $sesID ) or IsEmpty ( $billNo ) ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "status" ; "NO_PARAM" ; JSONString ] ) ]
+End If
+#
+# คีย์ POS_API_KEY ที่เจ้าของระบบ SES ให้ เก็บในที่ปลอดภัยของ FMP (เช่น ฟิลด์ในตารางตั้งค่าที่จำกัดสิทธิ์) ห้ามเขียนคีย์ลงสคริปต์ตรงๆ
+Set Variable [ $key ; Value: ‹ฟิลด์ที่เก็บคีย์ เช่น settings::ses_pos_api_key› ]
+#
+# เวลาไทยพร้อม +07:00 เช่น 2026-11-03T14:52:10+07:00
+Set Variable [ $t ; Value: Get ( CurrentHostTimestamp ) ]
+Set Variable [ $now ; Value: Year ( $t ) & "-" & Right ( "0" & Month ( $t ) ; 2 ) & "-" & Right ( "0" & Day ( $t ) ; 2 ) & "T" & Right ( "0" & Hour ( $t ) ; 2 ) & ":" & Right ( "0" & Minute ( $t ) ; 2 ) & ":" & Right ( "0" & Int ( Seconds ( $t ) ) ; 2 ) & "+07:00" ]
+# [SES v3] เวลาเปิดบิลพักในรูปแบบเดียวกัน ($o = openedAt จาก param หรือเวลาตอนนี้)
+Set Variable [ $o ; Value: If ( IsEmpty ( $openedTs ) ; $t ; $openedTs ) ]
+Set Variable [ $opened ; Value: Year ( $o ) & "-" & Right ( "0" & Month ( $o ) ; 2 ) & "-" & Right ( "0" & Day ( $o ) ; 2 ) & "T" & Right ( "0" & Hour ( $o ) ; 2 ) & ":" & Right ( "0" & Minute ( $o ) ; 2 ) & ":" & Right ( "0" & Int ( Seconds ( $o ) ) ; 2 ) & "+07:00" ]
+# openedAt: SES ใช้เฉพาะครั้งแรกที่ได้ยินเลขบิลนี้ ครั้งต่อไป (ตอนชำระ) SES เก็บเวลาเปิดบิลเดิมไว้
+Set Variable [ $body ; Value: JSONSetElement ( "{}" ; [ "reference" ; $sesID ; JSONString ] ; [ "billNo" ; $billNo ; JSONString ] ; [ "openedAt" ; $opened ; JSONString ] ) ]
+# [SES v2] completedAt = เวลาที่ชำระเสร็จ → SES ปิดการขายตามเวลานี้
+If [ $paid ]
+	Set Variable [ $body ; Value: JSONSetElement ( $body ; "completedAt" ; $now ; JSONString ) ]
+End If
+#
+# ต้องมี User-Agent ที่ไม่ใช่ของ curl: Cloudflare หน้า ses.uficon.com ตอบ 403 กับ user-agent ของ curl (ทดสอบแล้ว 2026-11-03)
+Insert from URL [ Select ; With dialog: Off ; Target: $response ; "https://ses.uficon.com/api/integrations/pos/bills" ; Verify SSL Certificates ; cURL options: "-X POST -A \"Mozilla/5.0 (FileMaker; UFicon SES bill report)\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer " & $key & "\" --data @$body -D $headers --max-time 15" ]
+Set Variable [ $err ; Value: Get ( LastError ) ]
+Set Variable [ $status ; Value: MiddleWords ( GetValue ( $headers ; 1 ) ; 2 ; 1 ) ]
+# 201 = SES บันทึกแล้ว (เรียกซ้ำด้วยเลขบิลเดิมได้ 201 เหมือนเดิม ไม่บันทึกซ้ำ)
+# 409 = เลขบิลต่างจากที่เคยแจ้ง, ออเดอร์ถูกยกเลิก หรือยังไม่ถึงแคชเชียร์ · 401 = คีย์ผิด · 404 = ไม่พบ reference
+# 400 = ข้อมูลไม่ครบ หรือเวลาไม่สมเหตุผล (ก่อนลูกค้าเข้าร้าน, ชำระก่อนเปิดบิล, ล้ำเวลาปัจจุบันเกิน 5 นาที: ดูนาฬิกาเซิร์ฟเวอร์ FMP)
+Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; $err = 0 and $status = "201" ; JSONBoolean ] ; [ "status" ; $status ; JSONString ] ; [ "paid" ; $paid ; JSONBoolean ] ; [ "body" ; Left ( $response ; 500 ) ; JSONString ] ) ]

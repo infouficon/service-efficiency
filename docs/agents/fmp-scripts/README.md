@@ -21,6 +21,7 @@
 | [ses_v3_live_from_fmp.txt](ses_v3_live_from_fmp.txt) | ตัวที่ทีม FMP ใช้งานจริง (export 2026-11-06, ไว้เทียบ) |
 | [ses_v2.txt](ses_v2.txt) | สคริปต์ `ses` v2 ทุกจุดที่เปลี่ยนจากต้นฉบับมี `[SES v2]` นำหน้า |
 | [ses_fail_v2.txt](ses_fail_v2.txt) | สคริปต์ `ses_fail` เวอร์ชันใหม่ (เปลี่ยน 1 บรรทัด) |
+| **ชุด v4 (ล่าสุด 2026-11-10, D126)** [README-v4-TH.txt](README-v4-TH.txt) · [ses_v4.txt](ses_v4.txt) · [ses_fail_v4.txt](ses_fail_v4.txt) · [ses_report_bill_v4.txt](ses_report_bill_v4.txt) · [ses_report_cancel_v4.txt](ses_report_cancel_v4.txt) | ใช้แทน v3.x ทั้งหมด: v3.4 (เอาบิลพักออก/แก้ไขครั้งที่ N) + PayBy ตามชื่อช่องทาง SES (`$PAYBY_MAP`) · ต้องเพิ่มฟิลด์ `ses::ses_rev`, `pos_front_sale_tmp::ses_note` |
 | [ses_v3.4.txt](ses_v3.4.txt) | **ล่าสุด (v3.4 2026-11-10, D123)** ส่งกลับ STOCK / ยกเลิกใน SES = เอาบิลพักออก (ปล่อย SN) · ส่งรอบใหม่ = เปิดบิลพักใหม่ หมายเหตุ "แก้ไขครั้งที่ N" · ต้องเพิ่มฟิลด์ `ses::ses_rev`, `pos_front_sale_tmp::ses_note` · อ่าน [README-v3.4-TH.txt](README-v3.4-TH.txt) |
 | [ses_report_cancel_v1.txt](ses_report_cancel_v1.txt) | **ใหม่ (v1 2026-11-10, D121)** เรียกท้ายสคริปต์ยกเลิกบิลพักของ FMP: ล้าง `ses_status`/`sale_id` (ส่งซ้ำแล้วเปิดบิลใหม่ได้) + แจ้ง SES ผ่าน callback `status: "error"` ข้อความ `CANCELLED ...` |
 | [ses_report_bill_v3.txt](ses_report_bill_v3.txt) | **ล่าสุด (v3 2026-11-10)** FMP มีเลขบิลตอนชำระเท่านั้น: เรียกครั้งเดียวตอนชำระ `"paid": 1` + `"openedAt"` = เวลาเปิดบิลพัก (เช่น `ses::processed_at`) |

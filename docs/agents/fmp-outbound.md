@@ -114,6 +114,9 @@ to stock) and `CANCELLED` (`state: "CANCELLED"`) for an order FileMaker already 
 serials. Every message has `revision` (times STOCK sent the order) and `revisionNote`; the bill gets `ses_note` ("แก้ไขครั้งที่ N").
 New answers: `RELEASED`, `NOTHING_TO_RELEASE`, `STALE`, `ORDER_CANCELLED` (ok) and `BILL_IN_USE`, `RELEASE_FAILED` (error).
 
+**D126 (script set v4):** `ses_v4` fills `PayBy` from `payments` (the SES method names) through its `$PAYBY_MAP` table; an unmapped
+name is kept as it is and warned (`UNMAPPED_PAYMENT`). Install guide: `fmp-scripts/README-v4-TH.txt`.
+
 ## Reporting back: the callback door (D90)
 
 FileMaker tells SES what it did with a message by calling:

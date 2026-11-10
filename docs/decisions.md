@@ -1705,4 +1705,18 @@ Customer phone numbers at walk-in and confirmation previously required exactly 1
 3. **Display.** Friendly formatting throughout the UI (queue lists, staff workspace, logs): Thai numbers display in standard local format (`081-234-5678` or `02-123-4567`); foreign numbers display with country code (`+81 90 1234 5678`).
 4. **Outbound Compatibility (POS & FileMaker).** In `orderView` / outbound payloads (`customerPhone`), Thai numbers starting with `+66` are converted back to standard local format with a leading `0` (`0812345678` or `021234567`) so legacy POS and FileMaker `cust_tel` queries continue matching customer records without modification. Foreign numbers are sent as E.164 strings.
 
+## D121 — A held bill cancelled in FileMaker is reported through the callback; an SES cancel is cleared by hand (2026-11-10)
 
+The FileMaker team asked what to send when a bill from SES is cancelled on their side.
+
+1. **Cancelled in FileMaker.** FileMaker already frees the serials for a new scan, so the same order (same reference, same serials) can
+   be sent again. Their new script `ses_report_cancel` v1 (`docs/agents/fmp-scripts/`) clears `ses::ses_status` and `ses::sale_id`
+   (otherwise the `ses` script answers `ALREADY_DONE` and opens nothing) and calls the callback door (D90) with the reference,
+   `status: "error"` and a message starting `CANCELLED` (sale id, reason, "ชำระแล้ว" for a paid bill). No SES change: an error answer
+   already puts the order in "ออเดอร์ที่ต้องดู" (`ack-error`, with the resend button) and stops counting it as a held bill. Key: the
+   `FMP_CALLBACK_KEY` FileMaker already used for its test callbacks on 2026-10-31.
+2. **Cancelled after payment** (paid = 1): the record is not cleared and the order in SES stays sold; the warning tells staff to sort it
+   out by hand. Undoing a sale in SES is not built.
+3. **Cancelled in SES** after the order went to the cashier: SES sends nothing to FileMaker (it pushes only `SENT_TO_CASHIER`). For now the
+   cashier cancels the held bill in FileMaker by hand; a push of the cancel (and a FileMaker script to clear it) waits until it is
+   needed.

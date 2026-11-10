@@ -5,9 +5,49 @@ import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { loadPaymentTypes, orderView, type OrderViewSource } from '../sessions/order-view';
 
-/** What `enqueue` needs of a session: the order view plus its branch. */
-export type FmpSession = OrderViewSource & { id: string; branch: { code: string; name: string } };
+/**
+ * What `enqueue` needs of a session: the order view plus its branch, its outcome (an ended order is never billed) and its
+ * events (D123: how many times STOCK sent it, and why it came back).
+ */
+export type FmpSession = OrderViewSource & {
+  id: string;
+  branch: { code: string; name: string };
+  outcome?: string | null;
+  events: { eventType: string; metadata: Prisma.JsonValue | null }[];
+};
+
+/** D123: the messages that take an order's held bill away in FileMaker (and free its serials) instead of opening one. */
+export type FmpReleaseEvent = 'RETURNED_TO_STOCK' | 'CANCELLED';
+
+/** "reason: other reason" as staff gave it ("อื่น ๆ" alone says nothing, so only the other reason then); null when empty. */
+function reasonText(metadata: Prisma.JsonValue | null | undefined): string | null {
+  const m = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {};
+  const reason = typeof m.reason === 'string' ? m.reason.trim() : '';
+  const other = typeof m.otherReason === 'string' ? m.otherReason.trim() : '';
+  const text = reason === 'อื่น ๆ' ? other : [reason, other].filter(Boolean).join(': ');
+  return text ? text.slice(0, 200) : null;
+}
+
+/**
+ * D123: the held bill's revision, so FileMaker keeps one bill per order through a send-back. `revision` = how many times STOCK
+ * has sent the order to the cashier (1 the first time; a release names the revision it takes away). `revisionNote` = why the
+ * order was sent back (on a release, and on every send after the first) or why it was cancelled; null otherwise.
+ */
+export function fmpRevision(session: Pick<FmpSession, 'events'>, event: string): { revision: number; revisionNote: string | null } {
+  const sends = session.events.filter((e) => e.eventType === 'STOCK_SENT_TO_CASHIER').length;
+  const last = (type: string) => [...session.events].reverse().find((e) => e.eventType === type);
+  const revision = Math.max(1, sends);
+  const revisionNote =
+    event === 'CANCELLED'
+      ? reasonText(last('CUSTOMER_CANCELLED')?.metadata)
+      : event === 'RETURNED_TO_STOCK' || sends > 1
+        ? reasonText(last('CASHIER_REJECTED')?.metadata)
+        : null;
+  return { revision, revisionNote };
+}
 type Outbox = Pick<PrismaService, 'fmpOutbox' | 'fmpLog' | 'paymentMethod'> | Prisma.TransactionClient;
+/** D123: the stages before the cashier: an order resent from there was sent back to stock (its held bill must go). */
+const AT_STOCK = ['STOCK_REQUESTED', 'SEARCHING', 'FOUND'];
 
 /** Minutes to wait before attempt 2, 3, … (attempt 1 is at once); after the last one the message is `failed` until an ADMIN retries it. */
 const BACKOFF_MINUTES = [1, 2, 5, 10, 20, 30, 60];
@@ -343,6 +383,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const paymentTypes = await loadPaymentTypes(db);
     const queued = new Date();
     const view = orderView(session, paymentTypes);
+    const { revision, revisionNote } = fmpRevision(session, event);
     const payload = JSON.stringify({
       source: 'SES',
       // D92: what the FileMaker `ses` script checks before it opens a bill: the contract version, `test` (false: a real order)
@@ -355,6 +396,11 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       queuedAt: queued.toISOString(),
       branch: { code: session.branch.code, name: session.branch.name },
       ...view,
+      // D123: an ended order (cancelled, not bought...) says so: the `ses` script opens a bill only for SENT_TO_CASHIER, so a
+      // late retry or an ADMIN's resend of a cancelled order can never bill it
+      state: session.outcome ? 'CANCELLED' : view.state,
+      revision,
+      revisionNote,
       // D97: the `ses` script refuses any order with accessories; the shop adds them in FileMaker, so they travel as a note only
       accessories: [],
       accessoriesForCashier: view.accessories,
@@ -367,6 +413,17 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       db,
     );
     return id;
+  }
+
+  /**
+   * D123: an order FileMaker already got leaves the cashier (sent back to stock, or cancelled): FileMaker is told, so its `ses`
+   * script (v3.4) takes the held bill away and frees the serials (and, for a cancel, refuses the order from then on). Nothing is
+   * queued for an order SES never sent to FileMaker. Inside the caller's transaction, like `enqueue`.
+   */
+  async release(db: Outbox, session: FmpSession, event: FmpReleaseEvent): Promise<string | null> {
+    if (!this.configured()) return null;
+    const sent = await db.fmpOutbox.count({ where: { sessionId: session.id } });
+    return sent ? this.enqueue(db, session, event) : null;
   }
 
   // ---------------------------------------------------------------------------
@@ -816,7 +873,11 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     return { ok: true };
   }
 
-  /** Sends an existing order again (event `RESEND`), e.g. for the FileMaker team to test with a real order. */
+  /**
+   * Sends an existing order again, e.g. for the FileMaker team to test with a real order, or from "ออเดอร์ที่ต้องดู". D123: the
+   * message fits where the order is now: `CANCELLED` for an ended order, `RETURNED_TO_STOCK` for one back with stock (both take
+   * the held bill away), `RESEND` otherwise.
+   */
   async resend(reference: string, by = 'ADMIN') {
     if (!this.configured()) return { error: 'not-configured' as const };
     const session = await this.prisma.customerSession.findUnique({
@@ -829,11 +890,13 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
         points: true,
         burnPoints: true,
         payments: true,
+        events: { orderBy: { createdAt: 'asc' }, select: { eventType: true, metadata: true } },
       },
     });
     if (!session) return { error: 'not-found' as const };
-    await this.record({ direction: 'SES', kind: 'resend', ok: true, reference, summary: `${by} สั่งส่งออเดอร์นี้ซ้ำ` });
-    return { id: await this.enqueue(this.prisma, session, 'RESEND') };
+    const event = session.outcome ? 'CANCELLED' : AT_STOCK.includes(session.state) ? 'RETURNED_TO_STOCK' : 'RESEND';
+    await this.record({ direction: 'SES', kind: 'resend', ok: true, reference, summary: `${by} สั่งส่งออเดอร์นี้ซ้ำ (${event})` });
+    return { id: await this.enqueue(this.prisma, session, event) };
   }
 
   // ---------------------------------------------------------------------------

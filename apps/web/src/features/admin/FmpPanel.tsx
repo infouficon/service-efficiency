@@ -131,6 +131,9 @@ const KIND: Record<string, string> = {
 const EVENT: Record<string, string> = {
   SENT_TO_CASHIER: 'ส่งถึงแคชเชียร์',
   RESEND: 'ส่งซ้ำ',
+  // D123: these take the held bill away in FileMaker (and free its serials)
+  RETURNED_TO_STOCK: 'ส่งกลับ STOCK (เอาบิลพักออก)',
+  CANCELLED: 'ยกเลิกออเดอร์ (เอาบิลพักออก)',
 };
 const fmt = (iso: string) =>
   new Date(iso).toLocaleString('th-TH', {

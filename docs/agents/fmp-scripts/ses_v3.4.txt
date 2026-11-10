@@ -1,0 +1,640 @@
+# [SES v3] 2026-11-05 ทีม SES: สคริปต์ ses เวอร์ชัน 3 = v2 + "สแกน SN ทีหลัง" (ทุกจุดที่เปลี่ยนมี [SES v3] นำหน้า, ดู README.md)
+# [SES v3] เครื่องอยู่ที่ร้านแล้วแต่ FMP ยังไม่อัปเดต (เช่น ยังไม่รับโอน: SN_WRONG_BRANCH) หรือ STOCK ยังสแกนไม่ได้: เปิดบิลพักได้
+# [SES v3] v3.1 (ตามทีม FMP 2026-11-05): เครื่องนั้น "ข้าม" ไม่เขียนบรรทัด (ช่อง SN เป็นช่องหลังบ้าน แคชเชียร์กรอกไม่ได้)
+# [SES v3] แคชเชียร์สแกนขายเครื่องนั้นเพิ่มในบิลตามปกติหน้าร้าน แทนการปฏิเสธทั้งออเดอร์
+# [SES v3.2] 2026-11-06 = ตัวที่ทีม FMP ใช้งานจริง (export 2026-11-06, สำเนา: ses_v3_live_from_fmp.txt) ทุกจุดที่ทีม FMP แก้เพิ่มมี [SES v3.2] นำหน้า
+# [SES v3.2] ต่างจากตัวที่ใช้งานจริงจุดเดียว: 3.3 Payments อ่าน "paymentTypes" (ตัวที่ใช้งานจริงยังอ่าน "payments" 3 ที่ ต้องแก้)
+# [SES v3.3] 2026-11-10 ทีม SES: ผลลัพธ์มี "snCheck" = ผลตรวจ SN ทีละเครื่อง (เจอไหม เขียนลงบิลไหม รุ่น UPC สาขา สถานะ ชื่อ ราคา) ทั้งตอนสำเร็จและตอนล้ม
+# [SES v3.3] เพิ่ม 4 จุด มี [SES v3.3] นำหน้า (0. Config, ท้าย Loop ใน: sn, ses_fail 2 ที่, Exit Script สุดท้าย) ไม่เปลี่ยนการตรวจเดิมเลย
+# [SES v3.4] 2026-11-10 ทีม SES (D123): ส่งกลับ STOCK / ยกเลิกออเดอร์ = เอาบิลพักออก (ปล่อย SN) · STOCK ส่งใหม่ = เปิดบิลพักใหม่ "แก้ไขครั้งที่ N"
+# [SES v3.4] ต้องเพิ่ม 2 ฟิลด์ก่อนวางสคริปต์: ses::ses_rev (Number) และ pos_front_sale_tmp::ses_note (Text) ทุกจุดที่เปลี่ยนมี [SES v3.4] นำหน้า
+# =====================================================================
+# Script : ses
+# เรียกโดย : FileMaker Data API พร้อม "script":"ses", "script.param":"<SES reference>"
+# Param  : SES ID (reference)
+# Result : JSON { ok, code, sesID, saleID, lines, message, warnings, snCheck }
+# Version: v2 2026-11-03 แก้โดยทีม SES ให้ตรงกับข้อมูลที่ SES ส่งจริง ทุกจุดที่เปลี่ยนมี "[SES v2]" นำหน้า ที่เหลือคือของเดิม
+# Version: v3 2026-11-05 แก้โดยทีม SES เครื่องที่ยังไม่มี SN หรือ FMP ยังไม่มีในสาขานี้ ข้ามไม่เขียน พร้อมจำนวนเครื่องที่ข้ามและเหตุผล
+# Version: v3.2 2026-11-06 ตัวที่ทีม FMP ใช้งานจริง + แก้ 3.3 Payments ให้อ่าน "paymentTypes"
+# Version: v3.3 2026-11-10 เพิ่ม "snCheck" ในผลลัพธ์ (ผลตรวจ SN ทีละเครื่อง ให้ SES แสดงและส่งกลับให้ Stock สแกนใหม่เฉพาะเครื่องที่ผิด)
+# Version: v3.4 2026-11-10 รับ event RETURNED_TO_STOCK / CANCELLED (เอาบิลพักออก) และ revision (เปิดบิลพักใหม่แทนใบเดิม พร้อมหมายเหตุ)
+# =====================================================================
+# 
+Set Error Capture [ On ]
+Allow User Abort [ Off ]
+# 
+# ---------- 0. Config ----------
+# ตั้งเป็น 0 บน Production เพื่อปฏิเสธข้อมูลทดสอบ (test = true)
+Set Variable [ $ALLOW_TEST ; Value: 1 ]
+Set Variable [ $SUPPORTED_VERSION ; Value: 1 ]
+Set Variable [ $REQUIRED_STATE ; Value: "SENT_TO_CASHIER" ]
+# [SES v2] 1 = ลูกค้าใหม่ (ยังไม่มีในตาราง customer) เปิดบิลพักได้โดยยังไม่ผูกลูกค้า แคชเชียร์เลือก/สร้างลูกค้าในบิลเอง · 0 = ปฏิเสธ (WRONG_PHONE) แบบเดิม
+Set Variable [ $ALLOW_UNKNOWN_CUSTOMER ; Value: 1 ]
+# [SES v2] 1 = ไม่มีวิธีชำระ เปิดบิลพักได้ แคชเชียร์เลือกตอนรับเงิน (SES ไม่บังคับให้เลือกวิธีชำระ) · 0 = ปฏิเสธ (NO_PAYMENT)
+Set Variable [ $ALLOW_NO_PAYMENT ; Value: 1 ]
+# [SES v2] คำเตือนที่ไม่ทำให้ล้ม จะส่งกลับใน "warnings" และ "message" (SES แสดงในหน้า Admin)
+Set Variable [ $warnings ; Value: "" ]
+# [SES v3] 1 = เครื่องที่ยังไม่มี SN (SES ส่ง sn น้อยกว่า quantity, "snMissing") หรือ SN ที่ FMP ยังไม่มีในสาขานี้ (SN_NOT_FOUND,
+# [SES v3]     SN_WRONG_BRANCH, SN_NOT_READY_FOR_SALE) ข้ามไม่เขียนบรรทัด แคชเชียร์สแกนขายเพิ่มหน้าร้าน · 0 = ปฏิเสธทั้งออเดอร์แบบ v2
+# [SES v3] SN รุ่นไม่ตรง / ขายไปแล้ว / อยู่ในบิลพักอื่น / ซ้ำ ยังปฏิเสธเหมือนเดิม (หยิบผิดเครื่อง ต้องให้ Stock สแกนใหม่)
+Set Variable [ $ALLOW_SN_LATER ; Value: 1 ]
+# [SES v3.4] เอาบิลพักออกแบบไหน: "delete" = ลบหัวบิล (pos_front_sale_tmp) ทิ้ง · ค่าอื่น = ไม่ลบ แต่เปลี่ยน status หัวบิลเป็นค่านั้น (เช่น "cancel")
+# [SES v3.4] ทั้งสองแบบลบรายการ (POS_front_sale_detail ที่ mark_tmp = "tmp") ของบิลนั้น SN จึงว่างให้สแกนใหม่ได้ (ตามที่ข้อ 3 ตรวจ SN_ALREADY_SOLD_OR_HELD)
+Set Variable [ $RELEASE_MODE ; Value: "delete" ]
+# [SES v3] จำนวนเครื่องที่ข้าม (แคชเชียร์ต้องสแกนขายเพิ่ม) และเหตุผล (ส่งกลับใน "snPending" และ "message")
+Set Variable [ $snPending ; Value: 0 ]
+Set Variable [ $snLaterMsg ; Value: "" ]
+# [SES v3.3] ผลตรวจ SN ทีละเครื่อง (JSON array) และตัวนับ ส่งกลับใน "snCheck"
+Set Variable [ $snCheck ; Value: "[]" ]
+Set Variable [ $k ; Value: 0 ]
+# 
+Set Variable [ $sesID ; Value: Trim ( Get ( ScriptParameter ) ) ]
+If [ IsEmpty ( $sesID ) ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ;         [ "ok" ; False ; JSONBoolean ] ;         [ "code" ; "NO_PARAM" ; JSONString ] ;         [ "message" ; "Script parameter (SES ID) is empty" ; JSONString ] ) ]
+End If
+# 
+# ---------- 1. ค้นหา record ของ SES ID นั้นๆ ----------
+Go to Layout [ “ses” (ses) ; Animation: None ]
+Enter Find Mode [ Pause: Off ]
+Set Field [ ses::ses_id ; "==" & Quote ( $sesID ) ]
+Perform Find []
+# 
+# [SES v2] เดิม: FoundCount ≠ 1 → NOT_FOUND · ตอนนี้ไม่เจอเลยเท่านั้นที่เป็น NOT_FOUND
+If [ Get ( FoundCount ) = 0 ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ;         [ "ok" ; False ; JSONBoolean ] ;         [ "code" ; "NOT_FOUND" ; JSONString ] ;         [ "sesID" ; $sesID ; JSONString ] ) ]
+End If
+# [SES v2] SES เก็บ 1 record ต่อออเดอร์อยู่แล้ว (ส่งซ้ำ = แก้ record เดิม) ถ้ายังเจอมากกว่า 1 ให้ใช้ record ล่าสุด
+# (found set ที่ยังไม่ sort เรียงตามลำดับที่สร้าง: เหลือไว้ตัวสุดท้ายตัวเดียว ses_fail จะได้แก้ record ที่ถูกต้อง)
+If [ Get ( FoundCount ) > 1 ]
+	Go to Record/Request/Page [ First ]
+	Omit Multiple Records [ With dialog: Off ; Get ( FoundCount ) - 1 ]
+End If
+# 
+# =====================================================================
+# [SES v3.4] 1.5 event + revision (D123)
+#   event "RETURNED_TO_STOCK" (ส่งกลับ STOCK) / "CANCELLED" (ยกเลิกออเดอร์) = เอาบิลพักออก ไม่เปิดบิล
+#   revision = ครั้งที่ STOCK ส่งออเดอร์นี้มาที่แคชเชียร์ (1 = ครั้งแรก) · ses::ses_rev = ครั้งล่าสุดที่สคริปต์นี้ทำไปแล้ว
+#   ข้อความที่มาช้า (revision น้อยกว่าที่ทำไปแล้ว) ไม่ทำอะไร ตอบ STALE
+# =====================================================================
+Set Variable [ $json ; Value: ses::ses_body ]
+Set Variable [ $event ; Value: JSONGetElement ( $json ; "event" ) ]
+Set Variable [ $rev ; Value: GetAsNumber ( JSONGetElement ( $json ; "revision" ) ) ]
+If [ IsEmpty ( $rev ) or $rev < 1 ]
+	Set Variable [ $rev ; Value: 1 ]
+End If
+Set Variable [ $revNote ; Value: Trim ( JSONGetElement ( $json ; "revisionNote" ) ) ]
+Set Variable [ $lastRev ; Value: If ( IsEmpty ( ses::ses_rev ) ; 0 ; GetAsNumber ( ses::ses_rev ) ) ]
+Set Variable [ $isRelease ; Value: $event = "RETURNED_TO_STOCK" or $event = "CANCELLED" ]
+Set Variable [ $revised ; Value: False ]
+# ออเดอร์ที่ยกเลิกแล้ว ไม่เปิดบิลอีก
+If [ ses::ses_status = "CANCELLED" ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; "ORDER_CANCELLED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "message" ; "ออเดอร์นี้ถูกยกเลิกแล้ว ไม่เปิดบิล" ; JSONString ] ) ]
+End If
+# ข้อความเก่ากว่ารอบที่ทำไปแล้ว หรือรอบที่ถูกส่งกลับ STOCK ไปแล้ว
+If [ $rev < $lastRev or ( ses::ses_status = "RETURNED" and not $isRelease and $rev ≤ $lastRev ) ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; "STALE" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "message" ; "ข้อความรอบที่ " & $rev & " เก่ากว่ารอบที่ FMP ทำแล้ว (" & $lastRev & ") ไม่ทำอะไร" ; JSONString ] ) ]
+End If
+# 
+# ----- เอาบิลพักออก: เมื่อส่งกลับ STOCK / ยกเลิก หรือ STOCK ส่งรอบใหม่ (revision มากกว่า) ขณะบิลพักรอบก่อนยังอยู่ -----
+If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
+	Set Variable [ $holdKey ; Value: ses::sale_id ]
+	Set Variable [ $released ; Value: 0 ]
+	Set Variable [ $hStatus ; Value: "" ]
+	If [ not IsEmpty ( $holdKey ) ]
+		Set Variable [ $hStatus ; Value: ExecuteSQL ( "SELECT \"status\" FROM pos_front_sale_tmp WHERE \"_PrimaryKey\" = ?" ; "" ; "" ; $holdKey ) ]
+		Set Variable [ $inUse ; Value: ExecuteSQL ( "SELECT COUNT(*) FROM POS_front_sale_detail WHERE PrimaryKey = ? AND invStatus IS NOT NULL" ; "" ; "" ; $holdKey ) ]
+		If [ $hStatus = "?" or $inUse = "?" ]
+			Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "RELEASE_FAILED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "อ่านบิลพักไม่ได้ (ExecuteSQL error) ไม่ได้เอาออก" ; JSONString ] ) ]
+		End If
+		# บิลถูกเปิดทำรายการ/ชำระไปแล้ว ไม่แตะ แคชเชียร์ต้องจัดการเอง (หัวบิลหายไปแล้ว = ไม่มีอะไรให้เอาออก)
+		If [ ( not IsEmpty ( $hStatus ) and $hStatus ≠ "hold" ) or GetAsNumber ( $inUse ) > 0 ]
+			Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "BILL_IN_USE" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "บิลพักถูกเปิดทำรายการหรือชำระแล้ว (status " & $hStatus & ") ไม่ได้เอาออก แคชเชียร์ต้องจัดการใน FMP เอง" ; JSONString ] ) ]
+		End If
+	End If
+	Open Transaction []
+		If [ not IsEmpty ( $holdKey ) ]
+			# รายการของบิลพักนั้น (ลบแล้ว SN ว่าง สแกนใหม่ได้)
+			Go to Layout [ “POS_front_sale_detail” (POS_front_sale_detail) ; Animation: None ]
+			Enter Find Mode [ Pause: Off ]
+			Set Field [ POS_front_sale_detail::PrimaryKey ; "==" & $holdKey ]
+			Set Field [ POS_front_sale_detail::mark_tmp ; "==tmp" ]
+			Perform Find []
+			If [ Get ( FoundCount ) > 0 ]
+				Set Variable [ $released ; Value: Get ( FoundCount ) ]
+				Delete All Records [ With dialog: Off ]
+				Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5011 ; Error Message: "Delete held bill lines failed (" & Get ( LastError ) & ")" ]
+			End If
+			# หัวบิลพัก
+			If [ not IsEmpty ( $hStatus ) ]
+				Go to Layout [ “ขายหน้าร้าน TMP” (pos_front_sale_tmp) ; Animation: None ]
+				Enter Find Mode [ Pause: Off ]
+				Set Field [ pos_front_sale_tmp::_PrimaryKey ; "==" & $holdKey ]
+				Perform Find []
+				If [ Get ( FoundCount ) = 1 ]
+					If [ $RELEASE_MODE = "delete" ]
+						Delete Record/Request [ With dialog: Off ]
+					Else
+						Set Field [ pos_front_sale_tmp::status ; $RELEASE_MODE ]
+						Set Field [ pos_front_sale_tmp::ses_note ; pos_front_sale_tmp::ses_note & " · เอาออกแล้ว (" & $event & ")" ]
+					End If
+					Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5012 ; Error Message: "Remove held bill failed (" & Get ( LastError ) & ")" ]
+				End If
+			End If
+		End If
+		# record ses: ยกเลิก = CANCELLED (ปิดถาวร) · ส่งกลับ STOCK = RETURNED (รอ STOCK ส่งรอบใหม่) · ส่งรอบใหม่ = ว่าง (เปิดบิลต่อด้านล่าง)
+		Go to Layout [ “ses” (ses) ; Animation: None ]
+		Set Field [ ses::ses_status ; Case ( $event = "CANCELLED" ; "CANCELLED" ; $isRelease ; "RETURNED" ; "" ) ]
+		Set Field [ ses::sale_id ; "" ]
+		Set Field [ ses::ses_rev ; Max ( $rev ; $lastRev ) ]
+		Set Field [ ses::ses_error ; Case ( $isRelease ; $event & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) ; "" ) ]
+		Set Field [ ses::status_at ; Get ( CurrentHostTimestamp ) ]
+		Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5013 ; Error Message: "Update inbox failed (" & Get ( LastError ) & ")" ]
+	Commit Transaction
+	Set Variable [ $txErr ; Value: Get ( LastError ) ]
+	If [ $txErr ≠ 0 ]
+		Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "RELEASE_FAILED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; $txErr & " " & Get ( LastErrorDetail ) ; JSONString ] ) ]
+	End If
+	If [ $isRelease ]
+		Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; If ( IsEmpty ( $hStatus ) and $released = 0 ; "NOTHING_TO_RELEASE" ; "RELEASED" ) ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "lines" ; $released ; JSONNumber ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "message" ; If ( $event = "CANCELLED" ; "ยกเลิกออเดอร์: " ; "ส่งกลับ STOCK: " ) & If ( IsEmpty ( $hStatus ) and $released = 0 ; "ไม่มีบิลพักให้เอาออก" ; "เอาบิลพักออกแล้ว " & $released & " รายการ" ) ; JSONString ] ) ]
+	End If
+	# ส่งรอบใหม่: เอาบิลพักรอบก่อนออกแล้ว ไปเปิดบิลใหม่ต่อ
+	Set Variable [ $revised ; Value: True ]
+End If
+# 
+# ---------- 2. ตรวจสถานะ (กันรันซ้ำ / รองรับ Reprocess) ----------
+If [ ses::ses_status = "DONE" ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ;         [ "ok" ; True ; JSONBoolean ] ;         [ "code" ; "ALREADY_DONE" ; JSONString ] ;         [ "sesID" ; $sesID ; JSONString ] ;         [ "saleID" ; ses::sale_id ; JSONString ] ) ]
+Else If [ ses::ses_status = "PROCESSING" ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ;         [ "ok" ; False ; JSONBoolean ] ;         [ "code" ; "IN_PROGRESS" ; JSONString ] ;         [ "sesID" ; $sesID ; JSONString ] ) ]
+End If
+# 
+# # สถานะว่าง หรือ ERROR → ประมวลผลต่อ
+Set Variable [ $json ; Value: ses::ses_body ]
+Set Field [ ses::ses_status ; "PROCESSING" ]
+# [SES v3.4] จำรอบที่กำลังทำ (ล้มก็ยังจำ ข้อความรอบเก่าที่มาช้าจะได้ไม่ทำซ้ำ)
+Set Field [ ses::ses_rev ; Max ( $rev ; $lastRev ) ]
+Set Field [ ses::ses_error ; "" ]
+Set Field [ ses::status_at ; Get ( CurrentHostTimestamp ) ]
+Commit Records/Requests [ Skip data entry validation ; With dialog: Off ]
+# 
+# =====================================================================
+# 3. VALIDATION + เตรียมข้อมูล (single-pass loop = try/catch)
+#    ผลลัพธ์: ตัวแปร repetition $L_sn[n]
+# =====================================================================
+# 
+Set Variable [ $errCode ; Value: "" ]
+Set Variable [ $errMsg ; Value: "" ]
+# 
+Loop [ Flush: Minimum ]
+	# ----- 3.1 โครงสร้าง JSON -----
+	If [ Left ( JSONFormatElements ( $json ) ; 1 ) = "?" ]
+		Set Variable [ $errCode ; Value: "INVALID_JSON" ]
+		Set Variable [ $errMsg ; Value: "ses_body is not valid JSON" ]
+		Exit Loop If [ True ]
+	End If
+	# 
+	# ----- 3.2 Header -----
+	Set Variable [ $ref ; Value: JSONGetElement ( $json ; "reference" ) ]
+	Set Variable [ $version ; Value: JSONGetElement ( $json ; "version" ) ]
+	Set Variable [ $state ; Value: JSONGetElement ( $json ; "state" ) ]
+	Set Variable [ $isTest ; Value: GetAsBoolean ( JSONGetElement ( $json ; "test" ) ) ]
+	Set Variable [ $branch ; Value: Trim ( JSONGetElement ( $json ; "branch.code" ) ) ]
+	Set Variable [ $phone ; Value: Trim ( JSONGetElement ( $json ; "customerPhone" ) ) ]
+	Set Variable [ $queue ; Value: JSONGetElement ( $json ; "queue" ) ]
+	Set Variable [ $staffID ; Value: GetAsNumber ( JSONGetElement ( $json ; "staffId" ) ) ]
+	Set Variable [ $source ; Value: JSONGetElement ( $json ; "source" ) ]
+	# [SES v2] บัญชีที่สร้างเองใน SES (เช่น 0001) ไม่ใช่รหัสพนักงาน ERP: ถ้าไม่พบในตาราง staff ให้เว้นว่าง แคชเชียร์เลือกพนักงานเอง
+	# (ถ้า ExecuteSQL error จะได้ "?" ซึ่งไม่ว่าง → ใช้รหัสเดิม ไม่ทำอะไร)
+	If [ not IsEmpty ( $staffID ) and IsEmpty ( ExecuteSQL ( "SELECT staff_id FROM staff WHERE staff_id = ?" ; "" ; "" ; $staffID ) ) ]
+		Set Variable [ $staffID ; Value: "" ]
+		Set Variable [ $warnings ; Value: List ( $warnings ; "UNKNOWN_STAFF" ) ]
+	End If
+	# [SES v2] บรรทัด $createdAt ด้านล่างถูก FileMaker ตัดตอน export ไม่ต้องแก้ ใช้สูตรเดิมในไฟล์ (SES ส่ง "2026-11-03T14:40:12+07:00")
+	# createdAt "2026-10-29T17:31:31+07:00" → Timestamp (เวลาไทยตามที่ SES ส่งมา)
+	Set Variable [ $createdAt ; Value: Let (   [ 	t  = JSONGetElement ( $json ; "createdAt" ) ; 	d  = Date ( Middle ( t ; 6 ; 2 ) ; Middle ( t ; 9 ; 2 ) ; Left ( t ; 4 ) ) ; 	tm = Time ( Middle ( t ; 12 ; 2 ) ; Middle ( t ; 15 ; 2 ) ; Middle ( t ; 18 ; 2 ) )   ] ; 	If ( Length ( t ) ≥ 19 ; T… ]
+	# เช็ค SES ID
+	If [ $ref ≠ $sesID ]
+		Set Variable [ $errCode ; Value: "REFERENCE_MISMATCH" ]
+		Set Variable [ $errMsg ; Value: "reference in body ≠ script parameter" ]
+		Exit Loop If [ True ]
+	End If
+	# 
+	# เช็ค version
+	If [ GetAsNumber ( $version ) ≠ $SUPPORTED_VERSION ]
+		Set Variable [ $errCode ; Value: "UNSUPPORTED_VERSION" ]
+		Set Variable [ $errMsg ; Value: "version " & $version & " is not supported" ]
+		Exit Loop If [ True ]
+	End If
+	# 
+	# เช็ค state
+	If [ $state ≠ $REQUIRED_STATE ]
+		Set Variable [ $errCode ; Value: "INVALID_STATE" ]
+		Set Variable [ $errMsg ; Value: "state = " & $state ]
+		Exit Loop If [ True ]
+	End If
+	# 
+	# เช็ค test
+	If [ $isTest and not $ALLOW_TEST ]
+		Set Variable [ $errCode ; Value: "TEST_NOT_ALLOWED" ]
+		Set Variable [ $errMsg ; Value: "Test transaction rejected on this server" ]
+		Exit Loop If [ True ]
+	End If
+	# 
+	# เช็ค เบอร์โทรศัพท์ลูกค้า
+	If [ IsEmpty ( $phone ) ]
+		Set Variable [ $errCode ; Value: "MISSING_PHONE" ]
+		Set Variable [ $errMsg ; Value: "customerPhone is empty" ]
+		Exit Loop If [ True ]
+	End If
+	Set Variable [ $phone ; Value: Substitute ( $phone ; [ "-" ; "" ] ; [ " " ; "" ] ) ]
+	Set Variable [ $customerID ; Value: Let (   [ 	x = ExecuteSQL ( "select customer_id from customer where cust_tel = ? ORDER BY \"_CreationTimestamp\"" ; "" ; "" ; $phone )   ] ; 	If ( x = "" or x = "?" ; "" ; x )  ) ]
+	Set Variable [ $custCnt ; Value: ValueCount ( $customerID ) ]
+	If [ $custCnt = 0 ]
+		# [SES v2] ลูกค้าใหม่ของ SES ยังไม่มีใน FMP: เปิดบิลพักได้โดยยังไม่ผูกลูกค้า (ถ้า $ALLOW_UNKNOWN_CUSTOMER = 1)
+		If [ $ALLOW_UNKNOWN_CUSTOMER ]
+			Set Variable [ $customer ; Value: "" ]
+			Set Variable [ $warnings ; Value: List ( $warnings ; "NEW_CUSTOMER" ) ]
+		Else
+			Set Variable [ $errCode ; Value: "WRONG_PHONE" ]
+			Set Variable [ $errMsg ; Value: "customerPhone is wrong" ]
+			Exit Loop If [ True ]
+		End If
+	Else
+		Set Variable [ $customer ; Value: GetValue ( $customerID ; $custCnt ) ]
+	End If
+	# 
+	# เช็ค สาขา
+	If [ IsEmpty ( $branch ) ]
+		Set Variable [ $errCode ; Value: "MISSING_BRANCH" ]
+		Set Variable [ $errMsg ; Value: "branch.code is empty" ]
+		Exit Loop If [ True ]
+	End If
+	Set Variable [ $branchID ; Value: Let (   [ 	x = ExecuteSQL ( "select branch_id from branch where branch_code = ?" ; "" ; "" ; $branch )   ] ; 	If ( x = "" or x = "?" ; "" ; x )  ) ]
+	If [ IsEmpty ( $branchID ) ]
+		Set Variable [ $errCode ; Value: "WRONG_BRANCH" ]
+		Set Variable [ $errMsg ; Value: "branch.code is wrong" ]
+		Exit Loop If [ True ]
+	End If
+	# 
+	# ----- 3.3 Payments -----
+	# [SES v2] อ่าน "paymentTypes" (ประเภทตามรายการของ FMP: เงินสด, โอนเงิน, บัตรเครดิต, บัตรเงินผ่อน, ใช้มัดจำ, Trade In, U-Joy, Partner Mall, อื่นๆ)
+	# แทน "payments" (ชื่อช่องทางใน SES เช่น 0% Credit Card, PayNext ซึ่ง ADMIN ของ SES เพิ่มได้เรื่อยๆ) ADMIN ของ SES เลือกประเภทให้ทุกช่องทางเอง
+	# [SES v3.2] ตัวที่ใช้งานจริง (export 2026-11-06) ยังอ่าน "payments" 3 ที่ในส่วนนี้ (If, $payCnt, $payby): เปลี่ยนเป็น "paymentTypes"
+	# [SES v3.2] "payments" คือชื่อช่องทางของ SES (Cash, Transfer, Full Credit Card…) ไม่ตรงกับ Substitute ภาษาไทยด้านล่าง PayBy จึงได้ชื่อดิบ
+	If [ JSONGetElementType ( $json ; "paymentTypes" ) ≠ JSONArray ]
+		Set Variable [ $errCode ; Value: "INVALID_PAYMENTS" ]
+		Set Variable [ $errMsg ; Value: "paymentTypes must be an array" ]
+		Exit Loop If [ True ]
+	End If
+	Set Variable [ $payCnt ; Value: ValueCount ( JSONListKeys ( $json ; "paymentTypes" ) ) ]
+	Set Variable [ $payby ; Value: JSONListValues ( $json ; "paymentTypes" ) ]
+	# ตัด ¶ ท้ายสุด (ถ้ามี) และบรรทัดว่าง
+	Set Variable [ $payby ; Value: While ( [ r = $payby ] ; Right ( r ; 1 ) = ¶ ; [ r = Left ( r ; Length ( r ) - 1 ) ] ; r ) ]
+	# [SES v2] แปลงประเภทภาษาไทยเป็น PayBy ของ FMP (1 ต่อ 1) แทน Substitute คำอังกฤษเดิมทั้งบรรทัด
+	# TODO ทีม FMP: เติม label ของ Trade In / U-Joy / Partner Mall / อื่นๆ ถ้ามีใน FMP (ไม่เติม = ใช้ข้อความเดิมตามที่ SES ส่ง)
+	Set Variable [ $payby ; Value: Substitute ( $payby ;
+		[ "เงินสด" ; "เงินสด ( Cash )" ] ;
+		[ "โอนเงิน" ; "โอนเงิน ( Bank Transfer )" ] ;
+		[ "บัตรเครดิต" ; "บัตรเครดิต ( Credit Card )" ] ;
+		[ "บัตรเงินผ่อน" ; "บัตรเงินผ่อน (Card Installment)" ] ;
+		[ "ใช้มัดจำ" ; "ใช้มัดจำ (Deposit)" ] ) ]
+	If [ $payCnt = 0 or IsEmpty ( $payby ) ]
+		# [SES v2] SES ไม่บังคับเลือกวิธีชำระ: เปิดบิลพักได้ แคชเชียร์เลือกตอนรับเงิน (ถ้า $ALLOW_NO_PAYMENT = 1) · รหัส error เดิมสะกด NO_PAYMEN
+		If [ $ALLOW_NO_PAYMENT ]
+			Set Variable [ $payby ; Value: "" ]
+			Set Variable [ $warnings ; Value: List ( $warnings ; "NO_PAYMENT" ) ]
+		Else
+			Set Variable [ $errCode ; Value: "NO_PAYMENT" ]
+			Set Variable [ $errMsg ; Value: "paymentTypes is empty" ]
+			Exit Loop If [ True ]
+		End If
+	End If
+	# 
+	# ----- 3.4 Accessories -----
+	# [SES v2] ตกลงกันแล้ว (2026-11-03): หน้าร้านเพิ่มอุปกรณ์เสริมลงบิลเองใน FMP ไม่ต้องตรวจ
+	# SES ส่ง "accessories" เป็น [] เสมอ รายการที่ลูกค้าเลือกอยู่ที่ "accessoriesForCashier" [{name, quantity}] ไว้ดูอ้างอิง (ไม่มี SKU ไม่มี SN)
+	# 
+	# ----- 3.5 Items -----
+	If [ JSONGetElementType ( $json ; "items" ) ≠ JSONArray ]
+		Set Variable [ $errCode ; Value: "INVALID_ITEMS" ]
+		Set Variable [ $errMsg ; Value: "items must be an array" ]
+		Exit Loop If [ True ]
+	End If
+	Set Variable [ $itemCnt ; Value: ValueCount ( JSONListKeys ( $json ; "items" ) ) ]
+	If [ $itemCnt = 0 ]
+		Set Variable [ $errCode ; Value: "NO_ITEMS" ]
+		Set Variable [ $errMsg ; Value: "items is empty" ]
+		Exit Loop If [ True ]
+	End If
+	Set Variable [ $line ; Value: 0 ]
+	Set Variable [ $allSN ; Value: "" ]
+	Set Variable [ $i ; Value: 0 ]
+	# ===== Loop นอก : items (UPC)
+	Loop [ Flush: Minimum ]
+		Exit Loop If [ $i ≥ $itemCnt ]
+		Set Variable [ $item ; Value: JSONGetElement ( $json ; "items[" & $i & "]" ) ]
+		Set Variable [ $partNo ; Value: Trim ( JSONGetElement ( $item ; "partNo" ) ) ]
+		Set Variable [ $qty ; Value: GetAsNumber ( JSONGetElement ( $item ; "quantity" ) ) ]
+		# เช็คจำนวน upc
+		If [ IsEmpty ( $partNo ) ]
+			Set Variable [ $errCode ; Value: "MISSING_PARTNO" ]
+			Set Variable [ $errMsg ; Value: "items[" & $i & "].partNo is empty" ]
+		Else If [ JSONGetElementType ( $item ; "sn" ) ≠ JSONArray ]
+			Set Variable [ $errCode ; Value: "INVALID_SN" ]
+			Set Variable [ $errMsg ; Value: "items[" & $i & "].sn must be an array" ]
+		End If
+		Exit Loop If [ not IsEmpty ( $errCode ) ]
+		# 
+		# เช็คจำนวน sn
+		Set Variable [ $snArr ; Value: JSONGetElement ( $item ; "sn" ) ]
+		Set Variable [ $snCnt ; Value: ValueCount ( JSONListKeys ( $snArr ; "" ) ) ]
+		# [SES v3] sn น้อยกว่า quantity ได้ถ้า $ALLOW_SN_LATER = 1 (เครื่องที่ขาดข้ามไป แคชเชียร์สแกนขายเพิ่ม) มากกว่า quantity ไม่ได้
+		If [ $qty < 1 or $snCnt > $qty or ( $snCnt < $qty and not $ALLOW_SN_LATER ) ]
+			Set Variable [ $errCode ; Value: "SN_COUNT_MISMATCH" ]
+			Set Variable [ $errMsg ; Value: $partNo & " quantity=" & $qty & " but sn=" & $snCnt ]
+			Exit Loop If [ True ]
+		End If
+		# [SES v3] เครื่องที่ SES ส่งมาโดยยังไม่มี SN
+		Set Variable [ $later ; Value: $qty - $snCnt ]
+		# 
+		Set Variable [ $j ; Value: 0 ]
+		# ===== Loop ใน : sn
+		Loop [ Flush: Minimum ]
+			Exit Loop If [ $j ≥ $snCnt ]
+			Set Variable [ $sn ; Value: Trim ( JSONGetElement ( $snArr ; "[" & $j & "]" ) ) ]
+			# [SES v2] บรรทัด $snRow ด้านล่างถูก FileMaker ตัดตอน export ไม่ต้องแก้ ใช้ SQL เดิมในไฟล์ (SES ส่ง sn เป็นตัวพิมพ์ใหญ่ ตามที่สแกนจากกล่อง)
+			# [SES v2] แนะนำ: ให้ ProductStore_detail::product_sn มี index (SES รอคำตอบสคริปต์ได้ไม่เกิน 60 วินาที)
+			# ดึงข้อมูล SN + UPC + Model + ราคา + ต้นทุน ในครั้งเดียว (ฟิลด์ข้อความที่อาจมี ¶ ปน เช่น product_name ต้องอยู่ท้ายสุด)
+			Set Variable [ $snRow ; Value: ExecuteSQL (     "SELECT d.product_upc, d.status, p.product_model, p.Price_Sell,             d.Cost_afterVat, d.Cost_beforeVat, d.vatValue, d.noINV,             p.product_brand, p.product_Category, p.product_SubCategory,             p.product_SubSubCateg… ]
+			Set Variable [ $snUPC ; Value: Trim ( GetValue ( $snRow ; 1 ) ) ]
+			Set Variable [ $snStatus ; Value: Trim ( GetValue ( $snRow ; 2 ) ) ]
+			Set Variable [ $snModel ; Value: Trim ( GetValue ( $snRow ; 3 ) ) ]
+			Set Variable [ $snPrice ; Value: GetAsNumber ( GetValue ( $snRow ; 4 ) ) ]
+			Set Variable [ $snBranch ; Value: Trim ( GetValue ( $snRow ; 13 ) ) ]
+			# [SES v3.2] ทีม FMP เพิ่มคอลัมน์ที่ 14 = รหัสสาขาของ SN ใน SQL ของ $snRow (product_name ย้ายไปคอลัมน์ 15)
+			Set Variable [ $snBcode ; Value: Trim ( GetValue ( $snRow ; 14 ) ) ]
+			# 
+			# SN ว่าง
+			If [ IsEmpty ( $sn ) ]
+				Set Variable [ $errCode ; Value: "EMPTY_SN" ]
+				Set Variable [ $errMsg ; Value: $partNo & " sn[" & $j & "] is empty" ]
+				# SN ซ้ำกันเองใน payload
+			Else If [ Position ( ¶ & $allSN & ¶ ; ¶ & $sn & ¶ ; 1 ; 1 ) > 0 ]
+				Set Variable [ $errCode ; Value: "DUPLICATE_SN_IN_PAYLOAD" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " appears more than once" ]
+				# SN error
+			Else If [ $snRow = "?" ]
+				Set Variable [ $errCode ; Value: "SN_CHECK_ERROR" ]
+				Set Variable [ $errMsg ; Value: "Cannot query stock for SN " & $sn ]
+				# SN มีในสต๊อกไหม
+			Else If [ IsEmpty ( $snRow ) ]
+				Set Variable [ $errCode ; Value: "SN_NOT_FOUND" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " not found in stock" ]
+				# SN อยู่ในสต็อกของสาขาที่เปิดบิลไหม
+			Else If [ $snBranch ≠ $branchID ]
+				Set Variable [ $errCode ; Value: "SN_WRONG_BRANCH" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " is in branch " & $snBcode & " (" & $snBranch & "), not " & $branch & " (" & $branchID & ")" ]
+				# SN สถานะเป็น ready ไหม
+			Else If [ $snStatus ≠ "ready" ]
+				Set Variable [ $errCode ; Value: "SN_NOT_READY_FOR_SALE" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " status = " & $snStatus ]
+				# เช็คว่าใช่ model เดียวกันไหม
+			Else If [ $snModel ≠ $partNo ]
+				Set Variable [ $errCode ; Value: "SN_MODEL_MISMATCH" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " is model " & $snModel & " (UPC " & $snUPC & "), not " & $partNo ]
+				# เช็คราคา
+			Else If [ IsEmpty ( $snPrice ) or $snPrice ≤ 0 ]
+				Set Variable [ $errCode ; Value: "PRICE_NOT_FOUND" ]
+				Set Variable [ $errMsg ; Value: "UPC " & $snUPC & " has no selling price" ]
+				# เช็คว่าขาย หรือ อยู่ในรายการพักบิลหรือยัง
+			Else If [ ExecuteSQL ( "SELECT COUNT(*) FROM POS_front_sale_detail WHERE product_sn = ?               AND ( ( LOWER(invStatus) = 'complete' AND CN_ID IS NULL )                  OR ( invStatus IS NULL AND mark_tmp = 'tmp' ) )" ; "" ; "" ; $sn ) > 0 ]
+				Set Variable [ $errCode ; Value: "SN_ALREADY_SOLD_OR_HELD" ]
+				Set Variable [ $errMsg ; Value: "SN " & $sn & " is already sold or in a held bill" ]
+			End If
+			# [SES v3.3] จดผลตรวจ SN เครื่องนี้ (ก่อน "ข้ามเครื่อง" ด้านล่างจะล้าง $errCode): written = ผ่านทุกข้อ จะเขียนลงบิล
+			# [SES v3.3] ข้อมูลรุ่น/UPC/สาขา/สถานะ/ราคา มาจาก $snRow ที่ดึงไว้แล้ว ไม่ query เพิ่ม · name = บรรทัดแรกของ product_name (คอลัมน์ 15)
+			Set Variable [ $snCheck ; Value: JSONSetElement ( $snCheck ; "[" & $k & "]" ; JSONSetElement ( "{}" ;
+				[ "sn" ; $sn ; JSONString ] ;
+				[ "partNo" ; $partNo ; JSONString ] ;
+				[ "found" ; not IsEmpty ( $snRow ) and $snRow ≠ "?" ; JSONBoolean ] ;
+				[ "written" ; IsEmpty ( $errCode ) ; JSONBoolean ] ;
+				[ "code" ; $errCode ; JSONString ] ;
+				[ "model" ; $snModel ; JSONString ] ;
+				[ "upc" ; $snUPC ; JSONString ] ;
+				[ "status" ; $snStatus ; JSONString ] ;
+				[ "branch" ; $snBcode ; JSONString ] ;
+				[ "name" ; GetValue ( $snRow ; 15 ) ; JSONString ] ;
+				[ "price" ; If ( IsEmpty ( $snPrice ) ; "null" ; $snPrice ) ; JSONRaw ] ) ; JSONObject ) ]
+			Set Variable [ $k ; Value: $k + 1 ]
+			# [SES v3] FMP ยังไม่มีเครื่องนี้ในสาขานี้ (ยังไม่รับโอน / ยังไม่เข้าสต็อก / ยังไม่ ready): ไม่ปฏิเสธ ข้ามเครื่องนี้ไป
+			If [ $ALLOW_SN_LATER and ( $errCode = "SN_NOT_FOUND" or $errCode = "SN_WRONG_BRANCH" or $errCode = "SN_NOT_READY_FOR_SALE" ) ]
+				Set Variable [ $snLaterMsg ; Value: List ( $snLaterMsg ; $errMsg ) ]
+				Set Variable [ $errCode ; Value: "" ]
+				Set Variable [ $errMsg ; Value: "" ]
+				Set Variable [ $later ; Value: $later + 1 ]
+				Set Variable [ $allSN ; Value: List ( $allSN ; $sn ) ]
+				Set Variable [ $j ; Value: $j + 1 ]
+			Else
+				Exit Loop If [ not IsEmpty ( $errCode ) ]
+				# 
+				# ก็บลงตัวแปร repetition (ไม่ต้อง parse JSON ซ้ำตอนเขียนข้อมูล)
+				Set Variable [ $line ; Value: $line + 1 ]
+				Set Variable [ $L_sn[$line] ; Value: $sn ]
+				Set Variable [ $L_row[$line] ; Value: $snRow ]
+				Set Variable [ $allSN ; Value: List ( $allSN ; $sn ) ]
+				Set Variable [ $j ; Value: $j + 1 ]
+			End If
+		End Loop
+		Exit Loop If [ not IsEmpty ( $errCode ) ]
+		# [SES v3] เครื่องของรุ่นนี้ที่ข้ามไป (SES ส่งมาไม่ครบ + SN ที่ FMP ยังไม่มีในสาขานี้): ไม่เขียนบรรทัด นับไว้บอก SES
+		If [ $later > 0 ]
+			Set Variable [ $snPending ; Value: $snPending + $later ]
+			Set Variable [ $snLaterMsg ; Value: List ( $snLaterMsg ; $partNo & " ข้าม " & $later & " เครื่อง" ) ]
+		End If
+		Exit Loop If [ not IsEmpty ( $errCode ) ]
+		# 
+		Set Variable [ $i ; Value: $i + 1 ]
+	End Loop
+	# 
+	# จบ single-pass
+	Exit Loop If [ True ]
+End Loop
+# 
+If [ not IsEmpty ( $errCode ) ]
+	# [SES v3.3] ส่ง snCheck ให้ ses_fail คืนกลับไปด้วย (SES เห็นว่าเครื่องไหนผิด เครื่องไหนผ่านแล้ว)
+	Perform Script [ “ses_fail” ; Specified: From list ; Parameter: JSONSetElement ( "{}" ;             [ "code" ; $errCode ; JSONString ] ;             [ "message" ; $errMsg ; JSONString ] ;             [ "snCheck" ; $snCheck ; JSONArray ] ) ]
+	Exit Script [ Text Result: Get ( ScriptResult ) ]
+End If
+# 
+# =====================================================================
+# 4. เขียนบิลใน Transaction เดียว (ล้มตรงไหน = Rollback ทั้งบิล)
+# =====================================================================
+Open Transaction []
+	# In Claris FileMaker Pro, custom error codes specified in the Revert Transaction script step must fall within the range of 5000 to 5499.
+When you assign a custom code and message within this range, FileMaker stops the transaction, reverts any changes made within the block, and passes your specified code to the Get ( LastError ) function right after the Commit Transaction line.
+	# 
+	# ----- 4.1 หัวบิล -----
+	Go to Layout [ “ขายหน้าร้าน TMP” (pos_front_sale_tmp) ; Animation: None ]
+	New Record/Request
+	Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5001 ; Error Message: "Create sale header failed (" & Get ( LastError ) & ")" ]
+	Set Field [ pos_front_sale_tmp::ses_id ; $sesID ]
+	Set Field [ pos_front_sale_tmp::ses_queue ; $queue ]
+	# [SES v3.4] หมายเหตุบนบิลพัก ให้แคชเชียร์เห็นว่ามาจาก SES คิวไหน แก้มากี่ครั้ง เช่น "SES-20261110-000002 · คิว A002 · แก้ไขครั้งที่ 2: หยิบผิดรุ่น"
+	Set Field [ pos_front_sale_tmp::ses_note ; $sesID & " · คิว " & $queue & If ( $rev > 1 ; " · แก้ไขครั้งที่ " & $rev & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) ; "" ) ]
+	Set Field [ pos_front_sale_tmp::ses_openTs ; $createdAt ]
+	Set Field [ pos_front_sale_tmp::staff_id ; GetAsNumber ( $staffID ) ]
+	Set Field [ pos_front_sale_tmp::branch_id ; GetAsNumber ( $branchID ) ]
+	Set Field [ pos_front_sale_tmp::branch_idTo ; GetAsNumber ( $branchID ) ]
+	Set Field [ pos_front_sale_tmp::customer_id ; $customer ]
+	Set Field [ pos_front_sale_tmp::PayBy ; $payby ]
+	Set Field [ pos_front_sale_tmp::bill_type ; "S" ]
+	Set Field [ pos_front_sale_tmp::status ; "hold" ]
+	Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5001 ; Error Message: "Create sale header failed (" & Get ( LastError ) & ")" ]
+	Set Variable [ $priKey ; Value: pos_front_sale_tmp::_PrimaryKey ]
+	Set Variable [ $vatSale ; Value: pos_front_sale_tmp::vat ]
+	Set Variable [ $vatType ; Value: pos_front_sale_tmp::vat type ]
+	# 
+	# ----- 4.2 รายการขาย 1 บรรทัดต่อ 1 SN -----
+	Go to Layout [ “POS_front_sale_detail” (POS_front_sale_detail) ; Animation: None ]
+	Set Variable [ $n ; Value: 1 ]
+	Loop [ Flush: Minimum ]
+		Exit Loop If [ $n > $line ]
+		# [SES v3.2] ทีม FMP กันไว้อีกชั้น: เขียนเฉพาะบรรทัดที่มี SN (เครื่องที่ข้ามไม่ได้อยู่ใน $L_sn อยู่แล้ว)
+		If [ not IsEmpty ( $L_sn[$n] ) ]
+			New Record/Request
+			Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5002 ; Error Message: "Create line " & $n & " failed (SN " & $L_sn[$n] & ", err " & Get ( LastError ) & ")" ]
+			# 
+			Set Variable [ $r ; Value: $L_row[$n] ]
+			Set Variable [ $upc ; Value: Trim ( GetValue ( $r ; 1 ) ) ]
+			Set Variable [ $old_status ; Value: GetValue ( $r ; 2 ) ]
+			Set Variable [ $pdModel ; Value: GetValue ( $r ; 3 ) ]
+			Set Variable [ $stPrice ; Value: Let (   [ 	x = GetValue ( $r ; 4 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $cost_a ; Value: Let (   [ 	x = GetValue ( $r ; 5 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $cost_b ; Value: Let (   [ 	x = GetValue ( $r ; 6 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $vat ; Value: Let (   [ 	x = GetValue ( $r ; 7 )   ] ; 	If ( x = "" or x = 0 ; 0 ; GetAsNumber ( x ) )  ) ]
+			Set Variable [ $inv ; Value: GetValue ( $r ; 8 ) ]
+			Set Variable [ $pdBrand ; Value: GetValue ( $r ; 9 ) ]
+			Set Variable [ $pdCat ; Value: GetValue ( $r ; 10 ) ]
+			Set Variable [ $pdSub ; Value: GetValue ( $r ; 11 ) ]
+			Set Variable [ $pdSubSub ; Value: GetValue ( $r ; 12 ) ]
+			Set Variable [ $pdName ; Value: GetValue ( $r ; 15) ]
+			# 
+			Set Variable [ $title ; Value: TextFormatRemove ( Case ( not IsEmpty ( $pdModel ) ; $pdModel & " " ; "" ) & Case ( not IsEmpty ( $pdName ) ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ; "" ) & ¶ & "SN: " & $L_sn[$n] ) ]
+			# 
+			Set Variable [ $isLuxury ; Value: "N" ]
+			If [ $pdCat = "iPad" ]
+				If [ $stPrice ≥ 40000 ]
+					Set Variable [ $isLuxury ; Value: "Y" ]
+				Else
+					Set Variable [ $isLuxury ; Value: "N" ]
+				End If
+			Else If [ $pdCat = "iPhone" ]
+				If [ $stPrice ≥ 40000 ]
+					Set Variable [ $isLuxury ; Value: "Y" ]
+				Else
+					Set Variable [ $isLuxury ; Value: "N" ]
+				End If
+			Else If [ $pdCat = "Watch" ]
+				If [ $stPrice ≥ 40000 ]
+					Set Variable [ $isLuxury ; Value: "Y" ]
+				Else
+					Set Variable [ $isLuxury ; Value: "N" ]
+				End If
+			Else If [ $pdCat = "Mac" ]
+				If [ PatternCount ( $pdSub ; "MACBOOK" ) ]
+					If [ $stPrice ≥ 40000 ]
+						Set Variable [ $isLuxury ; Value: "Y" ]
+					Else
+						Set Variable [ $isLuxury ; Value: "N" ]
+					End If
+				Else
+					If [ $stPrice ≥ 100000 ]
+						Set Variable [ $isLuxury ; Value: "Y" ]
+					Else
+						Set Variable [ $isLuxury ; Value: "N" ]
+					End If
+				End If
+			Else If [ $pdCat = "Apple Accy" or $pdCat = "Third Party Accy" ]
+				Set Variable [ $isLuxury ; Value: "N" ]
+			Else If [ PatternCount ( $pdCat ; "Speaker" ) ]
+				Set Variable [ $isLuxury ; Value: "N" ]
+			End If
+			# 
+			Set Field [ POS_front_sale_detail::PrimaryKey ; $priKey ]
+			Set Field [ POS_front_sale_detail::sortOrder ; $n ]
+			Set Field [ POS_front_sale_detail::mark_tmp ; "tmp" ]
+			Set Field [ POS_front_sale_detail::customer_id ; $customer ]
+			Set Field [ POS_front_sale_detail::product_sn ; $L_sn[$n] ]
+			Set Field [ POS_front_sale_detail::product_upc ; $upc ]
+			Set Field [ POS_front_sale_detail::vrt_isLuxury ; $isLuxury ]
+			Set Field [ POS_front_sale_detail::store_model ; $pdModel ]
+			Set Field [ POS_front_sale_detail::product_name ; Substitute ( $pdName ; Char ( 9 ) ; "" ) ]
+			Set Field [ POS_front_sale_detail::store_name ; $pdName ]
+			Set Field [ POS_front_sale_detail::pd_Brand ; $pdBrand ]
+			Set Field [ POS_front_sale_detail::store_Brand ; $pdBrand ]
+			Set Field [ POS_front_sale_detail::pd_category ; $pdCat ]
+			Set Field [ POS_front_sale_detail::store_category ; $pdCat ]
+			Set Field [ POS_front_sale_detail::pd_SubCat ; If ( not IsEmpty ( $pdSub ) ; $pdSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::pd_SubSubCategory ; If ( not IsEmpty ( $pdSubSub ) ; 	$pdSubSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::store_SubCat ; If ( not IsEmpty ( $pdSub ) ; $pdSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::store_SubSubCat ; If ( not IsEmpty ( $pdSubSub ) ; 	$pdSubSub ; "" ) ]
+			Set Field [ POS_front_sale_detail::product_oldStatus ; $old_status ]
+			Set Field [ POS_front_sale_detail::vat ; $vatSale ]
+			Set Field [ POS_front_sale_detail::vatType ; $vatType ]
+			Set Field [ POS_front_sale_detail::product costก่อนvat ; $cost_b ]
+			Set Field [ POS_front_sale_detail::cost_beforeVat ; $cost_b ]
+			Set Field [ POS_front_sale_detail::cost_afterVat ; $cost_a ]
+			Set Field [ POS_front_sale_detail::cost_vatValue ; $vat ]
+			Set Field [ POS_front_sale_detail::title ; $title ]
+			Set Field [ POS_front_sale_detail::po_inv ; $inv ]
+			Set Field [ POS_front_sale_detail::amount ; 1 ]
+			Set Field [ POS_front_sale_detail::Type ; "Sale" ]
+			Set Field [ POS_front_sale_detail::saleType ; "genSale" ]
+			Set Field [ POS_front_sale_detail::SellingPrice ; $stPrice ]
+			# 
+			Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5002 ; Error Message: "Create line " & $n & " failed (SN " & $L_sn[$n] & ", err " & Get ( LastError ) & ")" ]
+		End If
+		# 
+		Set Variable [ $n ; Value: $n + 1 ]
+	End Loop
+	# 
+	# ----- 4.3 อัปเดต Inbox เป็น DONE (อยู่ใน Transaction เดียวกัน) -----
+	Go to Layout [ “ses” (ses) ; Animation: None ]
+	Set Field [ ses::ses_status ; "DONE" ]
+	Set Field [ ses::sale_id ; $priKey ]
+	# [SES v3.4]
+	Set Field [ ses::ses_rev ; $rev ]
+	Set Field [ ses::line_count ; $line ]
+	Set Field [ ses::status_at ; Get ( CurrentHostTimestamp ) ]
+	Set Field [ ses::processed_at ; Get ( CurrentHostTimestamp ) ]
+	Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5003 ; Error Message: "Update inbox failed (" & Get ( LastError ) & ")" ]
+	# 
+Commit Transaction
+# 
+Set Variable [ $txErr ; Value: Get ( LastError ) ]
+Set Variable [ $txDetail ; Value: Get ( LastErrorDetail ) ]
+# 
+# ---------- 5. ผลลัพธ์ ----------
+If [ $txErr ≠ 0 ]
+	# [SES v3.3] ส่ง snCheck ด้วย
+	Perform Script [ “ses_fail” ; Specified: From list ; Parameter: JSONSetElement ( "{}" ;             [ "code" ; "TRANSACTION_FAILED" ; JSONString ] ;             [ "message" ; $txErr & " " & $txDetail ; JSONString ] ;             [ "snCheck" ; $snCheck ; JSONArray ] ) ]
+	Exit Script [ Text Result: Get ( ScriptResult ) ]
+End If
+# 
+# [SES v2] คำเตือน (ไม่ใช่ error) ส่งกลับให้ SES แสดงในหน้า Admin เช่น "CREATED saleID … (1 รายการ): ลูกค้าใหม่ …"
+Set Variable [ $warnMsg ; Value: Substitute ( $warnings ;
+	[ "NEW_CUSTOMER" ; "ลูกค้าใหม่ ยังไม่ผูกลูกค้าในบิล" ] ;
+	[ "NO_PAYMENT" ; "ไม่มีวิธีชำระ ให้เลือกตอนรับเงิน" ] ;
+	[ "UNKNOWN_STAFF" ; "ไม่พบรหัสพนักงานใน FMP" ] ;
+	[ ¶ ; " · " ] ) ]
+# [SES v3] มีเครื่องที่ข้าม: code = CREATED_SN_LATER (SES แสดงเป็นคำเตือนสีเหลืองให้แคชเชียร์สแกนขายเพิ่มในบิล)
+# [SES v3] ทุกเครื่องถูกข้าม (lines = 0): ยังเปิดบิลพัก (ลูกค้า วิธีชำระ คิว) ให้แคชเชียร์สแกนขายทั้งหมดหน้าร้าน
+If [ $snPending > 0 ]
+	Set Variable [ $warnMsg ; Value: "แคชเชียร์สแกนขายเพิ่ม " & $snPending & " เครื่อง" & Case ( not IsEmpty ( $snLaterMsg ) ; " (" & Substitute ( $snLaterMsg ; ¶ ; " · " ) & ")" ; "" ) & Case ( not IsEmpty ( $warnMsg ) ; " · " & $warnMsg ; "" ) ]
+End If
+# [SES v3.4] ส่งรอบใหม่ที่แทนบิลพักเดิม: code เดิม (CREATED / CREATED_SN_LATER) + "revision" + ข้อความนำหน้า
+If [ $revised ]
+	Set Variable [ $warnMsg ; Value: "แก้ไขครั้งที่ " & $rev & " (แทนบิลพักเดิม" & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) & ")" & Case ( not IsEmpty ( $warnMsg ) ; " · " & $warnMsg ; "" ) ]
+End If
+# [SES v3.3] เพิ่ม "snCheck" ท้ายผลลัพธ์ · [SES v3.4] เพิ่ม "revision"
+Exit Script [ Text Result: JSONSetElement ( "{}" ;     [ "ok" ; True ; JSONBoolean ] ;     [ "revision" ; $rev ; JSONNumber ] ;     [ "code" ; If ( $snPending > 0 ; "CREATED_SN_LATER" ; "CREATED" ) ; JSONString ] ;     [ "snPending" ; $snPending ; JSONNumber ] ;     [ "sesID" ; $sesID ; JSONString ] ;     [ "saleID" ; $priKey ; JSONString ] ;     [ "lines" ; $line ; JSONNumber ] ;     [ "payments" ; $payCnt ; JSONNumber ] ;     [ "message" ; $warnMsg ; JSONString ] ;     [ "warnings" ; Substitute ( $warnings ; ¶ ; "," ) ; JSONString ] ;     [ "snCheck" ; $snCheck ; JSONArray ] ) ]

@@ -1719,7 +1719,7 @@ The FileMaker team asked what to send when a bill from SES is cancelled on their
    `FMP_CALLBACK_KEY` FileMaker already used for its test callbacks on 2026-10-31.
 2. **Cancelled after payment** (paid = 1): the record is not cleared and the order in SES stays sold; the warning tells staff to sort it
    out by hand. Undoing a sale in SES is not built.
-3. **Cancelled in SES** after the order went to the cashier: SES sends nothing to FileMaker (it pushes only `SENT_TO_CASHIER`). For now the
+3. **Cancelled in SES** (superseded by D123: SES now sends `CANCELLED` and the script takes the held bill away) after the order went to the cashier: SES sends nothing to FileMaker (it pushes only `SENT_TO_CASHIER`). For now the
    cashier cancels the held bill in FileMaker by hand; a push of the cancel (and a FileMaker script to clear it) waits until it is
    needed.
 
@@ -1734,3 +1734,29 @@ Cashiers previously had to ask every customer at the till whether they needed a 
 2. **Persistence.** `vatRefund` and `taxInvoice` boolean columns on `CustomerSession` (migration `202611100003_vat_refund_tax_invoice`). A re-bought session copies both flags from the previous session.
 3. **Outbound (`orderView`).** `orderView` includes `vatRefund: boolean` and `taxInvoice: boolean`. Both the U POS door and the FileMaker outbound message carry these flags so the cashier / POS can prepare the document before or at billing.
 4. **Visibility.** Prominently displayed on the order summary (`Summary.tsx`) with badges (`ใบกำกับภาษี`, `VAT Refund`) and in the staff queue cards and logs.
+
+## D123 — A send-back or a cancel takes the held bill away in FileMaker; the next send is revision N (2026-11-10)
+
+The owner asked that an order sent back to stock should not leave a held bill behind, and that the corrected bill should say which
+SES order and queue it comes from and that it was corrected. A held bill has no number yet (D119), so nothing is lost by opening a
+new one.
+
+1. **SES tells FileMaker when an order leaves the cashier.** "ส่งกลับ STOCK" queues `RETURNED_TO_STOCK`, a cancel (also the stock-review
+   cancel) queues `CANCELLED`, in the same transaction, only for an order SES already sent to FileMaker (`FmpService.release`). The
+   `ses` script v3.4 deletes the held bill's lines (the serials are free again: its own check looks at those lines), removes the
+   header (or sets a status, `$RELEASE_MODE`) and marks its `ses` record `RETURNED` / `CANCELLED`. A cancelled order is never billed
+   again (`ORDER_CANCELLED`).
+2. **Revision.** Every message carries `revision` (how many times STOCK sent the order; 1 the first time; a release names the one it
+   takes away) and `revisionNote` (the send-back reason on a release and on every later send; the cancel reason on a cancel).
+   FileMaker writes `ses_note` on the held bill, e.g. `SES-20261110-000002 · คิว A002 · แก้ไขครั้งที่ 2: หยิบผิดรุ่น`. A send with a
+   higher revision replaces a held bill still there (the release may not have arrived); an older one (a late retry) does nothing
+   (`STALE`, kept in `ses::ses_rev`).
+3. **An ended order says so.** The payload's `state` is `CANCELLED` for any order with an outcome, so a late retry or an ADMIN resend
+   of a cancelled order can never open a bill. "ส่งซ้ำ" sends `CANCELLED` for an ended order, `RETURNED_TO_STOCK` for one back with
+   stock, `RESEND` otherwise.
+4. **Safe before FileMaker updates.** Script v3.3 refuses a state other than `SENT_TO_CASHIER` (`WRONG_STATE`) or answers
+   `ALREADY_DONE`, so the new messages open nothing; the cashier cancels by hand as before. A held bill already opened or paid in
+   FileMaker is not touched (`BILL_IN_USE`, shown in "ออเดอร์ที่ต้องดู").
+5. FileMaker adds two fields: `ses::ses_rev` (number), `pos_front_sale_tmp::ses_note` (text), and shows `ses_id`, `ses_queue`,
+   `ses_note` on the held-bill screen. Open: whether FileMaker deletes or re-statuses a cancelled held bill (`$RELEASE_MODE`).
+

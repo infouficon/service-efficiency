@@ -1279,7 +1279,7 @@ export class SessionsService {
       // Give back what FOUND took off the shelf (D41): exactly the units recorded per item (none while "stock unlimited" was on, D59)
       await this.returnItemsToShelf(tx, session.branchId, session.items);
 
-      return tx.customerSession.update({
+      const updated = await tx.customerSession.update({
         where: { id: session.id },
         data: {
           outcome: 'CUSTOMER_CANCELLED',
@@ -1299,6 +1299,9 @@ export class SessionsService {
         },
         include: sessionInclude,
       });
+      // D123: an order FileMaker already got: its held bill goes away and the order is refused from then on
+      await this.fmp.release(tx, updated, 'CANCELLED');
+      return updated;
     });
   }
 
@@ -1330,7 +1333,7 @@ export class SessionsService {
       await this.returnItemsToShelf(tx, session.branchId, session.items);
       // D92: the units go back to the shelf, so the serial numbers scanned for them are no longer true; STOCK scans again
       await tx.sessionItemSerial.deleteMany({ where: { item: { sessionId: session.id } } });
-      return tx.customerSession.update({
+      const updated = await tx.customerSession.update({
         where: { id: session.id },
         data: {
           state: 'SEARCHING',
@@ -1355,6 +1358,9 @@ export class SessionsService {
         },
         include: sessionInclude,
       });
+      // D123: FileMaker takes the held bill away and frees the serials; STOCK's next send opens it again as revision 2
+      await this.fmp.release(tx, updated, 'RETURNED_TO_STOCK');
+      return updated;
     });
   }
 
@@ -1777,7 +1783,7 @@ export class SessionsService {
           throw new BadRequestException('Cancellation reason is required');
         }
 
-        return tx.customerSession.update({
+        const cancelled = await tx.customerSession.update({
           where: { id: session.id },
           data: {
             outcome: 'CUSTOMER_CANCELLED',
@@ -1805,6 +1811,9 @@ export class SessionsService {
           },
           include: sessionInclude,
         });
+        // D123: an order sent back from the cashier earlier may still be known to FileMaker: it is refused from now on
+        await this.fmp.release(tx, cancelled, 'CANCELLED');
+        return cancelled;
       }
 
       throw new BadRequestException('Invalid resolve action');

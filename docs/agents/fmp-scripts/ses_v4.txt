@@ -2,10 +2,14 @@
 # [SES v4] 2026-11-10 ชุดล่าสุด (รวมทุกอย่างตั้งแต่ v3.2 ที่ทีม FMP ใช้งานจริง) — อ่าน README-v4-TH.txt ก่อนวาง
 # [SES v4] จาก v3.3 (ที่ FMP วางแล้ว 2026-11-10) เปลี่ยน:
 # [SES v4]   1) event ส่งกลับ STOCK / ยกเลิก = เอาบิลพักออก ปล่อย SN (ข้อ 1.5) · STOCK ส่งใหม่ = เปิดบิลพักใหม่ "แก้ไขครั้งที่ N"
-# [SES v4]   2) หมายเหตุบนบิลพัก ses_note (ref · คิว · ครั้งที่แก้ · เหตุผล)
+# [SES v4]   2) หมายเหตุ SES บนร่างบิล (ref · คิว · ครั้งที่แก้ · เหตุผล) ลงฟิลด์ตาม $NOTE_FIELD
 # [SES v4]   3) PayBy จับคู่ตาม "ชื่อช่องทาง" ของ SES ด้วยตาราง $PAYBY_MAP ในข้อ 0 (ทีม FMP เติมเอง) แทนประเภทกว้างๆ
-# [SES v4]   4) ผลลัพธ์มี "revision" · code ใหม่ RELEASED / NOTHING_TO_RELEASE / STALE / ORDER_CANCELLED / BILL_IN_USE / RELEASE_FAILED
-# [SES v4] ต้องเพิ่ม 2 ฟิลด์ก่อนวาง: ses::ses_rev (Number) และ pos_front_sale_tmp::ses_note (Text)
+# [SES v4]   4) ผลลัพธ์มี "revision" · code ใหม่ RELEASED / NOTHING_TO_RELEASE / STALE / ORDER_CANCELLED / BILL_IN_USE / BILL_CONFIRMED / RELEASE_FAILED
+# [SES v4] ต้องเพิ่มฟิลด์ก่อนวาง: ses::ses_rev (Number) · หมายเหตุลงฟิลด์ตาม $NOTE_FIELD ข้อ 0 (ค่าเริ่มต้น pos_front_sale_tmp::ses_note ต้องเพิ่ม)
+# [SES v4.1] 2026-11-10 ตามคุณกบ: pos_front_sale_tmp เป็นแค่ร่าง (ยังไม่ใช่บิล) บิลจริงสร้างใน pos_front_sale ตอนแคชเชียร์กดยืนยัน
+# [SES v4.1]   - เอาออก = ลบร่างและรายการของร่างทิ้งเสมอ (ไม่มีโหมดเปลี่ยน status แล้ว)
+# [SES v4.1]   - ร่างหายไปแล้ว (ยืนยันเป็นบิลจริงแล้ว) = ไม่แตะ ตอบ BILL_CONFIRMED ให้แคชเชียร์ยกเลิกบิลจริงเอง
+# [SES v4.1]   - หมายเหตุ SES เลือกฟิลด์ได้ ($NOTE_FIELD) เช่นช่อง Comment ที่ติดไปบิลจริง
 # [SES v4] จุดที่เปลี่ยนมี [SES v3.4] (ข้อ 1-2, 4) และ [SES v4] (ข้อ 3) นำหน้า
 # =====================================================================
 # [SES v3] 2026-11-05 ทีม SES: สคริปต์ ses เวอร์ชัน 3 = v2 + "สแกน SN ทีหลัง" (ทุกจุดที่เปลี่ยนมี [SES v3] นำหน้า, ดู README.md)
@@ -28,7 +32,8 @@
 # Version: v3.2 2026-11-06 ตัวที่ทีม FMP ใช้งานจริง + แก้ 3.3 Payments ให้อ่าน "paymentTypes"
 # Version: v3.3 2026-11-10 เพิ่ม "snCheck" ในผลลัพธ์ (ผลตรวจ SN ทีละเครื่อง ให้ SES แสดงและส่งกลับให้ Stock สแกนใหม่เฉพาะเครื่องที่ผิด)
 # Version: v3.4 2026-11-10 รับ event RETURNED_TO_STOCK / CANCELLED (เอาบิลพักออก) และ revision (เปิดบิลพักใหม่แทนใบเดิม พร้อมหมายเหตุ)
-# Version: v4   2026-11-10 = v3.4 + PayBy ตามชื่อช่องทาง ($PAYBY_MAP) + เก็บกวาด (ชุดล่าสุด)
+# Version: v4   2026-11-10 = v3.4 + PayBy ตามชื่อช่องทาง ($PAYBY_MAP) + เก็บกวาด
+# Version: v4.1 2026-11-10 ร่างบิล = ลบทิ้ง, ร่างหาย = BILL_CONFIRMED, หมายเหตุเลือกฟิลด์ได้ ($NOTE_FIELD) (ชุดล่าสุด)
 # =====================================================================
 # 
 Set Error Capture [ On ]
@@ -49,9 +54,10 @@ Set Variable [ $warnings ; Value: "" ]
 # [SES v3]     SN_WRONG_BRANCH, SN_NOT_READY_FOR_SALE) ข้ามไม่เขียนบรรทัด แคชเชียร์สแกนขายเพิ่มหน้าร้าน · 0 = ปฏิเสธทั้งออเดอร์แบบ v2
 # [SES v3] SN รุ่นไม่ตรง / ขายไปแล้ว / อยู่ในบิลพักอื่น / ซ้ำ ยังปฏิเสธเหมือนเดิม (หยิบผิดเครื่อง ต้องให้ Stock สแกนใหม่)
 Set Variable [ $ALLOW_SN_LATER ; Value: 1 ]
-# [SES v3.4] เอาบิลพักออกแบบไหน: "delete" = ลบหัวบิล (pos_front_sale_tmp) ทิ้ง · ค่าอื่น = ไม่ลบ แต่เปลี่ยน status หัวบิลเป็นค่านั้น (เช่น "cancel")
-# [SES v3.4] ทั้งสองแบบลบรายการ (POS_front_sale_detail ที่ mark_tmp = "tmp") ของบิลนั้น SN จึงว่างให้สแกนใหม่ได้ (ตามที่ข้อ 3 ตรวจ SN_ALREADY_SOLD_OR_HELD)
-Set Variable [ $RELEASE_MODE ; Value: "delete" ]
+# [SES v4.1] ฟิลด์ที่ใส่หมายเหตุ SES ("SES-… · คิว A002 · แก้ไขครั้งที่ 2: เหตุผล") ใส่ชื่อเต็ม "ตาราง::ฟิลด์"
+# [SES v4.1] แนะนำช่อง Comment บนหน้าจอขายหน้าร้าน ถ้าช่องนั้นติดไปบิลจริง (pos_front_sale) ตอนยืนยัน หมายเหตุจะอยู่บนบิลจริงด้วย
+# [SES v4.1] ใช้ช่องที่มีอยู่แล้ว = ไม่ต้องเพิ่มฟิลด์ ses_note
+Set Variable [ $NOTE_FIELD ; Value: "pos_front_sale_tmp::ses_note" ]
 # [SES v4] PayBy ของแต่ละ "ชื่อช่องทาง" ที่ SES ส่งมาใน "payments" (ตามที่ ADMIN ของ SES ตั้งชื่อไว้) บรรทัดละ 1 คู่: ชื่อใน SES=PayBy ใน FMP
 # [SES v4] ทีม FMP เติมหลัง "=" ให้ครบ (ที่จับคู่ไว้แล้วในตัวจริง ย้ายมาใส่ตรงนี้) · เว้นว่างหรือไม่มีในตาราง = ใช้ชื่อเดิมของ SES และเตือน
 # [SES v4] ตัวพิมพ์เล็ก/ใหญ่ไม่มีผล · ADMIN ของ SES เพิ่มช่องทางใหม่เมื่อไร ต้องเพิ่มบรรทัดที่นี่ด้วย (SES จะขึ้นเตือน "ยังไม่ได้จับคู่ PayBy")
@@ -138,8 +144,12 @@ If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
 		If [ $hStatus = "?" or $inUse = "?" ]
 			Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "RELEASE_FAILED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "อ่านบิลพักไม่ได้ (ExecuteSQL error) ไม่ได้เอาออก" ; JSONString ] ) ]
 		End If
-		# บิลถูกเปิดทำรายการ/ชำระไปแล้ว ไม่แตะ แคชเชียร์ต้องจัดการเอง (หัวบิลหายไปแล้ว = ไม่มีอะไรให้เอาออก)
-		If [ ( not IsEmpty ( $hStatus ) and $hStatus ≠ "hold" ) or GetAsNumber ( $inUse ) > 0 ]
+		# [SES v4.1] ร่างบิลหายไปแล้ว = แคชเชียร์กดยืนยันเป็นบิลจริง (pos_front_sale) แล้ว หรือมีคนลบใน FMP: ไม่แตะ ไม่เปิดใบใหม่
+		If [ IsEmpty ( $hStatus ) ]
+			Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "BILL_CONFIRMED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "ไม่พบร่างบิลแล้ว (แคชเชียร์อาจยืนยันเป็นบิลจริงไปแล้ว) ไม่ได้เอาออก ต้องยกเลิกบิลใน FMP เอง" ; JSONString ] ) ]
+		End If
+		# ร่างถูกเปิดทำรายการอยู่ (status ไม่ใช่ hold) หรือมีรายการออกใบกำกับแล้ว: ไม่แตะ แคชเชียร์ต้องจัดการเอง
+		If [ $hStatus ≠ "hold" or GetAsNumber ( $inUse ) > 0 ]
 			Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "BILL_IN_USE" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "บิลพักถูกเปิดทำรายการหรือชำระแล้ว (status " & $hStatus & ") ไม่ได้เอาออก แคชเชียร์ต้องจัดการใน FMP เอง" ; JSONString ] ) ]
 		End If
 	End If
@@ -156,21 +166,14 @@ If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
 				Delete All Records [ With dialog: Off ]
 				Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5011 ; Error Message: "Delete held bill lines failed (" & Get ( LastError ) & ")" ]
 			End If
-			# หัวบิลพัก
-			If [ not IsEmpty ( $hStatus ) ]
-				Go to Layout [ “ขายหน้าร้าน TMP” (pos_front_sale_tmp) ; Animation: None ]
-				Enter Find Mode [ Pause: Off ]
-				Set Field [ pos_front_sale_tmp::_PrimaryKey ; "==" & $holdKey ]
-				Perform Find []
-				If [ Get ( FoundCount ) = 1 ]
-					If [ $RELEASE_MODE = "delete" ]
-						Delete Record/Request [ With dialog: Off ]
-					Else
-						Set Field [ pos_front_sale_tmp::status ; $RELEASE_MODE ]
-						Set Field [ pos_front_sale_tmp::ses_note ; pos_front_sale_tmp::ses_note & " · เอาออกแล้ว (" & $event & ")" ]
-					End If
-					Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5012 ; Error Message: "Remove held bill failed (" & Get ( LastError ) & ")" ]
-				End If
+			# [SES v4.1] ร่างบิล (pos_front_sale_tmp ยังไม่ใช่บิลจริง): ลบทิ้ง
+			Go to Layout [ “ขายหน้าร้าน TMP” (pos_front_sale_tmp) ; Animation: None ]
+			Enter Find Mode [ Pause: Off ]
+			Set Field [ pos_front_sale_tmp::_PrimaryKey ; "==" & $holdKey ]
+			Perform Find []
+			If [ Get ( FoundCount ) = 1 ]
+				Delete Record/Request [ With dialog: Off ]
+				Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5012 ; Error Message: "Delete draft bill failed (" & Get ( LastError ) & ")" ]
 			End If
 		End If
 		# record ses: ยกเลิก = CANCELLED (ปิดถาวร) · ส่งกลับ STOCK = RETURNED (รอ STOCK ส่งรอบใหม่) · ส่งรอบใหม่ = ว่าง (เปิดบิลต่อด้านล่าง)
@@ -187,7 +190,7 @@ If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
 		Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "RELEASE_FAILED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; $txErr & " " & Get ( LastErrorDetail ) ; JSONString ] ) ]
 	End If
 	If [ $isRelease ]
-		Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; If ( IsEmpty ( $hStatus ) and $released = 0 ; "NOTHING_TO_RELEASE" ; "RELEASED" ) ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "lines" ; $released ; JSONNumber ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "message" ; If ( $event = "CANCELLED" ; "ยกเลิกออเดอร์: " ; "ส่งกลับ STOCK: " ) & If ( IsEmpty ( $hStatus ) and $released = 0 ; "ไม่มีบิลพักให้เอาออก" ; "เอาบิลพักออกแล้ว " & $released & " รายการ" ) ; JSONString ] ) ]
+		Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; If ( IsEmpty ( $holdKey ) ; "NOTHING_TO_RELEASE" ; "RELEASED" ) ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "lines" ; $released ; JSONNumber ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "message" ; If ( $event = "CANCELLED" ; "ยกเลิกออเดอร์: " ; "ส่งกลับ STOCK: " ) & If ( IsEmpty ( $holdKey ) ; "ไม่มีบิลพักให้เอาออก" ; "เอาบิลพักออกแล้ว " & $released & " รายการ" ) ; JSONString ] ) ]
 	End If
 	# ส่งรอบใหม่: เอาบิลพักรอบก่อนออกแล้ว ไปเปิดบิลใหม่ต่อ
 	Set Variable [ $revised ; Value: True ]
@@ -523,7 +526,8 @@ When you assign a custom code and message within this range, FileMaker stops the
 	Set Field [ pos_front_sale_tmp::ses_id ; $sesID ]
 	Set Field [ pos_front_sale_tmp::ses_queue ; $queue ]
 	# [SES v3.4] หมายเหตุบนบิลพัก ให้แคชเชียร์เห็นว่ามาจาก SES คิวไหน แก้มากี่ครั้ง เช่น "SES-20261110-000002 · คิว A002 · แก้ไขครั้งที่ 2: หยิบผิดรุ่น"
-	Set Field [ pos_front_sale_tmp::ses_note ; $sesID & " · คิว " & $queue & If ( $rev > 1 ; " · แก้ไขครั้งที่ " & $rev & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) ; "" ) ]
+	# [SES v4.1] ลงฟิลด์ตาม $NOTE_FIELD (ข้อ 0)
+	Set Field By Name [ $NOTE_FIELD ; $sesID & " · คิว " & $queue & If ( $rev > 1 ; " · แก้ไขครั้งที่ " & $rev & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) ; "" ) ]
 	Set Field [ pos_front_sale_tmp::ses_openTs ; $createdAt ]
 	Set Field [ pos_front_sale_tmp::staff_id ; GetAsNumber ( $staffID ) ]
 	Set Field [ pos_front_sale_tmp::branch_id ; GetAsNumber ( $branchID ) ]

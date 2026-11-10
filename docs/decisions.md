@@ -1538,7 +1538,7 @@ categories out, so staff could only name them as a free accessory (no SKU, no se
 6. **Icons.** One `CategoryIcon` for every screen (was three copies): AirPods headphones, Apple TV a TV, HomePod a speaker, AirTag a pin;
    Accessories now a cable. No product pictures for the four yet.
 
-## D113 — Login codes go to the staff member's LINE (UFiconStaff OA) first, SMS second (2026-11-09)
+## D113 — Login codes go to the staff member's LINE (UFiconStaff OA) first, SMS second (2026-11-09; SMS removed by D117)
 
 Owner (WorkTrack SES-8, SES-7's list): "แก้ขอ OTP ผ่าน LineOA Staff", the OA "UFicon Staff" the FMP team uses. On 2026-11-09 every SMS
 code failed (`ERROR_SENDER_NOT_FOUND`, D85), so the 72 ERP accounts could not sign in. Checked that day: the OA is **UFiconStaff
@@ -1633,3 +1633,24 @@ Owner (WorkTrack SES-10, "เชื่อมเวลาทำงานจาก
    within 5 min–24 h, 30 min–7 days, 2 min–24 h) so they can be tuned without a release; the panel shows the ones in force.
 5. **What it does not do.** No LINE or e-mail. If FileMaker never reports a bill the ADMIN can still close an order by hand (D105, "ปิดการขาย (แทน U POS)").
    When LINE is on (D113) a push to ADMIN is a small step if the owner wants it, with the question of how often.
+
+## D117 — SMS removed: login codes go by LINE only (2026-11-10)
+
+Owner, 2026-11-10 09:26, after staff 1138 asked for a code and got nothing: "ทำไมทั้ง sms และ line ไม่ได้รับ … เอาระบบ sms ออกไปด้วย เพราะถ้าใช้ line ได้ก็จะได้ไม่ต้องเสียตัง".
+What the logs showed (`LoginOtp`, 09:23): LINE had **no userId for 1138** (the ERP `line_user_id` is empty and UFHR is not connected), and SMS was
+refused by ThaiBulkSMS with `400 ERROR_SENDER` (the default sender is not accepted since `THAIBULKSMS_SENDER` was removed on 11-09). The LINE token itself was fine.
+At that moment 26 of 168 active accounts had a LINE userId and 149 had a phone; the owner chose to remove SMS anyway (asked, with these numbers).
+
+1. **What was removed.** `src/sms/*` (ThaiBulkSMS sender, delivery webhook `/api/webhooks/thaibulksms/:token`), the "ส่ง SMS ทดสอบ" endpoint and button, the
+   SMS panel of Admin → เข้าสู่ระบบด้วย OTP, the SMS fallback in `OtpService.deliver`, and `channels` in `GET /auth/config` (now `{ otp }`).
+   `THAIBULKSMS_*` env vars are no longer read (delete them in Coolify; the key and secret stay valid at ThaiBulkSMS if it is ever wanted back: it is in git history).
+2. **OTP mode** is on exactly when `LINE_CHANNEL_ACCESS_TOKEN` is set. A person can get a code only with a LINE userId (the ERP copy, or UFHR when connected, D113).
+   `request` still answers `{ ok: true }` for everybody (D85), so a person with no LINE sees "sent" and nothing arrives: the login page tells them what to do.
+3. **Who is locked out is visible.** The staff list shows a "ไม่มี LINE" tag per ERP account (`hasLine` on the account), the OTP panel says how many ERP accounts have no
+   LINE userId, and the ERP import warns for every person without one (the warning text says the phone does not help).
+4. **Kept on purpose.** `Staff.phone` and the ERP `tel` import (a contact number, shown masked, in the staff sheet) and the `LoginOtp` columns `smsStatus`, `smsError`,
+   `smsMessageId`, `smsReport`, `phoneLast4` (names are from the SMS days: `smsStatus` is the delivery status, `smsError` the note; no migration). Old rows keep
+   `channel = 'sms'` and show as "SMS (เดิม)". The system-wide daily cap env is renamed `OTP_SMS_DAILY_LIMIT` -> `OTP_GLOBAL_DAILY_LIMIT` (it was never set in production).
+5. **Consequence the owner accepted.** Until the ERP `line_user_id` (FMP team) or UFHR (`UFHR_API_BASE` + `UFHR_API_KEY`) gives a userId, that person cannot sign in by OTP.
+   They were already locked out by the SMS error; ADMIN can still give a hand-made account or press Reset (password) for someone urgent.
+   Supersedes D85's SMS parts and D113 item 1's SMS fallback (the rest of D85: 12-hour session, limits, hash-only codes, stands).

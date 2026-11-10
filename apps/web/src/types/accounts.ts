@@ -12,8 +12,10 @@ export interface Account {
   mustChangePassword: boolean;
   /** True for accounts created by the daily ERP import (D54): the ERP owns their password, name, branch, active flag and STAFF/STOCK/CASHIER roles. */
   erpManaged: boolean;
-  /** the number the login OTP goes to, masked ("08X-XXX-1234"); null = none, so no OTP login (D85) */
+  /** the contact number, masked ("08X-XXX-1234"); null = none. Not used to send login codes (D117) */
   phone?: string | null;
+  /** a LINE userId is stored (from the ERP), so the login code can go to it; UFHR may know one more (D113) */
+  hasLine?: boolean;
 }
 export interface ManagedBranch {
   id: string;

@@ -200,7 +200,7 @@ export function StaffSheetTools({ onImported }: { onImported: () => void | Promi
               )}
               {report.summary.created > 0 && (
                 <p className="fine">
-                  บัญชีใหม่ไม่มีรหัสผ่าน: เข้าด้วย OTP ทาง SMS ได้เมื่อมีเบอร์โทร หรือให้ ADMIN กด Reset ตั้งรหัสผ่านชั่วคราวให้
+                  บัญชีใหม่ไม่มีรหัสผ่าน: เข้าด้วย OTP ทาง LINE ได้เมื่อมี LINE userId หรือให้ ADMIN กด Reset ตั้งรหัสผ่านชั่วคราวให้
                 </p>
               )}
               {shown.length > 0 ? (

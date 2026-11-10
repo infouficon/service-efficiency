@@ -6,11 +6,10 @@ import { cleanup, PASSWORD, seedWorld, startApi } from './support.mjs';
 
 const { hashPassword } = await import('../dist/accounts/password.js');
 
-// Stand-ins for the three outside services: the LINE Messaging API, UFHR's /staff-contacts and ThaiBulkSMS.
+// Stand-ins for the two outside services: the LINE Messaging API and UFHR's /staff-contacts.
 // stall = answer with headers and half a body, then nothing; mismatch = HR answers about somebody else
 const line = { calls: [], status: 200, stall: false };
 const hr = { calls: [], lineOf: new Map(), status: 200, stall: false, mismatch: false };
-const sms = { calls: [] };
 const listen = (handler) =>
   new Promise((resolve) => {
     const server = http.createServer((req, res) => {
@@ -42,10 +41,6 @@ const hrServer = await listen((req, raw, res) => {
     .map((id) => ({ staffId: Number(id) + (hr.mismatch ? 1 : 0), lineUid: hr.lineOf.get(id), email: null, name: 'x' }));
   res.end(JSON.stringify({ staff }));
 });
-const smsServer = await listen((req, raw, res) => {
-  sms.calls.push(Object.fromEntries(new URLSearchParams(raw)));
-  res.end(JSON.stringify({ phone_number_list: [{ message_id: `m-${sms.calls.length}`, used_credit: 1 }], bad_phone_number_list: [] }));
-});
 const port = (s) => s.address().port;
 const LINE_ENV = {
   LINE_CHANNEL_ACCESS_TOKEN: 'line-token',
@@ -53,12 +48,7 @@ const LINE_ENV = {
   LINE_TIMEOUT_MS: '300',
 };
 const HR_ENV = { UFHR_API_BASE: `http://127.0.0.1:${port(hrServer)}/api/external/`, UFHR_API_KEY: 'hr-key' };
-const SMS_ENV = {
-  THAIBULKSMS_API_KEY: 'k',
-  THAIBULKSMS_API_SECRET: 's',
-  THAIBULKSMS_API_URL: `http://127.0.0.1:${port(smsServer)}/sms`,
-};
-const ALL = [...Object.keys(LINE_ENV), ...Object.keys(HR_ENV), ...Object.keys(SMS_ENV), 'THAIBULKSMS_SENDER'];
+const ALL = [...Object.keys(LINE_ENV), ...Object.keys(HR_ENV), 'OTP_GLOBAL_DAILY_LIMIT'];
 const clearEnv = () => ALL.forEach((k) => delete process.env[k]);
 const until = async (check, ms = 3000) => {
   const end = Date.now() + ms;
@@ -72,10 +62,10 @@ const until = async (check, ms = 3000) => {
 const uid = (n) => `U${String(n).padStart(32, '0')}`;
 const codeIn = (text) => text.match(/\b(\d{6})\b/)[1];
 
-test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then SMS (D113)', async (t) => {
+test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, and no SMS (D113, D117)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) {
-    [lineServer, hrServer, smsServer].forEach((s) => {
+    [lineServer, hrServer].forEach((s) => {
       s.closeAllConnections?.();
       s.close();
     });
@@ -120,7 +110,7 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
 
     await t.test('LINE alone turns OTP on; the code goes to the stored LINE userId with the channel token', async () => {
       Object.assign(process.env, LINE_ENV);
-      assert.deepEqual((await request('/auth/config')).data, { otp: true, channels: ['line'] });
+      assert.deepEqual((await request('/auth/config')).data, { otp: true });
       assert.equal(
         (await request('/auth/login', 'POST', { staffId: people.stored.staffId, password: PASSWORD })).status,
         401,
@@ -129,7 +119,7 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
       for (const who of ['stored', 'hronly', 'phone', 'none']) assert.deepEqual((await ask(who)).data, { ok: true });
       const call = await until(() => line.calls[0]);
       await new Promise((r) => setTimeout(r, 150));
-      assert.equal(line.calls.length, 1, 'only the person LINE can reach (no UFHR, no SMS here)');
+      assert.equal(line.calls.length, 1, 'only the person LINE can reach (no UFHR here; a phone alone gets nothing)');
       assert.equal(call.method, 'POST');
       assert.equal(call.url, '/v2/bot/message/push');
       assert.equal(call.auth, 'Bearer line-token');
@@ -138,7 +128,7 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
       const row = await rowOf('stored');
       assert.equal(row.channel, 'line');
       assert.equal(row.smsError, null);
-      assert.equal(row.phoneLast4, '0001');
+      assert.equal(row.phoneLast4, '', 'no phone digits are kept');
       assert.equal(await db.loginOtp.count({ where: { staffId: { in: [people.hronly.staffId, people.phone.staffId, people.none.staffId] } } }), 0);
       const signedIn = await request('/auth/otp/verify', 'POST', { staffId: people.stored.staffId, code: codeIn(call.body.messages[0].text) });
       assert.equal(signedIn.status, 201, JSON.stringify(signedIn.data));
@@ -179,33 +169,23 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
       await reset();
     });
 
-    await t.test('SMS is the fallback: no LINE for the person, or LINE refuses', async () => {
-      Object.assign(process.env, SMS_ENV);
-      assert.deepEqual((await request('/auth/config')).data, { otp: true, channels: ['line', 'sms'] });
-      await ask('phone');
-      const first = await until(() => sms.calls[0]);
-      assert.equal(first.msisdn, '0830000003');
-      const viaSms = await rowOf('phone');
-      assert.equal(viaSms.channel, 'sms');
-      assert.equal(viaSms.smsMessageId, 'm-1');
-      assert.match(viaSms.smsError, /^LINE: UFHR ไม่มี LINE/, 'the LINE miss stays as a note for the ADMIN');
-      const signedIn = await request('/auth/otp/verify', 'POST', { staffId: people.phone.staffId, code: codeIn(first.message) });
-      assert.equal(signedIn.status, 201, 'an SMS code signs in the same way');
-
-      line.status = 429;
+    await t.test('no fallback: a LINE refusal or no LINE for the person is a failed code with the reason, nothing goes to their phone', async () => {
       hr.lineOf.set(String(people.stored.erp), uid(11));
+      line.status = 429;
+      line.calls.length = 0;
       await ask('stored');
-      assert.ok(await until(() => sms.calls.length === 2));
-      assert.equal(sms.calls[1].msisdn, '0830000001');
-      const fellBack = await rowOf('stored');
-      assert.equal(fellBack.channel, 'sms');
-      assert.match(fellBack.smsError, /LINE: LINE ปฏิเสธ \(429 You have reached your monthly limit\.\)/);
-
-      hr.lineOf.set(String(people.none.erp), uid(4));
-      await ask('none');
-      const nothing = await rowOf('none', 'failed');
-      assert.match(nothing.smsError, /LINE: LINE ปฏิเสธ \(429.*SMS: ไม่มีเบอร์มือถือ/);
+      const refused = await rowOf('stored', 'failed');
+      assert.equal(refused.channel, 'line');
+      assert.match(refused.smsError, /LINE: LINE ปฏิเสธ \(429 You have reached your monthly limit\.\)/);
+      assert.equal(line.calls.length, 1, 'one try, no second channel');
       line.status = 200;
+      await reset();
+
+      // HR has no LINE for a person who has a phone: the code fails with HR's answer, and the phone is never used
+      await ask('phone');
+      const noLine = await rowOf('phone', 'failed');
+      assert.match(noLine.smsError, /UFHR ไม่มี LINE ของคนนี้/);
+      assert.equal(line.calls.length, 1, 'nothing more went out');
       await reset();
     });
 
@@ -213,19 +193,16 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
       await reset();
       hr.lineOf.clear();
       line.calls.length = 0;
-      sms.calls.length = 0;
       await ask('stored'); // has an ERP copy (uid 1) and a phone; HR says it has no LINE for them
-      assert.ok(await until(() => sms.calls.length === 1));
+      const unlinked = await rowOf('stored', 'failed');
       assert.equal(line.calls.length, 0, 'HR unlinked the person: the older ERP copy is not used');
-      const viaSms = await rowOf('stored');
-      assert.equal(viaSms.channel, 'sms');
-      assert.match(viaSms.smsError, /UFHR ไม่มี LINE/);
+      assert.match(unlinked.smsError, /UFHR ไม่มี LINE/);
 
       await reset();
       hr.lineOf.set(String(people.stored.erp), uid(11));
       hr.mismatch = true; // HR answers, but about another staff id
       await ask('stored');
-      assert.ok(await until(() => sms.calls.length === 2));
+      await rowOf('stored', 'failed');
       assert.equal(line.calls.length, 0, 'an answer about somebody else is not this person');
       hr.mismatch = false;
 
@@ -234,21 +211,17 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
       await ask('stored');
       assert.ok(await until(() => line.calls.length === 1));
       assert.equal(line.calls[0].body.to, uid(1));
-      await new Promise((r) => setTimeout(r, 150));
-      assert.equal(sms.calls.length, 2, 'LINE took it, so no SMS');
+      assert.equal((await rowOf('stored')).channel, 'line');
       hr.status = 200;
       await reset();
     });
 
-    await t.test('a LINE success sends no SMS; LINE codes count against the same daily cap', async () => {
+    await t.test('a LINE success is recorded as sent; LINE codes count against the system-wide daily cap', async () => {
       await reset();
       hr.lineOf.set(String(people.stored.erp), uid(11));
       line.calls.length = 0;
-      sms.calls.length = 0;
       await ask('stored');
       assert.ok(await until(() => line.calls.length === 1));
-      await new Promise((r) => setTimeout(r, 150));
-      assert.equal(sms.calls.length, 0, 'LINE worked: nothing by SMS');
       const row = await rowOf('stored');
       assert.equal(row.channel, 'line');
       assert.equal(row.smsError, null);
@@ -257,30 +230,28 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
       // one code for somebody else, so the cap is at least 1 (0 would mean "unset")
       await db.loginOtp.create({ data: { id: randomUUID(), staffId: people.none.staffId, codeHash: 'x'.repeat(64), phoneLast4: '', expiresAt: new Date() } });
       const used = await db.loginOtp.count({ where: { createdAt: { gte: new Date(Date.now() - 24 * 3600_000) } } });
-      process.env.OTP_SMS_DAILY_LIMIT = String(used);
+      process.env.OTP_GLOBAL_DAILY_LIMIT = String(used);
       try {
         await ask('stored');
         await new Promise((r) => setTimeout(r, 200));
         assert.equal(line.calls.length, 1, 'the system-wide cap stops LINE codes too');
         assert.equal(await db.loginOtp.count({ where: { staffId: people.stored.staffId } }), 0);
       } finally {
-        delete process.env.OTP_SMS_DAILY_LIMIT;
+        delete process.env.OTP_GLOBAL_DAILY_LIMIT;
       }
       await reset();
     });
 
-    await t.test('an answer that stalls after its headers does not hold the code back (the deadline covers the body)', async () => {
+    await t.test('an answer that stalls after its headers ends at the deadline (the deadline covers the body)', async () => {
       await reset();
       hr.lineOf.set(String(people.stored.erp), uid(11));
       line.calls.length = 0;
-      sms.calls.length = 0;
       line.stall = true; // LINE: headers, then nothing
       const started = Date.now();
       await ask('stored');
-      assert.ok(await until(() => sms.calls.length === 1, 4000), 'the SMS goes out after the deadline');
+      const row = await rowOf('stored', 'failed');
+      assert.ok(row, 'the attempt ends at the deadline and is recorded as failed (it does not hang)');
       assert.ok(Date.now() - started < 3000);
-      const row = await rowOf('stored');
-      assert.equal(row.channel, 'sms');
       assert.match(row.smsError, /LINE: LINE ไม่ตอบภายใน 0\.3 วินาที/);
       line.stall = false;
 
@@ -339,7 +310,7 @@ test('LINE OTP login on the UFiconStaff OA: UFHR first, then the ERP copy, then 
     await db.loginSession.deleteMany({ where: { staffId: { in: mine } } }).catch(() => undefined);
     await db.staffRole.deleteMany({ where: { staffId: { in: mine } } }).catch(() => undefined);
     await db.staff.deleteMany({ where: { staffId: { in: mine } } }).catch(() => undefined);
-    [lineServer, hrServer, smsServer].forEach((s) => {
+    [lineServer, hrServer].forEach((s) => {
       s.closeAllConnections?.();
       s.close();
     });

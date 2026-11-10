@@ -1676,3 +1676,19 @@ LINE). Read on 2026-11-10: UFHR has a LINE for **122 of SES's 159** ERP accounts
 5. The password was first pasted into a chat (2026-11-10); it was entered into SES through a secret form, and the FileMaker team was
    asked to change it (then update the Coolify env).
 
+## D119 — The serial check comes back from FileMaker (`snCheck`), and a held bill counts as opened (2026-11-10)
+
+The FileMaker team asked how to report which serials they found, and said a bill number exists only at payment.
+
+1. **`snCheck`.** The `ses` script v3.3 (and `ses_fail` v3 on a failure) adds `snCheck` to its answer: per serial `{sn, partNo, found,
+   written, code, model, upc, status, branch, name, price}`, from the row it already reads (no extra query). SES keeps it, cleaned
+   (`parseSnCheck`: serial required, texts cut, a skipped serial always has a code, at most 100), in `FmpOutbox.snCheck` (JSON). Admin →
+   ส่งไป FileMaker shows a tag per serial (✓ on the bill / ✗ with the reason, branch or model); `price` is stored but not shown (D58).
+2. **"SN ไม่ได้ลงบิล".** When the latest message got a success answer but some serials were not put on the held bill, "ออเดอร์ที่ต้องดู"
+   lists it (kind `sn-skipped`, the serials and reasons; no resend button: the cashier scans those units in FileMaker).
+3. **Held bill = opened.** FileMaker opens the held bill when its script answers CREATED and sends a bill number only at payment
+   (`ses_report_bill` v3: one call at payment, `paid: 1`, `openedAt` = when the held bill was opened). So an order whose latest message
+   got a success answer waits "for payment" (stage `held-bill`, the 4-hour limit, counted from that answer), not "for a bill" (30 min).
+4. Not yet: sending only the wrong serials back to STOCK automatically, and a check at scan time (needs a FileMaker layout + index on
+   `product_sn`).
+

@@ -11,7 +11,7 @@ const PASSWORD = 'pa,`^;ss!x'; // special characters on purpose; 'ses:' + this i
 const padded = Buffer.from(`${USER}:${PASSWORD}`).toString('base64');
 const stripped = padded.replace(/=+$/, '');
 
-const { FMP_MAX_ATTEMPTS, ackStatusOf, maskPhone, maskedJson, parseFmpTime, scriptVerdict } = await import('../dist/fmp/fmp.service.js');
+const { FMP_MAX_ATTEMPTS, ackStatusOf, maskPhone, maskedJson, parseFmpTime, parseSnCheck, scriptVerdict } = await import('../dist/fmp/fmp.service.js');
 const CALLBACK_KEY = 'test-fmp-callback-key-0123456789abcdef0123456789';
 
 // A stand-in for the FileMaker Data API (vLatest): sessions (login / logout) and the records of one layout.
@@ -711,6 +711,24 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
       assert.equal(row.ackStatus, 'error');
       assert.match(row.ackMessage, /^ALREADY_DONE saleID S-77: FMP เปิดบิลจากการส่งครั้งก่อนไปแล้ว/);
 
+      // D119: script v3.3 sends the check of each serial; it is kept on the message, cleaned
+      fm.script = {
+        result: JSON.stringify({
+          ok: true, code: 'CREATED_SN_LATER', saleID: 'S-80', lines: 1, snPending: 1,
+          snCheck: [
+            { sn: 'AAA1', partNo: 'MX1', found: true, written: true, code: '', model: 'MX1', upc: '123', status: 'ready', branch: 'ISTA', name: 'iPhone', price: 39900 },
+            { sn: 'BBB2', partNo: 'MX1', found: true, written: false, code: 'SN_WRONG_BRANCH', model: 'MX1', branch: 'ISTM', price: null },
+          ],
+        }),
+        error: '0',
+      };
+      const c = await driveTo('send');
+      await fmp.tick();
+      row = await rowOf(c.reference, 'SENT_TO_CASHIER');
+      assert.equal(row.ackStatus, 'success');
+      assert.deepEqual(row.snCheck.map((x) => [x.sn, x.written, x.code, x.branch]), [['AAA1', true, null, 'ISTA'], ['BBB2', false, 'SN_WRONG_BRANCH', 'ISTM']]);
+      assert.ok((await app('/admin/fmp', 'GET', undefined, 'admin')).data.rows.find((r) => r.reference === c.reference).snCheck.length === 2, 'the admin list carries it');
+
       // a result that is not JSON says nothing about the order
       fm.script = { result: 'ok', error: '0' };
       const p = await driveTo('send');
@@ -733,6 +751,12 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
         { status: 'success', message: 'CREATED_SN_LATER saleID S9 (2 รายการ): รอสแกน SN ใน FMP 1 เครื่อง' },
       );
       for (const junk of ['', 'ok', '[]', 'null', '{"code":"X"}', '{"ok":"yes"}']) assert.equal(scriptVerdict(junk, false), null, junk);
+      // D119: snCheck is cleaned: no serial = dropped, texts trimmed and cut, a skipped serial always has a code, at most 100
+      assert.equal(parseSnCheck(null), null);
+      for (const junk of ['ok', '{}', '{"snCheck":"x"}', '{"snCheck":[{"written":true}]}']) assert.equal(parseSnCheck(junk), null, junk);
+      const cleaned = parseSnCheck(JSON.stringify({ snCheck: [{ sn: ' X1 ', written: 1, found: 1, name: 'a\nb', price: '12' }, { sn: 'X2', written: false }, 7] }));
+      assert.deepEqual(cleaned.map((x) => [x.sn, x.written, x.found, x.code, x.name, x.price]), [['X1', true, true, null, 'a b', null], ['X2', false, false, 'NOT_WRITTEN', null, null]]);
+      assert.equal(parseSnCheck(JSON.stringify({ snCheck: Array.from({ length: 150 }, (_, i) => ({ sn: `S${i}`, written: true })) })).length, 100);
       assert.ok(scriptVerdict(JSON.stringify({ ok: false, code: 'X', message: 'y'.repeat(400) }), false).message.length <= 255);
     });
 

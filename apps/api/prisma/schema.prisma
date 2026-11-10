@@ -114,6 +114,8 @@ model FmpOutbox {
   ackAt         DateTime? @db.DateTime(3) // the time FileMaker said it happened, when it sent one we could read
   ackTimeText   String?   @db.VarChar(40) // that time as FileMaker wrote it (so an unreadable format is still visible)
   ackReceivedAt DateTime? @db.DateTime(3)
+  // D119: the `ses` script's per-serial check (v3.3 "snCheck"), cleaned by `parseSnCheck`; null = the script did not send one
+  snCheck       Json?
 
   @@index([status, nextAttemptAt])
   @@index([reference])

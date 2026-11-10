@@ -99,11 +99,10 @@ message}`) and shows it on the order's row in Admin → ส่งไป FileMake
 `ALREADY_DONE` when SES updated an existing record (a second send) is shown as an error: the serial numbers of that send were not used.
 Keep the result JSON as it is; a result that is not JSON is stored but not interpreted.
 
-**Planned (ses v3.3, sent to the FileMaker team 2026-11-10):** the result also carries `snCheck`, one object per serial checked:
+**D119 (ses v3.3, sent to the FileMaker team 2026-11-10; SES reads it):** the result also carries `snCheck`, one object per serial checked:
 `{sn, partNo, found, written, code, model, upc, status, branch, name, price}` (`written` = it went onto the held bill; `code` empty when it
 passed; `price` is FileMaker's `Price_Sell` or null). On a failure `ses_fail` v3 passes it back too (serials up to the failing one). SES
-keeps it in the log today; reading it into the order (show what is wrong per serial, send only the wrong ones back to STOCK) is the SES
-side's next step.
+stores it in `FmpOutbox.snCheck`, shows it per serial in the admin table and flags skipped serials in "ออเดอร์ที่ต้องดู" (`sn-skipped`).
 
 ## Reporting back: the callback door (D90)
 

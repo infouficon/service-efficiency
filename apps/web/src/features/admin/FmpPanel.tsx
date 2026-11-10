@@ -4,6 +4,52 @@ import { Button, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
 
+/** D119: one serial number as the FileMaker `ses` script v3.3 checked it */
+export interface SnCheck {
+  sn: string;
+  partNo: string | null;
+  found: boolean;
+  written: boolean;
+  code: string | null;
+  model: string | null;
+  upc: string | null;
+  status: string | null;
+  branch: string | null;
+  name: string | null;
+  price: number | null;
+}
+/** Thai words for the script's serial codes */
+export const SN_CODE: Record<string, string> = {
+  SN_NOT_FOUND: 'ไม่มีในสต็อก FMP',
+  SN_WRONG_BRANCH: 'อยู่สาขาอื่น',
+  SN_NOT_READY_FOR_SALE: 'ยังไม่พร้อมขาย',
+  SN_MODEL_MISMATCH: 'รุ่นไม่ตรง',
+  SN_ALREADY_SOLD_OR_HELD: 'ขายแล้ว/ติดบิลอื่น',
+  DUPLICATE_SN_IN_PAYLOAD: 'SN ซ้ำ',
+  EMPTY_SN: 'SN ว่าง',
+  PRICE_NOT_FOUND: 'ไม่มีราคาขาย',
+  SN_CHECK_ERROR: 'ตรวจ SN ไม่ได้',
+};
+/** The serials of one message: a green tag for each one on the bill, a red one with the reason (and where FMP has it) otherwise. */
+export function SnCheckList({ items }: { items: SnCheck[] }) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '4px' }}>
+      {items.map((c) => (
+        <span
+          key={c.sn}
+          className={`status-tag ${c.written ? 'status-found' : 'status-outcome'}`}
+          title={[c.name, c.model && `รุ่น ${c.model}`, c.upc && `UPC ${c.upc}`, c.branch && `สาขา ${c.branch}`, c.status && `สถานะ ${c.status}`]
+            .filter(Boolean)
+            .join(' · ')}
+        >
+          {c.written ? '✓' : '✗'} {c.sn}
+          {!c.written && ` ${SN_CODE[c.code ?? ''] ?? c.code ?? ''}${c.branch && c.code === 'SN_WRONG_BRANCH' ? ` (${c.branch})` : ''}${c.model && c.code === 'SN_MODEL_MISMATCH' ? ` (${c.model})` : ''}`}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 interface FmpRow {
   id: string;
   reference: string;
@@ -15,6 +61,7 @@ interface FmpRow {
   sentAt: string | null;
   fmpRecordId: string | null;
   scriptResult: string | null;
+  snCheck: SnCheck[] | null;
   lastError: string | null;
   ackStatus: string | null;
   ackMessage: string | null;
@@ -275,6 +322,7 @@ export function FmpPanel() {
                         <td>
                           {row.fmpRecordId ?? '—'}
                           {row.scriptResult ? <div className="fine muted">script: {row.scriptResult}</div> : null}
+                          {row.snCheck?.length ? <SnCheckList items={row.snCheck} /> : null}
                         </td>
                         <td>
                           {row.ackStatus ? (

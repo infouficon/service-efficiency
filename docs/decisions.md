@@ -1712,7 +1712,9 @@ The FileMaker team asked what to send when a bill from SES is cancelled on their
 1. **Cancelled in FileMaker.** FileMaker already frees the serials for a new scan, so the same order (same reference, same serials) can
    be sent again. Their new script `ses_report_cancel` v1 (`docs/agents/fmp-scripts/`) clears `ses::ses_status` and `ses::sale_id`
    (otherwise the `ses` script answers `ALREADY_DONE` and opens nothing) and calls the callback door (D90) with the reference,
-   `status: "error"` and a message starting `CANCELLED` (sale id, reason, "ชำระแล้ว" for a paid bill). No SES change: an error answer
+   `status: "error"` and a message starting `CANCELLED` (reason; "ชำระแล้ว" and the bill number for a paid bill). A held bill has no bill number
+   yet (it comes at payment), so the order is named by its reference only; the script sends the held bill's internal key (`ses::sale_id`)
+   as `holdKey` for the log. No SES change: an error answer
    already puts the order in "ออเดอร์ที่ต้องดู" (`ack-error`, with the resend button) and stops counting it as a held bill. Key: the
    `FMP_CALLBACK_KEY` FileMaker already used for its test callbacks on 2026-10-31.
 2. **Cancelled after payment** (paid = 1): the record is not cleared and the order in SES stays sold; the warning tells staff to sort it

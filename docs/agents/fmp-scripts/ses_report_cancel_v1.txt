@@ -1,11 +1,12 @@
 # =====================================================================
-# Script : ses_report_cancel   (v1 2026-11-10 เขียนโดยทีม SES)
+# Script : ses_report_cancel   (v1.1 2026-11-10 เขียนโดยทีม SES · v1.1: ไม่ต้องส่ง saleID บิลพักยังไม่มีเลขบิล)
 # หน้าที่ : เมื่อยกเลิกบิลพักที่มาจาก SES ในฝั่ง FMP
 #           1) ล้างสถานะ record ในตาราง ses (ses_status / sale_id) เพื่อให้ SES ส่งออเดอร์เดิมมาเปิดบิลใหม่ได้
 #           2) แจ้ง SES ผ่าน callback ว่าบิลถูกยกเลิก → SES ขึ้นในแผง "ออเดอร์ที่ต้องดู" (FMP แจ้งผิดพลาด) พร้อมปุ่มส่งซ้ำ
 # เรียกเมื่อ: ท้ายสคริปต์ยกเลิกบิลพักของ FMP เฉพาะบิลที่ pos_front_sale_tmp::ses_id ไม่ว่าง (หลัง FMP คืน SN ให้สแกนใหม่ได้แล้ว)
-# Param  : { "sesID": ses::ses_id หรือ pos_front_sale_tmp::ses_id, "saleID": <เลขบิลพักที่ยกเลิก>, "reason": "<เหตุผล>", "paid": 0/1 }
-#          paid = 1 ถ้ายกเลิกบิลที่ชำระเงินแล้ว (void) → SES แค่ขึ้นเตือน ออเดอร์ใน SES ยังเป็นขายแล้ว ต้องแจ้งทีม SES/ผู้จัดการ
+# Param  : { "sesID": pos_front_sale_tmp::ses_id, "reason": "<เหตุผล>", "paid": 0/1, "billNo": "<เลขที่บิล เฉพาะ paid = 1>" }
+#          บิลพักยังไม่มีเลขที่บิล (ได้ตอนชำระ) จึงอ้างอิงด้วย sesID อย่างเดียว สคริปต์อ่าน key บิลพัก (ses::sale_id) เองเพื่อเก็บใน log
+#          paid = 1 ถ้ายกเลิกบิลที่ชำระเงินแล้ว (void) ใส่ billNo มาด้วย → SES แค่ขึ้นเตือน ออเดอร์ใน SES ยังเป็นขายแล้ว ต้องแจ้งทีม SES/ผู้จัดการ
 # Result : JSON { ok, status, reset, body }
 # ทำไมต้องล้าง ses_status: สคริปต์ ses ตอบ ALREADY_DONE ทันทีถ้า ses::ses_status = "DONE" (ขั้น 2 ของสคริปต์ ses)
 #          ถ้าไม่ล้าง SES ส่งออเดอร์เดิมซ้ำแล้ว FMP จะไม่เปิดบิลพักใหม่
@@ -16,7 +17,8 @@ Allow User Abort [ Off ]
 #
 Set Variable [ $p ; Value: Get ( ScriptParameter ) ]
 Set Variable [ $sesID ; Value: Trim ( JSONGetElement ( $p ; "sesID" ) ) ]
-Set Variable [ $saleID ; Value: Trim ( JSONGetElement ( $p ; "saleID" ) ) ]
+Set Variable [ $billNo ; Value: Trim ( JSONGetElement ( $p ; "billNo" ) ) ]
+Set Variable [ $holdKey ; Value: "" ]
 Set Variable [ $reason ; Value: Trim ( JSONGetElement ( $p ; "reason" ) ) ]
 Set Variable [ $paid ; Value: GetAsBoolean ( JSONGetElement ( $p ; "paid" ) ) ]
 If [ IsEmpty ( $sesID ) ]
@@ -36,9 +38,11 @@ If [ not $paid ]
 		# ถ้ามีหลาย record ของ sesID เดียวกัน (สคริปต์ ses v2 ขึ้นไปรองรับ) ล้างทุก record
 		Go to Record/Request/Page [ First ]
 		Loop
+			# key ภายในของบิลพัก (pos_front_sale_tmp::_PrimaryKey ที่สคริปต์ ses เก็บไว้) ไม่ใช่เลขที่บิล เก็บไว้ส่งให้ SES ลง log
+			Set Variable [ $holdKey ; Value: List ( $holdKey ; ses::sale_id ) ]
 			Set Field [ ses::ses_status ; "" ]
 			Set Field [ ses::sale_id ; "" ]
-			Set Field [ ses::ses_error ; "CANCELLED " & $saleID & If ( IsEmpty ( $reason ) ; "" ; ": " & $reason ) ]
+			Set Field [ ses::ses_error ; "CANCELLED" & If ( IsEmpty ( $reason ) ; "" ; ": " & $reason ) ]
 			Go to Record/Request/Page [ Next ; Exit after last: On ]
 		End Loop
 		Commit Records/Requests [ With dialog: Off ]
@@ -55,8 +59,8 @@ Set Variable [ $key ; Value: ‹ฟิลด์ที่เก็บคีย์
 Set Variable [ $t ; Value: Get ( CurrentHostTimestamp ) ]
 Set Variable [ $now ; Value: Year ( $t ) & "-" & Right ( "0" & Month ( $t ) ; 2 ) & "-" & Right ( "0" & Day ( $t ) ; 2 ) & "T" & Right ( "0" & Hour ( $t ) ; 2 ) & ":" & Right ( "0" & Minute ( $t ) ; 2 ) & ":" & Right ( "0" & Int ( Seconds ( $t ) ) ; 2 ) & "+07:00" ]
 # status "error" = SES ขึ้นเตือนในแผง "ออเดอร์ที่ต้องดู" ข้อความขึ้นต้นด้วย CANCELLED ให้พนักงานรู้ว่าเป็นการยกเลิก
-Set Variable [ $msg ; Value: Left ( "CANCELLED" & If ( $paid ; " (ชำระแล้ว)" ; "" ) & If ( IsEmpty ( $saleID ) ; "" ; " saleID " & $saleID ) & If ( IsEmpty ( $reason ) ; "" ; ": " & $reason ) ; 255 ) ]
-Set Variable [ $body ; Value: JSONSetElement ( "{}" ; [ "reference" ; $sesID ; JSONString ] ; [ "status" ; "error" ; JSONString ] ; [ "message" ; $msg ; JSONString ] ; [ "time" ; $now ; JSONString ] ; [ "event" ; "cancelled" ; JSONString ] ; [ "saleID" ; $saleID ; JSONString ] ; [ "paid" ; $paid ; JSONBoolean ] ) ]
+Set Variable [ $msg ; Value: Left ( "CANCELLED" & If ( $paid ; " (ชำระแล้ว" & If ( IsEmpty ( $billNo ) ; "" ; " บิล " & $billNo ) & ")" ; " (บิลพัก)" ) & If ( IsEmpty ( $reason ) ; "" ; ": " & $reason ) ; 255 ) ]
+Set Variable [ $body ; Value: JSONSetElement ( "{}" ; [ "reference" ; $sesID ; JSONString ] ; [ "status" ; "error" ; JSONString ] ; [ "message" ; $msg ; JSONString ] ; [ "time" ; $now ; JSONString ] ; [ "event" ; "cancelled" ; JSONString ] ; [ "holdKey" ; Substitute ( $holdKey ; ¶ ; "," ) ; JSONString ] ; [ "billNo" ; $billNo ; JSONString ] ; [ "paid" ; $paid ; JSONBoolean ] ) ]
 #
 # ต้องมี User-Agent ที่ไม่ใช่ของ curl: Cloudflare หน้า ses.uficon.com ตอบ 403 กับ user-agent ของ curl
 Insert from URL [ Select ; With dialog: Off ; Target: $response ; "https://ses.uficon.com/api/integrations/fmp/callback" ; Verify SSL Certificates ; cURL options: "-X POST -A \"Mozilla/5.0 (FileMaker; UFicon SES cancel report)\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer " & $key & "\" --data @$body -D $headers --max-time 15" ]

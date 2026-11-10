@@ -15,6 +15,7 @@ import {
 import { hashPassword, OTP_ONLY_HASH, verifyPassword } from '../accounts/password';
 import { normalizeLineUserId } from '../line/line.service';
 import { normalizeThaiMobile } from '../accounts/phone';
+import { LineService } from '../line/line.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -44,6 +45,9 @@ export const ERP_HO_PERSON_GROUPS = ['HO'];
 /** D113/D117: OTP mode (codes go by LINE only), and the ERP holds no LINE userId for the person (UFHR may still know it) */
 const NO_LINE_NOTE =
   'ไม่มี LINE (line_user_id) ใน ERP: ถ้า UFHR ไม่มี LINE ของคนนี้ด้วย จะเข้าระบบด้วย OTP ไม่ได้ (รหัส OTP ส่งทาง LINE อย่างเดียว)';
+/** D118: the same, when the LINE userIds came from UFHR's FileMaker layout (UFHR's answer is final) */
+const NO_LINE_UFHR_NOTE =
+  'ไม่มี LINE ใน UFHR (ยังไม่ผูก LINE ที่เมนูลงเวลา หรือไม่ได้ Active ใน HR): เข้าระบบด้วย OTP ไม่ได้ (รหัส OTP ส่งทาง LINE อย่างเดียว)';
 
 /**
  * Provisional mapping from the ERP `position` text to SES roles (owner will send corrections, D54).
@@ -601,7 +605,31 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly accounts: AccountsService,
     private readonly config: ConfigService,
+    private readonly line: LineService,
   ) {}
+
+  /**
+   * D118: when UFHR's FileMaker layout is set up, the LINE userIds come from there (one read for everybody), not from the
+   * ERP's incomplete copy: UFHR's answer is final (not linked, or not Active in HR = no LINE). When UFHR cannot be read, or
+   * answers with nobody at all, the ERP copy stays and a note says so. Returns that note, or null.
+   */
+  private async lineFromUfhr(parsed: ReturnType<typeof parsePeople>, requirePassword: boolean): Promise<BranchNote | null> {
+    if (!this.line.ufhrFmConfigured()) return null;
+    let lines: Map<number, string | null>;
+    try {
+      lines = await this.line.ufhrLines();
+    } catch (error) {
+      return { code: 'UFHR', reason: `อ่าน LINE จาก UFHR ไม่สำเร็จ (${error instanceof Error ? error.message : 'ไม่ทราบสาเหตุ'}) จึงใช้ line_user_id จาก ERP แทน` };
+    }
+    if (!lines.size) return { code: 'UFHR', reason: 'UFHR ตอบว่าไม่มีพนักงานเลย จึงใช้ line_user_id จาก ERP แทน (กันลบ LINE ของทุกคน)' };
+    for (const person of parsed.people) person.lineUserId = lines.get(person.erpStaffId) ?? null;
+    if (!requirePassword) {
+      parsed.warnings = parsed.warnings.filter((w) => w.reason !== NO_LINE_NOTE);
+      for (const person of parsed.people)
+        if (!person.lineUserId) parsed.warnings.push({ staffId: person.staffId, reason: NO_LINE_UFHR_NOTE });
+    }
+    return null;
+  }
 
   private erpConfig(): ErpConfig | null {
     return erpConfigFrom(this.config);
@@ -824,6 +852,8 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
             : 'มีสาขา HO ซ้ำกันใน SES จึงไม่นำเข้าพนักงานกลุ่ม HO',
       });
     const parsed = parsePeople(staffRows, scope, dropped, !otp, extras, ho.length === 1 ? ho[0].id : null);
+    const lineNote = await this.lineFromUfhr(parsed, !otp);
+    if (lineNote) notes.push(lineNote);
     const plan: Plan = {
       branches: scope,
       branchNotes: notes,

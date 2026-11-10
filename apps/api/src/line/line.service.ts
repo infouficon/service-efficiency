@@ -18,9 +18,19 @@ export interface LineTarget {
   note?: string;
 }
 
+/** UFHR's FileMaker file and the layout its team opened for SES (D118): `staff_id`, `line_uid`, `status`, names. */
+const DEFAULT_UFHR_FM_DATABASE = 'UFHR';
+const DEFAULT_UFHR_FM_LAYOUT = 'api_staff';
+/** FileMaker Data API: "no records match the request" (an answer, not an error) */
+const FM_NO_RECORDS = '401';
+
 /**
  * Login codes over the UFiconStaff LINE OA (D113), the OA the staff already clock in with and UFPOS sends its own OTP
  * through. Push only: SES never receives the OA's webhook (UFHR owns it). Off until `LINE_CHANNEL_ACCESS_TOKEN` is set.
+ *
+ * D118: UFHR can also be asked straight in its FileMaker file (`UFHR_FM_HOST` / `UFHR_FM_USER` / `UFHR_FM_PASSWORD`,
+ * database `UFHR`, layout `api_staff`, a read-only account the UFHR team made for SES). It is preferred over the HTTP API
+ * when both are set. A person counts as linked only with `status` Active and a real userId in `line_uid`.
  *
  * Who is who on LINE is kept by UFHR (`staff::line_uid`, linked by each person in the OA). With `UFHR_API_BASE` and
  * `UFHR_API_KEY` set, UFHR's `GET /staff-contacts?ids=` decides: its answer is final, so a person HR has unlinked (or
@@ -40,9 +50,13 @@ export class LineService {
   configured(): boolean {
     return this.env('LINE_CHANNEL_ACCESS_TOKEN').length > 0;
   }
-  /** UFHR can be asked for a person's LINE userId. */
+  /** UFHR can be asked for a person's LINE userId (its FileMaker layout, D118, or its HTTP API, D113). */
   ufhrConfigured(): boolean {
-    return this.env('UFHR_API_BASE').length > 0 && this.env('UFHR_API_KEY').length > 0;
+    return this.ufhrFmConfigured() || (this.env('UFHR_API_BASE').length > 0 && this.env('UFHR_API_KEY').length > 0);
+  }
+  /** D118: UFHR's FileMaker layout can be read (host, user and password set). */
+  ufhrFmConfigured(): boolean {
+    return ['UFHR_FM_HOST', 'UFHR_FM_USER', 'UFHR_FM_PASSWORD'].every((k) => this.env(k).length > 0);
   }
 
   /**
@@ -67,6 +81,7 @@ export class LineService {
   }
 
   private async askUfhr(erpStaffId: number): Promise<string | null> {
+    if (this.ufhrFmConfigured()) return (await this.ufhrLines([erpStaffId])).get(erpStaffId) ?? null;
     const base = this.env('UFHR_API_BASE').replace(/\/+$/, '');
     const data = (await this.call(
       `${base}/staff-contacts?ids=${erpStaffId}`,
@@ -75,6 +90,53 @@ export class LineService {
     )) as { staff?: { staffId?: unknown; lineUid?: unknown }[] } | null;
     const row = data?.staff?.find((s) => String(s.staffId) === String(erpStaffId));
     return normalizeLineUserId(row?.lineUid);
+  }
+
+  /**
+   * D118: ERP staff id -> LINE userId from UFHR's FileMaker layout (null = in UFHR but not linked or not Active), for the
+   * given ids or for everybody. A staff id UFHR does not have is absent from the map. One login, one read, one logout.
+   * Throws a short Thai reason when UFHR refuses or does not answer.
+   */
+  async ufhrLines(ids?: number[]): Promise<Map<number, string | null>> {
+    const host = this.env('UFHR_FM_HOST').replace(/\/+$/, '');
+    const db = `${host}/fmi/data/vLatest/databases/${encodeURIComponent(this.env('UFHR_FM_DATABASE') || DEFAULT_UFHR_FM_DATABASE)}`;
+    const layout = `${db}/layouts/${encodeURIComponent(this.env('UFHR_FM_LAYOUT') || DEFAULT_UFHR_FM_LAYOUT)}`;
+    const basic = Buffer.from(`${this.env('UFHR_FM_USER')}:${this.env('UFHR_FM_PASSWORD')}`).toString('base64');
+    const login = await this.request(`${db}/sessions`, {
+      method: 'POST',
+      headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/json' },
+      body: '{}',
+    }, 'UFHR');
+    const token = (login.data as { response?: { token?: unknown } } | null)?.response?.token;
+    if (!login.ok || typeof token !== 'string') throw new Error(`UFHR ปฏิเสธการเข้าระบบ (${login.status} ${fmCode(login.data)})`);
+    const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    try {
+      const res = ids
+        ? await this.request(`${layout}/_find`, {
+            method: 'POST',
+            headers: auth,
+            body: JSON.stringify({ query: ids.map((id) => ({ staff_id: `==${id}` })), limit: ids.length * 5 + 10 }),
+          }, 'UFHR')
+        : await this.request(`${layout}/records?_limit=5000`, { headers: auth }, 'UFHR');
+      const code = fmCode(res.data);
+      if (code === FM_NO_RECORDS) return new Map();
+      if (!res.ok || code !== '0') throw new Error(`UFHR ปฏิเสธ (${res.status} ${code})`);
+      const rows = ((res.data as { response?: { data?: { fieldData?: Record<string, unknown> }[] } } | null)?.response?.data ?? []);
+      const lines = new Map<number, string | null>();
+      for (const row of rows) {
+        const f = row.fieldData ?? {};
+        const id = Number(f.staff_id);
+        if (!Number.isInteger(id) || id <= 0) continue;
+        const active = String(f.status ?? '').trim().toLowerCase() === 'active';
+        const uid = active ? normalizeLineUserId(f.line_uid) : null;
+        // a staff id twice: a linked Active row wins over one that is not
+        if (!lines.get(id)) lines.set(id, uid);
+      }
+      return lines;
+    } finally {
+      // always give the session back: FileMaker counts them
+      await this.request(`${db}/sessions/${encodeURIComponent(token)}`, { method: 'DELETE' }, 'UFHR').catch(() => undefined);
+    }
   }
 
   /** One text message to one person. Throws a short Thai reason when LINE refuses or does not answer. */
@@ -102,12 +164,24 @@ export class LineService {
   }
 
   private async call(url: string, init: RequestInit, who: 'LINE' | 'UFHR'): Promise<unknown> {
+    const { ok, status, data } = await this.request(url, init, who);
+    if (!ok) {
+      const message = (data as { message?: unknown } | null)?.message;
+      const reason = typeof message === 'string' ? message.slice(0, 120) : '';
+      this.log.error(`${who} ${status} ${reason}`.trim());
+      throw new Error(`${who} ปฏิเสธ (${status}${reason ? ` ${reason}` : ''})`);
+    }
+    return data;
+  }
+
+  /** One HTTP call with the deadline over headers and body; a refusal is returned, only no answer throws. */
+  private async request(url: string, init: RequestInit, who: 'LINE' | 'UFHR'): Promise<{ ok: boolean; status: number; data: unknown }> {
     const limit = this.timeoutMs();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), limit);
     let ok: boolean;
     let status: number;
-    let data: { message?: unknown } | null;
+    let data: unknown;
     try {
       const response = await fetch(url, { ...init, signal: controller.signal });
       ok = response.ok;
@@ -116,7 +190,7 @@ export class LineService {
       data = (await response.json().catch((error: unknown) => {
         if (error instanceof Error && error.name === 'AbortError') throw error;
         return null;
-      })) as { message?: unknown } | null;
+      })) as unknown;
     } catch (error) {
       // never echo error.message: some runtimes quote the URL or headers in it
       throw new Error(
@@ -127,11 +201,12 @@ export class LineService {
     } finally {
       clearTimeout(timer);
     }
-    if (!ok) {
-      const reason = typeof data?.message === 'string' ? data.message.slice(0, 120) : '';
-      this.log.error(`${who} ${status} ${reason}`.trim());
-      throw new Error(`${who} ปฏิเสธ (${status}${reason ? ` ${reason}` : ''})`);
-    }
-    return data;
+    return { ok, status, data };
   }
+}
+
+/** The FileMaker Data API message code of an answer ("0" = OK, "401" = no records, "212" = bad login, ...). */
+function fmCode(data: unknown): string {
+  const messages = (data as { messages?: { code?: unknown }[] } | null)?.messages;
+  return String(messages?.[0]?.code ?? '?');
 }

@@ -1274,6 +1274,78 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
       },
     );
 
+    await t.test("D118: with UFHR's FileMaker layout set up, the LINE userIds come from UFHR (its answer is final); UFHR down keeps the ERP copy", async () => {
+      // a small stand-in for UFHR's FileMaker Data API (database UFHR, layout api_staff)
+      const hr = { rows: [], down: false, open: 0 };
+      const answer = (res, status, code, response = {}) => {
+        res.statusCode = status;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ response, messages: [{ code: String(code) }] }));
+      };
+      const hrServer = http.createServer((req, res) => {
+        req.resume();
+        req.on('end', () => {
+          if (hr.down) return answer(res, 500, 952);
+          if (req.method === 'POST' && req.url.endsWith('/sessions')) {
+            hr.open++;
+            return answer(res, 200, 0, { token: 't' });
+          }
+          if (req.method === 'DELETE') {
+            hr.open--;
+            return answer(res, 200, 0);
+          }
+          if (req.method === 'GET' && req.url.includes('/layouts/api_staff/records'))
+            return answer(res, 200, 0, { data: hr.rows.map((fieldData) => ({ fieldData })) });
+          return answer(res, 404, 105);
+        });
+      });
+      await new Promise((r) => hrServer.listen(0, '127.0.0.1', r));
+      const ufhrUid = `U${'0d'.repeat(16)}`;
+      const erpUid = `U${'0e'.repeat(16)}`;
+      const env = {
+        LINE_CHANNEL_ACCESS_TOKEN: 't',
+        UFHR_FM_HOST: `http://127.0.0.1:${hrServer.address().port}`,
+        UFHR_FM_USER: 'staff_api',
+        UFHR_FM_PASSWORD: 'p',
+      };
+      Object.assign(process.env, env);
+      const p50 = erpState.staff.find((r) => r.staff_id === n(50)) ?? es(50, { 'user password': '', tel: '' });
+      const p51 = erpState.staff.find((r) => r.staff_id === n(51)) ?? es(51, { 'user password': '', tel: '' });
+      for (const p of [p50, p51]) if (!erpState.staff.includes(p)) erpState.staff.push(p);
+      p51.line_user_id = erpUid; // the ERP copy says one thing
+      try {
+        hr.rows = [
+          { staff_id: n(1), line_uid: ufhrUid, status: 'Active' },
+          { staff_id: n(51), line_uid: ufhrUid, status: 'Resign' }, // left HR: no LINE, whatever the ERP copy says
+        ];
+        const res = await run();
+        assert.equal(res.data.ok, true, res.data.error);
+        assert.equal((await staffRow(1)).lineUserId, ufhrUid, 'from UFHR');
+        assert.equal((await staffRow(51)).lineUserId, null, 'not Active in UFHR: none, the ERP copy is not used');
+        assert.equal((await staffRow(50)).lineUserId, null, 'UFHR does not know the person: none');
+        const warned = res.data.summary.staff.warnings;
+        assert.ok(warned.some((w) => w.staffId === sid(50) && /UFHR/.test(w.reason)), 'warned with the UFHR wording');
+        assert.ok(!warned.some((w) => w.staffId === sid(1)), 'a person with a LINE from UFHR is not warned');
+        assert.equal(hr.open, 0, 'the FileMaker session is given back');
+
+        hr.down = true;
+        const down = await run();
+        assert.equal(down.data.ok, true, down.data.error);
+        assert.ok(down.data.summary.branches.notes.some((x) => x.code === 'UFHR'), 'a note says UFHR could not be read');
+        assert.equal((await staffRow(51)).lineUserId, erpUid, 'UFHR down: the ERP copy');
+
+        hr.down = false;
+        hr.rows = [];
+        const empty = await run();
+        assert.ok(empty.data.summary.branches.notes.some((x) => x.code === 'UFHR'), 'nobody at all in UFHR is not believed');
+        assert.equal((await staffRow(51)).lineUserId, erpUid, 'so nobody loses their LINE');
+      } finally {
+        for (const k of Object.keys(env)) delete process.env[k];
+        p51.line_user_id = '';
+        hrServer.close();
+      }
+    });
+
     await t.test('head-office people go to the SES HO branch; other groups stay out; a missing HO branch keeps what exists (D115)', async (tt) => {
       const existing = await db.branch.findMany({ where: { code: 'HO' } });
       if (existing.length > 1 || (existing.length === 1 && !existing[0].active)) return tt.skip('the test database has its own HO branch(es)');

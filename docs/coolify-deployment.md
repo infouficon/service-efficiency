@@ -107,6 +107,7 @@
 | `LINE_CHANNEL_ACCESS_TOKEN` | Channel access token (long-lived) ของ LINE OA **UFiconStaff** (Messaging API) ตั้งเป็น **Sensitive** ตั้งแล้ว = เปิดโหมด OTP รหัสไปทาง LINE อย่างเดียว (ไม่มี SMS: คนที่ไม่มี LINE userId ขอรหัสไม่ได้) ตั้งตัวนี้ตัวเดียวก็เปิดโหมด OTP แล้ว (บัญชี ERP ที่ไม่มี `line_user_id` และ UFHR ไม่มี LINE ให้ จะเข้าไม่ได้นอกจาก ADMIN กด Reset: ดูตัวเลข "บัญชี ERP ที่มี LINE" ในหน้า Admin ก่อน) token ตัวนี้ UFHR / UFPOS ใช้ร่วมกัน ห้าม reissue โดยไม่บอกทีมนั้น |
 | `UFHR_API_BASE` | เช่น `https://hrm.uficon.com/api/external` ใช้ถาม LINE userId ล่าสุดจาก UFHR (`/staff-contacts`) ก่อนทุกครั้ง |
 | `UFHR_API_KEY` | key ของ SES ที่ทีม UFHR ออกให้ (UFHR ต้องเพิ่ม caller `ses` ก่อน) ตั้งเป็น **Sensitive** ไม่ตั้ง = ใช้ `line_user_id` ที่ซิงก์จาก ERP อย่างเดียว |
+| `UFHR_FM_HOST`, `UFHR_FM_USER`, `UFHR_FM_PASSWORD` | (D118) ถาม LINE ของพนักงานจากไฟล์ FileMaker ของ UFHR ตรงๆ: host `https://pos.uficon.net`, user `staff_api` (อ่านได้แค่ layout `api_staff`) รหัสตั้งเป็น **Sensitive** ตั้งครบ = ใช้ UFHR ตอนขอ OTP และตอนซิงก์ ERP (แทนสำเนา `line_user_id` ใน ERP) `UFHR_FM_DATABASE` / `UFHR_FM_LAYOUT` ค่าเริ่มต้น `UFHR` / `api_staff` |
 | `OTP_GLOBAL_DAILY_LIMIT` | เพดานจำนวนรหัส OTP ทั้งระบบใน 24 ชม. (ค่าเริ่มต้น 1000) กันคนไล่ขอรหัสให้เพื่อนร่วมงาน (เดิมชื่อ `OTP_SMS_DAILY_LIMIT`) |
 | `LINE_API_URL` | ใช้เฉพาะทดสอบ (ค่าเริ่มต้น `https://api.line.me`) |
 

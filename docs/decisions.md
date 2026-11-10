@@ -1654,3 +1654,25 @@ At that moment 26 of 168 active accounts had a LINE userId and 149 had a phone; 
 5. **Consequence the owner accepted.** Until the ERP `line_user_id` (FMP team) or UFHR (`UFHR_API_BASE` + `UFHR_API_KEY`) gives a userId, that person cannot sign in by OTP.
    They were already locked out by the SMS error; ADMIN can still give a hand-made account or press Reset (password) for someone urgent.
    Supersedes D85's SMS parts and D113 item 1's SMS fallback (the rest of D85: 12-hour session, limits, hash-only codes, stands).
+
+## D118 — LINE userIds come from UFHR's FileMaker layout `api_staff` (2026-11-10)
+
+After D117 only 26 of 159 ERP accounts had a LINE userId (the ERP's `line_user_id` is a copy UFHR's `staff_send_to_ufservice` keeps
+incomplete; the owner, staff 1138, had none). The FileMaker team (KoB) made a read-only account for SES in UFHR's own file: database
+`UFHR`, layout `api_staff`, user `staff_api`, fields `staff_id`, `line_uid`, `status`, `name_full_th`, `name_full_en` (715 rows; 200 with a
+LINE). Read on 2026-11-10: UFHR has a LINE for **122 of SES's 159** ERP accounts (all 26 ERP copies equal UFHR's), 1138 included.
+(The SES ERP OData account cannot open UFHR: 401, as it should.)
+
+1. **Env.** `UFHR_FM_HOST` (`https://pos.uficon.net`), `UFHR_FM_USER`, `UFHR_FM_PASSWORD` (Sensitive); `UFHR_FM_DATABASE` / `UFHR_FM_LAYOUT`
+   default to `UFHR` / `api_staff`. Set = UFHR counts as "set up" (D113) and is asked through FileMaker's Data API, preferred over the
+   HTTP API (`UFHR_API_BASE`) when both exist.
+2. **At each OTP request** SES logs in, finds the person by ERP staff id, logs out (about 1 s); the answer is final as in D113: a person
+   counts as linked only with `status` Active and a real userId in `line_uid`. Not there, not Active, or no LINE = no code. FileMaker down
+   (or no answer in 10 s) = the stored copy.
+3. **At each ERP sync** SES reads the whole layout once (one login, one read, one logout) and stores UFHR's LINE on every imported
+   person (`Staff.lineUserId`), replacing the ERP copy, so the staff list ("ไม่มี LINE"), the OTP panel counts and the import warnings
+   show the real state. UFHR unreadable, or answering with nobody at all: the ERP copy stays and a branch note `UFHR` says why.
+4. **Always log out**: FileMaker counts sessions. The password is never logged. The account can read only those five fields.
+5. The password was first pasted into a chat (2026-11-10); it was entered into SES through a secret form, and the FileMaker team was
+   asked to change it (then update the Coolify env).
+

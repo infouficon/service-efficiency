@@ -23,6 +23,7 @@ export function CameraScan({
   expect,
   skip,
   problem,
+  accepts,
   onScan,
   onClose,
 }: {
@@ -33,6 +34,8 @@ export function CameraScan({
   problem?: string;
   /** units of this product still without a serial when the camera opened */
   expect: number;
+  /** D125: only the kind of number this product carries (an iPhone's IMEI, not its serial); default: any serial or IMEI */
+  accepts?: (sn: string) => boolean;
   onScan: (sn: string) => void;
   onClose: () => void;
 }) {
@@ -48,9 +51,9 @@ export function CameraScan({
   const [held, setHeld] = useState('');
   /** barcodes of a box already done (the other candidates of a choice, whatever was read while holding) */
   const setAside = useRef(new Set<string>());
-  const latest = useRef({ onScan, onClose, expect, skip });
+  const latest = useRef({ onScan, onClose, expect, skip, accepts });
   useEffect(() => {
-    latest.current = { onScan, onClose, expect, skip };
+    latest.current = { onScan, onClose, expect, skip, accepts };
   });
 
   const accept = (sn: string) => {
@@ -98,7 +101,11 @@ export function CameraScan({
               const fresh = [
                 ...new Set(read.map((one) => serialFromBarcode(one.rawValue)).filter((sn): sn is string => Boolean(sn))),
               ].filter(
-                (sn) => !gotRef.current.includes(sn) && !latest.current.skip.includes(sn) && !setAside.current.has(sn),
+                (sn) =>
+                  !gotRef.current.includes(sn) &&
+                  !latest.current.skip.includes(sn) &&
+                  !setAside.current.has(sn) &&
+                  (latest.current.accepts?.(sn) ?? true),
               );
               if (holding.current) fresh.forEach((sn) => setAside.current.add(sn));
               else if (fresh.length === 1) accept(fresh[0]);

@@ -16,11 +16,32 @@ export function luhnOk(digits: string): boolean {
 }
 
 /**
+ * D125: which number FileMaker keeps for a main product (the shops' rule; the server has the same `serialKindOf`): `imei` for
+ * iPhone, iPad Cellular, Watch Cellular; `serial` (starts with A-Z) for Mac, iPad Wi-Fi, Watch GPS; null for the rest.
+ */
+export type SerialKind = 'imei' | 'serial' | null;
+export function serialKindOf(category: string | null | undefined, ...names: (string | null | undefined)[]): SerialKind {
+  const c = (category ?? '').trim().toLowerCase();
+  const cellular = names.some((n) => /cell/i.test(n ?? ''));
+  if (c === 'iphone') return 'imei';
+  if (c === 'ipad' || c === 'watch') return cellular ? 'imei' : 'serial';
+  if (c === 'mac') return 'serial';
+  return null;
+}
+
+/**
  * D124: what is wrong with a serial typed or scanned into the box, or '' (the server checks the same, `serialProblem`). Digits
  * only = an iPhone IMEI: 15 digits with a valid check digit. 14 digits is the MEID on the label, 12 / 13 the UPC / EAN.
  */
-export function serialProblem(sn: string): string {
+export function serialProblem(sn: string, kind: SerialKind = null): string {
   if (!SERIAL.test(sn)) return 'ใช้ตัวอักษร/ตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ไม่เกิน 64 ตัว';
+  // D125: the kind of number the product carries in FileMaker
+  if (kind === 'imei' && !/^\d+$/.test(sn))
+    return 'สินค้านี้ (iPhone / iPad Cellular / Watch Cellular) ใช้ IMEI ตัวเลข 15 หลัก ไม่ใช่ Serial No.: สแกนบาร์โค้ด IMEI บนกล่อง';
+  if (kind === 'serial' && !/^[A-Z]/.test(sn))
+    return 'สินค้านี้ (Mac / iPad Wi-Fi / Watch GPS) ใช้ Serial No. ขึ้นต้นด้วยตัวอักษร A-Z ไม่ใช่ IMEI: สแกนบาร์โค้ด Serial No. บนกล่อง';
+  if (kind === 'serial' && !/^[A-Z][A-Z0-9]{7,19}$/.test(sn))
+    return 'Serial No. ต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข 8-20 ตัว ขึ้นต้นด้วยตัวอักษร';
   if (!/^\d+$/.test(sn)) return '';
   if (sn.length === 14) return 'เลข 14 หลักคือ MEID ไม่ใช่ IMEI: สแกนบาร์โค้ด IMEI (15 หลัก) บนกล่อง';
   if (sn.length !== 15) return `ตัวเลข ${sn.length} หลักไม่ใช่ IMEI (IMEI มี 15 หลัก; 12/13 หลักคือบาร์โค้ดสินค้า)`;

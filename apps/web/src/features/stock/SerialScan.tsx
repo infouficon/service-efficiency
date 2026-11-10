@@ -5,7 +5,7 @@ import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
 import { CameraScan } from './CameraScan';
-import { createWedgeReader, serialProblem } from './scanning';
+import { createWedgeReader, serialKindOf, serialProblem } from './scanning';
 
 /** The camera needs a secure page and a browser that can reach it. */
 const canUseCamera = () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
@@ -134,8 +134,10 @@ export function SerialScan({
     const itemId = item.id as string;
     const sn = raw.trim().toUpperCase();
     if (!sn) return;
-    const problem = serialProblem(sn) // D124: also an IMEI that is not 15 digits with a valid check digit
-      ? serialProblem(sn)
+    // D124/D125: an IMEI that is not 15 digits with a valid check digit, or the wrong kind of number for this product
+    const kind = serialKindOf(item.product.category, item.product.product, item.product.model);
+    const problem = serialProblem(sn, kind)
+      ? serialProblem(sn, kind)
       : session.selection.items.some((one) => one.serials?.some((serial) => serial.sn === sn)) ||
           queue.current.some((scan) => scan.sn === sn)
         ? 'สแกนเครื่องนี้ไปแล้วในออเดอร์นี้'
@@ -206,7 +208,7 @@ export function SerialScan({
         สแกน Serial Number เครื่องที่หยิบจริง ({saved}/{total})
       </strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
-        สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบ (Mac/iPad ขึ้นต้น S, iPhone ใช้ IMEI) เครื่องสแกนยิงได้เลยไม่ต้องกดที่ช่อง
+        สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบ (Mac / iPad Wi-Fi / Watch GPS ใช้ Serial No. ขึ้นต้นด้วยตัวอักษร · iPhone / iPad Cellular / Watch Cellular ใช้ IMEI 15 หลัก) เครื่องสแกนยิงได้เลยไม่ต้องกดที่ช่อง
         หรือกด 📷 ใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่ ต้องครบทุกเครื่องก่อนกดส่ง (อุปกรณ์เสริมไม่ต้องสแกน)
       </p>
       {allDone && <span className="serial-scan-problem">{allDone}</span>}
@@ -297,6 +299,7 @@ export function SerialScan({
                   ...queued.map((scan) => scan.sn),
                 ]}
                 problem={problem}
+                accepts={(sn) => !serialProblem(sn, serialKindOf(item.product.category, item.product.product, item.product.model))}
                 onScan={(sn) => submit(item, sn)}
                 onClose={() => setCameraFor(null)}
               />

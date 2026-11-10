@@ -1771,3 +1771,19 @@ serial typed or fired by a scanner into the box was checked only for printable c
    not 15 digits with a valid Luhn check digit: 14 digits is the MEID on the label (the IMEI without its check digit), 12 / 13 the
    UPC / EAN, one wrong digit fails the check. The message says which. Serials with letters (Mac, iPad) are not affected.
 2. The camera also ignores a 15-digit read whose check digit is wrong.
+
+## D125 — The kind of number follows the product: IMEI for iPhone / iPad Cellular / Watch Cellular, a serial for Mac / iPad Wi-Fi / Watch GPS (2026-11-10)
+
+The shops' rule for what STOCK scans (it is what FileMaker keeps for the unit):
+
+1. `serialKindOf(category, names...)` (server and stock screen): category `iPhone` → `imei`; `iPad` / `Watch` → `imei` when the
+   product, model or SKU name says "Cellular" / "Cell" (warroom writes "Wi-Fi + Cellular", "GPS + Cell"), else `serial`; `Mac` →
+   `serial`; anything else (AirPods, HomePod, accessories...) → no rule beyond D124.
+2. `imei`: digits only, then D124 (15 digits, valid check digit; 14 = MEID). `serial`: starts with a letter A-Z, 8-20 letters and
+   digits (a Mac label's "S" + serial passes). The wrong kind is refused with a message naming the product group and the barcode to
+   scan, on a per-unit scan and on a `send` with a list; the camera only takes the kind the product carries (an iPhone box's serial
+   barcode is passed over).
+3. The test catalog (iPhones) now uses made-up IMEIs; tests about letter serials move their products to `Mac`.
+4. Not done yet: pushing the scanned serials to the shops' per-branch Google Sheets (needs the sheets, their layout and an access
+   method from the owner).
+

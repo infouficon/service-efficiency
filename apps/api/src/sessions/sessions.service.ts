@@ -152,13 +152,41 @@ function luhnOk(digits: string): boolean {
 }
 
 /**
+ * D125: which number FileMaker keeps for a main product, from its category and names (the shops' rule, 2026-11-10):
+ * `imei` (digits) for iPhone, iPad Cellular and Watch Cellular; `serial` (starts with a letter A-Z) for Mac, iPad Wi-Fi and
+ * Watch GPS; null (no rule beyond D124) for everything else (AirPods, HomePod, accessories...). "Cellular" / "Cell" is read in
+ * the product, model or SKU name (warroom writes "Wi-Fi + Cellular", "GPS + Cell").
+ */
+export type SerialKind = 'imei' | 'serial' | null;
+export function serialKindOf(category: string | null | undefined, ...names: (string | null | undefined)[]): SerialKind {
+  const c = (category ?? '').trim().toLowerCase();
+  const cellular = names.some((n) => /cell/i.test(n ?? ''));
+  if (c === 'iphone') return 'imei';
+  if (c === 'ipad' || c === 'watch') return cellular ? 'imei' : 'serial';
+  if (c === 'mac') return 'serial';
+  return null;
+}
+
+/** D125: the serial kind of a session item (its SKU with model and product, as `sessionInclude` loads it). */
+function kindOfItem(item: { sku: { name: string; model?: { name: string; product?: { category: string; name: string } | null } | null } }): SerialKind {
+  return serialKindOf(item.sku.model?.product?.category, item.sku.model?.product?.name, item.sku.model?.name, item.sku.name);
+}
+
+/**
  * D124: what is wrong with a serial number STOCK typed or scanned, or null. Printable ASCII without spaces, 1 to 64 characters
  * (D92). A number made only of digits is an iPhone IMEI, which FileMaker keeps for iPhones: exactly 15 digits with a valid check
  * digit. 14 digits is the MEID on the same label (the IMEI without its check digit), 12 / 13 digits the UPC / EAN: FileMaker would
  * never find them and the cashier would have to scan the unit by hand (2026-11-10, SES-20261110-000002).
  */
-export function serialProblem(sn: string): string | null {
+export function serialProblem(sn: string, kind: SerialKind = null): string | null {
   if (!/^[\x21-\x7E]{1,64}$/.test(sn)) return 'ใช้ตัวอักษรหรือตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ยาวไม่เกิน 64 ตัว';
+  // D125: the kind of number the product carries in FileMaker
+  if (kind === 'imei' && !/^\d+$/.test(sn))
+    return 'สินค้านี้ (iPhone / iPad Cellular / Watch Cellular) ใช้ IMEI ตัวเลข 15 หลัก ไม่ใช่ Serial No.: สแกนบาร์โค้ด IMEI บนกล่อง';
+  if (kind === 'serial' && !/^[A-Z]/.test(sn))
+    return 'สินค้านี้ (Mac / iPad Wi-Fi / Watch GPS) ใช้ Serial No. ขึ้นต้นด้วยตัวอักษร A-Z ไม่ใช่ IMEI: สแกนบาร์โค้ด Serial No. บนกล่อง';
+  if (kind === 'serial' && !/^[A-Z][A-Z0-9]{7,19}$/.test(sn))
+    return 'Serial No. ต้องเป็นตัวอักษรภาษาอังกฤษหรือตัวเลข 8-20 ตัว ขึ้นต้นด้วยตัวอักษร';
   if (!/^\d+$/.test(sn)) return null;
   if (sn.length === 14) return 'เลข 14 หลักคือ MEID ไม่ใช่ IMEI: สแกนบาร์โค้ด IMEI (15 หลัก) บนกล่อง';
   if (sn.length !== 15) return `ตัวเลข ${sn.length} หลักไม่ใช่ IMEI (IMEI มี 15 หลัก; 12/13 หลักคือบาร์โค้ดสินค้า)`;
@@ -713,7 +741,7 @@ export class SessionsService {
    * bill from them). Exactly `quantity` per main product, each printable ASCII without spaces, none twice. Returns what to save.
    */
   private checkSerials(
-    items: { id: string; quantity: number; sku: { name: string } }[],
+    items: { id: string; quantity: number; sku: { name: string; model?: { name: string; product?: { category: string; name: string } | null } | null } }[],
     given: { itemId: string; sn: string[] }[] | undefined,
   ): { itemId: string; sn: string[] }[] {
     if (!items.length) return [];
@@ -733,7 +761,7 @@ export class SessionsService {
       if (sn.length !== item.quantity)
         throw new BadRequestException(`${item.sku.name}: ต้องสแกน ${item.quantity} เครื่อง แต่ได้ ${sn.length}`);
       for (const one of sn) {
-        const problem = serialProblem(one); // D124
+        const problem = serialProblem(one, kindOfItem(item)); // D124, D125
         if (problem) throw new BadRequestException(`Serial Number "${one}" ไม่ถูกต้อง (${problem})`);
         const key = one.toLowerCase();
         if (seen.has(key)) throw new BadRequestException(`Serial Number "${one}" ซ้ำกันในรายการที่สแกน`);
@@ -795,9 +823,9 @@ export class SessionsService {
   }
 
   /** D95/D101: a serial number as FileMaker keeps it: trimmed, in capitals, printable ASCII without spaces, 1–64 characters. */
-  private normalizeSerial(raw: string): string {
+  private normalizeSerial(raw: string, kind: SerialKind = null): string {
     const sn = raw.trim().toUpperCase();
-    const problem = serialProblem(sn); // D124
+    const problem = serialProblem(sn, kind); // D124, D125
     if (problem) throw new BadRequestException(`Serial Number "${raw.trim()}" ไม่ถูกต้อง (${problem})`);
     return sn;
   }
@@ -814,7 +842,7 @@ export class SessionsService {
       throw new BadRequestException('สแกน Serial Number ได้ระหว่างค้นหาสินค้าหรือหลังพบสินค้าเท่านั้น');
     const item = session.items.find((i) => i.id === dto.itemId);
     if (!item) throw new BadRequestException(`ไม่พบรายการสินค้า ${dto.itemId} ในออเดอร์นี้`);
-    const sn = this.normalizeSerial(dto.sn);
+    const sn = this.normalizeSerial(dto.sn, kindOfItem(item));
     return this.prisma.$transaction(async (tx) => {
       await this.claim(tx, session.id, Prisma.sql`outcome IS NULL AND state IN ('SEARCHING', 'FOUND')`);
       const existing = await tx.sessionItemSerial.findMany({ where: { item: { sessionId: session.id } } });

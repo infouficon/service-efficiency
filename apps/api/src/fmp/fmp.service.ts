@@ -137,6 +137,70 @@ export function scriptVerdict(result: string, wasUpdate: boolean): { status: 'su
   return { status: r.ok ? 'success' : 'error', message: `${code || (r.ok ? 'OK' : 'ERROR')}${sale}${lines}${message}`.slice(0, 255) };
 }
 
+/** One serial number as the `ses` script v3.3 checked it (D119). */
+export interface SnCheck {
+  sn: string;
+  partNo: string | null;
+  /** FileMaker has the unit at all */
+  found: boolean;
+  /** it went onto the held bill (passed every check) */
+  written: boolean;
+  /** why not (SN_NOT_FOUND, SN_WRONG_BRANCH, SN_MODEL_MISMATCH, ...); null when written */
+  code: string | null;
+  model: string | null;
+  upc: string | null;
+  status: string | null;
+  branch: string | null;
+  name: string | null;
+  /** FileMaker's Price_Sell; kept for the record only (SES shows no prices, D58) */
+  price: number | null;
+}
+const SN_CHECK_MAX = 100;
+
+/**
+ * D119: the `snCheck` array of the script's answer, cleaned: only objects with a serial number, every text trimmed and cut to
+ * its column-ish length, at most 100. Not JSON, no array, or nothing usable: null.
+ */
+export function parseSnCheck(result: string | null): SnCheck[] | null {
+  if (!result) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(result);
+  } catch {
+    return null;
+  }
+  const list = (parsed as { snCheck?: unknown } | null)?.snCheck;
+  if (!Array.isArray(list)) return null;
+  const textOf = (v: unknown, max: number) => {
+    if (v === null || v === undefined) return null;
+    const t = String(v).replace(/[\r\n]+/g, ' ').trim();
+    return t ? t.slice(0, max) : null;
+  };
+  const out: SnCheck[] = [];
+  for (const item of list.slice(0, SN_CHECK_MAX)) {
+    if (!item || typeof item !== 'object') continue;
+    const r = item as Record<string, unknown>;
+    const sn = textOf(r.sn, 64);
+    if (!sn) continue;
+    const written = r.written === true || r.written === 1;
+    const price = typeof r.price === 'number' && Number.isFinite(r.price) ? r.price : null;
+    out.push({
+      sn,
+      partNo: textOf(r.partNo, 40),
+      found: r.found === true || r.found === 1,
+      written,
+      code: written ? null : textOf(r.code, 40) ?? 'NOT_WRITTEN',
+      model: textOf(r.model, 40),
+      upc: textOf(r.upc, 32),
+      status: textOf(r.status, 32),
+      branch: textOf(r.branch, 16),
+      name: textOf(r.name, 200),
+      price,
+    });
+  }
+  return out.length ? out : null;
+}
+
 /** What FileMaker says it did: `status` "success" / "error" (or a boolean). Anything else is kept as `reported`. */
 export function ackStatusOf(body: Record<string, unknown>): 'success' | 'error' | 'reported' {
   for (const key of ['status', 'result', 'state', 'success', 'ok']) {
@@ -355,6 +419,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
                 fmpRecordId: out.recordId,
                 scriptResult: out.script,
                 lastError: out.scriptError,
+                ...(out.snCheck !== undefined ? { snCheck: out.snCheck ? (out.snCheck as unknown as Prisma.InputJsonArray) : Prisma.DbNull } : {}),
                 ...(out.verdict ? { ackStatus: out.verdict.status, ackMessage: out.verdict.message, ackAt: new Date(), ackTimeText: null, ackReceivedAt: new Date() } : {}),
               },
             });
@@ -565,6 +630,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       // the record exists: a script error must not make SES send it again, it is only recorded
       scriptError: scriptError === '0' ? null : `script error ${scriptError}`,
       verdict,
+      // D119: undefined = no script ran (leave the column alone); null = the script sent no snCheck
+      snCheck: scriptResult === null ? undefined : parseSnCheck(scriptResult),
     };
   }
 
@@ -603,6 +670,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
           ackAt: true,
           ackTimeText: true,
           ackReceivedAt: true,
+          snCheck: true,
         },
       }),
     ]);
@@ -655,7 +723,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       where: { createdAt: { gte: since } },
       orderBy: { createdAt: 'desc' },
       take: 1000,
-      select: { id: true, sessionId: true, reference: true, event: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, scriptResult: true, createdAt: true, sentAt: true },
+      select: { id: true, sessionId: true, reference: true, event: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, scriptResult: true, snCheck: true, createdAt: true, sentAt: true },
     });
     const latest = new Map<string, (typeof outboxRows)[number]>();
     for (const row of outboxRows) if (!latest.has(row.reference)) latest.set(row.reference, row);
@@ -663,10 +731,17 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const waiting = sessions
       .map((x) => {
         const billOpen = x.state === 'BILL_OPENED';
-        const waitingSince = billOpen ? (x.posBillOpenedAt ?? x.billOpenedAt) : (x.events[0]?.createdAt ?? x.stockFoundAt);
-        const minutes = waitingSince ? Math.floor((now - waitingSince.getTime()) / 60_000) : null;
-        const late = minutes !== null && minutes >= (billOpen ? payMinutes : openMinutes);
         const out = latest.get(x.reference);
+        // D119: FileMaker opens a held bill when its `ses` script answers CREATED, and only sends a bill number at payment;
+        // so an order whose latest message got a success answer is "held bill open, waiting for payment" from that moment
+        const held = !billOpen && out?.ackStatus === 'success' && out.sentAt !== null;
+        const waitingSince = billOpen
+          ? (x.posBillOpenedAt ?? x.billOpenedAt)
+          : held
+            ? out.sentAt
+            : (x.events[0]?.createdAt ?? x.stockFoundAt);
+        const minutes = waitingSince ? Math.floor((now - waitingSince.getTime()) / 60_000) : null;
+        const late = minutes !== null && minutes >= (billOpen || held ? payMinutes : openMinutes);
         return {
           late,
           item: {
@@ -675,7 +750,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
             branch: x.branch.name,
             branchCode: x.branch.code,
             queueNo: x.queueNo,
-            stage: billOpen ? 'bill-open' : 'no-bill',
+            stage: billOpen ? 'bill-open' : held ? 'held-bill' : 'no-bill',
             since: waitingSince?.toISOString() ?? null,
             minutes,
             posBillNo: x.posBillNo,
@@ -691,6 +766,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const problems = [...latest.values()]
       .map((row) => {
         const age = Math.floor((now - row.createdAt.getTime()) / 60_000);
+        // D119: the bill opened but some serials were not put on it (wrong branch, not in stock, ...): the cashier scans them
+        const skipped = ((row.snCheck as SnCheck[] | null) ?? []).filter((c) => !c.written);
         const kind =
           row.status === 'failed'
             ? ('failed' as const)
@@ -698,7 +775,9 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
               ? ('stuck' as const)
               : row.ackStatus === 'error'
                 ? ('ack-error' as const)
-                : null;
+                : row.ackStatus === 'success' && skipped.length
+                  ? ('sn-skipped' as const)
+                  : null;
         return kind
           ? {
               outboxId: row.id,
@@ -706,7 +785,13 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
               event: row.event,
               kind,
               attempts: row.attempts,
-              message: row.ackStatus === 'error' ? (row.ackMessage ?? row.scriptResult) : row.lastError,
+              message:
+                kind === 'sn-skipped'
+                  ? `เปิดบิลแล้ว แต่ ${skipped.length} SN ไม่ได้ลงบิล: ${skipped.map((c) => `${c.sn} (${c.code}${c.branch ? ` สาขา ${c.branch}` : ''}${c.model ? ` รุ่น ${c.model}` : ''})`).join(', ')}`.slice(0, 500)
+                  : row.ackStatus === 'error'
+                    ? (row.ackMessage ?? row.scriptResult)
+                    : row.lastError,
+              snCheck: (row.snCheck as SnCheck[] | null) ?? null,
               at: row.createdAt.toISOString(),
               minutes: age,
             }

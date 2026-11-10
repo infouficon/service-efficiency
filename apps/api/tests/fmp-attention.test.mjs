@@ -96,6 +96,25 @@ test('ADMIN sees what needs a person: orders waiting too long for a bill, and me
       assert.deepEqual(wild.data.thresholds, { openMinutes: 5, payMinutes: 7 * 24 * 60, stuckMinutes: 10 });
       assert.equal(wild.data.total, wild.data.waiting.length + wild.data.problems.length);
     });
+    await t.test('D119: a held bill FileMaker opened (script CREATED) waits for payment, not for a bill; skipped serials are flagged', async () => {
+      const heldLate = await order('held-late', sentAt(300));
+      await message('held-late', heldLate, { status: 'sent', sentAt: ago(299), ackStatus: 'success', createdAt: ago(299) });
+      const heldOk = await order('held-ok', sentAt(60));
+      await message('held-ok', heldOk, { status: 'sent', sentAt: ago(59), ackStatus: 'success', createdAt: ago(59) });
+      const skipped = await order('skipped', sentAt(5));
+      await message('skipped', skipped, {
+        status: 'sent', sentAt: ago(4), ackStatus: 'success', createdAt: ago(4),
+        snCheck: [{ sn: 'OK1', written: true, code: null }, { sn: 'BAD2', written: false, code: 'SN_WRONG_BRANCH', branch: 'ISTM', model: 'MX1' }],
+      });
+      const res = await get();
+      const waiting = mine(res.data.waiting);
+      assert.equal(waiting.find((w) => w.reference === ref('held-late'))?.stage, 'held-bill', 'held bill open 5 h without payment');
+      assert.ok(!waiting.some((w) => w.reference === ref('held-ok')), 'a held bill open 1 h is fine (it is not "no bill after 30 min")');
+      const p = mine(res.data.problems).find((x) => x.reference === ref('skipped'));
+      assert.equal(p?.kind, 'sn-skipped');
+      assert.match(p.message, /1 SN ไม่ได้ลงบิล: BAD2 \(SN_WRONG_BRANCH สาขา ISTM รุ่น MX1\)/);
+      assert.equal(p.snCheck.length, 2);
+    });
   } finally {
     if (world) await db.fmpOutbox.deleteMany({ where: { reference: { startsWith: world.prefix } } }).catch(() => undefined);
     await cleanup(ctx, world);

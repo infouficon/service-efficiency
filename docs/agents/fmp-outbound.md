@@ -104,6 +104,11 @@ Keep the result JSON as it is; a result that is not JSON is stored but not inter
 passed; `price` is FileMaker's `Price_Sell` or null). On a failure `ses_fail` v3 passes it back too (serials up to the failing one). SES
 stores it in `FmpOutbox.snCheck`, shows it per serial in the admin table and flags skipped serials in "ออเดอร์ที่ต้องดู" (`sn-skipped`).
 
+**D121 (cancel in FileMaker, 2026-11-10):** when a held bill from SES is cancelled in FileMaker, the script `ses_report_cancel` v1
+clears `ses::ses_status` / `ses::sale_id` (so a resend opens a new bill instead of `ALREADY_DONE`) and calls the callback below with the
+`reference`, `status: "error"` and a message starting `CANCELLED`. SES shows it in "ออเดอร์ที่ต้องดู" with the resend button. A cancel in
+SES is not pushed to FileMaker yet: the cashier cancels the held bill there by hand.
+
 ## Reporting back: the callback door (D90)
 
 FileMaker tells SES what it did with a message by calling:

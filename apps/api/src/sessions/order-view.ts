@@ -1,6 +1,7 @@
 import type { Prisma } from '@prisma/client';
 import { FMP_PAYMENT_TYPE_FALLBACK } from '../payments/payments.service';
 import { formatQueue } from '../queue/queue.service';
+import { toOutboundCustomerPhone } from '../common/phone.util';
 import type { PrismaService } from '../prisma/prisma.service';
 
 /** The parts of a session the outside world is told about (the U POS door and the FileMaker push, D60 / D88). */
@@ -43,7 +44,7 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
     reference: s.reference,
     queue: s.queueNo === null ? s.reference : formatQueue(s.queueLetter, s.queueNo),
     state: s.state,
-    customerPhone: s.phone,
+    customerPhone: toOutboundCustomerPhone(s.phone),
     staffId: s.staffId,
     confirmedAt: s.productSelectionConfirmedAt,
     items: s.items.map((i) => ({

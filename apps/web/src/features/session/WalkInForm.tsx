@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react';
 import { UserCheck } from 'lucide-react';
 import { Button } from '../../components/ui';
+import { PhoneInput } from '../../components/PhoneInput';
 import { phoneIsValid } from './workflow';
 
 /**
- * Step 1 of a walk-in (D56, D68, D70): the customer's phone number. Submitting creates the
- * session directly in PRODUCT_SELECTION. The queue number is allocated later at confirmation.
+ * Step 1 of a walk-in (D56, D68, D70, D120): the customer's phone number.
+ * Supports Thai mobile (9 digits without 0), Thai company (8 digits without 0), and international numbers.
+ * Submitting creates the session directly in PRODUCT_SELECTION.
  */
 export function WalkInForm({
   busy,
@@ -26,33 +28,33 @@ export function WalkInForm({
     onSubmit(phone);
   };
 
+  const isInvalid = attempted && !phoneIsValid(phone);
+
   return (
     <form className="walkin-form" onSubmit={submit} noValidate>
-      <label>
-        หมายเลขโทรศัพท์ลูกค้า (Customer Phone Number)
-        <input
-          type="tel"
-          inputMode="numeric"
-          autoComplete="off"
-          autoFocus
-          className="walkin-phone"
-          placeholder="เบอร์โทรศัพท์ 10 หลัก"
-          aria-invalid={attempted && !phoneIsValid(phone)}
-          aria-describedby="walkin-phone-help"
+      <label style={{ display: 'block', marginBottom: '8px' }}>
+        <span style={{ display: 'block', marginBottom: '6px', fontWeight: 600 }}>
+          หมายเลขโทรศัพท์ลูกค้า (Customer Phone Number)
+        </span>
+        <PhoneInput
           value={phone}
-          onChange={(e) => {
-            setPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+          onChange={(newPhone) => {
+            setPhone(newPhone);
             setAttempted(false);
           }}
+          autoFocus
+          disabled={busy}
+          ariaInvalid={isInvalid}
+          ariaDescribedBy="walkin-phone-help"
         />
       </label>
       <p
         id="walkin-phone-help"
-        className={attempted && !phoneIsValid(phone) ? 'field-error' : 'fine'}
+        className={isInvalid ? 'field-error' : 'fine'}
       >
-        {attempted && !phoneIsValid(phone)
-          ? `กรุณากรอกตัวเลข 0–9 ให้ครบ 10 หลัก (ขณะนี้ ${phone.length}/10)`
-          : 'กรอกเบอร์โทรศัพท์ลูกค้าเพื่อเริ่มให้บริการ'}
+        {isInvalid
+          ? 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (เบอร์ไทยไม่ต้องใส่ 0 นำหน้า หรือเลือกประเทศสำหรับเบอร์ต่างประเทศ)'
+          : 'กรอกเบอร์โทรศัพท์ลูกค้าเพื่อเริ่มให้บริการ (รองรับเบอร์ไทยและเบอร์ต่างประเทศ)'}
       </p>
 
       <Button type="submit" size="lg" disabled={busy}>

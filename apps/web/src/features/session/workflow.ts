@@ -6,6 +6,7 @@ import type {
   Timestamp,
   WorkflowState,
 } from '../../types/session';
+import { isValidPhone } from '../../utils/phone.ts';
 export type StepAction =
   | 'startDemo'
   | 'endDemo'
@@ -234,7 +235,7 @@ export function formatQueue(
 }
 
 export function phoneIsValid(phone: string): boolean {
-  return /^[0-9]{10}$/.test(phone);
+  return isValidPhone(phone);
 }
 export function quantityIsValid(quantity: string): boolean {
   return /^0*[1-9][0-9]*$/.test(quantity);

@@ -1692,3 +1692,17 @@ The FileMaker team asked how to report which serials they found, and said a bill
 4. Not yet: sending only the wrong serials back to STOCK automatically, and a check at scan time (needs a FileMaker layout + index on
    `product_sn`).
 
+## D120 — International phone support, 9-digit Thai company numbers, leading 0 strip, and E.164 storage (2026-11-10)
+
+Customer phone numbers at walk-in and confirmation previously required exactly 10 ASCII digits (`/^[0-9]{10}$/`). To serve international customers and business accounts:
+
+1. **Format & Input (UI).** Walk-in and order confirmation provide a country selector (default: Thailand `+66`) with search (by country name or dial code) and popular countries prioritized at the top.
+   - For Thai numbers (`+66`): entering a leading `0` automatically strips the `0`.
+   - Supports Thai mobile (9 digits after removing `0`) and Thai company / landline (8 digits after removing `0`, e.g. `02-xxx-xxxx` -> `2xxxxxxx`).
+   - For foreign numbers: full international validation using `libphonenumber-js`.
+2. **Storage.** Customer phone numbers are normalized and stored in the database in international E.164 format (e.g. `+66812345678`, `+6621234567`, `+819012345678`). `Customer.phone` and `CustomerSession.phone` columns are expanded from `VARCHAR(10)` to `VARCHAR(32)`.
+   - Prisma migration `202611100002_international_phone_e164` migrates existing 10-digit/9-digit numbers in the database to E.164.
+3. **Display.** Friendly formatting throughout the UI (queue lists, staff workspace, logs): Thai numbers display in standard local format (`081-234-5678` or `02-123-4567`); foreign numbers display with country code (`+81 90 1234 5678`).
+4. **Outbound Compatibility (POS & FileMaker).** In `orderView` / outbound payloads (`customerPhone`), Thai numbers starting with `+66` are converted back to standard local format with a leading `0` (`0812345678` or `021234567`) so legacy POS and FileMaker `cust_tel` queries continue matching customer records without modification. Foreign numbers are sent as E.164 strings.
+
+

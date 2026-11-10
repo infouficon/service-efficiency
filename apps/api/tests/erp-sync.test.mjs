@@ -135,7 +135,7 @@ test('people of the ERP head-office group go to the SES HO branch; Huawei Store,
     row(7, { branch_id: 1, branch_group: 'iStudio' }), // an imported branch as before
     row(8, { status: 'resign' }),
   ];
-  const out = erp.parsePeople(rows, branches, new Set(), true, new Map(), { sms: true, line: true }, 'ho-branch-id');
+  const out = erp.parsePeople(rows, branches, new Set(), true, new Map(), 'ho-branch-id');
   assert.deepEqual(
     out.people.map((p) => [p.staffId, p.sesBranchId ?? null, p.erpBranchId, p.roles.join('+')]),
     [
@@ -152,7 +152,7 @@ test('people of the ERP head-office group go to the SES HO branch; Huawei Store,
   assert.equal(none.outOfScope, 6, 'HO (3) + Huawei Store, iMedic, no group (3)');
   assert.deepEqual([...none.retain].sort(), ['1', '2', '3', '7'].map(Number), 'HO people are retained, the other groups are not');
   // a broken ERP branch row still keeps the account and does not move it to HO
-  const broken = erp.parsePeople([row(9, { branch_id: 500 })], branches, new Set([500]), true, new Map(), { sms: true, line: true }, 'ho-branch-id');
+  const broken = erp.parsePeople([row(9, { branch_id: 500 })], branches, new Set([500]), true, new Map(), 'ho-branch-id');
   assert.deepEqual(broken.people, []);
   assert.deepEqual([...broken.retain], [9]);
 });
@@ -171,7 +171,7 @@ test('registration URL: only a clean http(s) address that fits the column is tak
   assert.deepEqual(branches.map((b) => [b.code, b.registrationUrl]), [['ISTA', ok], ['ISXX', null]]);
 });
 
-test('SMS OTP mode: the ERP password is not required, the tel becomes the phone, a missing one is a warning (D85)', () => {
+test('OTP mode: the ERP password is not required, the tel is kept as the contact phone, no LINE userId is a warning (D85, D117)', () => {
   const branches = [{ erpBranchId: 1, code: 'A1', name: 'A1', phone: '', active: true }];
   const row = (id, o = {}) => ({
     staff_id: id,
@@ -209,7 +209,7 @@ test('SMS OTP mode: the ERP password is not required, the tel becomes the phone,
     ],
     'everybody is imported, with or without a password; only a Thai mobile number counts',
   );
-  assert.deepEqual(out.warnings.map((w) => w.staffId), ['3', '4', '5']);
+  assert.deepEqual(out.warnings.map((w) => w.staffId), ['1', '2', '3', '4', '5', '6'], 'codes go by LINE only: a phone does not help, so every row without a line_user_id is warned');
   assert.deepEqual(out.skipped, []);
   // password mode still needs the password and still reads the tel
   const old = erp.parsePeople([row(7, { 'user password': 'pw' }), row(8)], branches);
@@ -248,16 +248,8 @@ test('OTP mode reads the ERP line_user_id; a LINE userId alone is enough to need
     [['1', uid], ['2', uid], ['3', null], ['4', null], ['5', null]],
     'only a real LINE userId (U + 32 lower-case hex) is kept',
   );
-  assert.deepEqual(out.warnings.map((w) => w.staffId), ['4', '5'], 'no phone and no LINE: warned; either one is enough');
+  assert.deepEqual(out.warnings.map((w) => w.staffId), ['3', '4', '5'], 'no usable LINE userId: warned, even with a phone (SMS is gone, D117)');
   assert.match(out.warnings[0].reason, /line_user_id/);
-  // the warning follows the channels in force: a contact for a channel that is off does not count
-  const names = (routes) =>
-    erp
-      .parsePeople([row(1, { line_user_id: uid }), row(3, { tel: '0812345678' }), row(5)], branches, new Set(), false, new Map(), routes)
-      .warnings.map((w) => w.staffId);
-  assert.deepEqual(names({ sms: true, line: false }), ['1', '5'], 'SMS only: a LINE userId alone cannot get a code');
-  assert.deepEqual(names({ sms: false, line: true }), ['3', '5'], 'LINE only: a phone alone cannot get a code');
-  assert.deepEqual(names({ sms: true, line: true }), ['5']);
 });
 
 test('extra people picked by hand skip the branch-scope and position rules; they still need to be active in the ERP (D87)', () => {
@@ -1216,14 +1208,13 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
     );
 
     await t.test(
-      'with SMS OTP on (ThaiBulkSMS configured) the import stops reading ERP passwords and ERP accounts keep only the OTP marker (D85)',
+      'with OTP on (LINE configured) the import stops reading ERP passwords and ERP accounts keep only the OTP marker (D85, D113)',
       async () => {
         const phoneOf = async (k) => (await staffRow(k))?.phone;
         // the phone from the ERP tel was stored by the earlier (password-mode) runs
         assert.equal(await phoneOf(1), `08${String(20000001).slice(-8)}`);
         erpState.requests.length = 0;
-        process.env.THAIBULKSMS_API_KEY = 'k';
-        process.env.THAIBULKSMS_API_SECRET = 's';
+        process.env.LINE_CHANNEL_ACCESS_TOKEN = 't';
         try {
           erpState.staff.push(es(50, { 'user password': '', tel: '' }));
           const lineUid = `U${'0b'.repeat(16)}`;
@@ -1237,8 +1228,8 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           assert.match(staffCall.url, /[,=]line_user_id[,&]/, 'and the LINE userId (D113)');
           assert.equal((await staffRow(51)).lineUserId, lineUid, 'the ERP line_user_id is stored on the account');
           assert.ok(
-            res.data.summary.staff.warnings.some((w) => w.staffId === sid(51)),
-            'only SMS is set up: a LINE userId without a phone cannot get a code, so it is warned (D113)',
+            !res.data.summary.staff.warnings.some((w) => w.staffId === sid(51)),
+            'a LINE userId is enough to get a code, so no warning (D113)',
           );
           const one = await staffRow(1);
           assert.equal(one.passwordHash, 'otp:only', 'the stored ERP password copy is gone');
@@ -1253,18 +1244,16 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           );
           assert.ok(
             res.data.summary.staff.warnings.some((w) => w.staffId === sid(50)),
-            'and a warning that OTP login cannot reach them',
+            'and a warning that OTP login cannot reach them (no LINE userId)',
           );
           assert.equal((await login(sid(1), 'erp-new-1')).status, 401, 'password login is closed for ERP accounts');
           // a second run changes nothing
           const again = await run();
           assert.equal(again.data.summary.staff.passwordChanged, 0);
-          // with LINE set up too, a LINE userId is a route: no warning for 51, still one for 50
-          process.env.LINE_CHANNEL_ACCESS_TOKEN = 't';
           const withLine = await run();
           assert.equal(withLine.data.ok, true, withLine.data.error);
           const warned = withLine.data.summary.staff.warnings.map((w) => w.staffId);
-          assert.ok(!warned.includes(sid(51)), 'LINE is on: a LINE userId is enough');
+          assert.ok(!warned.includes(sid(51)), 'a LINE userId is enough');
           assert.ok(warned.includes(sid(50)), 'nothing at all is still a warning');
           // a new valid userId replaces the stored one; an empty ERP field clears it
           const other = `U${'0c'.repeat(16)}`;
@@ -1276,8 +1265,6 @@ test('ERP import: branches, staff, passwords, leavers and guards against a real 
           assert.equal((await staffRow(51)).lineUserId, null, 'cleared when the ERP field is emptied');
         } finally {
           delete process.env.LINE_CHANNEL_ACCESS_TOKEN;
-          delete process.env.THAIBULKSMS_API_KEY;
-          delete process.env.THAIBULKSMS_API_SECRET;
         }
         // back to password mode: the next import re-creates the password copies, so nobody stays locked out
         const back = await run();

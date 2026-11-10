@@ -16,20 +16,14 @@ const savedMode = (): 'otp' | 'password' => {
   }
 };
 
-type OtpChannel = 'line' | 'sms';
-/** How the login page names where the code goes, from the channels the server tries in order (D113: LINE first, then SMS). */
-const channelLabel = (channels: OtpChannel[]) =>
-  channels.map((c) => (c === 'line' ? 'LINE' : 'SMS')).join(' / ') || 'SMS';
-
 /**
  * Sign-in. Once the server can send codes (`GET /auth/config` -> `otp`) staff sign in with a 6-digit code sent to their LINE
- * on the UFiconStaff OA, or by SMS to the phone on their account (D85, D113); the password form stays one click away for the
- * accounts that are not synced from the ERP (the first ADMIN, hand-made accounts). Without either it is the password form.
+ * on the UFiconStaff OA (D113; SMS was removed in D117); the password form stays one click away for the accounts that are not
+ * synced from the ERP (the first ADMIN, hand-made accounts). Without LINE set up it is the password form.
  */
 export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
   const toast = useToast();
   const [otpAvailable, setOtpAvailable] = useState<boolean | null>(null);
-  const [channels, setChannels] = useState<OtpChannel[]>([]);
   const [usePassword, setUsePassword] = useState(() => savedMode() === 'password');
   const [staffId, setStaffId] = useState('');
   const [password, setPassword] = useState('');
@@ -42,11 +36,9 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
 
   useEffect(() => {
     let active = true;
-    api<{ otp: boolean; channels?: OtpChannel[] }>('/auth/config')
+    api<{ otp: boolean }>('/auth/config')
       .then((config) => {
-        if (!active) return;
-        setOtpAvailable(config.otp);
-        setChannels(config.channels ?? []);
+        if (active) setOtpAvailable(config.otp);
       })
       .catch(() => {
         if (active) setOtpAvailable(false);
@@ -94,13 +86,7 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
       setCodeSent(true);
       setCode('');
       setWait(RESEND_SECONDS);
-      toast.info(
-        channels.includes('line')
-          ? channels.includes('sms')
-            ? 'ส่งรหัส OTP แล้ว ดูใน LINE UFiconStaff (ถ้ายังไม่ได้ผูก LINE จะมาเป็น SMS)'
-            : 'ส่งรหัส OTP แล้ว ดูใน LINE UFiconStaff (ต้องผูก LINE กับระบบ HR ไว้แล้ว)'
-          : 'ส่งรหัส OTP แล้ว ถ้ามีบัญชีนี้และมีเบอร์โทรในระบบ',
-      );
+      toast.info('ส่งรหัส OTP แล้ว ดูใน LINE UFiconStaff (ต้องผูก LINE กับระบบ HR ไว้แล้ว)');
       setTimeout(() => codeInput.current?.focus(), 50);
     } catch (err) {
       fail(err, 'ขอรหัส OTP ไม่สำเร็จ');
@@ -131,7 +117,7 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
         {otpAvailable === true && (
           <div className="category-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '12px' }}>
             <button type="button" className={`tab-btn ${!usePassword ? 'active' : ''}`} onClick={() => chooseMode(false)}>
-              <MessageSquare size={14} /> OTP ทาง {channelLabel(channels)}
+              <MessageSquare size={14} /> OTP ทาง LINE
             </button>
             <button type="button" className={`tab-btn ${usePassword ? 'active' : ''}`} onClick={() => chooseMode(true)}>
               <KeyRound size={14} /> รหัสผ่าน
@@ -175,19 +161,9 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
             {codeSent && (
               <>
                 <Notice>
-                  {channels.includes('line') ? (
-                    <>
-                      ส่งรหัส 6 หลักไปที่ LINE <b>UFiconStaff</b> แล้ว (ใช้ได้ 5 นาที)
-                      {channels.includes('sms') && ' ถ้ายังไม่ได้ผูก LINE กับระบบ HR รหัสจะมาเป็น SMS ที่เบอร์ใน ERP แทน'}
-                      {' '}ถ้าไม่ได้รับภายใน 1 นาที ให้ขอรหัสใหม่ ถ้ายังไม่เคยผูก LINE ให้กดเมนู “ลงเวลา” ใน LINE UFiconStaff
-                      แล้วผูกบัญชีตามขั้นตอนของ HR ก่อน
-                    </>
-                  ) : (
-                    <>
-                      ส่งรหัส 6 หลักไปที่เบอร์มือถือที่ลงทะเบียนไว้ใน ERP แล้ว (ใช้ได้ 5 นาที)
-                      ถ้าไม่ได้รับภายใน 1 นาที ให้ขอรหัสใหม่ หรือแจ้ง ADMIN ว่าเบอร์ของคุณใน ERP ยังไม่ถูกต้อง
-                    </>
-                  )}{' '}
+                  ส่งรหัส 6 หลักไปที่ LINE <b>UFiconStaff</b> แล้ว (ใช้ได้ 5 นาที) ถ้าไม่ได้รับภายใน 1 นาที ให้ขอรหัสใหม่
+                  ถ้ายังไม่เคยผูก LINE ให้กดเมนู “ลงเวลา” ใน LINE UFiconStaff แล้วผูกบัญชีตามขั้นตอนของ HR ก่อน
+                  (ถ้าผูกแล้วแต่ยังไม่ได้รับ แจ้ง ADMIN: ระบบยังไม่มี LINE ของคุณ){' '}
                   บัญชีที่สร้างเองใน SES (ไม่ได้มาจาก ERP) เข้าด้วยแท็บ “รหัสผ่าน” ได้
                 </Notice>
                 <label>
@@ -214,7 +190,7 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
                   ? 'กรุณารอสักครู่…'
                   : codeSent
                     ? 'เข้าสู่ระบบ'
-                    : `ขอรหัส OTP ทาง ${channelLabel(channels)}`}
+                    : 'ขอรหัส OTP ทาง LINE'}
               </span>
             </Button>
             {codeSent && (
@@ -288,7 +264,7 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
         )}
         {otpAvailable === true && usePassword && (
           <p className="fine" style={{ marginTop: '12px' }}>
-            ใช้ได้กับบัญชีที่สร้างเองใน SES เช่น ADMIN พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยแท็บ “OTP ทาง {channelLabel(channels)}”
+            ใช้ได้กับบัญชีที่สร้างเองใน SES เช่น ADMIN พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยแท็บ “OTP ทาง LINE”
           </p>
         )}
       </section>

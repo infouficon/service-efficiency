@@ -14,7 +14,7 @@ import {
 } from '../accounts/accounts.service';
 import { hashPassword, OTP_ONLY_HASH, verifyPassword } from '../accounts/password';
 import { normalizeLineUserId } from '../line/line.service';
-import { normalizeThaiMobile } from '../sms/sms.service';
+import { normalizeThaiMobile } from '../accounts/phone';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -41,18 +41,9 @@ const HASH_CONCURRENCY = 4;
 const HO_BRANCH_CODE = 'HO';
 /** D115: ERP `branch_group` of the people who go to that branch (Huawei Store, iMedic and people with no group stay out, owner 2026-11-10) */
 export const ERP_HO_PERSON_GROUPS = ['HO'];
-/** Which contacts can receive a login code with the sending set-up in force (D113): SMS needs a mobile number, LINE a userId */
-export interface OtpRoutes {
-  sms: boolean;
-  line: boolean;
-}
-/** D85/D113: OTP mode, and the ERP holds no contact the configured channels can use (UFHR may still know the LINE) */
-const noOtpRoute = (routes: OtpRoutes) =>
-  routes.sms && routes.line
-    ? 'ไม่มีเบอร์มือถือ (tel) และไม่มี LINE (line_user_id) ใน ERP: ถ้า UFHR ไม่มี LINE ของคนนี้ด้วย จะเข้าระบบด้วย OTP ไม่ได้'
-    : routes.line
-      ? 'ไม่มี LINE (line_user_id) ใน ERP ขณะนี้ส่งรหัสทาง LINE อย่างเดียว: ถ้า UFHR ไม่มี LINE ของคนนี้ด้วย จะเข้าระบบด้วย OTP ไม่ได้'
-      : 'ไม่มีเบอร์มือถือที่ใช้ได้ใน ERP (tel) จึงเข้าระบบด้วย OTP ไม่ได้ จนกว่า ERP จะแก้';
+/** D113/D117: OTP mode (codes go by LINE only), and the ERP holds no LINE userId for the person (UFHR may still know it) */
+const NO_LINE_NOTE =
+  'ไม่มี LINE (line_user_id) ใน ERP: ถ้า UFHR ไม่มี LINE ของคนนี้ด้วย จะเข้าระบบด้วย OTP ไม่ได้ (รหัส OTP ส่งทาง LINE อย่างเดียว)';
 
 /**
  * Provisional mapping from the ERP `position` text to SES roles (owner will send corrections, D54).
@@ -285,12 +276,10 @@ export function parsePeople(
   rows: unknown[],
   branches: ErpBranch[],
   dropped: Set<number> = new Set(),
-  /** false while SMS OTP login is on (D85): the ERP password is neither read nor required */
+  /** false while OTP login is on (D85, D113): the ERP password is neither read nor required */
   requirePassword = true,
   /** D87: ERP staff_id -> roles and SES branch for the people an ADMIN picked by hand; they skip the branch-scope and position rules */
   extras: Map<number, { roles: RoleCode[]; branchId: string }> = new Map(),
-  /** D113: the channels codes go out on, to word the "cannot get a code" warning (default: both) */
-  routes: OtpRoutes = { sms: true, line: true },
   /**
    * D115: the SES branch (HO) for the active people of the ERP head-office group (their branch is not an imported one).
    * null, or any other group (Huawei Store, iMedic, none) = out of scope, as before.
@@ -325,8 +314,7 @@ export function parsePeople(
       }
       const phone = normalizeThaiMobile(row.tel);
       const lineUserId = normalizeLineUserId(row.line_user_id);
-      if (!requirePassword && !(routes.sms && phone) && !(routes.line && lineUserId))
-        warnings.push({ staffId, reason: noOtpRoute(routes) });
+      if (!requirePassword && !lineUserId) warnings.push({ staffId, reason: NO_LINE_NOTE });
       candidates.push({
         erpStaffId: extraId,
         staffId,
@@ -405,8 +393,7 @@ export function parsePeople(
       });
     const phone = normalizeThaiMobile(row.tel);
     const lineUserId = normalizeLineUserId(row.line_user_id);
-    if (!requirePassword && !(routes.sms && phone) && !(routes.line && lineUserId))
-      warnings.push({ staffId, reason: noOtpRoute(routes) });
+    if (!requirePassword && !lineUserId) warnings.push({ staffId, reason: NO_LINE_NOTE });
     candidates.push({
       erpStaffId,
       staffId,
@@ -836,7 +823,7 @@ export class ErpSyncService implements OnApplicationBootstrap, OnModuleDestroy {
             ? 'ไม่พบสาขา HO (ที่ใช้งานอยู่) ใน SES จึงไม่นำเข้าพนักงานกลุ่ม HO'
             : 'มีสาขา HO ซ้ำกันใน SES จึงไม่นำเข้าพนักงานกลุ่ม HO',
       });
-    const parsed = parsePeople(staffRows, scope, dropped, !otp, extras, this.accounts.otpRoutes(), ho.length === 1 ? ho[0].id : null);
+    const parsed = parsePeople(staffRows, scope, dropped, !otp, extras, ho.length === 1 ? ho[0].id : null);
     const plan: Plan = {
       branches: scope,
       branchNotes: notes,

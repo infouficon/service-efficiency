@@ -53,7 +53,7 @@ interface StaffDraft {
   active: boolean;
   password: string;
   erpManaged: boolean;
-  /** a new number typed for the login OTP; empty = leave the stored one alone (D85) */
+  /** a new contact number; empty = leave the stored one alone */
   phone: string;
   /** the stored number, masked, shown as the placeholder */
   currentPhone: string | null;
@@ -86,7 +86,7 @@ export function AdminHub({
   const toast = useToast();
   const admin = user.roles.includes('ADMIN');
   const [staff, setStaff] = useState<Account[]>([]);
-  const erpMissingPhone = staff.filter((s) => s.erpManaged && s.active && !s.phone).length;
+  const erpMissingLine = staff.filter((s) => s.erpManaged && s.active && !s.hasLine).length;
   const [branches, setBranches] = useState<ManagedBranch[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -100,7 +100,7 @@ export function AdminHub({
   // F10: the address the receipt QR of a branch opens (set for ERP-managed branches too)
   const [qrBranch, setQrBranch] = useState<ManagedBranch | null>(null);
   const [qrUrl, setQrUrl] = useState('');
-  // D85: the last real ERP import, to explain why ERP accounts may still have no phone (their number comes from the ERP at sync time)
+  // D85: the last real ERP import, to explain why ERP accounts may still have no LINE (it comes from the ERP at sync time)
   const [erpLast, setErpLast] = useState<{
     startedAt: string;
     ok: boolean | null;
@@ -203,7 +203,7 @@ export function AdminHub({
                     : subTab === 'categories'
                       ? 'หมวดหมู่สินค้า (Categories)'
                       : subTab === 'otp'
-                        ? 'เข้าสู่ระบบด้วย OTP (SMS)'
+                        ? 'เข้าสู่ระบบด้วย OTP (LINE)'
                         : subTab === 'fmp'
                           ? 'ส่งออเดอร์ไป FileMaker (FMP)'
                           : 'จัดการผู้ใช้ (Staff Members)'}
@@ -281,10 +281,11 @@ export function AdminHub({
                     {/* D86: the whole staff list as an Excel file, and back. ADMIN only (it holds phone numbers). */}
                     {admin && <StaffSheetTools onImported={load} />}
                   </div>
-                  {admin && erpMissingPhone > 0 && (
+                  {admin && erpMissingLine > 0 && (
                     <Notice>
-                      บัญชีที่ซิงก์จาก ERP <strong>{erpMissingPhone}</strong> บัญชียังไม่มีเบอร์ (เข้าด้วย OTP ไม่ได้)
-                      เบอร์มาจากฟิลด์ <code>tel</code> ใน ERP และเข้าฐานตอนซิงก์เท่านั้น ·{' '}
+                      บัญชีที่ซิงก์จาก ERP <strong>{erpMissingLine}</strong> บัญชียังไม่มี LINE userId ใน SES (OTP ส่งทาง LINE
+                      อย่างเดียว คนเหล่านี้เข้าไม่ได้ ถ้า UFHR ไม่มี LINE ให้ด้วย) LINE มาจากฟิลด์ <code>line_user_id</code> ใน ERP
+                      และเข้าฐานตอนซิงก์เท่านั้น ·{' '}
                       {erpLast === undefined
                         ? 'ดูผลได้ที่เมนู ซิงก์ ERP'
                         : erpLast === null
@@ -300,7 +301,7 @@ export function AdminHub({
                           <th>Staff ID</th>
                           <th>Name</th>
                           <th>Branch</th>
-                          <th>เบอร์ (OTP)</th>
+                          <th>เบอร์ / LINE</th>
                           <th>Roles</th>
                           <th>Status</th>
                           <th>Actions</th>
@@ -329,11 +330,13 @@ export function AdminHub({
                             </td>
                             <td>{s.branch}</td>
                             <td>
-                              {s.phone ? (
-                                <span className="fine">{s.phone}</span>
-                              ) : (
-                                <span className="status-tag status-outcome" title="ไม่มีเบอร์ จึงเข้าระบบด้วย OTP ไม่ได้">
-                                  ไม่มีเบอร์
+                              {s.phone ? <span className="fine">{s.phone}</span> : <span className="fine muted">ไม่มีเบอร์</span>}{' '}
+                              {s.erpManaged && !s.hasLine && (
+                                <span
+                                  className="status-tag status-outcome"
+                                  title="ไม่มี LINE userId ใน SES จึงขอรหัส OTP ไม่ได้ (ถ้าต่อ UFHR ไว้ อาจมี LINE ใน UFHR)"
+                                >
+                                  ไม่มี LINE
                                 </span>
                               )}
                             </td>
@@ -613,7 +616,7 @@ export function AdminHub({
               </label>
             </div>
             <label>
-              เบอร์มือถือสำหรับรับรหัส OTP
+              เบอร์มือถือ (ข้อมูลติดต่อ)
               <input
                 inputMode="tel"
                 maxLength={10}

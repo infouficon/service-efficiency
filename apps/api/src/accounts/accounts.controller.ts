@@ -27,7 +27,6 @@ import {
   OtpRequestDto,
   OtpVerifyDto,
   LineTestDto,
-  SmsTestDto,
   ResetPasswordDto,
   StaffCreateDto,
   StaffImportDto,
@@ -94,14 +93,14 @@ export class AccountsController {
     this.cookie(response, result.token);
     return result.user;
   }
-  /** Which sign-in the login page offers: OTP once LINE (D113) or ThaiBulkSMS (D85) is configured, else the password. Public. */
+  /** Which sign-in the login page offers: OTP once the LINE OA is configured (D113, D117), else the password. Public. */
   @Get('auth/config')
   authConfig(@Res({ passthrough: true }) response: Response) {
     response.setHeader('Cache-Control', 'no-store');
-    return { otp: this.accounts.otpEnabled(), channels: this.otp.channels() };
+    return { otp: this.accounts.otpEnabled() };
   }
 
-  /** Sends a login code to the person's LINE, else their phone. Always answers `{ ok: true }` (nothing tells whether the account exists). */
+  /** Sends a login code to the person's LINE. Always answers `{ ok: true }` (nothing tells whether the account exists). */
   @Post('auth/otp/request')
   requestOtp(@Body() body: OtpRequestDto) {
     return this.otp.request(body.staffId);
@@ -117,7 +116,7 @@ export class AccountsController {
     return result.user;
   }
 
-  /** ADMIN: how LINE and SMS are set up and the latest login codes with their delivery status. */
+  /** ADMIN: how LINE is set up and the latest login codes with their delivery status. */
   @Get('admin/otp')
   async otpStatus(@Req() request: Request) {
     await this.admin(request);
@@ -131,12 +130,6 @@ export class AccountsController {
     return this.otp.sendTestLine(body.staffId);
   }
 
-  /** ADMIN: one test SMS (costs a credit). */
-  @Post('admin/otp/test-sms')
-  async testSms(@Req() request: Request, @Body() body: SmsTestDto) {
-    await this.admin(request);
-    return this.otp.sendTest(body.phone);
-  }
 
   @Get('auth/me')
   me(@Req() request: Request, @Res({ passthrough: true }) response: Response) {

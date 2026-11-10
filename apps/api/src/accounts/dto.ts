@@ -26,7 +26,7 @@ export class ChangePasswordDto {
 export class ResetPasswordDto {
   @IsString() @MinLength(8) @MaxLength(128) password!: string;
 }
-/** A Thai mobile number as 10 digits; `null` clears it (D85: where the login OTP goes). */
+/** A Thai mobile number as 10 digits; `null` clears it (a contact number only: login codes go by LINE, D117). */
 export const PHONE_PATTERN = /^0[689]\d{8}$/;
 export class StaffUpdateDto {
   @IsString()
@@ -97,7 +97,4 @@ export class OtpVerifyDto {
 /** ADMIN: a test LINE message to the person with this Staff ID (D113) */
 export class LineTestDto {
   @IsString() @MinLength(1) @MaxLength(64) staffId!: string;
-}
-export class SmsTestDto {
-  @IsString() @Matches(PHONE_PATTERN, { message: 'เบอร์โทรต้องเป็นเบอร์มือถือ 10 หลัก' }) phone!: string;
 }

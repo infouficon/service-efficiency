@@ -20,7 +20,6 @@ import {
   verifyPassword,
 } from './password';
 import { LineService } from '../line/line.service';
-import { SmsService } from '../sms/sms.service';
 import { BranchDto, StaffCreateDto, StaffUpdateDto } from './dto';
 import {
   bangkokText,
@@ -68,8 +67,10 @@ export function publicAccount(account: Account) {
     active: account.active,
     mustChangePassword: account.mustChangePassword,
     erpManaged: account.erpStaffId !== null,
-    /** the number the login OTP goes to, masked ("08X-XXX-1234"); null = none, so no OTP login (D85) */
+    /** the contact number, masked ("08X-XXX-1234"); null = none. It is not used to send login codes (D117) */
     phone: maskPhone(account.phone),
+    /** a LINE userId is stored (from the ERP): the login code can go to it. UFHR may know one more (D113) */
+    hasLine: Boolean(account.lineUserId),
   };
 }
 /** "0812345678" -> "08X-XXX-5678": enough for a person to recognise their own number, not to use it. */
@@ -104,18 +105,12 @@ export class AccountsService {
   private readonly log = new Logger('Accounts');
   constructor(
     private readonly prisma: PrismaService,
-    private readonly sms: SmsService,
     private readonly line: LineService,
   ) {}
 
-  /** Login switches to OTP once a way to send codes is configured: ThaiBulkSMS (D85) or the UFiconStaff LINE OA (D113). */
+  /** Login switches to OTP once the UFiconStaff LINE OA can send codes (D113). SMS was removed in D117. */
   otpEnabled(): boolean {
-    return this.sms.configured() || this.line.configured();
-  }
-
-  /** Which contact a person needs to receive a code: a mobile number (SMS on), a LINE userId (LINE on, or UFHR can be asked). */
-  otpRoutes(): { sms: boolean; line: boolean } {
-    return { sms: this.sms.configured(), line: this.line.configured() };
+    return this.line.configured();
   }
 
   /** Starts a login session (12 h, D85) and sweeps the expired ones. Runs inside the caller's transaction. */
@@ -243,7 +238,7 @@ export class AccountsService {
     if (!result)
       throw new UnauthorizedException(
         this.otpEnabled()
-          ? 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน (พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยรหัส OTP ทาง LINE หรือ SMS)'
+          ? 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน (พนักงานที่ซิงก์จาก ERP ให้เข้าด้วยรหัส OTP ทาง LINE)'
           : 'Staff ID หรือรหัสผ่านไม่ถูกต้อง หรือบัญชีถูกพัก/ปิดใช้งาน',
       );
     return result;
@@ -521,8 +516,8 @@ export class AccountsService {
    * ADMIN: creates and updates accounts from the rows of the staff spreadsheet (D86). The same rules as the staff form apply to
    * every row (ERP accounts keep their ERP-owned fields, the last ADMIN stays, a branch is needed for non-ADMIN roles). The
    * file is all or nothing: any error, and every dry run, rolls the whole thing back and returns the report.
-   * Empty cell = leave as is; phone `-` = clear. A new account gets a random password nobody knows: it signs in by SMS OTP
-   * (needs a phone) or after an ADMIN's Reset.
+   * Empty cell = leave as is; phone `-` = clear. A new account gets a random password nobody knows: it signs in by LINE OTP
+   * (needs a LINE userId from the ERP or UFHR) or after an ADMIN's Reset.
    */
   async importStaff(
     token: string | undefined,

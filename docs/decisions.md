@@ -1787,3 +1787,16 @@ The shops' rule for what STOCK scans (it is what FileMaker keeps for the unit):
 4. Not done yet: pushing the scanned serials to the shops' per-branch Google Sheets (needs the sheets, their layout and an access
    method from the owner).
 
+## D126 — FileMaker script set v4: one bundle, and PayBy follows the SES payment method name (2026-11-10)
+
+The owner asked for one latest version of the FileMaker scripts instead of v3.x pieces.
+
+1. `docs/agents/fmp-scripts/` v4 = `ses_v4` (v3.4: release and revision, D123) + `ses_fail_v4`, `ses_report_bill_v4`,
+   `ses_report_cancel_v4` (unchanged from v3 / v3 / v1.1, renamed so the set has one number) + `README-v4-TH.txt` (one install guide:
+   fields, scripts, config, where to call, screen, answers, test steps).
+2. **PayBy by method name.** v2-v3.4 filled `PayBy` from `paymentTypes` (seven broad types), so SPayLater, UFund, Kashjoy... all became
+   "อื่นๆ", while the FileMaker team maps by the SES method name. `ses_v4` reads `payments` and looks each name up in `$PAYBY_MAP`
+   (config, one "SES name=FMP PayBy" per line; five filled from the old types, the rest for the FileMaker team). A name with no entry
+   goes into PayBy as it is and the answer warns `UNMAPPED_PAYMENT` ("ยังไม่ได้จับคู่ PayBy: ..."), shown in SES. SES still sends
+   `paymentTypes`; nothing changes in SES.
+

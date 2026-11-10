@@ -1799,4 +1799,10 @@ The owner asked for one latest version of the FileMaker scripts instead of v3.x 
    (config, one "SES name=FMP PayBy" per line; five filled from the old types, the rest for the FileMaker team). A name with no entry
    goes into PayBy as it is and the answer warns `UNMAPPED_PAYMENT` ("ยังไม่ได้จับคู่ PayBy: ..."), shown in SES. SES still sends
    `paymentTypes`; nothing changes in SES.
+3. **v4.1 (the FileMaker team, 2026-11-10):** `pos_front_sale_tmp` is only a draft (customer and payments); the real bill is created in
+   `pos_front_sale` when the cashier confirms. So a release always deletes the draft and its lines (`$RELEASE_MODE` is gone); a draft
+   that is no longer there while `ses::sale_id` still points to it means the bill was confirmed (or deleted by hand): nothing is
+   touched, no new draft is opened, the answer is `BILL_CONFIRMED` (error, shown in "ออเดอร์ที่ต้องดู"). The SES note goes to the
+   field named in `$NOTE_FIELD` (`Set Field By Name`; default `pos_front_sale_tmp::ses_note`, the screen's Comment field suggested so
+   the note follows the confirmed bill).
 

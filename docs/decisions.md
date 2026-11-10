@@ -1760,3 +1760,14 @@ new one.
 5. FileMaker adds two fields: `ses::ses_rev` (number), `pos_front_sale_tmp::ses_note` (text), and shows `ses_id`, `ses_queue`,
    `ses_note` on the held-bill screen. Open: whether FileMaker deletes or re-statuses a cancelled held bill (`$RELEASE_MODE`).
 
+
+## D124 — A serial made only of digits must be a real IMEI: 15 digits with a valid check digit (2026-11-10)
+
+On 2026-11-10 order SES-20261110-000002 reached FileMaker with the iPhone's serial `35571369420008` (14 digits); FileMaker did not
+find it, skipped the unit and the held bill showed only the MacBook. The camera already took only 15-digit numbers (D108), but a
+serial typed or fired by a scanner into the box was checked only for printable characters.
+
+1. SES (server, `serialProblem`, for a scan and for a `send` with a list) and the stock screen refuse a digits-only serial that is
+   not 15 digits with a valid Luhn check digit: 14 digits is the MEID on the label (the IMEI without its check digit), 12 / 13 the
+   UPC / EAN, one wrong digit fails the check. The message says which. Serials with letters (Mac, iPad) are not affected.
+2. The camera also ignores a 15-digit read whose check digit is wrong.

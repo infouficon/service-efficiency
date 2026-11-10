@@ -136,6 +136,34 @@ const CHANGE_REASONS = [
 ];
 
 type Tx = Prisma.TransactionClient;
+
+/** IMEI check digit (Luhn): every second digit from the right doubled, the sum a multiple of 10. */
+function luhnOk(digits: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i += 1) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * D124: what is wrong with a serial number STOCK typed or scanned, or null. Printable ASCII without spaces, 1 to 64 characters
+ * (D92). A number made only of digits is an iPhone IMEI, which FileMaker keeps for iPhones: exactly 15 digits with a valid check
+ * digit. 14 digits is the MEID on the same label (the IMEI without its check digit), 12 / 13 digits the UPC / EAN: FileMaker would
+ * never find them and the cashier would have to scan the unit by hand (2026-11-10, SES-20261110-000002).
+ */
+export function serialProblem(sn: string): string | null {
+  if (!/^[\x21-\x7E]{1,64}$/.test(sn)) return 'ใช้ตัวอักษรหรือตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ยาวไม่เกิน 64 ตัว';
+  if (!/^\d+$/.test(sn)) return null;
+  if (sn.length === 14) return 'เลข 14 หลักคือ MEID ไม่ใช่ IMEI: สแกนบาร์โค้ด IMEI (15 หลัก) บนกล่อง';
+  if (sn.length !== 15) return `ตัวเลข ${sn.length} หลักไม่ใช่ IMEI (IMEI มี 15 หลัก; 12/13 หลักคือบาร์โค้ดสินค้า)`;
+  return luhnOk(sn) ? null : 'IMEI ไม่ถูกต้อง (เลขตรวจหลักสุดท้ายไม่ตรง) สแกนหรือพิมพ์ผิด ลองสแกนใหม่';
+}
 /** States in which STOCK has already picked the goods (a cancel then needs them brought back). */
 const FOUND_OR_LATER: string[] = [
   'FOUND',
@@ -705,8 +733,8 @@ export class SessionsService {
       if (sn.length !== item.quantity)
         throw new BadRequestException(`${item.sku.name}: ต้องสแกน ${item.quantity} เครื่อง แต่ได้ ${sn.length}`);
       for (const one of sn) {
-        if (!/^[\x21-\x7E]{1,64}$/.test(one))
-          throw new BadRequestException(`Serial Number "${one}" ไม่ถูกต้อง (ใช้ตัวอักษรหรือตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ยาวไม่เกิน 64 ตัว)`);
+        const problem = serialProblem(one); // D124
+        if (problem) throw new BadRequestException(`Serial Number "${one}" ไม่ถูกต้อง (${problem})`);
         const key = one.toLowerCase();
         if (seen.has(key)) throw new BadRequestException(`Serial Number "${one}" ซ้ำกันในรายการที่สแกน`);
         seen.add(key);
@@ -769,8 +797,8 @@ export class SessionsService {
   /** D95/D101: a serial number as FileMaker keeps it: trimmed, in capitals, printable ASCII without spaces, 1–64 characters. */
   private normalizeSerial(raw: string): string {
     const sn = raw.trim().toUpperCase();
-    if (!/^[\x21-\x7E]{1,64}$/.test(sn))
-      throw new BadRequestException(`Serial Number "${raw.trim()}" ไม่ถูกต้อง (ใช้ตัวอักษรหรือตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ยาวไม่เกิน 64 ตัว)`);
+    const problem = serialProblem(sn); // D124
+    if (problem) throw new BadRequestException(`Serial Number "${raw.trim()}" ไม่ถูกต้อง (${problem})`);
     return sn;
   }
 

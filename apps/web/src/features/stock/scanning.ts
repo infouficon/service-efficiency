@@ -1,6 +1,32 @@
 /** What the server accepts as a serial number (D92): printable ASCII, no spaces, 1 to 64 characters. */
 export const SERIAL = /^[\x21-\x7E]{1,64}$/;
 
+/** IMEI check digit (Luhn): every second digit from the right doubled, the sum a multiple of 10. */
+export function luhnOk(digits: string): boolean {
+  let sum = 0;
+  for (let i = 0; i < digits.length; i += 1) {
+    let d = Number(digits[digits.length - 1 - i]);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+/**
+ * D124: what is wrong with a serial typed or scanned into the box, or '' (the server checks the same, `serialProblem`). Digits
+ * only = an iPhone IMEI: 15 digits with a valid check digit. 14 digits is the MEID on the label, 12 / 13 the UPC / EAN.
+ */
+export function serialProblem(sn: string): string {
+  if (!SERIAL.test(sn)) return 'ใช้ตัวอักษร/ตัวเลขที่พิมพ์ได้ ไม่มีเว้นวรรค ไม่เกิน 64 ตัว';
+  if (!/^\d+$/.test(sn)) return '';
+  if (sn.length === 14) return 'เลข 14 หลักคือ MEID ไม่ใช่ IMEI: สแกนบาร์โค้ด IMEI (15 หลัก) บนกล่อง';
+  if (sn.length !== 15) return `ตัวเลข ${sn.length} หลักไม่ใช่ IMEI (IMEI มี 15 หลัก; 12/13 หลักคือบาร์โค้ดสินค้า)`;
+  return luhnOk(sn) ? '' : 'IMEI ไม่ถูกต้อง (เลขตรวจหลักสุดท้ายไม่ตรง) สแกนหรือพิมพ์ผิด ลองสแกนใหม่';
+}
+
 /**
  * D108: the serial (or IMEI) a barcode on the box stands for, or null for the other barcodes on an Apple label. The value is
  * kept as read (upper case), the same as a barcode scanner would type it.
@@ -11,7 +37,7 @@ export const SERIAL = /^[\x21-\x7E]{1,64}$/;
 export function serialFromBarcode(raw: string): string | null {
   const text = raw.trim().toUpperCase();
   if (!SERIAL.test(text)) return null;
-  if (/^\d+$/.test(text)) return text.length === 15 ? text : null;
+  if (/^\d+$/.test(text)) return text.length === 15 && luhnOk(text) ? text : null; // D124: a misread IMEI is not used
   if (text.includes('/')) return null;
   return /^[A-Z0-9]{8,20}$/.test(text) ? text : null;
 }

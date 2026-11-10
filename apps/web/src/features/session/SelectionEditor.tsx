@@ -621,6 +621,72 @@ export function SelectionEditor({
           </>
         )}
       </fieldset>
+      <fieldset>
+        <legend>
+          เอกสารภาษี / Tax Documents <small className="legend-note">(ไม่บังคับ)</small>
+        </legend>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 14px',
+              border: `1px solid ${value.taxInvoice ? 'var(--primary)' : 'var(--border-color)'}`,
+              borderRadius: '8px',
+              background: value.taxInvoice ? '#f0fdfa' : 'var(--bg-surface)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              userSelect: 'none',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(value.taxInvoice)}
+              onChange={(e) => onChange({ ...value, taxInvoice: e.target.checked })}
+              style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
+            />
+            <div>
+              <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                ต้องการใบกำกับภาษี (Tax Invoice)
+              </span>
+              <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                ขอใบกำกับภาษีเต็มรูปสำหรับบุคคลธรรมดาหรือนิติบุคคล
+              </span>
+            </div>
+          </label>
+
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '10px 14px',
+              border: `1px solid ${value.vatRefund ? 'var(--primary)' : 'var(--border-color)'}`,
+              borderRadius: '8px',
+              background: value.vatRefund ? '#f0fdfa' : 'var(--bg-surface)',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease',
+              userSelect: 'none',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={Boolean(value.vatRefund)}
+              onChange={(e) => onChange({ ...value, vatRefund: e.target.checked })}
+              style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
+            />
+            <div>
+              <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                ต้องการ VAT Refund
+              </span>
+              <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                ขอเอกสารคืนภาษีมูลค่าเพิ่มสำหรับนักท่องเที่ยวต่างชาติ (ภ.พ.10)
+              </span>
+            </div>
+          </label>
+        </div>
+      </fieldset>
       <div className="actions">
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span

@@ -518,6 +518,8 @@ export function StaffWorkspace({
                 <div className="card-meta">
                   <span>ผู้ดูแล: {s.staffId}</span>
                   {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
+                  {(s.taxInvoice ?? s.selection?.taxInvoice) && <span style={{ color: '#1d4ed8', fontWeight: 600 }}>🧾 Tax</span>}
+                  {(s.vatRefund ?? s.selection?.vatRefund) && <span style={{ color: '#b45309', fontWeight: 600 }}>✈️ VAT</span>}
                 </div>
               </div>
             ))}
@@ -556,6 +558,16 @@ export function StaffWorkspace({
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>
                       ซื้อใหม่ (ใช้คิวเดิม)
+                    </span>
+                  )}
+                  {(activeSession.taxInvoice ?? activeSession.selection?.taxInvoice) && (
+                    <span className="status-tag" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', marginRight: '6px' }}>
+                      🧾 ใบกำกับภาษี
+                    </span>
+                  )}
+                  {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
+                    <span className="status-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', marginRight: '6px' }}>
+                      ✈️ VAT Refund
                     </span>
                   )}
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}

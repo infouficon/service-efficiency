@@ -1722,3 +1722,15 @@ The FileMaker team asked what to send when a bill from SES is cancelled on their
 3. **Cancelled in SES** after the order went to the cashier: SES sends nothing to FileMaker (it pushes only `SENT_TO_CASHIER`). For now the
    cashier cancels the held bill in FileMaker by hand; a push of the cancel (and a FileMaker script to clear it) waits until it is
    needed.
+
+## D122 — Customer tax document requests: VAT refund and full tax invoice (2026-11-10)
+
+Cashiers previously had to ask every customer at the till whether they needed a VAT refund or a full tax invoice. To streamline the cashier handoff and bill opening:
+
+1. **Input (UI).** In product selection (`SelectionEditor`), immediately following the payment methods, an optional section "เอกสารภาษี / Tax Documents" allows staff to toggle two independent flags:
+   - **ต้องการใบกำกับภาษี (Tax Invoice):** for Thai residents / registered companies requiring a full tax invoice.
+   - **ต้องการ VAT Refund:** for foreign tourists requesting the PP10 VAT refund form.
+   Both default to `false` (neither required).
+2. **Persistence.** `vatRefund` and `taxInvoice` boolean columns on `CustomerSession` (migration `202611100003_vat_refund_tax_invoice`). A re-bought session copies both flags from the previous session.
+3. **Outbound (`orderView`).** `orderView` includes `vatRefund: boolean` and `taxInvoice: boolean`. Both the U POS door and the FileMaker outbound message carry these flags so the cashier / POS can prepare the document before or at billing.
+4. **Visibility.** Prominently displayed on the order summary (`Summary.tsx`) with badges (`ใบกำกับภาษี`, `VAT Refund`) and in the staff queue cards and logs.

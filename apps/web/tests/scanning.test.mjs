@@ -61,3 +61,21 @@ test('D124: an IMEI must be 15 digits with a valid check digit; the MEID and the
   assert.equal(serialFromBarcode('355713696420007'), null, 'the camera ignores a misread IMEI');
   assert.equal(serialFromBarcode('355713696420008'), '355713696420008');
 });
+
+test('D125: the kind of number follows the product: IMEI for iPhone / iPad Cellular / Watch Cellular, a serial for Mac / iPad Wi-Fi / Watch GPS', async () => {
+  const { serialKindOf, serialProblem } = await import('../src/features/stock/scanning.ts');
+  assert.equal(serialKindOf('iPhone', 'iPhone 18 Pro Max'), 'imei');
+  assert.equal(serialKindOf('iPad', 'iPad Air WiFi + Cellular', 'iPad Air 11 M3 Wi-Fi + Cellular'), 'imei');
+  assert.equal(serialKindOf('iPad', 'iPad Pro', 'iPad Pro 13 M5 Wi-Fi'), 'serial');
+  assert.equal(serialKindOf('Watch', 'Watch S 12', 'Watch S 12 GPS + Cell 46mm'), 'imei');
+  assert.equal(serialKindOf('Watch', 'Watch Ultra 4', 'Watch Ultra 4 49mm (Demo)'), 'serial');
+  assert.equal(serialKindOf('Mac', 'MacBook Neo'), 'serial');
+  assert.equal(serialKindOf('AirPods', 'AirPods Pro 3'), null);
+  assert.match(serialProblem('SMG92W35604', 'imei'), /ใช้ IMEI/, 'a serial on an iPhone');
+  assert.match(serialProblem('355713696420008', 'serial'), /Serial No\. ขึ้นต้นด้วยตัวอักษร/, 'an IMEI on a Mac');
+  assert.match(serialProblem('S12', 'serial'), /8-20 ตัว/);
+  assert.equal(serialProblem('SMG92W35604', 'serial'), '');
+  assert.equal(serialProblem('355713696420008', 'imei'), '');
+  assert.match(serialProblem('35571369420008', 'imei'), /MEID/);
+  assert.equal(serialProblem('ABC12345', null), '', 'no rule for AirPods and the rest beyond D124');
+});

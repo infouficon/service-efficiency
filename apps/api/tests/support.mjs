@@ -18,12 +18,38 @@ const { hashPassword } = await import('../dist/accounts/password.js');
 
 export const PASSWORD = 'Support-test-1234';
 
-/** Unique made-up serial numbers for the items of a session: exactly `quantity` per item. */
+/**
+ * A unique made-up IMEI: 15 digits with a valid check digit (D124). `seedCatalog` makes iPhones, which carry an IMEI (D125).
+ */
+export function madeUpImei() {
+  const body = `35${Array.from({ length: 12 }, () => Math.floor(Math.random() * 10)).join('')}`;
+  let sum = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    let d = Number(body[body.length - 1 - i]);
+    if (i % 2 === 0) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return body + String((10 - (sum % 10)) % 10);
+}
+
+/**
+ * Unique made-up serial numbers for the items of a session: exactly `quantity` per item, of the kind the product carries (D125):
+ * an IMEI for an iPhone (the test catalog) or a cellular iPad / Watch, a serial starting with a letter for the others.
+ */
 export function madeUpSerials(items) {
-  return items.map((item) => ({
-    itemId: item.id,
-    sn: Array.from({ length: item.quantity }, () => `T${randomUUID().replace(/-/g, '').slice(0, 11).toUpperCase()}`),
-  }));
+  return items.map((item) => {
+    const product = item.sku?.model?.product;
+    const category = (product?.category ?? 'iPhone').toLowerCase();
+    const cellular = [product?.name, item.sku?.model?.name, item.sku?.name].some((n) => /cell/i.test(n ?? ''));
+    const imei = category === 'iphone' || ((category === 'ipad' || category === 'watch') && cellular) || !['mac', 'ipad', 'watch'].includes(category);
+    return {
+      itemId: item.id,
+      sn: Array.from({ length: item.quantity }, () => (imei ? madeUpImei() : `T${randomUUID().replace(/-/g, '').slice(0, 11).toUpperCase()}`)),
+    };
+  });
 }
 
 /** Starts the API on a random port. Returns null (and skips `t`) when the database server is not reachable. */
@@ -222,6 +248,12 @@ export async function seedCatalog(ctx, world, count = 2, stock = 5) {
       data: { branchId: branches.a.id, skuId: sku.id, stock, active: true },
     });
   return skus;
+}
+
+/** D125: moves the product of these SKUs to another category (e.g. 'Mac', whose units carry a serial starting with a letter). */
+export async function setCategory(ctx, skus, category) {
+  const models = await ctx.db.productModel.findMany({ where: { skus: { some: { id: { in: skus.map((x) => x.id) } } } }, select: { productId: true } });
+  await ctx.db.product.updateMany({ where: { id: { in: [...new Set(models.map((m) => m.productId))] } }, data: { category } });
 }
 
 /**

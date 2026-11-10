@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
+import { cleanup, madeUpImei, seedCatalog, seedWorld, setCategory, startApi } from './support.mjs';
 
 const POS_KEY = 'test-pos-key-0123456789abcdef0123456789abcdef';
 process.env.POS_API_KEY = POS_KEY;
@@ -14,6 +14,7 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
     world = await seedWorld(ctx);
     const { cookies, prefix } = world;
     const [skuA, skuB, skuC] = await seedCatalog(ctx, world, 3, 20);
+    await setCategory(ctx, [skuA, skuB, skuC], 'Mac'); // D125: these tests use serials with letters (a Mac's)
     const base = await ctx.app.getUrl();
     const app = (path, method, body, who) => request(path, method, body, cookies[who]);
     const tag = prefix.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -60,13 +61,11 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
       assert.equal((await scan(s, a, sn())).status, 400, 'A needs 2: a third is refused');
       assert.equal((await scan(s, { id: 'nope' }, sn())).status, 400);
       for (const bad of ['', '   ', 'AB CD', 'ซีเรียล', 'X'.repeat(65)]) assert.equal((await scan(s, b, bad)).status, 400, JSON.stringify(bad));
-      // D124: digits only = an iPhone IMEI: 15 digits with a valid check digit (the MEID, a mistyped IMEI and the UPC are refused)
-      for (const bad of ['35571369420008', '355713696420007', '195951413723']) {
-        const res = await scan(s, b, bad);
-        assert.equal(res.status, 400, bad);
-        assert.match(res.data.message, /MEID|เลขตรวจ|ไม่ใช่ IMEI/, bad);
-      }
-      const sent = await step(s, 'send', { serials: [{ itemId: a.id, sn: [x, '35571369420008'] }, { itemId: b.id, sn: [sn()] }] });
+      // D125: a Mac carries a serial starting with a letter: an IMEI (digits) is refused, on a scan and on a send with a list
+      const imeiOnMac = await scan(s, b, '355713696420008');
+      assert.equal(imeiOnMac.status, 400);
+      assert.match(imeiOnMac.data.message, /Serial No\. ขึ้นต้นด้วยตัวอักษร/);
+      const sent = await step(s, 'send', { serials: [{ itemId: a.id, sn: [x, '355713696420008'] }, { itemId: b.id, sn: [sn()] }] });
       assert.equal(sent.status, 400, 'a send with a list is checked the same way');
       const other = await toSearching();
       await step(other, 'search');
@@ -186,6 +185,38 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
       assert.equal((await pos({ reference: three.reference, billNo: 'FM-3', openedAt: opened, completedAt: new Date(Date.now() + 3_600_000).toISOString() })).status, 400, 'in the future');
       assert.equal((await pos({ reference: three.reference, billNo: 'FM-3', openedAt: opened, completedAt: 'yesterday' })).status, 400);
       assert.equal((await app(`/sessions/${three.id}`, 'GET', undefined, 'staff')).data.state, 'SENT_TO_CASHIER', 'a refused report changes nothing');
+    });
+
+    await t.test('an iPhone needs a real IMEI, a Mac a serial starting with a letter (D124, D125)', async () => {
+      // an iPhone next to the Mac of this file (seedCatalog's SKU codes are taken)
+      const made = await db.product.create({
+        data: { category: 'iPhone', name: `${prefix} Phone 2`, models: { create: { name: `${prefix} Model 2`, skus: { create: [{ sku: `${prefix}-P1`, name: `${prefix} P1 128GB` }] } } } },
+        include: { models: { include: { skus: true } } },
+      });
+      const phone = made.models[0].skus[0];
+      await db.branchInventory.create({ data: { branchId: world.branches.a.id, skuId: phone.id, stock: 20, active: true } });
+      const created = await app('/sessions', 'POST', { phone: `09999009${String(phoneNo++).slice(-2)}` }, 'staff');
+      const id = created.data.id;
+      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: phone.id, quantity: 1 }, { skuId: skuA.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [] }, 'staff');
+      await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
+      const s = (await app(`/sessions/${id}`, 'GET', undefined, 'staff')).data;
+      await step(s, 'search');
+      const iphone = itemOf(s, phone);
+      const mac = itemOf(s, skuA);
+      const refused = async (item, value, why) => {
+        const res = await scan(s, item, value);
+        assert.equal(res.status, 400, value);
+        assert.match(res.data.message, why, value);
+      };
+      await refused(iphone, sn(), /ใช้ IMEI/); // a serial with letters on an iPhone
+      await refused(iphone, '35571369420008', /MEID/); // 2026-11-10: the 14-digit number FileMaker could not find
+      await refused(iphone, '355713696420007', /เลขตรวจ/); // one digit wrong
+      await refused(iphone, '195951413723', /ไม่ใช่ IMEI/); // the UPC
+      await refused(mac, '355713696420008', /Serial No\. ขึ้นต้นด้วยตัวอักษร/);
+      await refused(mac, 'S12', /8-20 ตัว/);
+      const imei = madeUpImei();
+      assert.equal((await scan(s, iphone, imei)).status, 201, 'a real IMEI');
+      assert.equal((await scan(s, mac, sn())).status, 201, 'a Mac serial');
     });
   } finally {
     await cleanup(ctx, world);

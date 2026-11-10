@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
+import { cleanup, seedCatalog, seedWorld, setCategory, startApi } from './support.mjs';
 
 const POS_KEY = 'test-pos-key-0123456789abcdef0123456789abcdef';
 process.env.POS_API_KEY = POS_KEY;
@@ -14,6 +14,7 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
     world = await seedWorld(ctx);
     const { cookies, branches, prefix } = world;
     const [skuA, skuB] = await seedCatalog(ctx, world, 2, 20);
+    await setCategory(ctx, [skuA, skuB], 'Mac'); // D125: these tests use serials with letters (a Mac's)
     await db.productSku.update({ where: { id: skuA.id }, data: { upc: '194253000001' } });
     const base = await ctx.app.getUrl();
     const app = (path, method, body, who) => request(path, method, body, cookies[who]);

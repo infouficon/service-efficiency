@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
+import { cleanup, seedCatalog, seedWorld, setCategory, startApi } from './support.mjs';
 
 test('a double click or a retry applies an action once: stock moves once, one event, the other gets 409 (H-01)', async (t) => {
   const ctx = await startApi(t);
@@ -11,6 +11,7 @@ test('a double click or a retry applies an action once: stock moves once, one ev
     world = await seedWorld(ctx);
     const { cookies, branches } = world;
     const [sku] = await seedCatalog(ctx, world, 1, 10);
+    await setCategory(ctx, [sku], 'Mac'); // D125: these tests use serials with letters (a Mac's)
     await request('/settings', 'PUT', { stockUnlimited: false }, cookies.admin);
     const app = (path, method, body, who) => request(path, method, body, cookies[who]);
     const stockOf = async () => (await db.branchInventory.findUnique({ where: { branchId_skuId: { branchId: branches.a.id, skuId: sku.id } } })).stock;
@@ -41,7 +42,7 @@ test('a double click or a retry applies an action once: stock moves once, one ev
       const id = await toSearching();
       await app(`/sessions/${id}/step`, 'POST', { action: 'found' }, 'stock');
       const s = (await app(`/sessions/${id}`, 'GET', undefined, 'staff')).data;
-      const serials = [{ itemId: s.items[0].id, sn: [`DC${phoneNo}A`, `DC${phoneNo}B`] }];
+      const serials = [{ itemId: s.items[0].id, sn: [`DCX${phoneNo}000A`, `DCX${phoneNo}000B`] }];
       const rs = await twice(() => app(`/sessions/${id}/step`, 'POST', { action: 'send', serials }, 'stock'));
       assert.equal(rs.filter((r) => r.status === 201).length, 1, JSON.stringify(statuses(rs)));
       assert.equal(await eventsOf(id, 'STOCK_SENT_TO_CASHIER'), 1);

@@ -483,12 +483,12 @@ export function PaymentMethodsPanel() {
                 setCardDragOverIndex(null);
                 setCardCanDrag(false);
               }}
-              maxWidth="760px"
+              maxWidth="820px"
             >
               <p className="muted" style={{ marginTop: 0 }}>
                 {isZeroPercent
-                  ? 'กำหนดประเภทบัตรและจำนวนเดือนผ่อนที่รองรับสำหรับ 0% Credit Card (ลากไอคอน ⠿ หรือใช้ลูกศรเพื่อสลับลำดับ)'
-                  : 'กำหนดประเภทบัตรเครดิตที่ยอมรับสำหรับ Full Credit Card (ลากไอคอน ⠿ หรือใช้ลูกศรเพื่อสลับลำดับ)'}
+                  ? 'กำหนดประเภทบัตรและจำนวนเดือนผ่อนที่รองรับสำหรับ 0% Credit Card (ลากไอคอน ⠿ เพื่อสลับลำดับ)'
+                  : 'กำหนดประเภทบัตรเครดิตที่ยอมรับสำหรับ Full Credit Card (ลากไอคอน ⠿ เพื่อสลับลำดับ)'}
               </p>
               <form
                 className="payment-add-form"
@@ -552,7 +552,10 @@ export function PaymentMethodsPanel() {
               {cardList.length === 0 ? (
                 <Notice>ยังไม่มีประเภทบัตร กดเพิ่มบัตรด้านบนได้ทันที</Notice>
               ) : (
-                <div className="table-responsive">
+                <div
+                  className="table-responsive"
+                  style={{ maxHeight: 'min(420px, 50vh)', overflowY: 'auto' }}
+                >
                   <table className="admin-table">
                     <thead>
                       <tr>
@@ -561,7 +564,7 @@ export function PaymentMethodsPanel() {
                         <th>ชื่อประเภทบัตร</th>
                         {isZeroPercent && <th>จำนวนเดือนที่ผ่อน</th>}
                         <th style={{ width: '90px' }}>สถานะ</th>
-                        <th style={{ width: '210px' }}>Actions</th>
+                        <th style={{ width: '140px' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -710,7 +713,8 @@ export function PaymentMethodsPanel() {
                                       }
                                     }}
                                     style={{
-                                      width: '130px',
+                                      width: '100%',
+                                      minWidth: '150px',
                                       padding: '4px 6px',
                                       fontSize: '12px',
                                     }}
@@ -774,40 +778,6 @@ export function PaymentMethodsPanel() {
                                 </div>
                               ) : (
                                 <div style={{ display: 'flex', gap: '4px' }}>
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    disabled={busy || idx === 0}
-                                    aria-label="เลื่อนขึ้น"
-                                    onClick={() =>
-                                      void handleCardReorder(
-                                        currentMethod.id,
-                                        cardList,
-                                        idx,
-                                        idx - 1,
-                                      )
-                                    }
-                                  >
-                                    <ArrowUp size={14} />
-                                  </Button>
-                                  <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    disabled={
-                                      busy || idx === cardList.length - 1
-                                    }
-                                    aria-label="เลื่อนลง"
-                                    onClick={() =>
-                                      void handleCardReorder(
-                                        currentMethod.id,
-                                        cardList,
-                                        idx,
-                                        idx + 1,
-                                      )
-                                    }
-                                  >
-                                    <ArrowDown size={14} />
-                                  </Button>
                                   <Button
                                     variant="secondary"
                                     size="sm"

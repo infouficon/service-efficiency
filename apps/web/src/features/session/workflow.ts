@@ -1,6 +1,7 @@
 import type {
   MockSession,
   Product,
+  ReceiptType,
   SelectionItem,
   SessionEventItem,
   Timestamp,
@@ -98,7 +99,8 @@ export function confirmSelection(
     session.selection.items.length === 0 ||
     !phoneIsValid(session.phone) ||
     !quantitiesAreValid(session.selection.accessories) ||
-    !paymentsAreValid(session.selection.payments, session.selection.paymentDetails)
+    !paymentsAreValid(session.selection.payments, session.selection.paymentDetails) ||
+    !receiptTypeIsValid(session.selection.receiptType)
   )
     return session;
   return {
@@ -282,6 +284,75 @@ export function formatPaymentLabel(
   }
   return method;
 }
+/** D128: Single source of truth for receipt type options, validation, and labels. */
+export const RECEIPT_TYPE_OPTIONS: readonly {
+  value: ReceiptType;
+  label: string;
+  shortLabel: string;
+  description: string;
+  isTaxInvoice: boolean;
+}[] = [
+  {
+    value: 'TAX_CORPORATE',
+    label: 'ใบกำกับภาษีในนามนิติบุคคล',
+    shortLabel: 'นิติบุคคล',
+    description: 'ออกใบกำกับภาษีเต็มรูปในนามบริษัท / ห้างหุ้นส่วน / นิติบุคคล',
+    isTaxInvoice: true,
+  },
+  {
+    value: 'TAX_INDIVIDUAL',
+    label: 'ใบกำกับภาษีในนามบุคคล',
+    shortLabel: 'บุคคล',
+    description: 'ออกใบกำกับภาษีเต็มรูปในนามบุคคลธรรมดา',
+    isTaxInvoice: true,
+  },
+  {
+    value: 'SIMPLIFIED',
+    label: 'ใบเสร็จอย่างย่อ',
+    shortLabel: 'อย่างย่อ',
+    description: 'ใบเสร็จรับเงิน / ใบกำกับภาษีอย่างย่อทั่วไป',
+    isTaxInvoice: false,
+  },
+];
+
+export function receiptTypeIsValid(receiptType?: ReceiptType | null): boolean {
+  return (
+    receiptType === 'TAX_CORPORATE' ||
+    receiptType === 'TAX_INDIVIDUAL' ||
+    receiptType === 'SIMPLIFIED'
+  );
+}
+
+export function isTaxInvoiceReceipt(
+  receiptType?: ReceiptType | null,
+  taxInvoiceFallback?: boolean,
+): boolean {
+  if (receiptType === 'TAX_CORPORATE' || receiptType === 'TAX_INDIVIDUAL') return true;
+  if (receiptType === 'SIMPLIFIED') return false;
+  return Boolean(taxInvoiceFallback);
+}
+
+export function receiptTypeLabel(
+  receiptType?: ReceiptType | null,
+  taxInvoiceFallback?: boolean,
+): string | null {
+  const matched = RECEIPT_TYPE_OPTIONS.find((o) => o.value === receiptType);
+  if (matched) return matched.label;
+  if (taxInvoiceFallback) return 'ใบกำกับภาษี';
+  return null;
+}
+
+export function receiptTypeBadgeLabel(
+  receiptType?: ReceiptType | null,
+  taxInvoiceFallback?: boolean,
+): string | null {
+  if (receiptType === 'TAX_CORPORATE') return 'นิติบุคคล';
+  if (receiptType === 'TAX_INDIVIDUAL') return 'บุคคล';
+  if (receiptType === 'SIMPLIFIED') return null;
+  if (taxInvoiceFallback) return 'Tax';
+  return null;
+}
+
 export function toggleAccessory(
   accessories: Record<string, string>,
   name: string,

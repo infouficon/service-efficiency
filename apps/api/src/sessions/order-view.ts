@@ -3,6 +3,7 @@ import { FMP_PAYMENT_TYPE_FALLBACK } from '../payments/payments.service';
 import { formatQueue } from '../queue/queue.service';
 import { toOutboundCustomerPhone } from '../common/phone.util';
 import type { PrismaService } from '../prisma/prisma.service';
+import type { ReceiptTypeValue } from './dto';
 
 /** The parts of a session the outside world is told about (the U POS door and the FileMaker push, D60 / D88). */
 export interface OrderViewSource {
@@ -22,6 +23,7 @@ export interface OrderViewSource {
   posBillNo: string | null;
   vatRefund?: boolean | null;
   taxInvoice?: boolean | null;
+  receiptType?: ReceiptTypeValue | null;
 }
 
 /** payment method name (lower case, the database compares without regard to case) -> its FMP payment type */
@@ -79,6 +81,10 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
     burnPoints: s.burnPoints.map((b) => b.name),
     posBillNo: s.posBillNo,
     vatRefund: Boolean(s.vatRefund),
-    taxInvoice: Boolean(s.taxInvoice),
+    taxInvoice:
+      s.receiptType != null
+        ? s.receiptType === 'TAX_CORPORATE' || s.receiptType === 'TAX_INDIVIDUAL'
+        : Boolean(s.taxInvoice),
+    receiptType: s.receiptType ?? null,
   };
 }

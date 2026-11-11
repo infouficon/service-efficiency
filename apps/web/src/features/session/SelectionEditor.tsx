@@ -31,6 +31,8 @@ import {
   paymentsAreValid,
   quantitiesAreValid,
   quantityIsValid,
+  RECEIPT_TYPE_OPTIONS,
+  receiptTypeIsValid,
   stepAccessory,
   stepItem,
   toggleAccessory,
@@ -262,10 +264,12 @@ export function SelectionEditor({
   );
   const stockInfo = stockInfoLine(allSkus);
   const paymentsValid = paymentsAreValid(value.payments, value.paymentDetails);
+  const receiptValid = receiptTypeIsValid(value.receiptType);
   const reviewDisabled =
     value.items.length === 0 ||
     !quantitiesAreValid(value.accessories) ||
-    !paymentsValid;
+    !paymentsValid ||
+    !receiptValid;
   /** `+` stops at the stock figure unless nothing is blocked by stock (D59). */
   const canRaise = (item: Selection['items'][number]) =>
     isUnlimited(item.product) ||
@@ -995,39 +999,63 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          เอกสารภาษี / Tax Documents <small className="legend-note">(ไม่บังคับ)</small>
+          ประเภทใบเสร็จ <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+        </legend>
+        <div
+          role="radiogroup"
+          aria-label="ประเภทใบเสร็จ"
+          style={{ display: 'flex', flexDirection: 'column', marginTop: '6px' }}
+        >
+          {RECEIPT_TYPE_OPTIONS.map((opt) => {
+            const selected = value.receiptType === opt.value;
+            return (
+              <label
+                key={opt.value}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '10px 14px',
+                  border: `1px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
+                  borderRadius: '8px',
+                  background: selected ? '#f0fdfa' : 'var(--bg-surface)',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  userSelect: 'none',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="receiptType"
+                  value={opt.value}
+                  checked={selected}
+                  onChange={() =>
+                    onChange({
+                      ...value,
+                      receiptType: opt.value,
+                      taxInvoice: opt.isTaxInvoice,
+                    })
+                  }
+                  style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
+                />
+                <div>
+                  <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                    {opt.label}
+                  </span>
+                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                    {opt.description}
+                  </span>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>
+          เอกสารภาษีเพิ่มเติม / VAT Refund <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
-          <label
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              padding: '10px 14px',
-              border: `1px solid ${value.taxInvoice ? 'var(--primary)' : 'var(--border-color)'}`,
-              borderRadius: '8px',
-              background: value.taxInvoice ? '#f0fdfa' : 'var(--bg-surface)',
-              cursor: 'pointer',
-              transition: 'all 0.15s ease',
-              userSelect: 'none',
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={Boolean(value.taxInvoice)}
-              onChange={(e) => onChange({ ...value, taxInvoice: e.target.checked })}
-              style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
-            />
-            <div>
-              <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
-                ต้องการใบกำกับภาษี (Tax Invoice)
-              </span>
-              <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                ขอใบกำกับภาษีเต็มรูปสำหรับบุคคลธรรมดาหรือนิติบุคคล
-              </span>
-            </div>
-          </label>
-
           <label
             style={{
               display: 'flex',
@@ -1062,6 +1090,11 @@ export function SelectionEditor({
       {!paymentsValid && (
         <Notice error>
           กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
+        </Notice>
+      )}
+      {!receiptValid && (
+        <Notice error>
+          กรุณาเลือกประเภทใบเสร็จก่อนตรวจสอบรายการ
         </Notice>
       )}
       <div className="actions">

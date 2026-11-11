@@ -59,74 +59,79 @@ test('D120: Outbound customerPhone for FileMaker & POS compatibility', () => {
   assert.equal(toOutboundCustomerPhone(null), null);
 });
 
-test('D121: orderView carries vatRefund and taxInvoice flags', () => {
+test('D121 / D128: orderView carries vatRefund, receiptType, and derived taxInvoice', () => {
+  const base = {
+    queueLetter: 'A',
+    state: 'SENT_TO_CASHIER',
+    phone: null,
+    staffId: 's',
+    productSelectionConfirmedAt: null,
+    items: [],
+    accessories: [],
+    payments: [],
+    ontop: [],
+    points: [],
+    burnPoints: [],
+    posBillNo: null,
+  };
+
+  // Corporate tax invoice + VAT refund
   const v1 = orderView(
     {
+      ...base,
       reference: 'SES-TAX-1',
-      queueLetter: 'A',
       queueNo: 1,
-      state: 'SENT_TO_CASHIER',
-      phone: null,
-      staffId: 's',
-      productSelectionConfirmedAt: null,
-      items: [],
-      accessories: [],
-      payments: [],
-      ontop: [],
-      points: [],
-      burnPoints: [],
-      posBillNo: null,
       vatRefund: true,
-      taxInvoice: false,
+      receiptType: 'TAX_CORPORATE',
     },
     new Map(),
   );
   assert.equal(v1.vatRefund, true);
-  assert.equal(v1.taxInvoice, false);
+  assert.equal(v1.receiptType, 'TAX_CORPORATE');
+  assert.equal(v1.taxInvoice, true);
 
+  // Individual tax invoice without VAT refund
   const v2 = orderView(
     {
+      ...base,
       reference: 'SES-TAX-2',
-      queueLetter: 'A',
       queueNo: 2,
-      state: 'SENT_TO_CASHIER',
-      phone: null,
-      staffId: 's',
-      productSelectionConfirmedAt: null,
-      items: [],
-      accessories: [],
-      payments: [],
-      ontop: [],
-      points: [],
-      burnPoints: [],
-      posBillNo: null,
       vatRefund: false,
-      taxInvoice: true,
+      receiptType: 'TAX_INDIVIDUAL',
     },
     new Map(),
   );
   assert.equal(v2.vatRefund, false);
+  assert.equal(v2.receiptType, 'TAX_INDIVIDUAL');
   assert.equal(v2.taxInvoice, true);
 
+  // Simplified receipt (taxInvoice false even if legacy flag omitted)
   const v3 = orderView(
     {
+      ...base,
       reference: 'SES-TAX-3',
-      queueLetter: 'A',
       queueNo: 3,
-      state: 'SENT_TO_CASHIER',
-      phone: null,
-      staffId: 's',
-      productSelectionConfirmedAt: null,
-      items: [],
-      accessories: [],
-      payments: [],
-      ontop: [],
-      points: [],
-      burnPoints: [],
-      posBillNo: null,
+      vatRefund: true,
+      receiptType: 'SIMPLIFIED',
     },
     new Map(),
   );
-  assert.equal(v3.vatRefund, false);
+  assert.equal(v3.vatRefund, true);
+  assert.equal(v3.receiptType, 'SIMPLIFIED');
   assert.equal(v3.taxInvoice, false);
+
+  // Legacy historical session with null receiptType retains taxInvoice boolean fallback
+  const v4 = orderView(
+    {
+      ...base,
+      reference: 'SES-TAX-4',
+      queueNo: 4,
+      taxInvoice: true,
+      receiptType: null,
+    },
+    new Map(),
+  );
+  assert.equal(v4.vatRefund, false);
+  assert.equal(v4.receiptType, null);
+  assert.equal(v4.taxInvoice, true);
 });

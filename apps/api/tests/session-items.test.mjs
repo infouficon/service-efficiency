@@ -241,7 +241,10 @@ test('a session holds several main products with quantities (D40 flow, F3)', asy
     };
     const confirmed = async (items) => {
       const id = await atSelection();
-      assert.equal((await put(id, { items, payments: ['Cash'] })).status, 200);
+      assert.equal(
+        (await put(id, { items, payments: ['Cash'], receiptType: 'SIMPLIFIED' })).status,
+        200,
+      );
       const res = await request(
         `/sessions/${id}/confirm`,
         'POST',
@@ -353,6 +356,12 @@ test('a session holds several main products with quantities (D40 flow, F3)', asy
         );
         assert.equal(none.status, 400);
         assert.equal((await put(id, { items: twoAndOne })).status, 200);
+        assert.equal(
+          (await request(`/sessions/${id}/confirm`, 'POST', undefined, cookies.staff)).status,
+          400,
+          'receipt type required before confirmation (D128)',
+        );
+        assert.equal((await put(id, { receiptType: 'TAX_CORPORATE' })).status, 200);
         const done = await request(
           `/sessions/${id}/confirm`,
           'POST',

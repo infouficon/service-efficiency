@@ -31,6 +31,7 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
         payments: ['Cash'],
         ontop: [],
         points: [],
+        receiptType: 'SIMPLIFIED',
       }, 'staff');
       await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
       for (const action of ['search', 'found']) {

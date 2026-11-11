@@ -137,6 +137,8 @@ export interface PaymentDetail {
   installmentMonths?: number | null;
 }
 
+export type ReceiptType = 'TAX_CORPORATE' | 'TAX_INDIVIDUAL' | 'SIMPLIFIED';
+
 export interface Selection {
   /** The main products, in the order the staff added them; empty = none chosen yet. */
   items: SelectionItem[];
@@ -149,8 +151,10 @@ export interface Selection {
   paymentDetails?: PaymentDetail[];
   /** D121: customer requests VAT refund (tourists). */
   vatRefund?: boolean;
-  /** D121: customer requests full tax invoice. */
+  /** D121 / D128: derived tax invoice boolean for compatibility; prefer `receiptType`. */
   taxInvoice?: boolean;
+  /** D128: selected receipt type (required before confirming). */
+  receiptType?: ReceiptType | null;
 }
 
 export type Timestamp =
@@ -216,9 +220,10 @@ export interface MockSession {
   /** F17 (D60): the bill U POS opened for this order, as U POS reported it: its number and the real time. */
   posBillNo?: string;
   posBillOpenedAt?: string;
-  /** D121: customer requests VAT refund or tax invoice */
+  /** D121 / D128: customer requests VAT refund or receipt type */
   vatRefund?: boolean;
   taxInvoice?: boolean;
+  receiptType?: ReceiptType | null;
   /** D100: the order's FileMaker side: the latest message SES sent and what FileMaker answered (null: nothing sent). */
   fmp?: FmpStatus | null;
   /** F12: when and by whom stock acknowledged this cancel; absent while stock still has to act. */

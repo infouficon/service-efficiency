@@ -36,6 +36,12 @@ enum Outcome {
   CUSTOMER_CANCELLED
 }
 
+enum ReceiptType {
+  TAX_CORPORATE
+  TAX_INDIVIDUAL
+  SIMPLIFIED
+}
+
 enum EventType {
   SESSION_CREATED
   DEMO_STARTED
@@ -422,9 +428,10 @@ model CustomerSession {
   // F17 (D60): the bill U POS opened for this order, reported by U POS: its number and the real time it was opened
   posBillNo       String?       @db.VarChar(64)
   posBillOpenedAt DateTime?     @db.DateTime(3)
-  // D121: customer requests tax invoice or VAT refund
+  // D121 / D128: customer requests VAT refund or receipt type (corporate/individual tax invoice or simplified receipt)
   vatRefund       Boolean       @default(false)
   taxInvoice      Boolean       @default(false)
+  receiptType     ReceiptType?
   rebuyOfId      String?       @unique @db.VarChar(36)
   rebuyOf        CustomerSession? @relation("Rebuy", fields: [rebuyOfId], references: [id], onDelete: SetNull)
   rebuiltAs      CustomerSession? @relation("Rebuy")

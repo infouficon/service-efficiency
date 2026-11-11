@@ -16,6 +16,14 @@ import {
   ValidateNested,
 } from 'class-validator';
 
+export const RECEIPT_TYPES = [
+  'TAX_CORPORATE',
+  'TAX_INDIVIDUAL',
+  'SIMPLIFIED',
+] as const;
+
+export type ReceiptTypeValue = (typeof RECEIPT_TYPES)[number];
+
 export const STEP_ACTIONS = [
   'startDemo',
   'endDemo',
@@ -255,10 +263,15 @@ export class UpdateSelectionDto {
   @IsBoolean()
   vatRefund?: boolean;
 
-  /** D121: customer requests full tax invoice. */
+  /** D121: customer requests full tax invoice (legacy flag, derived when receiptType is set). */
   @IsOptional()
   @IsBoolean()
   taxInvoice?: boolean;
+
+  /** D128: customer receipt type choice (corporate tax invoice, individual tax invoice, simplified receipt). */
+  @IsOptional()
+  @IsIn(RECEIPT_TYPES)
+  receiptType?: ReceiptTypeValue;
 }
 
 export class ReportStockMissingDto {

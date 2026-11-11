@@ -29,6 +29,7 @@ import {
   formatPaymentLabel,
   itemName,
   itemsText,
+  receiptTypeLabel,
   stepDurations,
   visitDuration,
 } from '../session/workflow';
@@ -317,8 +318,12 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       },
       {
         key: 'taxInvoice',
-        label: 'ขอใบกำกับภาษี',
-        getValue: (s) => ((s.taxInvoice ?? s.selection?.taxInvoice) ? 'ใช่' : 'ไม่ใช่'),
+        label: 'ประเภทใบเสร็จ',
+        getValue: (s) =>
+          receiptTypeLabel(
+            s.receiptType ?? s.selection?.receiptType,
+            s.taxInvoice ?? s.selection?.taxInvoice,
+          ) ?? '',
       },
       {
         key: 'vatRefund',

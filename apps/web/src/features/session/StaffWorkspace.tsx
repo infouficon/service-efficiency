@@ -35,6 +35,8 @@ import {
   itemsText,
   phoneIsValid,
   progressIndex,
+  receiptTypeBadgeLabel,
+  receiptTypeLabel,
   stateLabel,
   type StepAction,
 } from './workflow';
@@ -519,7 +521,15 @@ export function StaffWorkspace({
                   <span>ผู้ดูแล: {s.staffId}</span>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
-                    {(s.taxInvoice ?? s.selection?.taxInvoice) && <span style={{ color: '#1d4ed8', fontWeight: 600 }}>🧾 Tax</span>}
+                    {(() => {
+                      const badge = receiptTypeBadgeLabel(
+                        s.receiptType ?? s.selection?.receiptType,
+                        s.taxInvoice ?? s.selection?.taxInvoice,
+                      );
+                      return badge ? (
+                        <span style={{ color: '#1d4ed8', fontWeight: 600 }}>🧾 {badge}</span>
+                      ) : null;
+                    })()}
                     {(s.vatRefund ?? s.selection?.vatRefund) && <span style={{ color: '#b45309', fontWeight: 600 }}>✈️ VAT</span>}
                   </div>
                 </div>
@@ -562,11 +572,17 @@ export function StaffWorkspace({
                       ซื้อใหม่ (ใช้คิวเดิม)
                     </span>
                   )}
-                  {(activeSession.taxInvoice ?? activeSession.selection?.taxInvoice) && (
-                    <span className="status-tag" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', marginRight: '6px' }}>
-                      🧾 ใบกำกับภาษี
-                    </span>
-                  )}
+                  {(() => {
+                    const activeReceipt = activeSession.receiptType ?? activeSession.selection?.receiptType;
+                    const activeTax = activeSession.taxInvoice ?? activeSession.selection?.taxInvoice;
+                    const badge = receiptTypeBadgeLabel(activeReceipt, activeTax);
+                    const fullLabel = receiptTypeLabel(activeReceipt, activeTax);
+                    return badge && fullLabel ? (
+                      <span className="status-tag" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', marginRight: '6px' }}>
+                        🧾 {fullLabel}
+                      </span>
+                    ) : null;
+                  })()}
                   {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
                     <span className="status-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', marginRight: '6px' }}>
                       ✈️ VAT Refund

@@ -24,7 +24,7 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
     const toSearching = async () => {
       const s = await app('/sessions', 'POST', { phone: `09999009${String(phoneNo++).slice(-2)}` }, 'staff');
       const id = s.data.id;
-      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: skuA.id, quantity: 2 }, { skuId: skuB.id, quantity: 1 }], accessories: [{ accessoryName: 'Case', quantity: 1 }], payments: ['Cash'], ontop: [], points: [] }, 'staff');
+      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: skuA.id, quantity: 2 }, { skuId: skuB.id, quantity: 1 }], accessories: [{ accessoryName: 'Case', quantity: 1 }], payments: ['Cash'], ontop: [], points: [], receiptType: 'SIMPLIFIED' }, 'staff');
       await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
       return (await app(`/sessions/${id}`, 'GET', undefined, 'staff')).data;
     };
@@ -197,7 +197,7 @@ test('STOCK scans serials one by one while searching (server time); "send" then 
       await db.branchInventory.create({ data: { branchId: world.branches.a.id, skuId: phone.id, stock: 20, active: true } });
       const created = await app('/sessions', 'POST', { phone: `09999009${String(phoneNo++).slice(-2)}` }, 'staff');
       const id = created.data.id;
-      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: phone.id, quantity: 1 }, { skuId: skuA.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [] }, 'staff');
+      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: phone.id, quantity: 1 }, { skuId: skuA.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [], receiptType: 'SIMPLIFIED' }, 'staff');
       await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
       const s = (await app(`/sessions/${id}`, 'GET', undefined, 'staff')).data;
       await step(s, 'search');

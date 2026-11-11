@@ -63,7 +63,7 @@ test('stock unlimited: one global ADMIN switch, on by default (D59)', async (t) 
       const chosen = await request(
         `/sessions/${id}/selection`,
         'PUT',
-        { items: [{ skuId: sku.id, quantity: 1 }], payments: ['Cash'] },
+        { items: [{ skuId: sku.id, quantity: 1 }], payments: ['Cash'], receiptType: 'SIMPLIFIED' },
         cookies.staff,
       );
       assert.equal(chosen.status, 200, JSON.stringify(chosen.data));

@@ -38,3 +38,18 @@ test('an order sent with serials missing, refused by an older FileMaker script, 
   assert.doesNotMatch(r.hint, /ส่งกลับ Stock/);
 });
 
+
+test('answers about taking the held draft out read as what the cashier must do (D129)', () => {
+  const released = fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'RELEASED saleID 99 (2 รายการ): ส่งกลับ STOCK: เอาบิลพักออกแล้ว 2 รายการ' });
+  assert.deepEqual([released.tone, released.text], ['ok', 'FileMaker เอาร่างบิลออกแล้ว SN ว่าง สแกนใหม่ได้']);
+  assert.equal(fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'NOTHING_TO_RELEASE: ส่งกลับ STOCK: ไม่มีบิลพักให้เอาออก' }).tone, 'ok');
+  const confirmed = fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'BILL_CONFIRMED saleID 99: ไม่พบร่างบิลแล้ว' });
+  assert.equal(confirmed.tone, 'bad');
+  assert.match(confirmed.text, /บิลจริง/);
+  assert.match(confirmed.hint, /ยกเลิกบิลจริง/);
+  assert.match(fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'BILL_IN_USE saleID 99: status open' }).text, /ทำรายการอยู่/);
+  assert.match(fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'RELEASE_FAILED: 5011 locked' }).hint, /ส่งซ้ำ/);
+  assert.match(fmpStatusText({ ...base, ackStatus: 'error', ackMessage: 'QUERY_FAILED: customer lookup failed' }).hint, /ส่งซ้ำ/);
+  // anything else keeps its old wording
+  assert.equal(fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'CREATED saleID S-1 (1 รายการ)' }).text, 'FileMaker รับแล้ว: CREATED saleID S-1 (1 รายการ)');
+});

@@ -33,12 +33,27 @@ it never creates a second record (D96).
   "accessoriesForCashier": [{ "name": "Case", "quantity": 1 }],
   "payments": ["Cash", "Transfer"],
   "paymentTypes": ["เงินสด", "โอนเงิน"],
+  "paymentDetails": [
+    { "method": "Cash", "type": "เงินสด", "cardType": null, "installmentMonths": null, "label": "Cash" },
+    { "method": "Transfer", "type": "โอนเงิน", "cardType": null, "installmentMonths": null, "label": "Transfer" }
+  ],
   "ontop": ["AIS"],
   "points": ["MCard"],
   "burnPoints": [],
-  "posBillNo": null
+  "posBillNo": null,
+  "vatRefund": false,
+  "taxInvoice": true,
+  "receiptType": "TAX_CORPORATE",
+  "receiptTypeLabel": "ใบกำกับภาษีในนามนิติบุคคล"
 }
 ```
+
+- **Card, months and receipt type (D129):** `paymentDetails` = every payment with its type and the card / installment months staff
+  picked (D127), e.g. `{"method": "0% Credit Card", "type": "บัตรเงินผ่อน", "cardType": "SCB", "installmentMonths": 10,
+  "label": "0% Credit Card (SCB 10 เดือน)"}`; `cardType` / `installmentMonths` are null for a method without a card. `receiptType`
+  (`TAX_CORPORATE` / `TAX_INDIVIDUAL` / `SIMPLIFIED`, null before D128) comes with its Thai `receiptTypeLabel`. `ses` v4.2 appends the
+  labels to the draft's note and can write mapped values into FileMaker fields (`$RECEIPT_FIELD` / `$CARD_FIELD` / `$INSTALLMENT_FIELD`).
+  `payments` and `paymentTypes` are unchanged.
 
 - **Accessories (D97):** `accessories` is always `[]` in the FileMaker message (the `ses` script refuses any; the shop adds them in
   FileMaker by hand); what the customer picked is under `accessoriesForCashier` for information. The U POS door still lists them.

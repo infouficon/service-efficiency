@@ -16,7 +16,7 @@ export interface OrderViewSource {
   productSelectionConfirmedAt: Date | null;
   items: { quantity: number; sku: { sku: string; name: string; upc: string | null }; serials: { sn: string; position: number }[] }[];
   accessories: { accessoryName: string; quantity: number }[];
-  payments: { method: string }[];
+  payments: { method: string; cardType?: string | null; installmentMonths?: number | null }[];
   ontop: { name: string }[];
   points: { name: string }[];
   burnPoints: { name: string }[];
@@ -25,6 +25,13 @@ export interface OrderViewSource {
   taxInvoice?: boolean | null;
   receiptType?: ReceiptTypeValue | null;
 }
+
+/** D128 labels, as staff picked them; sent with the code so FileMaker can show or map either (D129). */
+export const RECEIPT_TYPE_LABELS: Record<ReceiptTypeValue, string> = {
+  TAX_CORPORATE: 'ใบกำกับภาษีในนามนิติบุคคล',
+  TAX_INDIVIDUAL: 'ใบกำกับภาษีในนามบุคคล',
+  SIMPLIFIED: 'ใบเสร็จอย่างย่อ',
+};
 
 /** payment method name (lower case, the database compares without regard to case) -> its FMP payment type */
 export type PaymentTypes = ReadonlyMap<string, string | null>;
@@ -76,6 +83,20 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
         ),
       ),
     ],
+    // D129: every payment with its FMP type and the card / installment months staff picked (D127), plus one readable label,
+    // so the FileMaker script can map each value or just show the label to the cashier
+    paymentDetails: s.payments.map((p) => {
+      const cardType = p.cardType?.trim() || null;
+      const installmentMonths = p.installmentMonths ?? null;
+      const extra = [cardType, installmentMonths ? `${installmentMonths} เดือน` : null].filter(Boolean).join(' ');
+      return {
+        method: p.method,
+        type: paymentTypes.get(p.method.toLowerCase()) ?? FMP_PAYMENT_TYPE_FALLBACK,
+        cardType,
+        installmentMonths,
+        label: extra ? `${p.method} (${extra})` : p.method,
+      };
+    }),
     ontop: s.ontop.map((o) => o.name),
     points: s.points.map((p) => p.name),
     burnPoints: s.burnPoints.map((b) => b.name),
@@ -86,5 +107,6 @@ export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {
         ? s.receiptType === 'TAX_CORPORATE' || s.receiptType === 'TAX_INDIVIDUAL'
         : Boolean(s.taxInvoice),
     receiptType: s.receiptType ?? null,
+    receiptTypeLabel: s.receiptType ? RECEIPT_TYPE_LABELS[s.receiptType] : null,
   };
 }

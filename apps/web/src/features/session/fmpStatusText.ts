@@ -8,6 +8,9 @@ export function fmpStatusText(
   fmp: FmpStatus | null | undefined,
 ): { tone: 'ok' | 'warn' | 'wait' | 'bad'; text: string; hint?: string } | null {
   if (!fmp) return null;
+  // D123 / D129: answers to "take the held draft out" (sent back to STOCK, cancelled, or a new round from STOCK)
+  const release = releaseText(fmp);
+  if (release) return release;
   if (fmp.ackStatus === 'error') {
     const message = fmp.ackMessage ?? '';
     // D103: the unit is in the shop but FileMaker has it elsewhere / not yet (a transfer not received)
@@ -24,7 +27,9 @@ export function fmpStatusText(
         ? 'เครื่องอยู่ที่ร้านแต่ FileMaker ยังไม่อัปเดต (เช่น ยังไม่รับโอน): รับโอนใน FileMaker แล้ว ADMIN กด "ส่งซ้ำ" · หยิบผิดเครื่อง: ส่งกลับ Stock ให้สแกนใหม่'
         : sn
           ? 'Serial Number ไม่ตรงกับสต็อกใน FileMaker: ส่งกลับ Stock ให้สแกนใหม่'
-          : 'แจ้ง ADMIN / ทีม FileMaker',
+          : /^QUERY_FAILED/.test(message)
+            ? 'FileMaker อ่านข้อมูลของตัวเองไม่ได้ชั่วคราว ไม่ได้เปิดบิล: ADMIN กด "ส่งซ้ำ" ถ้ายังไม่หายแจ้งทีม FileMaker'
+            : 'แจ้ง ADMIN / ทีม FileMaker',
     };
   }
   // D103: FileMaker opened the held bill without the units that have no serial it accepts; the cashier scans those in as usual
@@ -40,4 +45,28 @@ export function fmpStatusText(
   if (fmp.status === 'sent') return { tone: 'wait', text: 'ส่งถึง FileMaker แล้ว (ยังไม่มีผลตอบกลับ)' };
   if (fmp.attempts > 0 && fmp.error) return { tone: 'wait', text: `กำลังลองส่งไป FileMaker ใหม่ (ครั้งที่ ${fmp.attempts}): ${fmp.error}` };
   return { tone: 'wait', text: 'กำลังส่งไป FileMaker…' };
+}
+
+/** The `ses` script's answers about taking the held draft (pos_front_sale_tmp) out, in the cashier's words; null for any other answer. */
+function releaseText(fmp: FmpStatus): { tone: 'ok' | 'bad'; text: string; hint?: string } | null {
+  const message = fmp.ackMessage ?? '';
+  const code = /^[A-Z_]+/.exec(message)?.[0];
+  if (fmp.ackStatus === 'success' && code === 'RELEASED') return { tone: 'ok', text: 'FileMaker เอาร่างบิลออกแล้ว SN ว่าง สแกนใหม่ได้' };
+  if (fmp.ackStatus === 'success' && code === 'NOTHING_TO_RELEASE') return { tone: 'ok', text: 'FileMaker ไม่มีร่างบิลของออเดอร์นี้ ไม่ต้องเอาออก' };
+  if (fmp.ackStatus !== 'error') return null;
+  if (code === 'BILL_CONFIRMED')
+    return {
+      tone: 'bad',
+      text: 'เอาร่างบิลออกไม่ได้: แคชเชียร์ยืนยันเป็นบิลจริงใน FileMaker ไปแล้ว',
+      hint: 'แคชเชียร์ยกเลิกบิลจริงใบนั้นใน FileMaker เอง พอ STOCK ส่งออเดอร์มาใหม่ FileMaker จะเปิดร่างใบใหม่ให้',
+    };
+  if (code === 'BILL_IN_USE')
+    return {
+      tone: 'bad',
+      text: 'เอาร่างบิลออกไม่ได้: แคชเชียร์เปิดร่างนี้ทำรายการอยู่',
+      hint: 'แคชเชียร์ยกเลิกร่างนั้นใน FileMaker เอง',
+    };
+  if (code === 'RELEASE_FAILED')
+    return { tone: 'bad', text: `เอาร่างบิลออกไม่สำเร็จ: ${message}`, hint: 'ADMIN กด "ส่งซ้ำ" ถ้ายังไม่หายแจ้งทีม FileMaker' };
+  return null;
 }

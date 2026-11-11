@@ -1843,5 +1843,42 @@ Supersedes the `taxInvoice` checkbox part of D122 via `/grill-me`: instead of a 
    - **Queue cards & session header (`StaffWorkspace`):** Right-aligned badge appears only when a Tax Invoice type is chosen (`🧾 นิติบุคคล` / `🧾 บุคคล`), keeping `ใบเสร็จอย่างย่อ` clean on compact cards (`✈️ VAT` remains when `vatRefund` is enabled).
    - **Summary & Session Logs:** Always show the full receipt type label for all 3 options (`ใบกำกับภาษีในนามนิติบุคคล`, `ใบกำกับภาษีในนามบุคคล`, `ใบเสร็จอย่างย่อ`), plus `VAT Refund` when selected.
 
+## D129 — FileMaker script set v4.2 and the SES side of a code review of v4.1 / D127 (2026-11-11)
 
+A Codex review of the v4.1 script set and the FileMaker integration (owner asked for it before sending v4.1 to the FMP team) found:
 
+1. **`BILL_CONFIRMED` never recovered.** When the draft (`pos_front_sale_tmp`) is gone because the cashier confirmed it into a real bill
+   (`pos_front_sale`), v4.1 answered `BILL_CONFIRMED` without touching the `ses` record (still `DONE`, `sale_id` kept), so every later
+   send took the release path again and answered the same, never opening a new draft. v4.2 looks the real bill up by `ses_id`
+   (`$REAL_BILL_SQL` = all, `$REAL_BILL_ACTIVE_SQL` = not voided, which the FMP team fills in): **ACTIVE** = no new draft (no double
+   bill), the order's round is remembered and the next send checks again; **VOIDED** = carry on (release answers
+   `NOTHING_TO_RELEASE`, a new round opens a new draft); **UNKNOWN** (active query not set, no `ses_id` on the real bill, SQL error) =
+   answer `BILL_CONFIRMED` (`realBill` in the result) and, with `$UNKNOWN_REOPEN = 1` (default), free the record (`RETURNED`, no
+   `sale_id`) so the next send opens a draft (`0` = keep blocking until the real bill can be checked). A configured active query that
+   fails (`"?"`) is **ERROR**: `RELEASE_FAILED`, nothing touched.
+   A cancelled order closes the record (`CANCELLED`) in every case. A new STOCK round does not raise `ses_rev` on this path, so an
+   ADMIN's "ส่งซ้ำ" of the same round after the real bill is voided is not answered `STALE`.
+2. **`PROCESSING` had no expiry**: a run that stopped after marking the record answered `IN_PROGRESS` forever. v4.2 treats a
+   `PROCESSING` older than `$PROCESSING_TIMEOUT_MIN` (5) minutes as stopped and carries on (warning `STALE_RUN_RECOVERED`); the bill and
+   the `DONE` mark are one transaction, so a stopped run leaves no draft.
+3. **A send-back during an unfinished send** could be overtaken by the older run re-creating the draft. v4.2: a release while another run
+   is fresh in `PROCESSING` answers `IN_PROGRESS`. The run's start time (`$runAt`, written to `status_at` with `PROCESSING`) is its
+   ownership token: inside the bill transaction the script opens (locks and refreshes) the `ses` record first and reverts with 5009 if it
+   is no longer `PROCESSING` with that `status_at` (answered `STALE`, no `ses_fail`, so a newer run's state is not overwritten); a record
+   locked by another run reverts with 5008 (answered `IN_PROGRESS`). **SES** now sends a message again on its normal back-off when the script answers
+   `{ok:false, code:"IN_PROGRESS"}` (`scriptIsBusy`), instead of filing it as a final error.
+4. **ExecuteSQL errors were guessed**: a failed customer lookup (`"?"`) became "new customer" (an unlinked draft), a failed branch lookup
+   `WRONG_BRANCH`, and the sold/held count compared `"?"` as text. v4.2 answers `QUERY_FAILED` / `SN_CHECK_ERROR`.
+5. **A wrong `$NOTE_FIELD`** was hidden (later steps reset `LastError` before the transaction's check). v4.2 checks right after the write
+   and reverts the bill with the field's name (custom errors 5004-5007 for the note and the optional fields below).
+6. **Card, months and receipt type did not reach FileMaker.** `orderView` adds `paymentDetails` (`method`, `type`, `cardType`,
+   `installmentMonths`, `label`) and `receiptTypeLabel` (D128's Thai label); `payments` / `paymentTypes` are unchanged. v4.2 appends the
+   card labels, the receipt label and "VAT Refund" to the draft's note, and writes mapped values (`$RECEIPT_MAP`, `$CARD_MAP`) into
+   `$RECEIPT_FIELD` / `$CARD_FIELD` / `$INSTALLMENT_FIELD` when the FMP team names them (empty = note only). The owner's call: send
+   everything with labels and maps, the FMP team decides where it goes.
+7. **D127 was enforced only in the browser.** `confirmPurchase` now refuses a `Full Credit Card` payment without a card, a `0% Credit Card`
+   without card and months, a card ADMIN does not offer (or switched off) for that method, or months the card does not support.
+8. **D125 web/API mismatch**: the web classified IMEI vs serial from the SKU name in place of the model name; when only the model name says
+   "Cellular" the two disagreed. The web now passes the model name too (`Product.modelName`), the same inputs as the server.
+9. **Order page wording** for the release answers (`RELEASED`, `NOTHING_TO_RELEASE`, `BILL_CONFIRMED`, `BILL_IN_USE`, `RELEASE_FAILED`) and
+   `QUERY_FAILED` tells the cashier what to do instead of "FileMaker ไม่รับ … แจ้ง ADMIN".

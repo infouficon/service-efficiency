@@ -177,6 +177,20 @@ export function scriptVerdict(result: string, wasUpdate: boolean): { status: 'su
   return { status: r.ok ? 'success' : 'error', message: `${code || (r.ok ? 'OK' : 'ERROR')}${sale}${lines}${message}`.slice(0, 255) };
 }
 
+/**
+ * D129: the `ses` script answered IN_PROGRESS: FileMaker is still opening this order's bill from an earlier message (v4.2 lets a
+ * stuck run go after 5 minutes). Nothing was done with this message, so it is sent again on the normal back-off, not marked done.
+ */
+export function scriptIsBusy(result: string | null): boolean {
+  if (!result) return false;
+  try {
+    const parsed = JSON.parse(result) as { ok?: unknown; code?: unknown } | null;
+    return !!parsed && parsed.ok === false && parsed.code === 'IN_PROGRESS';
+  } catch {
+    return false;
+  }
+}
+
 /** One serial number as the `ses` script v3.3 checked it (D119). */
 export interface SnCheck {
   sn: string;
@@ -681,6 +695,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
         summary: `สคริปต์ ${cfg.script} ตอบ: ${verdict.message}`.slice(0, 255),
         response: scriptResult.slice(0, 8000),
       });
+    if (scriptIsBusy(scriptResult)) throw new Error('FileMaker ยังเปิดบิลจากข้อความก่อนหน้าไม่เสร็จ (IN_PROGRESS)');
     return {
       recordId: recordId ?? (res.response.recordId === undefined ? null : String(res.response.recordId).slice(0, 32)),
       script: scriptResult === null ? null : scriptResult.slice(0, 200),

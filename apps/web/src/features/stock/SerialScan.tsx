@@ -135,7 +135,7 @@ export function SerialScan({
     const sn = raw.trim().toUpperCase();
     if (!sn) return;
     // D124/D125: an IMEI that is not 15 digits with a valid check digit, or the wrong kind of number for this product
-    const kind = serialKindOf(item.product.category, item.product.product, item.product.model);
+    const kind = serialKindOf(item.product.category, item.product.product, item.product.modelName, item.product.model);
     const problem = serialProblem(sn, kind)
       ? serialProblem(sn, kind)
       : session.selection.items.some((one) => one.serials?.some((serial) => serial.sn === sn)) ||
@@ -299,7 +299,7 @@ export function SerialScan({
                   ...queued.map((scan) => scan.sn),
                 ]}
                 problem={problem}
-                accepts={(sn) => !serialProblem(sn, serialKindOf(item.product.category, item.product.product, item.product.model))}
+                accepts={(sn) => !serialProblem(sn, serialKindOf(item.product.category, item.product.product, item.product.modelName, item.product.model))}
                 onScan={(sn) => submit(item, sn)}
                 onClose={() => setCameraFor(null)}
               />

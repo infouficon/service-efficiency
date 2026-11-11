@@ -170,6 +170,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
           category: item.sku.model.product.category,
           product: item.sku.model.product.name,
           model: item.sku.name || item.sku.model.name,
+          modelName: item.sku.model.name,
           sku: item.sku.sku,
         },
       })),

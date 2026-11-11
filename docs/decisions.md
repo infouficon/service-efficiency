@@ -1853,15 +1853,19 @@ A Codex review of the v4.1 script set and the FileMaker integration (owner asked
    (`$REAL_BILL_SQL` = all, `$REAL_BILL_ACTIVE_SQL` = not voided, which the FMP team fills in): **ACTIVE** = no new draft (no double
    bill), the order's round is remembered and the next send checks again; **VOIDED** = carry on (release answers
    `NOTHING_TO_RELEASE`, a new round opens a new draft); **UNKNOWN** (active query not set, no `ses_id` on the real bill, SQL error) =
-   answer `BILL_CONFIRMED` (`realBill` in the result) but free the record (`RETURNED`, no `sale_id`) so the next send opens a draft.
+   answer `BILL_CONFIRMED` (`realBill` in the result) and, with `$UNKNOWN_REOPEN = 1` (default), free the record (`RETURNED`, no
+   `sale_id`) so the next send opens a draft (`0` = keep blocking until the real bill can be checked). A configured active query that
+   fails (`"?"`) is **ERROR**: `RELEASE_FAILED`, nothing touched.
    A cancelled order closes the record (`CANCELLED`) in every case. A new STOCK round does not raise `ses_rev` on this path, so an
    ADMIN's "ส่งซ้ำ" of the same round after the real bill is voided is not answered `STALE`.
 2. **`PROCESSING` had no expiry**: a run that stopped after marking the record answered `IN_PROGRESS` forever. v4.2 treats a
    `PROCESSING` older than `$PROCESSING_TIMEOUT_MIN` (5) minutes as stopped and carries on (warning `STALE_RUN_RECOVERED`); the bill and
    the `DONE` mark are one transaction, so a stopped run leaves no draft.
 3. **A send-back during an unfinished send** could be overtaken by the older run re-creating the draft. v4.2: a release while another run
-   is fresh in `PROCESSING` answers `IN_PROGRESS`; before writing the bill the script re-reads the record (`ROWID`) and answers `STALE`
-   if it is no longer `PROCESSING`. **SES** now sends a message again on its normal back-off when the script answers
+   is fresh in `PROCESSING` answers `IN_PROGRESS`. The run's start time (`$runAt`, written to `status_at` with `PROCESSING`) is its
+   ownership token: inside the bill transaction the script opens (locks and refreshes) the `ses` record first and reverts with 5009 if it
+   is no longer `PROCESSING` with that `status_at` (answered `STALE`, no `ses_fail`, so a newer run's state is not overwritten); a record
+   locked by another run reverts with 5008 (answered `IN_PROGRESS`). **SES** now sends a message again on its normal back-off when the script answers
    `{ok:false, code:"IN_PROGRESS"}` (`scriptIsBusy`), instead of filing it as a final error.
 4. **ExecuteSQL errors were guessed**: a failed customer lookup (`"?"`) became "new customer" (an unlinked draft), a failed branch lookup
    `WRONG_BRANCH`, and the sold/held count compared `"?"` as text. v4.2 answers `QUERY_FAILED` / `SN_CHECK_ERROR`.

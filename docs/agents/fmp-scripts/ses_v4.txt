@@ -15,7 +15,8 @@
 # [SES v4.2]   1) ร่างหาย (ยืนยันเป็นบิลจริงแล้ว) ไม่วนติด BILL_CONFIRMED อีก: ดูบิลจริงใน pos_front_sale ตาม ses_id
 # [SES v4.2]      บิลจริงยังอยู่ = ไม่เปิดร่างใหม่ · ยกเลิกแล้ว = เปิดร่างใหม่ได้ · ตรวจไม่ได้ = ปล่อย record ให้รอบถัดไปเปิดร่างใหม่ + เตือน
 # [SES v4.2]   2) PROCESSING ค้างเกิน $PROCESSING_TIMEOUT_MIN นาที (รอบก่อนหยุดกลางทาง) ทำต่อได้ ไม่ค้าง IN_PROGRESS ตลอดไป
-# [SES v4.2]   3) กันชน: ส่งกลับ STOCK / ยกเลิก ระหว่างที่รอบก่อนกำลังเปิดบิล = ตอบ IN_PROGRESS (SES ส่งซ้ำเอง) · ก่อนเขียนบิลอ่านสถานะซ้ำ
+# [SES v4.2]   3) กันชน: ส่งกลับ STOCK / ยกเลิก ระหว่างที่รอบก่อนกำลังเปิดบิล = ตอบ IN_PROGRESS (SES ส่งซ้ำเอง) · ก่อนเขียนบิลจอง record
+# [SES v4.2]      แล้วเช็คว่ายังเป็นของรอบนี้ ($runAt) ไม่ใช่ = STALE ไม่เปิดบิล
 # [SES v4.2]   4) ExecuteSQL error ตอนหาลูกค้า / สาขา / SN ขายแล้ว = ตอบ error (QUERY_FAILED / SN_CHECK_ERROR) ไม่เดาว่าเป็นลูกค้าใหม่
 # [SES v4.2]   5) เขียนหมายเหตุลง $NOTE_FIELD ไม่ได้ (ชื่อฟิลด์ผิด) = ยกเลิกทั้งบิลพร้อมบอกสาเหตุ ไม่เงียบ
 # [SES v4.2]   6) บัตร / เดือนผ่อน (paymentDetails) ประเภทใบเสร็จ (receiptType) และ VAT Refund ต่อท้ายหมายเหตุ
@@ -76,6 +77,10 @@ Set Variable [ $PROCESSING_TIMEOUT_MIN ; Value: 5 ]
 # [SES v4.2]   ปล่อย $REAL_BILL_ACTIVE_SQL ว่าง = ตรวจไม่ได้: ไม่เปิดร่างทันที ตอบ BILL_CONFIRMED แต่ปล่อย record ให้รอบส่งถัดไปเปิดร่างใหม่
 Set Variable [ $REAL_BILL_SQL ; Value: "SELECT COUNT(*) FROM pos_front_sale WHERE ses_id = ?" ]
 Set Variable [ $REAL_BILL_ACTIVE_SQL ; Value: "" ]
+# [SES v4.2] ตรวจบิลจริงไม่ได้ (ยังไม่ตั้ง $REAL_BILL_ACTIVE_SQL หรือบิลจริงไม่มี ses_id):
+# [SES v4.2]   1 = ปล่อย record ให้รอบส่งถัดไปเปิดร่างใหม่ (ไม่วนติด แต่ถ้าแคชเชียร์ลืมยกเลิกบิลจริงใบเดิม จะมีบิลสองใบ)
+# [SES v4.2]   0 = ไม่เปิดร่างใหม่จนกว่าจะตรวจได้ว่าบิลจริงยกเลิกแล้ว (ต้องตั้ง $REAL_BILL_ACTIVE_SQL ให้ใช้ได้ ไม่งั้นวนติดแบบ v4.1)
+Set Variable [ $UNKNOWN_REOPEN ; Value: 1 ]
 # [SES v4.2] ฟิลด์ของ FMP ที่จะลงค่าจาก SES (ชื่อเต็ม "ตาราง::ฟิลด์") เว้นว่าง = ไม่ลง (ยังอยู่ในหมายเหตุให้แคชเชียร์อ่านเหมือนเดิม)
 Set Variable [ $RECEIPT_FIELD ; Value: "" ]
 Set Variable [ $CARD_FIELD ; Value: "" ]
@@ -146,8 +151,7 @@ If [ Get ( FoundCount ) > 1 ]
 	Go to Record/Request/Page [ First ]
 	Omit Multiple Records [ With dialog: Off ; Get ( FoundCount ) - 1 ]
 End If
-# [SES v4.2] จำ record ไว้อ่านสถานะซ้ำก่อนเขียนบิล (ข้อ 4) · PROCESSING ที่ยังไม่หมดเวลา = มีสคริปต์อีกตัวกำลังเปิดบิลของออเดอร์นี้อยู่
-Set Variable [ $sesRowID ; Value: Get ( RecordID ) ]
+# [SES v4.2] PROCESSING ที่ยังไม่หมดเวลา = มีสคริปต์อีกตัวกำลังเปิดบิลของออเดอร์นี้อยู่
 Set Variable [ $busy ; Value: ses::ses_status = "PROCESSING" and not IsEmpty ( ses::status_at ) and ( Get ( CurrentHostTimestamp ) - ses::status_at ) < $PROCESSING_TIMEOUT_MIN * 60 ]
 # 
 # =====================================================================
@@ -201,10 +205,19 @@ If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
 		If [ IsEmpty ( $hStatus ) ]
 			Set Variable [ $realAll ; Value: ExecuteSQL ( $REAL_BILL_SQL ; "" ; "" ; $sesID ) ]
 			Set Variable [ $realActive ; Value: If ( IsEmpty ( $REAL_BILL_ACTIVE_SQL ) ; "?" ; ExecuteSQL ( $REAL_BILL_ACTIVE_SQL ; "" ; "" ; $sesID ) ) ]
+			# ตั้ง $REAL_BILL_ACTIVE_SQL แล้วแต่ SQL error = ERROR (ชั่วคราว ไม่แตะอะไร) · ยังไม่ตั้ง หรือไม่พบบิลจริงของ ses_id นี้ = UNKNOWN
 			Set Variable [ $realState ; Value: Case (
-				$realActive ≠ "?" and GetAsNumber ( $realActive ) > 0 ; "ACTIVE" ;
-				$realActive ≠ "?" and $realAll ≠ "?" and GetAsNumber ( $realAll ) > 0 ; "VOIDED" ;
+				IsEmpty ( $REAL_BILL_ACTIVE_SQL ) ; "UNKNOWN" ;
+				$realActive = "?" ; "ERROR" ;
+				GetAsNumber ( $realActive ) > 0 ; "ACTIVE" ;
+				$realAll = "?" ; "ERROR" ;
+				GetAsNumber ( $realAll ) > 0 ; "VOIDED" ;
 				"UNKNOWN" ) ]
+			If [ $realState = "ERROR" ]
+				Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "RELEASE_FAILED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "ตรวจบิลจริงไม่ได้ (ExecuteSQL error ดู $REAL_BILL_ACTIVE_SQL / $REAL_BILL_SQL) ไม่ได้ทำอะไร" ; JSONString ] ) ]
+			End If
+			# UNKNOWN + $UNKNOWN_REOPEN = 1: ปล่อย record · UNKNOWN + 0: ทำเหมือนบิลจริงยังอยู่ (ไม่เปิดร่างใหม่)
+			Set Variable [ $freeRecord ; Value: $realState = "UNKNOWN" and $UNKNOWN_REOPEN ]
 			# รอบใหม่จาก STOCK ไม่ขยับ ses_rev: ADMIN กด "ส่งซ้ำ" (รอบเดิม) หลังแคชเชียร์ยกเลิกบิลจริงแล้ว จะได้ไม่ถูกตอบ STALE
 			Set Variable [ $keepRev ; Value: If ( $isRelease ; Max ( $rev ; $lastRev ) ; $lastRev ) ]
 			If [ $realState ≠ "VOIDED" ]
@@ -212,12 +225,12 @@ If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
 				Set Field [ ses::ses_error ; "BILL_CONFIRMED " & $realState & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) ]
 				Set Field [ ses::status_at ; Get ( CurrentHostTimestamp ) ]
 				# ยกเลิกออเดอร์ = ปิด record ถาวรทุกกรณี · ตรวจไม่ได้ = ปล่อย record (RETURNED ไม่มี sale_id) ให้รอบถัดไปเปิดร่างใหม่
-				If [ $event = "CANCELLED" or $realState = "UNKNOWN" ]
+				If [ $event = "CANCELLED" or $freeRecord ]
 					Set Field [ ses::ses_status ; If ( $event = "CANCELLED" ; "CANCELLED" ; "RETURNED" ) ]
 					Set Field [ ses::sale_id ; "" ]
 				End If
 				Commit Records/Requests [ Skip data entry validation ; With dialog: Off ]
-				Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "BILL_CONFIRMED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "realBill" ; $realState ; JSONString ] ; [ "message" ; If ( $realState = "ACTIVE" ; "บิลจริงของออเดอร์นี้ยังไม่ถูกยกเลิก ไม่ได้เปิดร่างใหม่ แคชเชียร์ยกเลิกบิลจริงใน FMP ก่อน แล้วส่งใหม่" ; "ไม่พบร่างบิลแล้ว (แคชเชียร์ยืนยันเป็นบิลจริงไปแล้ว) ไม่ได้เอาออก แคชเชียร์ต้องยกเลิกบิลจริงใน FMP เอง · รอบส่งถัดไปจะเปิดร่างใบใหม่" ) ; JSONString ] ) ]
+				Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "BILL_CONFIRMED" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "realBill" ; $realState ; JSONString ] ; [ "message" ; Case ( $realState = "ACTIVE" ; "บิลจริงของออเดอร์นี้ยังไม่ถูกยกเลิก ไม่ได้เปิดร่างใหม่ แคชเชียร์ยกเลิกบิลจริงใน FMP ก่อน แล้วส่งใหม่" ; not $freeRecord ; "ตรวจไม่ได้ว่าบิลจริงยกเลิกแล้วหรือยัง ($REAL_BILL_ACTIVE_SQL) ไม่ได้เปิดร่างใหม่ แคชเชียร์ยกเลิกบิลจริงใน FMP เอง" ; "ไม่พบร่างบิลแล้ว (แคชเชียร์ยืนยันเป็นบิลจริงไปแล้ว) ไม่ได้เอาออก แคชเชียร์ต้องยกเลิกบิลจริงใน FMP เอง · รอบส่งถัดไปจะเปิดร่างใบใหม่" ) ; JSONString ] ) ]
 			End If
 			# VOIDED: บิลจริงยกเลิกแล้ว ไม่มีร่างให้ลบ ไปล้าง record ด้านล่าง
 			Set Variable [ $voided ; Value: True ]
@@ -288,7 +301,9 @@ Set Field [ ses::ses_status ; "PROCESSING" ]
 # [SES v3.4] จำรอบที่กำลังทำ (ล้มก็ยังจำ ข้อความรอบเก่าที่มาช้าจะได้ไม่ทำซ้ำ)
 Set Field [ ses::ses_rev ; Max ( $rev ; $lastRev ) ]
 Set Field [ ses::ses_error ; "" ]
-Set Field [ ses::status_at ; Get ( CurrentHostTimestamp ) ]
+# [SES v4.2] เวลาเริ่มรอบนี้ = ตัวบอกเจ้าของ record (ข้อ 4 เช็คว่ายังเป็นของรอบนี้ ก่อนเขียนบิล)
+Set Variable [ $runAt ; Value: Get ( CurrentHostTimestamp ) ]
+Set Field [ ses::status_at ; $runAt ]
 Commit Records/Requests [ Skip data entry validation ; With dialog: Off ]
 # 
 # =====================================================================
@@ -644,13 +659,6 @@ If [ not IsEmpty ( $errCode ) ]
 	Exit Script [ Text Result: Get ( ScriptResult ) ]
 End If
 # 
-# [SES v4.2] กันชน: ระหว่างตรวจข้อมูล อาจมีข้อความส่งกลับ STOCK / ยกเลิก มาเปลี่ยน record ses ไปแล้ว อ่านค่าล่าสุดก่อนเขียนบิล
-# ("?" = อ่านไม่ได้ ทำต่อตามเดิม)
-Set Variable [ $nowStatus ; Value: ExecuteSQL ( "SELECT ses_status FROM ses WHERE ROWID = ?" ; "" ; "" ; $sesRowID ) ]
-If [ $nowStatus ≠ "?" and $nowStatus ≠ "PROCESSING" ]
-	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; "STALE" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "message" ; "ระหว่างเตรียมบิล ออเดอร์ถูกเปลี่ยนเป็น " & If ( IsEmpty ( $nowStatus ) ; "(ว่าง)" ; $nowStatus ) & " แล้ว ไม่เปิดบิลจากข้อความนี้" ; JSONString ] ) ]
-End If
-# 
 # [SES v4.2] หมายเหตุ: ref · คิว · ครั้งที่แก้ · บัตร/เดือนผ่อน · ประเภทใบเสร็จ · VAT Refund
 Set Variable [ $note ; Value: $sesID & " · คิว " & $queue
 	& If ( $rev > 1 ; " · แก้ไขครั้งที่ " & $rev & If ( IsEmpty ( $revNote ) ; "" ; ": " & $revNote ) ; "" )
@@ -661,6 +669,12 @@ Set Variable [ $note ; Value: $sesID & " · คิว " & $queue
 # 4. เขียนบิลใน Transaction เดียว (ล้มตรงไหน = Rollback ทั้งบิล)
 # =====================================================================
 Open Transaction []
+	# [SES v4.2] กันชน: จอง record ses ก่อนเขียนบิล (Open Record ดึงค่าล่าสุดจาก server และล็อกไว้จนจบ Transaction)
+	# ระหว่างตรวจข้อมูล ข้อความส่งกลับ STOCK / ยกเลิก / รอบใหม่ อาจเปลี่ยน record ไปแล้ว: ถ้าไม่ใช่ PROCESSING ของรอบนี้ ($runAt) ไม่เขียนบิล
+	Go to Layout [ “ses” (ses) ; Animation: None ]
+	Open Record/Request
+	Revert Transaction [ Condition: Get ( LastError ) ≠ 0 ; Error Code: 5008 ; Error Message: "ses record is in use by another run (" & Get ( LastError ) & ")" ]
+	Revert Transaction [ Condition: ses::ses_status ≠ "PROCESSING" or ses::status_at ≠ $runAt ; Error Code: 5009 ; Error Message: "superseded: ses_status = " & ses::ses_status ]
 	# In Claris FileMaker Pro, custom error codes specified in the Revert Transaction script step must fall within the range of 5000 to 5499.
 When you assign a custom code and message within this range, FileMaker stops the transaction, reverts any changes made within the block, and passes your specified code to the Get ( LastError ) function right after the Commit Transaction line.
 	# 
@@ -822,6 +836,14 @@ Set Variable [ $txErr ; Value: Get ( LastError ) ]
 Set Variable [ $txDetail ; Value: Get ( LastErrorDetail ) ]
 # 
 # ---------- 5. ผลลัพธ์ ----------
+# [SES v4.2] ถูกรอบอื่นแทนที่ระหว่างเตรียมบิล: ไม่แตะ record (ไม่เรียก ses_fail ซึ่งจะทับสถานะของรอบใหม่) ไม่มีบิล
+If [ $txErr = 5009 ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; True ; JSONBoolean ] ; [ "code" ; "STALE" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "revision" ; $rev ; JSONNumber ] ; [ "message" ; "ระหว่างเตรียมบิล ออเดอร์ถูกส่งกลับ / ยกเลิก / ส่งรอบใหม่แล้ว ไม่เปิดบิลจากข้อความนี้" ; JSONString ] ) ]
+End If
+# [SES v4.2] record ถูกอีกรอบใช้อยู่: SES ส่งข้อความนี้ซ้ำเอง (สถานะ PROCESSING ของรอบนี้หมดเวลาใน $PROCESSING_TIMEOUT_MIN นาที)
+If [ $txErr = 5008 ]
+	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "IN_PROGRESS" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "message" ; $txDetail ; JSONString ] ) ]
+End If
 If [ $txErr ≠ 0 ]
 	# [SES v3.3] ส่ง snCheck ด้วย
 	Perform Script [ “ses_fail” ; Specified: From list ; Parameter: JSONSetElement ( "{}" ;             [ "code" ; "TRANSACTION_FAILED" ; JSONString ] ;             [ "message" ; $txErr & " " & $txDetail ; JSONString ] ;             [ "snCheck" ; $snCheck ; JSONArray ] ) ]

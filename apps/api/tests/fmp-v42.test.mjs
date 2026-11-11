@@ -101,6 +101,7 @@ test('an order paid by card cannot be confirmed without the card and months ADMI
       return request(`/sessions/${id}/confirm`, 'POST', undefined, cookies.staff);
     };
 
+    assert.equal((await tryConfirm([{ method: '0% Credit Card ' }])).status, 400, 'a trailing space does not skip the check');
     const noCard = await tryConfirm([{ method: 'Full Credit Card' }]);
     assert.equal(noCard.status, 400);
     assert.match(JSON.stringify(noCard.data), /card type/);

@@ -836,13 +836,14 @@ export class SessionsService {
    */
   private async assertCardDetails(payments: { method: string; cardType: string | null; installmentMonths: number | null }[]) {
     for (const p of payments) {
-      const needsMonths = CARD_METHODS.get(p.method.toLowerCase());
+      // trimmed: FileMaker trims the method name before mapping, so "0% Credit Card " must not slip past this check
+      const needsMonths = CARD_METHODS.get(p.method.trim().toLowerCase());
       if (needsMonths === undefined) continue;
       if (!p.cardType) throw new BadRequestException(`${p.method}: choose the card type before confirmation`);
       if (needsMonths && !p.installmentMonths)
         throw new BadRequestException(`${p.method}: choose the installment months before confirmation`);
       const option = await this.prisma.paymentCardOption.findFirst({
-        where: { name: p.cardType, active: true, paymentMethod: { name: p.method } },
+        where: { name: p.cardType.trim(), active: true, paymentMethod: { name: p.method.trim() } },
         select: { installmentMonths: true },
       });
       if (!option) throw new BadRequestException(`${p.method}: card ${p.cardType} is not offered any more, choose again`);

@@ -312,7 +312,7 @@ export function App({
           </button>
         </div>
 
-        <p className="nav-label">WORKSPACES</p>
+        <p className="nav-label">พื้นที่ทำงาน</p>
         <nav>
           {canAccessStaff && (
             <button

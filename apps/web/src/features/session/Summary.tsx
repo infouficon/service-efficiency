@@ -5,6 +5,8 @@ import {
   ShoppingBag,
   Percent,
   CreditCard,
+  Plane,
+  ReceiptText,
 } from 'lucide-react';
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
@@ -201,14 +203,15 @@ export function Summary({
                           gap: '4px',
                           padding: '2px 8px',
                           borderRadius: '4px',
-                          background: isTax ? '#eff6ff' : '#f1f5f9',
-                          color: isTax ? '#1d4ed8' : '#334155',
+                          background: isTax ? 'var(--bg-info)' : 'var(--bg-subtle)',
+                          color: isTax ? 'var(--color-info)' : 'var(--text-secondary)',
                           fontSize: '12px',
-                          fontWeight: 600,
-                          border: isTax ? '1px solid #bfdbfe' : '1px solid #cbd5e1',
+                          fontWeight: 500,
+                          border: isTax ? '1px solid var(--border-info)' : '1px solid var(--border-color)',
                         }}
                       >
-                        🧾 {docLabel}
+                        <ReceiptText size={12} strokeWidth={1.6} />
+                        {docLabel}
                       </span>
                     )}
                     {wantsVat && (
@@ -219,14 +222,15 @@ export function Summary({
                           gap: '4px',
                           padding: '2px 8px',
                           borderRadius: '4px',
-                          background: '#fef3c7',
-                          color: '#b45309',
+                          background: 'var(--bg-warning)',
+                          color: 'var(--color-warning)',
                           fontSize: '12px',
-                          fontWeight: 600,
-                          border: '1px solid #fde68a',
+                          fontWeight: 500,
+                          border: '1px solid var(--border-warning)',
                         }}
                       >
-                        ✈️ VAT Refund
+                        <Plane size={12} strokeWidth={1.6} />
+                        VAT Refund
                       </span>
                     )}
                   </div>

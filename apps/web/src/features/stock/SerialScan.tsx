@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Camera, X } from 'lucide-react';
+import { Camera, Check, X } from 'lucide-react';
 import { Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
@@ -20,8 +20,8 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
   const title = 'FileMaker ตอนนี้';
   if (check.verdict === 'here')
     return (
-      <span className="fmp-mark ok" title={`${title}: ready ที่สาขานี้`}>
-        ✓ สต็อก
+      <span className="fmp-mark ok" title={`${title}: ready ที่สาขานี้`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <Check size={12} strokeWidth={1.75} /> สต็อก
       </span>
     );
   const text =
@@ -209,7 +209,7 @@ export function SerialScan({
       </strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
         สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบ (Mac / iPad Wi-Fi / Watch GPS ใช้ Serial No. ขึ้นต้นด้วยตัวอักษร · iPhone / iPad Cellular / Watch Cellular ใช้ IMEI 15 หลัก) เครื่องสแกนยิงได้เลยไม่ต้องกดที่ช่อง
-        หรือกด 📷 ใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่ ต้องครบทุกเครื่องก่อนกดส่ง (อุปกรณ์เสริมไม่ต้องสแกน)
+        หรือกดปุ่มกล้องเพื่อใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่ ต้องครบทุกเครื่องก่อนกดส่ง (อุปกรณ์เสริมไม่ต้องสแกน)
       </p>
       {allDone && <span className="serial-scan-problem">{allDone}</span>}
       {items.map((item) => {

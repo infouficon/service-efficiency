@@ -1806,7 +1806,7 @@ Owner instruction via `/grill-me`: when staff pick "Full Credit Card" or "0% Cre
 
 1. **Card Options Model & Admin Management:**
    - `PaymentCardOption`: `id`, `paymentMethodId` (FK to `PaymentMethod`), `name` (unique per method), `active` (boolean), `position` (int), `installmentMonths` (JSON array of integers, e.g. `[3, 6, 10]`, or `null` for full payment).
-   - In Admin → ช่องทางชำระเงิน (`PaymentMethodsPanel`), a "ตั้งค่าบัตร" button opens a modal to manage card types for `Full Credit Card` and `0% Credit Card`: add new cards, toggle active/inactive, reorder, delete, and configure supported installment months per card.
+   - In Admin → ช่องทางชำระเงิน (`PaymentMethodsPanel`), a "ตั้งค่าบัตร" button opens a modal to manage card types for `Full Credit Card` and `0% Credit Card`: add new cards, rename (applies to future selections; historical `SessionPayment.cardType` snapshots stay unchanged), toggle active/inactive, reorder (via drag-and-drop handle or up/down arrows), delete, and configure supported installment months per card.
    - Migration `202611100004_payment_card_options` seeds popular Thai bank cards (KBank, SCB, KTC, BBL, Krungsri, TTB, UOB, CardX, First Choice) with default 0% installment months `[3, 6, 10]`.
 
 2. **Session Selection & Validation:**

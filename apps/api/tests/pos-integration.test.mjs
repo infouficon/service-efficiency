@@ -56,6 +56,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
               payments: ['Cash'],
               ontop: ['AIS'],
               points: ['MCard'],
+              receiptType: 'SIMPLIFIED',
             },
             'staff',
           );

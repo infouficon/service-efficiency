@@ -7,12 +7,13 @@ import type {
   PaymentMethod,
   MockSession,
   Outcome,
+  ReceiptType,
   Selection,
   Timestamp,
   WorkflowState,
   FmpStatus,
 } from '../types/session';
-import { formatQueue } from '../features/session/workflow';
+import { formatQueue, isTaxInvoiceReceipt } from '../features/session/workflow';
 
 export interface ApiSession {
   id: string;
@@ -44,6 +45,7 @@ export interface ApiSession {
   posBillOpenedAt?: string | null;
   vatRefund?: boolean | null;
   taxInvoice?: boolean | null;
+  receiptType?: ReceiptType | null;
   fmp?: FmpStatus | null;
   rebuyOf?: { id: string; reference: string } | null;
   rebuiltAs?: { id: string; reference: string } | null;
@@ -150,7 +152,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     posBillNo: s.posBillNo || undefined,
     posBillOpenedAt: s.posBillOpenedAt || undefined,
     vatRefund: Boolean(s.vatRefund),
-    taxInvoice: Boolean(s.taxInvoice),
+    taxInvoice: isTaxInvoiceReceipt(s.receiptType, Boolean(s.taxInvoice)),
+    receiptType: s.receiptType ?? null,
     fmp: s.fmp ?? null,
     stockAckAt: s.stockAckAt || undefined,
     stockAckBy: s.stockAckBy || undefined,
@@ -183,7 +186,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
           }))
         : [],
       vatRefund: Boolean(s.vatRefund),
-      taxInvoice: Boolean(s.taxInvoice),
+      taxInvoice: isTaxInvoiceReceipt(s.receiptType, Boolean(s.taxInvoice)),
+      receiptType: s.receiptType ?? null,
     },
     stockPendingReview: s.stockReview
       ? {
@@ -405,7 +409,8 @@ export async function updateSelectionApi(
     payments: selection.payments,
     paymentDetails: selection.paymentDetails,
     vatRefund: Boolean(selection.vatRefund),
-    taxInvoice: Boolean(selection.taxInvoice),
+    taxInvoice: isTaxInvoiceReceipt(selection.receiptType, Boolean(selection.taxInvoice)),
+    receiptType: selection.receiptType ?? undefined,
     // F3: the main products as a whole list (SKU id + quantity)
     items: selection.items.map((item) => ({
       skuId: item.product.id,

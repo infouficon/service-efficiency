@@ -1110,6 +1110,13 @@ export class SessionsService {
         }
       }
 
+      const nextReceiptType =
+        dto.receiptType !== undefined ? dto.receiptType : session.receiptType;
+      const nextTaxInvoice =
+        nextReceiptType != null
+          ? nextReceiptType === 'TAX_CORPORATE' || nextReceiptType === 'TAX_INDIVIDUAL'
+          : (dto.taxInvoice ?? session.taxInvoice);
+
       return tx.customerSession.update({
         where: { id: session.id },
         data: {
@@ -1117,7 +1124,8 @@ export class SessionsService {
           customerId,
           customerTypeId: nextCustomerTypeId,
           vatRefund: dto.vatRefund ?? session.vatRefund,
-          taxInvoice: dto.taxInvoice ?? session.taxInvoice,
+          taxInvoice: nextTaxInvoice,
+          receiptType: nextReceiptType,
         },
         include: sessionInclude,
       });
@@ -1138,6 +1146,10 @@ export class SessionsService {
 
     if (session.items.length === 0) {
       throw new BadRequestException('A main product selection is required before confirmation');
+    }
+
+    if (!session.receiptType) {
+      throw new BadRequestException('Receipt type selection is required before confirmation');
     }
 
     const now = new Date();
@@ -1630,6 +1642,7 @@ export class SessionsService {
             rebuyOfId: old.id,
             vatRefund: old.vatRefund,
             taxInvoice: old.taxInvoice,
+            receiptType: old.receiptType,
             items: {
               create: old.items.map((item, index) => ({
                 skuId: item.skuId,

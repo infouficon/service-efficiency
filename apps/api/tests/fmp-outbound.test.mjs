@@ -134,6 +134,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
             payments: ['Cash', 'Transfer'],
             ontop: ['AIS'],
             points: ['MCard'],
+            receiptType: 'SIMPLIFIED',
           }, 'staff');
           await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
         } else {

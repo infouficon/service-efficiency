@@ -15,7 +15,7 @@ test('each order carries its FileMaker side for the shop: delivery and FileMaker
     const app = (path, method, body, who) => request(path, method, body, cookies[who]);
     const s = await app('/sessions', 'POST', { phone: '0999901234' }, 'staff');
     const id = s.data.id;
-    await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: sku.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [] }, 'staff');
+    await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: sku.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [], receiptType: 'SIMPLIFIED' }, 'staff');
     await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff');
     const one = async (who = 'staff') => (await app(`/sessions/${id}`, 'GET', undefined, who)).data;
     const inList = async (who = 'staff') => (await app('/sessions', 'GET', undefined, who)).data.find((x) => x.id === id);

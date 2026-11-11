@@ -50,6 +50,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
               payments: ['Cash', 'Transfer'],
               ontop: ['AIS'],
               points: ['MCard'],
+              receiptType: 'SIMPLIFIED',
             },
             'staff',
           );

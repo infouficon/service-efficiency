@@ -1825,4 +1825,23 @@ Owner instruction via `/grill-me`: when staff pick "Full Credit Card" or "0% Cre
    - `orderView` continues to send base method names in `payments` (e.g. `'Full Credit Card'`, `'0% Credit Card'`) and standard types in `paymentTypes` (e.g. `'บัตรเครดิต'`, `'บัตรเงินผ่อน'`), maintaining 100% compatibility with FileMaker script set v4 (`$PAYBY_MAP`, D126) and POS bills.
    - In Summary, Receipt, and Session Logs, payments are formatted with details, e.g. `Full Credit Card (KBank)` and `0% Credit Card (SCB 10 เดือน)`.
 
+## D128 — Required 3-way receipt type replacing single Tax Invoice toggle (2026-11-11)
+
+Supersedes the `taxInvoice` checkbox part of D122 via `/grill-me`: instead of a boolean "ต้องการใบกำกับภาษี" toggle, staff must explicitly pick one receipt type (no default) before reviewing or confirming a purchase:
+
+1. **Receipt Type Options (`ReceiptType` enum):**
+   - `TAX_CORPORATE` — **ใบกำกับภาษีในนามนิติบุคคล**
+   - `TAX_INDIVIDUAL` — **ใบกำกับภาษีในนามบุคคล**
+   - `SIMPLIFIED` — **ใบเสร็จอย่างย่อ**
+   - **No default & required:** Staff must select one of the 3 options before advancing from `SelectionEditor` to Summary or calling `POST /sessions/:id/confirm` (both UI `workflow` validation and `confirmPurchase` API enforce this).
+   - **Type-only handoff:** No extra customer tax ID, company name, or address fields are collected in SES; cashier/POS handles details at billing.
+2. **VAT Refund stays independent:** `ต้องการ VAT Refund` (`vatRefund`) remains an optional, independent checkbox that can be combined freely with any receipt type.
+3. **Persistence & Outbound (`orderView`):**
+   - Added nullable `receiptType` (`ReceiptType?`) on `CustomerSession` (migration `202611110001_receipt_type`); historical pre-D128 rows retain `null`. `rebuy` copies `receiptType`, `vatRefund`, and `taxInvoice`.
+   - `orderView` carries `receiptType` (`'TAX_CORPORATE' | 'TAX_INDIVIDUAL' | 'SIMPLIFIED' | null`) while continuing to send `taxInvoice: boolean` (true when `TAX_CORPORATE` or `TAX_INDIVIDUAL`, with boolean fallback for pre-D128 sessions) for compatibility with existing POS / FileMaker consumers.
+4. **Display:**
+   - **Queue cards & session header (`StaffWorkspace`):** Right-aligned badge appears only when a Tax Invoice type is chosen (`🧾 นิติบุคคล` / `🧾 บุคคล`), keeping `ใบเสร็จอย่างย่อ` clean on compact cards (`✈️ VAT` remains when `vatRefund` is enabled).
+   - **Summary & Session Logs:** Always show the full receipt type label for all 3 options (`ใบกำกับภาษีในนามนิติบุคคล`, `ใบกำกับภาษีในนามบุคคล`, `ใบเสร็จอย่างย่อ`), plus `VAT Refund` when selected.
+
+
 

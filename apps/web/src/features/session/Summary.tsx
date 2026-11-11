@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
-import { formatPaymentLabel, itemName } from './workflow';
+import { formatPaymentLabel, isTaxInvoiceReceipt, itemName, receiptTypeLabel } from './workflow';
 import { formatDisplayPhone } from '../../utils/phone';
 
 interface SummaryProps {
@@ -178,49 +178,61 @@ export function Summary({
                 )}
               </div>
             </div>
-            {(s?.taxInvoice || s?.vatRefund || session.taxInvoice || session.vatRefund) && (
-              <div className="info-item-row">
-                <span className="info-item-label">เอกสารภาษี:</span>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  {(s?.taxInvoice ?? session.taxInvoice) && (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        background: '#eff6ff',
-                        color: '#1d4ed8',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        border: '1px solid #bfdbfe',
-                      }}
-                    >
-                      🧾 ใบกำกับภาษี
-                    </span>
-                  )}
-                  {(s?.vatRefund ?? session.vatRefund) && (
-                    <span
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        background: '#fef3c7',
-                        color: '#b45309',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        border: '1px solid #fde68a',
-                      }}
-                    >
-                      ✈️ VAT Refund
-                    </span>
-                  )}
+            {(() => {
+              const docLabel = receiptTypeLabel(
+                s?.receiptType ?? session.receiptType,
+                s?.taxInvoice ?? session.taxInvoice,
+              );
+              const isTax = isTaxInvoiceReceipt(
+                s?.receiptType ?? session.receiptType,
+                s?.taxInvoice ?? session.taxInvoice,
+              );
+              const wantsVat = Boolean(s?.vatRefund ?? session.vatRefund);
+              if (!docLabel && !wantsVat) return null;
+              return (
+                <div className="info-item-row">
+                  <span className="info-item-label">ประเภทใบเสร็จ / เอกสารภาษี:</span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {docLabel && (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: isTax ? '#eff6ff' : '#f1f5f9',
+                          color: isTax ? '#1d4ed8' : '#334155',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          border: isTax ? '1px solid #bfdbfe' : '1px solid #cbd5e1',
+                        }}
+                      >
+                        🧾 {docLabel}
+                      </span>
+                    )}
+                    {wantsVat && (
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '2px 8px',
+                          borderRadius: '4px',
+                          background: '#fef3c7',
+                          color: '#b45309',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          border: '1px solid #fde68a',
+                        }}
+                      >
+                        ✈️ VAT Refund
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {session.fmp && (
               <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
                 <span className="info-item-label">FileMaker:</span>

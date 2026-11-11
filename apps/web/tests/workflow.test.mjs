@@ -25,6 +25,10 @@ import {
   itemChangeNotice,
   paymentsAreValid,
   formatPaymentLabel,
+  receiptTypeIsValid,
+  receiptTypeLabel,
+  receiptTypeBadgeLabel,
+  isTaxInvoiceReceipt,
   serialsLeft,
   serialsComplete,
 } from '../src/features/session/workflow.ts';
@@ -43,6 +47,7 @@ const fixture = () => ({
     points: [],
     burnPoints: [],
     payments: [],
+    receiptType: 'SIMPLIFIED',
   },
 });
 test('purchase path requires confirmation and separate cashier completion', () => {
@@ -572,17 +577,60 @@ test('a main product is found once every unit has a saved serial; browser-only i
   assert.equal(serialsComplete(session([{ product: { id: 'x' }, quantity: 1 }])), true, 'not on the server yet');
 });
 
-test('selection keeps optional vatRefund and taxInvoice flags (D121)', () => {
-  const s = {
+test('D128: receiptType selection is required before confirming, supports 3 types cleanly, and leaves vatRefund independent', () => {
+  assert.equal(receiptTypeIsValid(null), false);
+  assert.equal(receiptTypeIsValid(undefined), false);
+  assert.equal(receiptTypeIsValid('TAX_CORPORATE'), true);
+  assert.equal(receiptTypeIsValid('TAX_INDIVIDUAL'), true);
+  assert.equal(receiptTypeIsValid('SIMPLIFIED'), true);
+
+  assert.equal(receiptTypeLabel('TAX_CORPORATE'), 'ใบกำกับภาษีในนามนิติบุคคล');
+  assert.equal(receiptTypeLabel('TAX_INDIVIDUAL'), 'ใบกำกับภาษีในนามบุคคล');
+  assert.equal(receiptTypeLabel('SIMPLIFIED'), 'ใบเสร็จอย่างย่อ');
+  assert.equal(receiptTypeLabel(null, true), 'ใบกำกับภาษี');
+  assert.equal(receiptTypeLabel(null, false), null);
+
+  assert.equal(receiptTypeBadgeLabel('TAX_CORPORATE'), 'นิติบุคคล');
+  assert.equal(receiptTypeBadgeLabel('TAX_INDIVIDUAL'), 'บุคคล');
+  assert.equal(receiptTypeBadgeLabel('SIMPLIFIED'), null);
+  assert.equal(receiptTypeBadgeLabel(null, true), 'Tax');
+
+  assert.equal(isTaxInvoiceReceipt('TAX_CORPORATE'), true);
+  assert.equal(isTaxInvoiceReceipt('TAX_INDIVIDUAL'), true);
+  assert.equal(isTaxInvoiceReceipt('SIMPLIFIED', true), false);
+  assert.equal(isTaxInvoiceReceipt(null, true), true);
+
+  // Missing receiptType blocks confirmation
+  const missingReceiptSession = {
     ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
     selection: {
       ...fixture().selection,
+      receiptType: null,
       vatRefund: true,
-      taxInvoice: true,
     },
   };
-  assert.equal(s.selection.vatRefund, true);
-  assert.equal(s.selection.taxInvoice, true);
+  assert.equal(
+    confirmSelection(missingReceiptSession, '10:00').state,
+    'PRODUCT_SELECTION',
+    'receiptType is required before confirmation',
+  );
+
+  // Selecting corporate tax invoice allows confirmation with optional VAT refund
+  const corporateSession = {
+    ...missingReceiptSession,
+    selection: {
+      ...missingReceiptSession.selection,
+      receiptType: 'TAX_CORPORATE',
+      taxInvoice: true,
+      vatRefund: true,
+    },
+  };
+  const confirmedCorporate = confirmSelection(corporateSession, '10:00');
+  assert.equal(confirmedCorporate.state, 'STOCK_REQUESTED');
+  assert.equal(confirmedCorporate.selection.vatRefund, true);
+  assert.equal(confirmedCorporate.selection.receiptType, 'TAX_CORPORATE');
 });
 
 test('D127: credit card payment validation (card type required for Full CC, card type and months required for 0% CC)', () => {

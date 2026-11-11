@@ -20,7 +20,7 @@ test('a double click or a retry applies an action once: stock moves once, one ev
     const toSearching = async () => {
       const s = await app('/sessions', 'POST', { phone: `09999009${String(phoneNo++).slice(-2)}` }, 'staff');
       const id = s.data.id;
-      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: sku.id, quantity: 2 }], accessories: [], payments: ['Cash'], ontop: [], points: [] }, 'staff');
+      await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: sku.id, quantity: 2 }], accessories: [], payments: ['Cash'], ontop: [], points: [], receiptType: 'SIMPLIFIED' }, 'staff');
       assert.equal((await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff')).status, 201);
       assert.equal((await app(`/sessions/${id}/step`, 'POST', { action: 'search' }, 'stock')).status, 201);
       return id;

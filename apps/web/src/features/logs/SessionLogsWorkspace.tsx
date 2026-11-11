@@ -20,6 +20,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Info,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
@@ -159,12 +160,13 @@ function renderStatusTag(s: MockSession) {
       <span
         className="status-tag"
         style={{
-          background: '#fef3c7',
-          color: '#b45309',
-          border: '1px solid #fde68a',
+          background: 'var(--bg-warning)',
+          color: 'var(--color-warning)',
+          border: '1px solid var(--border-warning)',
         }}
       >
-        ⚠️ ส่งกลับ Staff (RETURN_TO_STAFF)
+        <AlertTriangle size={12} strokeWidth={1.75} />
+        ส่งกลับ Staff (RETURN_TO_STAFF)
       </span>
     );
   }
@@ -1240,7 +1242,7 @@ export function SessionLogsWorkspace({
             </div>
           </Panel>
         ) : (
-          <Panel title="ไม่พบรายการ Session" eyebrow="NOT FOUND">
+          <Panel title="ไม่พบรายการ Session" eyebrow="ไม่พบข้อมูล">
             <p className="muted">
               ไม่พบข้อมูล Session ที่เลือก หรือรายการนี้ถูกลบแล้ว
             </p>

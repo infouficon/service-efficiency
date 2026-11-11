@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, RotateCcw, Send } from 'lucide-react';
+import { Check, RefreshCw, RotateCcw, Send, X } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
@@ -42,7 +42,7 @@ export function SnCheckList({ items }: { items: SnCheck[] }) {
             .filter(Boolean)
             .join(' · ')}
         >
-          {c.written ? '✓' : '✗'} {c.sn}
+          {c.written ? <Check size={11} strokeWidth={2} /> : <X size={11} strokeWidth={2} />} {c.sn}
           {!c.written && ` ${SN_CODE[c.code ?? ''] ?? c.code ?? ''}${c.branch && c.code === 'SN_WRONG_BRANCH' ? ` (${c.branch})` : ''}${c.model && c.code === 'SN_MODEL_MISMATCH' ? ` (${c.model})` : ''}`}
         </span>
       ))}

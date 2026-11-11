@@ -99,12 +99,11 @@ export function Login({ onLogin }: { onLogin: (user: Account) => void }) {
     <div className="login">
       <div className="login-story">
         <span className="brand-mark">S</span>
-        <p className="eyebrow">SERVICE EFFICIENCY SYSTEM</p>
-        <h1><em>
+        <p className="eyebrow">ระบบบริการหน้าร้าน iStudio</p>
+        <h1>
           ทุกขั้นตอน
           <br />
-          ของการบริการ
-          <br /></em>
+          <span style={{ color: 'var(--primary-accent)' }}>ของการบริการ</span>
         </h1>
         <p>Staff · Stock</p>
       </div>

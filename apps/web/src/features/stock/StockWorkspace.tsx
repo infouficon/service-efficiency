@@ -57,11 +57,11 @@ function getWrongItemBadgeText(
   const detail = reject.wrongItemDetails?.[itemId];
   if (detail) {
     if (detail.reason === 'อื่น ๆ' && detail.note) {
-      return `⚠️ อื่น ๆ: ${detail.note}`;
+      return `อื่น ๆ: ${detail.note}`;
     }
-    return `⚠️ ${detail.reason}`;
+    return detail.reason;
   }
-  return '⚠️ แจ้งว่ามีปัญหา';
+  return 'แจ้งว่ามีปัญหา';
 }
 
 interface StockWorkspaceProps {
@@ -388,7 +388,7 @@ export function StockWorkspace({
       {cancellingSession ? (
         <Panel
           title="ยกเลิกคำขอบริการ"
-          eyebrow="STOCK CANCELLATION"
+          eyebrow="จัดการคิวยกเลิกคลังสินค้า"
         >
           <p>
             ยกเลิกคำขอสำหรับคิว{' '}
@@ -593,18 +593,18 @@ export function StockWorkspace({
                         <div style={{ fontSize: '13px' }}>
                           <strong>เหตุผล:</strong> {notice.reason} {notice.note ? `(${notice.note})` : ''}
                         </div>
-                        <div style={{ fontSize: '13px', background: '#fef3c7', padding: '8px 12px', borderRadius: '6px' }}>
+                        <div style={{ fontSize: '13px', background: 'var(--bg-warning)', border: '1px solid var(--border-warning)', padding: '8px 12px', borderRadius: '6px' }}>
                           <div>
-                            <span style={{ color: '#b91c1c', fontWeight: 600 }}>❌ สินค้าเดิม:</span> {notice.oldName} ({notice.oldSku})
+                            <span style={{ color: 'var(--color-danger)', fontWeight: 600 }}>สินค้าเดิม:</span> {notice.oldName} ({notice.oldSku})
                           </div>
-                          <div style={{ marginTop: '2px' }}>
-                            <span style={{ color: '#15803d', fontWeight: 600 }}>✅ สินค้าใหม่ที่ต้องหยิบ:</span> {notice.newName} ({notice.newSku})
+                          <div style={{ marginTop: '4px' }}>
+                            <span style={{ color: 'var(--color-success)', fontWeight: 600 }}>สินค้าใหม่ที่ต้องหยิบ:</span> {notice.newName} ({notice.newSku})
                           </div>
                         </div>
                         {notice.hadPickedOldItem && (
-                          <div style={{ fontSize: '13px', color: '#b91c1c', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                            <AlertCircle size={15} />
-                            ⚠️ สินค้าเดิมเคยถูกหยิบไปแล้ว กรุณานำเครื่องเดิมคืนชั้นวางสินค้าในคลัง
+                          <div style={{ fontSize: '13px', color: 'var(--color-danger)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                            <AlertCircle size={15} strokeWidth={1.75} />
+                            สินค้าเดิมเคยถูกหยิบไปแล้ว กรุณานำเครื่องเดิมคืนชั้นวางสินค้าในคลัง
                           </div>
                         )}
                       </div>
@@ -727,13 +727,13 @@ export function StockWorkspace({
                                 color: '#047857',
                                 border: '1px solid #a7f3d0',
                                 borderRadius: '4px',
-                                padding: '2px 6px',
+                                padding: '2px 8px',
                                 fontSize: '11px',
-                                fontWeight: 600,
+                                fontWeight: 500,
                                 marginLeft: '8px',
                               }}
                             >
-                              ✨ สินค้าใหม่ที่เปลี่ยน (ต้องหยิบ)
+                              สินค้าใหม่ที่เปลี่ยน (ต้องหยิบ)
                             </span>
                           )}
                           {wrongBadge && (
@@ -742,11 +742,11 @@ export function StockWorkspace({
                                 display: 'inline-flex',
                                 alignItems: 'center',
                                 gap: '4px',
-                                backgroundColor: '#fef2f2',
-                                color: '#b91c1c',
-                                border: '1px solid #fecaca',
+                                backgroundColor: 'var(--bg-danger)',
+                                color: 'var(--color-danger)',
+                                border: '1px solid var(--border-danger)',
                                 borderRadius: '4px',
-                                padding: '2px 6px',
+                                padding: '2px 8px',
                                 fontSize: '11px',
                                 fontWeight: 600,
                                 marginLeft: '8px',
@@ -853,12 +853,14 @@ export function StockWorkspace({
                       return (
                         <>
                           {isNewSwappedItem && (
-                            <span className="status-tag" style={{ background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0' }}>
-                              ✨ ชิ้นใหม่ที่ต้องหยิบ
+                            <span className="status-tag" style={{ background: 'var(--bg-success)', color: 'var(--color-success)', border: '1px solid var(--border-success)' }}>
+                              <CheckCircle2 size={12} strokeWidth={1.75} />
+                              ชิ้นใหม่ที่ต้องหยิบ
                             </span>
                           )}
                           {wrongBadge && (
-                            <span className="status-tag" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                            <span className="status-tag" style={{ background: 'var(--bg-danger)', color: 'var(--color-danger)', border: '1px solid var(--border-danger)' }}>
+                              <AlertTriangle size={12} strokeWidth={1.75} />
                               {wrongBadge}
                             </span>
                           )}
@@ -1025,7 +1027,7 @@ export function StockWorkspace({
                 </details>
               </Panel>
             ) : (
-              <Panel title="กรุณาเลือกรายการคำขอ" eyebrow="STOCK SELECTION">
+              <Panel title="กรุณาเลือกรายการคำขอ" eyebrow="จัดการคิวคลังสินค้า">
                 <p className="muted">
                   เลือกรายการจากคิวทางด้านซ้ายเพื่อดูรายละเอียดและดำเนินการ
                 </p>

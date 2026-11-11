@@ -1014,13 +1014,13 @@ export function SelectionEditor({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '10px',
-                  padding: '10px 14px',
+                  gap: '12px',
+                  padding: '12px 16px',
                   border: `1px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
                   borderRadius: '8px',
-                  background: selected ? '#f0fdfa' : 'var(--bg-surface)',
+                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
+                  transition: 'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
                   userSelect: 'none',
                 }}
               >
@@ -1060,13 +1060,13 @@ export function SelectionEditor({
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '10px',
-              padding: '10px 14px',
+              gap: '12px',
+              padding: '12px 16px',
               border: `1px solid ${value.vatRefund ? 'var(--primary)' : 'var(--border-color)'}`,
               borderRadius: '8px',
-              background: value.vatRefund ? '#f0fdfa' : 'var(--bg-surface)',
+              background: value.vatRefund ? 'var(--primary-subtle)' : 'var(--bg-surface)',
               cursor: 'pointer',
-              transition: 'all 0.15s ease',
+              transition: 'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
               userSelect: 'none',
             }}
           >

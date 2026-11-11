@@ -10,6 +10,8 @@ import {
   CreditCard,
   ArrowLeft,
   AlertTriangle,
+  Plane,
+  ReceiptText,
   RefreshCw,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
@@ -503,7 +505,8 @@ export function StaffWorkspace({
                         border: '1px solid #fecaca',
                       }}
                     >
-                      ⚠️ สินค้าไม่ครบ
+                      <AlertTriangle size={12} strokeWidth={1.75} />
+                      <span>สินค้าไม่ครบ</span>
                     </span>
                   ) : (
                     <span
@@ -527,10 +530,34 @@ export function StaffWorkspace({
                         s.taxInvoice ?? s.selection?.taxInvoice,
                       );
                       return badge ? (
-                        <span style={{ color: '#1d4ed8', fontWeight: 600 }}>🧾 {badge}</span>
+                        <span
+                          style={{
+                            color: 'var(--color-info)',
+                            fontWeight: 500,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
+                          <ReceiptText size={13} strokeWidth={1.6} />
+                          {badge}
+                        </span>
                       ) : null;
                     })()}
-                    {(s.vatRefund ?? s.selection?.vatRefund) && <span style={{ color: '#b45309', fontWeight: 600 }}>✈️ VAT</span>}
+                    {(s.vatRefund ?? s.selection?.vatRefund) && (
+                      <span
+                        style={{
+                          color: 'var(--color-warning)',
+                          fontWeight: 500,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                      >
+                        <Plane size={13} strokeWidth={1.6} />
+                        VAT
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -543,7 +570,7 @@ export function StaffWorkspace({
             <div className="content-grid">
               <Panel
                 title="รับลูกค้าใหม่ (Walk-in)"
-                eyebrow="01 / CUSTOMER ARRIVAL"
+                eyebrow="ลงทะเบียนลูกค้าหน้าร้าน"
               >
                 <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
               </Panel>
@@ -578,14 +605,32 @@ export function StaffWorkspace({
                     const badge = receiptTypeBadgeLabel(activeReceipt, activeTax);
                     const fullLabel = receiptTypeLabel(activeReceipt, activeTax);
                     return badge && fullLabel ? (
-                      <span className="status-tag" style={{ background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', marginRight: '6px' }}>
-                        🧾 {fullLabel}
+                      <span
+                        className="status-tag"
+                        style={{
+                          background: 'var(--bg-info)',
+                          color: 'var(--color-info)',
+                          border: '1px solid var(--border-info)',
+                          marginRight: '6px',
+                        }}
+                      >
+                        <ReceiptText size={12} strokeWidth={1.6} />
+                        {fullLabel}
                       </span>
                     ) : null;
                   })()}
                   {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
-                    <span className="status-tag" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', marginRight: '6px' }}>
-                      ✈️ VAT Refund
+                    <span
+                      className="status-tag"
+                      style={{
+                        background: 'var(--bg-warning)',
+                        color: 'var(--color-warning)',
+                        border: '1px solid var(--border-warning)',
+                        marginRight: '6px',
+                      }}
+                    >
+                      <Plane size={12} strokeWidth={1.6} />
+                      VAT Refund
                     </span>
                   )}
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}
@@ -643,7 +688,7 @@ export function StaffWorkspace({
                               ? 'ส่งสินค้ากลับ Stock (หยิบผิด)'
                               : 'ดำเนินการบริการ'
                     }
-                    eyebrow="CURRENT STAGE"
+                    eyebrow="ขั้นตอนปัจจุบัน"
                   >
                     {finished ? (
                       <>
@@ -895,7 +940,7 @@ export function StaffWorkspace({
                 {/* <div>
                   <Panel
                     title="ประวัติเวลาการบริการ"
-                    eyebrow="SERVER TIMESTAMPS"
+                    eyebrow="บันทึกเวลาจากระบบ"
                   >
                     <ol className="timeline">
                       {Object.entries(activeSession.timestamps).map(

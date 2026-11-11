@@ -68,6 +68,8 @@ export interface Product {
   category: string;
   product: string;
   model: string;
+  /** The model's own name when `model` shows the SKU name instead; the IMEI/SN rule (D125) reads both, as the server does. */
+  modelName?: string;
   sku: string;
   stock?: number;
   /** Where `stock` comes from: `unlimited` = the ADMIN switch is on (D59, nothing is blocked), `erp` = warroom (D52), `manual` = kept by ADMIN (D41). */

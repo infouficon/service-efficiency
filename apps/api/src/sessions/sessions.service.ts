@@ -157,6 +157,12 @@ function luhnOk(digits: string): boolean {
  * Watch GPS; null (no rule beyond D124) for everything else (AirPods, HomePod, accessories...). "Cellular" / "Cell" is read in
  * the product, model or SKU name (warroom writes "Wi-Fi + Cellular", "GPS + Cell").
  */
+/** D127 / D129: payment methods that need a card (lower case) -> whether installment months are required too. */
+const CARD_METHODS: ReadonlyMap<string, boolean> = new Map([
+  ['full credit card', false],
+  ['0% credit card', true],
+]);
+
 export type SerialKind = 'imei' | 'serial' | null;
 export function serialKindOf(category: string | null | undefined, ...names: (string | null | undefined)[]): SerialKind {
   const c = (category ?? '').trim().toLowerCase();
@@ -823,6 +829,31 @@ export class SessionsService {
   }
 
   /** D95/D101: a serial number as FileMaker keeps it: trimmed, in capitals, printable ASCII without spaces, 1–64 characters. */
+  /**
+   * D129 (server side of D127): a card payment needs the card staff picked, and 0% Credit Card also its months; the card must be
+   * one ADMIN still offers for that method and the months one it supports. The web checks the same before review; this stops an
+   * older client or a direct API call from confirming an order FileMaker would get without them.
+   */
+  private async assertCardDetails(payments: { method: string; cardType: string | null; installmentMonths: number | null }[]) {
+    for (const p of payments) {
+      const needsMonths = CARD_METHODS.get(p.method.toLowerCase());
+      if (needsMonths === undefined) continue;
+      if (!p.cardType) throw new BadRequestException(`${p.method}: choose the card type before confirmation`);
+      if (needsMonths && !p.installmentMonths)
+        throw new BadRequestException(`${p.method}: choose the installment months before confirmation`);
+      const option = await this.prisma.paymentCardOption.findFirst({
+        where: { name: p.cardType, active: true, paymentMethod: { name: p.method } },
+        select: { installmentMonths: true },
+      });
+      if (!option) throw new BadRequestException(`${p.method}: card ${p.cardType} is not offered any more, choose again`);
+      if (needsMonths) {
+        const months = Array.isArray(option.installmentMonths) ? option.installmentMonths.map(Number) : [];
+        if (!months.includes(Number(p.installmentMonths)))
+          throw new BadRequestException(`${p.method}: ${p.cardType} has no ${p.installmentMonths}-month plan, choose again`);
+      }
+    }
+  }
+
   private normalizeSerial(raw: string, kind: SerialKind = null): string {
     const sn = raw.trim().toUpperCase();
     const problem = serialProblem(sn, kind); // D124, D125
@@ -1151,6 +1182,8 @@ export class SessionsService {
     if (!session.receiptType) {
       throw new BadRequestException('Receipt type selection is required before confirmation');
     }
+
+    await this.assertCardDetails(session.payments);
 
     const now = new Date();
 

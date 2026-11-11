@@ -97,7 +97,8 @@ export function confirmSelection(
     session.confirmed ||
     session.selection.items.length === 0 ||
     !phoneIsValid(session.phone) ||
-    !quantitiesAreValid(session.selection.accessories)
+    !quantitiesAreValid(session.selection.accessories) ||
+    !paymentsAreValid(session.selection.payments, session.selection.paymentDetails)
   )
     return session;
   return {
@@ -244,6 +245,42 @@ export function quantitiesAreValid(
   accessories: Record<string, string>,
 ): boolean {
   return Object.values(accessories).every(quantityIsValid);
+}
+
+/**
+ * D127: Validates that if Full Credit Card or 0% Credit Card is chosen,
+ * card type (and installment months for 0%) is provided.
+ */
+export function paymentsAreValid(
+  payments: string[],
+  paymentDetails?: { method: string; cardType?: string | null; installmentMonths?: number | null }[],
+): boolean {
+  if (payments.includes('Full Credit Card')) {
+    const detail = paymentDetails?.find((d) => d.method === 'Full Credit Card');
+    if (!detail?.cardType) return false;
+  }
+  if (payments.includes('0% Credit Card')) {
+    const detail = paymentDetails?.find((d) => d.method === '0% Credit Card');
+    if (!detail?.cardType || !detail?.installmentMonths) return false;
+  }
+  return true;
+}
+
+/**
+ * D127: Formats a payment method name with its card type and installment months if present.
+ */
+export function formatPaymentLabel(
+  method: string,
+  paymentDetails?: { method: string; cardType?: string | null; installmentMonths?: number | null }[],
+): string {
+  const detail = paymentDetails?.find((d) => d.method === method);
+  if (detail?.cardType && detail?.installmentMonths) {
+    return `${method} (${detail.cardType} ${detail.installmentMonths} เดือน)`;
+  }
+  if (detail?.cardType) {
+    return `${method} (${detail.cardType})`;
+  }
+  return method;
 }
 export function toggleAccessory(
   accessories: Record<string, string>,

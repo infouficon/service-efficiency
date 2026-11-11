@@ -4,7 +4,7 @@ import { Printer } from 'lucide-react';
 import { Button } from '../../components/ui';
 import type { MockSession } from '../../types/session';
 import { qrCode } from '../../utils/qr';
-import { itemName } from './workflow';
+import { formatPaymentLabel, itemName } from './workflow';
 
 /**
  * The receipt of a session on paper (F9, D58): a plain order summary for an 80 mm printer, **without prices** (the legal
@@ -94,7 +94,9 @@ export function ReceiptSheet({
         <hr />
         <p className="receipt-row">
           <span>ชำระโดย</span>
-          <span>{s.payments.join(', ') || '-'}</span>
+          <span>
+            {s.payments.map((p) => formatPaymentLabel(p, s.paymentDetails)).join(', ') || '-'}
+          </span>
         </p>
         {perks.map((line) => (
           <p key={line} className="receipt-small">

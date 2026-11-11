@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   ForbiddenException,
   Get,
   Param,
@@ -14,6 +15,9 @@ import type { Request } from 'express';
 import { OriginGuard } from '../accounts/accounts.controller';
 import { AccountsService } from '../accounts/accounts.service';
 import {
+  PaymentCardOptionCreateDto,
+  PaymentCardOptionReorderDto,
+  PaymentCardOptionUpdateDto,
   PaymentMethodCreateDto,
   PaymentMethodFmpTypeDto,
   PaymentMethodMoveDto,
@@ -86,5 +90,49 @@ export class PaymentsController {
   ) {
     await this.admin(req);
     return this.payments.move(id, dto.direction);
+  }
+
+  /** D127: Add a card option to a payment method */
+  @Post(':id/cards')
+  async addCard(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: PaymentCardOptionCreateDto,
+  ) {
+    await this.admin(req);
+    return this.payments.addCardOption(
+      id,
+      dto.name,
+      dto.installmentMonths ?? null,
+    );
+  }
+
+  /** D127: Update a card option */
+  @Put('cards/:cardId')
+  async updateCard(
+    @Req() req: Request,
+    @Param('cardId') cardId: string,
+    @Body() dto: PaymentCardOptionUpdateDto,
+  ) {
+    await this.admin(req);
+    return this.payments.updateCardOption(cardId, dto);
+  }
+
+  /** D127: Delete a card option */
+  @Delete('cards/:cardId')
+  async deleteCard(@Req() req: Request, @Param('cardId') cardId: string) {
+    await this.admin(req);
+    return this.payments.deleteCardOption(cardId);
+  }
+
+  /** D127: Reorder card options of a payment method */
+  @Put(':id/cards/reorder')
+  async reorderCards(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: PaymentCardOptionReorderDto,
+  ) {
+    await this.admin(req);
+    return this.payments.reorderCardOptions(id, dto.ids);
   }
 }

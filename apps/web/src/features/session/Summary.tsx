@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
-import { itemName } from './workflow';
+import { formatPaymentLabel, itemName } from './workflow';
 import { formatDisplayPhone } from '../../utils/phone';
 
 interface SummaryProps {
@@ -170,7 +170,7 @@ export function Summary({
                 {s?.payments && s.payments.length > 0 ? (
                   s.payments.map((p) => (
                     <span key={p} className="payment-tag-chip">
-                      <CreditCard size={12} /> {p}
+                      <CreditCard size={12} /> {formatPaymentLabel(p, s.paymentDetails)}
                     </span>
                   ))
                 ) : (

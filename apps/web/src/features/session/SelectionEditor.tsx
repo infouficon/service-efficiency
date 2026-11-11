@@ -7,6 +7,8 @@ import accessoriesIcon from '../../assets/category-icons/accessories.png';
 import batteryIcon from '../../assets/category-icons/battery.png';
 import {
   ArrowRight,
+  CreditCard,
+  Pencil,
   Plus,
   X,
 } from 'lucide-react';
@@ -19,12 +21,14 @@ import {
   payments,
   points,
 } from '../../constants/options';
-import type { Category, Product, Selection } from '../../types/session';
-import { Choices, MultiSelect, Button, Notice } from '../../components/ui';
+import type { Category, PaymentDetail, PaymentMethod, Product, Selection } from '../../types/session';
+import { MultiSelect, Button, Modal, Notice } from '../../components/ui';
 import {
   addItem,
+  formatPaymentLabel,
   itemName,
   itemsText,
+  paymentsAreValid,
   quantitiesAreValid,
   quantityIsValid,
   stepAccessory,
@@ -121,6 +125,21 @@ function StockBadge({ sku }: { sku: CatalogSku }) {
   );
 }
 
+const DEFAULT_FULL_CC_CARDS = [
+  'KBank', 'SCB', 'KTC', 'BBL', 'Krungsri', 'TTB', 'UOB', 'CardX',
+];
+
+const DEFAULT_ZERO_CC_CARDS: { name: string; installmentMonths: number[] }[] = [
+  { name: 'KBank', installmentMonths: [3, 6, 10] },
+  { name: 'SCB', installmentMonths: [3, 6, 10] },
+  { name: 'KTC', installmentMonths: [3, 6, 10] },
+  { name: 'BBL', installmentMonths: [3, 6, 10] },
+  { name: 'Krungsri', installmentMonths: [3, 6, 10] },
+  { name: 'TTB', installmentMonths: [3, 6, 10] },
+  { name: 'UOB', installmentMonths: [3, 6, 10] },
+  { name: 'First Choice', installmentMonths: [3, 6, 10] },
+];
+
 /**
  * Choosing the main products (F2, F3, D72): cascading dropdowns (Category → Model → Capacity → Color)
  * that adds to a list, each product with a `−` / `+` quantity stepper. Several main products can be added.
@@ -136,9 +155,24 @@ export function SelectionEditor({
 }) {
   const [catalog, setCatalog] = useState<CatalogProduct[] | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [cardModalMethod, setCardModalMethod] = useState<
+    'Full Credit Card' | '0% Credit Card' | null
+  >(null);
+  const [tempSelectedCard, setTempSelectedCard] = useState<string>('');
+  const [tempSelectedMonths, setTempSelectedMonths] = useState<number | null>(
+    null,
+  );
   // F6: the payment methods ADMIN keeps; the built-in list (no FMP types known) is the fallback when they cannot be loaded
-  const [paymentMethods, setPaymentMethods] = useState<{ name: string; fmpType: string | null }[]>(
-    () => payments.map((name) => ({ name, fmpType: null })),
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
+    () =>
+      payments.map((name, i) => ({
+        id: `p-${i}`,
+        name,
+        active: true,
+        position: i,
+        fmpType: null,
+        cardOptions: [],
+      })),
   );
   // D72: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
@@ -242,13 +276,197 @@ export function SelectionEditor({
     p.models.flatMap((m) => m.skus),
   );
   const stockInfo = stockInfoLine(allSkus);
+  const paymentsValid = paymentsAreValid(value.payments, value.paymentDetails);
   const reviewDisabled =
-    value.items.length === 0 || !quantitiesAreValid(value.accessories);
+    value.items.length === 0 ||
+    !quantitiesAreValid(value.accessories) ||
+    !paymentsValid;
   /** `+` stops at the stock figure unless nothing is blocked by stock (D59). */
   const canRaise = (item: Selection['items'][number]) =>
     isUnlimited(item.product) ||
     typeof item.product.stock !== 'number' ||
     item.quantity < item.product.stock;
+
+  const handlePaymentsChange = (newPayments: string[]) => {
+    // If Full Credit Card was just selected, open modal
+    if (
+      newPayments.includes('Full Credit Card') &&
+      !value.payments.includes('Full Credit Card')
+    ) {
+      const current = value.paymentDetails?.find(
+        (d) => d.method === 'Full Credit Card',
+      );
+      setTempSelectedCard(current?.cardType ?? '');
+      setCardModalMethod('Full Credit Card');
+      return;
+    }
+    // If 0% Credit Card was just selected, open modal
+    if (
+      newPayments.includes('0% Credit Card') &&
+      !value.payments.includes('0% Credit Card')
+    ) {
+      const current = value.paymentDetails?.find(
+        (d) => d.method === '0% Credit Card',
+      );
+      setTempSelectedCard(current?.cardType ?? '');
+      setTempSelectedMonths(current?.installmentMonths ?? null);
+      setCardModalMethod('0% Credit Card');
+      return;
+    }
+
+    // Normal toggle (e.g. unchecking or toggling other payments)
+    const existingDetails = value.paymentDetails ?? [];
+    const updatedDetails: PaymentDetail[] = [];
+
+    for (const method of newPayments) {
+      const found = existingDetails.find((d) => d.method === method);
+      if (found) {
+        updatedDetails.push(found);
+      } else {
+        updatedDetails.push({ method });
+      }
+    }
+
+    onChange({
+      ...value,
+      payments: newPayments,
+      paymentDetails: updatedDetails,
+    });
+  };
+
+  const handleOpenEditModal = (
+    method: 'Full Credit Card' | '0% Credit Card',
+  ) => {
+    const current = value.paymentDetails?.find((d) => d.method === method);
+    setTempSelectedCard(current?.cardType ?? '');
+    setTempSelectedMonths(current?.installmentMonths ?? null);
+    setCardModalMethod(method);
+  };
+
+  const handleConfirmModal = () => {
+    if (!cardModalMethod) return;
+
+    if (cardModalMethod === 'Full Credit Card') {
+      if (!tempSelectedCard) return;
+      const nextPayments = value.payments.includes('Full Credit Card')
+        ? value.payments
+        : [...value.payments, 'Full Credit Card'];
+      const nextDetails = [
+        ...(value.paymentDetails ?? []).filter(
+          (d) => d.method !== 'Full Credit Card',
+        ),
+        { method: 'Full Credit Card', cardType: tempSelectedCard },
+      ];
+      onChange({
+        ...value,
+        payments: nextPayments,
+        paymentDetails: nextDetails,
+      });
+    } else if (cardModalMethod === '0% Credit Card') {
+      if (!tempSelectedCard || !tempSelectedMonths) return;
+      const nextPayments = value.payments.includes('0% Credit Card')
+        ? value.payments
+        : [...value.payments, '0% Credit Card'];
+      const nextDetails = [
+        ...(value.paymentDetails ?? []).filter(
+          (d) => d.method !== '0% Credit Card',
+        ),
+        {
+          method: '0% Credit Card',
+          cardType: tempSelectedCard,
+          installmentMonths: tempSelectedMonths,
+        },
+      ];
+      onChange({
+        ...value,
+        payments: nextPayments,
+        paymentDetails: nextDetails,
+      });
+    }
+
+    setCardModalMethod(null);
+  };
+
+  const handleCancelModal = () => {
+    if (!cardModalMethod) return;
+
+    // Check if it was already validly selected prior to opening modal
+    const existing = value.paymentDetails?.find(
+      (d) => d.method === cardModalMethod,
+    );
+    const wasValid =
+      cardModalMethod === 'Full Credit Card'
+        ? Boolean(existing?.cardType)
+        : Boolean(existing?.cardType && existing?.installmentMonths);
+
+    if (!wasValid) {
+      // Remove it from selection since user didn't complete the modal
+      onChange({
+        ...value,
+        payments: value.payments.filter((p) => p !== cardModalMethod),
+        paymentDetails: (value.paymentDetails ?? []).filter(
+          (d) => d.method !== cardModalMethod,
+        ),
+      });
+    }
+
+    setCardModalMethod(null);
+  };
+
+  const renderPaymentChoices = (optionsList: string[]) => (
+    <div className="choices">
+      {optionsList.map((option) => {
+        const checked = value.payments.includes(option);
+        const label = formatPaymentLabel(option, value.paymentDetails);
+        const isCreditCard =
+          option === 'Full Credit Card' || option === '0% Credit Card';
+
+        return (
+          <label
+            className={`choice ${checked ? 'selected' : ''}`}
+            key={option}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              onChange={() =>
+                handlePaymentsChange(toggleOption(value.payments, option))
+              }
+            />
+            <span>{label}</span>
+            {checked && isCreditCard && (
+              <button
+                type="button"
+                aria-label={`แก้ไข ${option}`}
+                title="แก้ไขประเภทบัตร / เดือนผ่อน"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleOpenEditModal(option);
+                }}
+                style={{
+                  border: 'none',
+                  background: 'rgba(10, 186, 181, 0.15)',
+                  color: '#007d79',
+                  borderRadius: '4px',
+                  padding: '2px 5px',
+                  marginLeft: '4px',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '3px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                }}
+              >
+                <Pencil size={11} />
+              </button>
+            )}
+          </label>
+        );
+      })}
+    </div>
+  );
 
   return (
     <>
@@ -605,21 +823,193 @@ export function SelectionEditor({
           Payment <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
         {otherPayments.length > 0 && <p className="choice-group-title">ช่องทางหลัก</p>}
-        <Choices
-          options={mainPayments}
-          value={value.payments}
-          onChange={(payments) => onChange({ ...value, payments })}
-        />
+        {renderPaymentChoices(mainPayments)}
         {otherPayments.length > 0 && (
           <>
             <p className="choice-group-title">ช่องทางอื่น</p>
-            <Choices
-              options={otherPayments}
-              value={value.payments}
-              onChange={(payments) => onChange({ ...value, payments })}
-            />
+            {renderPaymentChoices(otherPayments)}
           </>
         )}
+
+        {/* D127: Modal for Full Credit Card & 0% Credit Card */}
+        {cardModalMethod && (() => {
+          const isZeroPercent = cardModalMethod === '0% Credit Card';
+          const methodObj = paymentMethods.find(
+            (m) => m.name === cardModalMethod,
+          );
+          const activeDbCards =
+            methodObj?.cardOptions?.filter((c) => c.active) ?? [];
+
+          // Cards list (use DB card options or fallback defaults)
+          const cards = isZeroPercent
+            ? activeDbCards.length > 0
+              ? activeDbCards.map((c) => ({
+                  name: c.name,
+                  installmentMonths: Array.isArray(c.installmentMonths)
+                    ? (c.installmentMonths as number[])
+                    : [3, 6, 10],
+                }))
+              : DEFAULT_ZERO_CC_CARDS
+            : activeDbCards.length > 0
+              ? activeDbCards.map((c) => ({
+                  name: c.name,
+                  installmentMonths: [] as number[],
+                }))
+              : DEFAULT_FULL_CC_CARDS.map((name) => ({
+                  name,
+                  installmentMonths: [] as number[],
+                }));
+
+          const selectedCardObj = cards.find(
+            (c) => c.name === tempSelectedCard,
+          );
+          const availableMonths = selectedCardObj?.installmentMonths ?? [];
+
+          const canConfirm = isZeroPercent
+            ? Boolean(tempSelectedCard && tempSelectedMonths)
+            : Boolean(tempSelectedCard);
+
+          return (
+            <Modal
+              isOpen={true}
+              title={
+                <span
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <CreditCard size={18} />
+                  {isZeroPercent
+                    ? 'เลือกประเภทบัตรและจำนวนเดือนผ่อน (0% Credit Card)'
+                    : 'เลือกประเภทบัตร (Full Credit Card)'}
+                </span>
+              }
+              onClose={handleCancelModal}
+              maxWidth="520px"
+            >
+              <div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    marginBottom: '10px',
+                  }}
+                >
+                  1. เลือกประเภทบัตร <span style={{ color: '#ef4444' }}>*</span>
+                </div>
+                <div className="choices" style={{ marginBottom: '16px' }}>
+                  {cards.map((card) => {
+                    const selected = tempSelectedCard === card.name;
+                    return (
+                      <button
+                        key={card.name}
+                        type="button"
+                        className={`choice ${selected ? 'selected' : ''}`}
+                        style={{
+                          padding: '10px 16px',
+                          fontSize: '13px',
+                          fontWeight: selected ? 600 : 500,
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => {
+                          setTempSelectedCard(card.name);
+                          if (
+                            isZeroPercent &&
+                            tempSelectedMonths &&
+                            !card.installmentMonths.includes(tempSelectedMonths)
+                          ) {
+                            setTempSelectedMonths(null);
+                          }
+                        }}
+                      >
+                        {card.name}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {isZeroPercent && (
+                  <div
+                    style={{
+                      marginTop: '16px',
+                      borderTop: '1px solid var(--border-color, #e2e8f0)',
+                      paddingTop: '14px',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        marginBottom: '10px',
+                      }}
+                    >
+                      2. เลือกจำนวนเดือนที่ผ่อน{' '}
+                      {tempSelectedCard ? `(${tempSelectedCard})` : ''}{' '}
+                      <span style={{ color: '#ef4444' }}>*</span>
+                    </div>
+                    {!tempSelectedCard ? (
+                      <p
+                        className="muted"
+                        style={{ margin: 0, fontSize: '12px' }}
+                      >
+                        กรุณาแตะเลือกประเภทบัตรด้านบนก่อน
+                      </p>
+                    ) : availableMonths.length === 0 ? (
+                      <p
+                        className="muted"
+                        style={{ margin: 0, fontSize: '12px' }}
+                      >
+                        บัตรนี้ยังไม่มีการกำหนดเดือนผ่อน
+                      </p>
+                    ) : (
+                      <div className="choices">
+                        {availableMonths.map((months) => {
+                          const selected = tempSelectedMonths === months;
+                          return (
+                            <button
+                              key={months}
+                              type="button"
+                              className={`choice ${selected ? 'selected' : ''}`}
+                              style={{
+                                padding: '10px 18px',
+                                fontSize: '13px',
+                                fontWeight: selected ? 600 : 500,
+                                cursor: 'pointer',
+                              }}
+                              onClick={() => setTempSelectedMonths(months)}
+                            >
+                              {months} เดือน
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '8px',
+                    marginTop: '24px',
+                    borderTop: '1px solid var(--border-color, #e2e8f0)',
+                    paddingTop: '14px',
+                  }}
+                >
+                  <Button variant="secondary" onClick={handleCancelModal}>
+                    ยกเลิก
+                  </Button>
+                  <Button disabled={!canConfirm} onClick={handleConfirmModal}>
+                    ยืนยัน
+                  </Button>
+                </div>
+              </div>
+            </Modal>
+          );
+        })()}
       </fieldset>
       <fieldset>
         <legend>
@@ -687,6 +1077,11 @@ export function SelectionEditor({
           </label>
         </div>
       </fieldset>
+      {!paymentsValid && (
+        <Notice error>
+          กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
+        </Notice>
+      )}
       <div className="actions">
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span

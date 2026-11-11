@@ -23,6 +23,8 @@ import {
   getSessionMissingDescription,
   progressIndex,
   itemChangeNotice,
+  paymentsAreValid,
+  formatPaymentLabel,
   serialsLeft,
   serialsComplete,
 } from '../src/features/session/workflow.ts';
@@ -581,4 +583,83 @@ test('selection keeps optional vatRefund and taxInvoice flags (D121)', () => {
   };
   assert.equal(s.selection.vatRefund, true);
   assert.equal(s.selection.taxInvoice, true);
+});
+
+test('D127: credit card payment validation (card type required for Full CC, card type and months required for 0% CC)', () => {
+  // Other payments or empty do not require credit card details
+  assert.equal(paymentsAreValid([]), true);
+  assert.equal(paymentsAreValid(['Cash', 'Transfer']), true);
+
+  // Full Credit Card requires cardType
+  assert.equal(paymentsAreValid(['Full Credit Card']), false);
+  assert.equal(paymentsAreValid(['Full Credit Card'], [{ method: 'Full Credit Card' }]), false);
+  assert.equal(paymentsAreValid(['Full Credit Card'], [{ method: 'Full Credit Card', cardType: 'KBank' }]), true);
+
+  // 0% Credit Card requires cardType AND installmentMonths
+  assert.equal(paymentsAreValid(['0% Credit Card']), false);
+  assert.equal(paymentsAreValid(['0% Credit Card'], [{ method: '0% Credit Card' }]), false);
+  assert.equal(paymentsAreValid(['0% Credit Card'], [{ method: '0% Credit Card', cardType: 'SCB' }]), false);
+  assert.equal(
+    paymentsAreValid(['0% Credit Card'], [{ method: '0% Credit Card', cardType: 'SCB', installmentMonths: 10 }]),
+    true,
+  );
+
+  // Both Full CC and 0% CC together
+  assert.equal(
+    paymentsAreValid(
+      ['Full Credit Card', '0% Credit Card'],
+      [
+        { method: 'Full Credit Card', cardType: 'KBank' },
+        { method: '0% Credit Card', cardType: 'SCB' },
+      ],
+    ),
+    false,
+    'missing installment months for 0% CC',
+  );
+  assert.equal(
+    paymentsAreValid(
+      ['Full Credit Card', '0% Credit Card'],
+      [
+        { method: 'Full Credit Card', cardType: 'KBank' },
+        { method: '0% Credit Card', cardType: 'SCB', installmentMonths: 6 },
+      ],
+    ),
+    true,
+  );
+
+  // confirmSelection enforces credit card validation
+  const invalidSession = {
+    ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
+    selection: {
+      ...fixture().selection,
+      payments: ['0% Credit Card'],
+      paymentDetails: [{ method: '0% Credit Card', cardType: 'SCB' }], // missing installmentMonths
+    },
+  };
+  assert.equal(confirmSelection(invalidSession, '10:00').state, 'PRODUCT_SELECTION', 'not confirmed');
+
+  const validSession = {
+    ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
+    selection: {
+      ...fixture().selection,
+      payments: ['0% Credit Card'],
+      paymentDetails: [{ method: '0% Credit Card', cardType: 'SCB', installmentMonths: 10 }],
+    },
+  };
+  assert.equal(confirmSelection(validSession, '10:00').state, 'STOCK_REQUESTED', 'confirmed');
+
+  // formatPaymentLabel formats in-place display labels cleanly
+  const details = [
+    { method: 'Full Credit Card', cardType: 'BBL' },
+    { method: '0% Credit Card', cardType: 'TTB', installmentMonths: 10 },
+    { method: 'Cash' },
+  ];
+  assert.equal(formatPaymentLabel('Full Credit Card', details), 'Full Credit Card (BBL)');
+  assert.equal(formatPaymentLabel('0% Credit Card', details), '0% Credit Card (TTB 10 เดือน)');
+  assert.equal(formatPaymentLabel('Cash', details), 'Cash');
+  assert.equal(formatPaymentLabel('Transfer', details), 'Transfer');
 });

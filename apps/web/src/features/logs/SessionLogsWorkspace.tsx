@@ -26,6 +26,7 @@ import { Summary } from '../session/Summary';
 import { ReceiptPrint } from '../session/Receipt';
 import {
   formatDuration,
+  formatPaymentLabel,
   itemName,
   itemsText,
   stepDurations,
@@ -309,7 +310,10 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       {
         key: 'payments',
         label: 'ช่องทางการชำระเงิน',
-        getValue: (s) => (s.selection?.payments || []).join('; '),
+        getValue: (s) =>
+          (s.selection?.payments || [])
+            .map((p) => formatPaymentLabel(p, s.selection?.paymentDetails))
+            .join('; '),
       },
       {
         key: 'taxInvoice',

@@ -267,13 +267,29 @@ model Setting {
 // F6: the payment methods staff can pick on a session, kept by ADMIN. The name is the value stored on a session's payments
 // (history), so a method is switched off, never renamed or deleted. `position` is the order shown.
 model PaymentMethod {
-  id        String   @id @default(uuid()) @db.VarChar(36)
-  name      String   @unique @db.VarChar(64)
-  active    Boolean  @default(true)
-  position  Int      @default(0)
+  id          String              @id @default(uuid()) @db.VarChar(36)
+  name        String              @unique @db.VarChar(64)
+  active      Boolean             @default(true)
+  position    Int                 @default(0)
   // D89: the payment type FileMaker knows this method by (one of FMP_PAYMENT_TYPES); null = not set, sent as "อื่นๆ"
-  fmpType   String?  @db.VarChar(32)
-  createdAt DateTime @default(now()) @db.DateTime(3)
+  fmpType     String?             @db.VarChar(32)
+  createdAt   DateTime            @default(now()) @db.DateTime(3)
+  cardOptions PaymentCardOption[]
+}
+
+// D127: card options (banks/issuers and installment months) for payment methods (e.g. Full Credit Card and 0% Credit Card)
+model PaymentCardOption {
+  id                String        @id @default(uuid()) @db.VarChar(36)
+  paymentMethodId   String        @db.VarChar(36)
+  paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Cascade)
+  name              String        @db.VarChar(64)
+  active            Boolean       @default(true)
+  position          Int           @default(0)
+  installmentMonths Json?
+  createdAt         DateTime      @default(now()) @db.DateTime(3)
+
+  @@unique([paymentMethodId, name])
+  @@index([paymentMethodId])
 }
 
 // Atomic running numbers that restart every Asia/Bangkok day: scope `reference` (SES-YYYYMMDD-NNNNNN) and
@@ -519,10 +535,12 @@ model SessionBurnPoint {
 }
 
 model SessionPayment {
-  id        String          @id @default(uuid()) @db.VarChar(36)
-  sessionId String          @db.VarChar(36)
-  session   CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  method    String          @db.VarChar(64)
+  id                String          @id @default(uuid()) @db.VarChar(36)
+  sessionId         String          @db.VarChar(36)
+  session           CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  method            String          @db.VarChar(64)
+  cardType          String?         @db.VarChar(64)
+  installmentMonths Int?
 
   @@index([sessionId])
 }

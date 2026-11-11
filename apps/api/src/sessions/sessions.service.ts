@@ -1015,23 +1015,36 @@ export class SessionsService {
 
       // Update payments and auto-classify customer type (D69, D70)
       let nextCustomerTypeId = session.customerTypeId;
-      if (dto.payments) {
+      if (dto.paymentDetails || dto.payments) {
         await tx.sessionPayment.deleteMany({ where: { sessionId: session.id } });
-        for (const method of dto.payments) {
-          await tx.sessionPayment.create({
-            data: { sessionId: session.id, method },
-          });
+        if (dto.paymentDetails) {
+          for (const item of dto.paymentDetails) {
+            await tx.sessionPayment.create({
+              data: {
+                sessionId: session.id,
+                method: item.method,
+                cardType: item.cardType ?? null,
+                installmentMonths: item.installmentMonths ?? null,
+              },
+            });
+          }
+        } else if (dto.payments) {
+          for (const method of dto.payments) {
+            await tx.sessionPayment.create({
+              data: { sessionId: session.id, method },
+            });
+          }
         }
       }
 
-      if (dto.payments || dto.ontop || dto.points || dto.burnPoints) {
+      if (dto.paymentDetails || dto.payments || dto.ontop || dto.points || dto.burnPoints) {
         const types = await tx.customerType.findMany({
           where: { active: true },
           orderBy: { letter: 'asc' },
         });
 
         const allPayments =
-          dto.payments ??
+          (dto.paymentDetails ? dto.paymentDetails.map((p) => p.method) : dto.payments) ??
           (
             await tx.sessionPayment.findMany({
               where: { sessionId: session.id },
@@ -1633,7 +1646,13 @@ export class SessionsService {
             ontop: { create: old.ontop.map((o) => ({ name: o.name })) },
             points: { create: old.points.map((p) => ({ name: p.name })) },
             burnPoints: { create: old.burnPoints.map((b) => ({ name: b.name })) },
-            payments: { create: old.payments.map((p) => ({ method: p.method })) },
+            payments: {
+              create: old.payments.map((p) => ({
+                method: p.method,
+                cardType: p.cardType,
+                installmentMonths: p.installmentMonths,
+              })),
+            },
             events: {
               create: [
                 {

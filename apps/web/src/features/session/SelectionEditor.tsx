@@ -125,21 +125,6 @@ function StockBadge({ sku }: { sku: CatalogSku }) {
   );
 }
 
-const DEFAULT_FULL_CC_CARDS = [
-  'KBank', 'SCB', 'KTC', 'BBL', 'Krungsri', 'TTB', 'UOB', 'CardX',
-];
-
-const DEFAULT_ZERO_CC_CARDS: { name: string; installmentMonths: number[] }[] = [
-  { name: 'KBank', installmentMonths: [3, 6, 10] },
-  { name: 'SCB', installmentMonths: [3, 6, 10] },
-  { name: 'KTC', installmentMonths: [3, 6, 10] },
-  { name: 'BBL', installmentMonths: [3, 6, 10] },
-  { name: 'Krungsri', installmentMonths: [3, 6, 10] },
-  { name: 'TTB', installmentMonths: [3, 6, 10] },
-  { name: 'UOB', installmentMonths: [3, 6, 10] },
-  { name: 'First Choice', installmentMonths: [3, 6, 10] },
-];
-
 /**
  * Choosing the main products (F2, F3, D72): cascading dropdowns (Category → Model → Capacity → Color)
  * that adds to a list, each product with a `−` / `+` quantity stepper. Several main products can be added.
@@ -840,25 +825,14 @@ export function SelectionEditor({
           const activeDbCards =
             methodObj?.cardOptions?.filter((c) => c.active) ?? [];
 
-          // Cards list (use DB card options or fallback defaults)
-          const cards = isZeroPercent
-            ? activeDbCards.length > 0
-              ? activeDbCards.map((c) => ({
-                  name: c.name,
-                  installmentMonths: Array.isArray(c.installmentMonths)
-                    ? (c.installmentMonths as number[])
-                    : [3, 6, 10],
-                }))
-              : DEFAULT_ZERO_CC_CARDS
-            : activeDbCards.length > 0
-              ? activeDbCards.map((c) => ({
-                  name: c.name,
-                  installmentMonths: [] as number[],
-                }))
-              : DEFAULT_FULL_CC_CARDS.map((name) => ({
-                  name,
-                  installmentMonths: [] as number[],
-                }));
+          // Cards list strictly from DB active card options
+          const cards = activeDbCards.map((c) => ({
+            name: c.name,
+            installmentMonths:
+              isZeroPercent && Array.isArray(c.installmentMonths)
+                ? (c.installmentMonths as number[])
+                : ([] as number[]),
+          }));
 
           const selectedCardObj = cards.find(
             (c) => c.name === tempSelectedCard,
@@ -899,38 +873,46 @@ export function SelectionEditor({
                 >
                   1. เลือกประเภทบัตร <span style={{ color: '#ef4444' }}>*</span>
                 </div>
-                <div className="choices" style={{ marginBottom: '16px' }}>
-                  {cards.map((card) => {
-                    const selected = tempSelectedCard === card.name;
-                    return (
-                      <button
-                        key={card.name}
-                        type="button"
-                        className={`choice ${selected ? 'selected' : ''}`}
-                        style={{
-                          padding: '10px 16px',
-                          fontSize: '13px',
-                          fontWeight: selected ? 600 : 500,
-                          cursor: 'pointer',
-                        }}
-                        onClick={() => {
-                          setTempSelectedCard(card.name);
-                          if (
-                            isZeroPercent &&
-                            tempSelectedMonths &&
-                            !card.installmentMonths.includes(tempSelectedMonths)
-                          ) {
-                            setTempSelectedMonths(null);
-                          }
-                        }}
-                      >
-                        {card.name}
-                      </button>
-                    );
-                  })}
-                </div>
+                {cards.length === 0 ? (
+                  <div style={{ marginBottom: '16px' }}>
+                    <Notice error>
+                      ยังไม่มีประเภทบัตรที่เปิดใช้งาน กรุณาตั้งค่าที่หน้า Admin → ช่องทางชำระเงิน
+                    </Notice>
+                  </div>
+                ) : (
+                  <div className="choices" style={{ marginBottom: '16px' }}>
+                    {cards.map((card) => {
+                      const selected = tempSelectedCard === card.name;
+                      return (
+                        <button
+                          key={card.name}
+                          type="button"
+                          className={`choice ${selected ? 'selected' : ''}`}
+                          style={{
+                            padding: '10px 16px',
+                            fontSize: '13px',
+                            fontWeight: selected ? 600 : 500,
+                            cursor: 'pointer',
+                          }}
+                          onClick={() => {
+                            setTempSelectedCard(card.name);
+                            if (
+                              isZeroPercent &&
+                              tempSelectedMonths &&
+                              !card.installmentMonths.includes(tempSelectedMonths)
+                            ) {
+                              setTempSelectedMonths(null);
+                            }
+                          }}
+                        >
+                          {card.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
-                {isZeroPercent && (
+                {isZeroPercent && cards.length > 0 && (
                   <div
                     style={{
                       marginTop: '16px',

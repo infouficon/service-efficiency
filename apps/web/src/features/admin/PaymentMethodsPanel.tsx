@@ -15,7 +15,14 @@ import {
   updatePaymentCardOptionApi,
 } from '../../services/sessionApi';
 import { fmpPaymentTypes } from '../../constants/options';
-import type { PaymentMethod } from '../../types/session';
+import type { PaymentCardOption, PaymentMethod } from '../../types/session';
+
+function parseInstallmentMonths(raw: string): number[] {
+  return raw
+    .split(/[\s,]+/)
+    .map((n) => parseInt(n.trim(), 10))
+    .filter((n) => !isNaN(n) && n > 0);
+}
 
 /**
  * Back-office list of payment methods (F6). New ones are added here, with no deploy. A name is what sessions store, so a
@@ -34,9 +41,13 @@ export function PaymentMethodsPanel() {
   const [canDrag, setCanDrag] = useState(false);
   const [selectedMethodForCards, setSelectedMethodForCards] = useState<PaymentMethod | null>(null);
   const [newCardName, setNewCardName] = useState('');
-  const [newCardMonths, setNewCardMonths] = useState('3, 6, 10');
+  const [newCardMonths, setNewCardMonths] = useState('3, 4, 5, 6, 9, 10, 12, 15, 18, 20, 24, 36, 48');
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editCardNameValue, setEditCardNameValue] = useState('');
   const [editMonthsValue, setEditMonthsValue] = useState('');
+  const [cardDraggedIndex, setCardDraggedIndex] = useState<number | null>(null);
+  const [cardDragOverIndex, setCardDragOverIndex] = useState<number | null>(null);
+  const [cardCanDrag, setCardCanDrag] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -106,6 +117,59 @@ export function PaymentMethodsPanel() {
       setDraggedIndex(null);
       setDragOverIndex(null);
       setCanDrag(false);
+    }
+  };
+
+  const handleCardReorder = async (
+    paymentMethodId: string,
+    cardList: PaymentCardOption[],
+    sourceIndex: number,
+    targetIndex: number,
+  ) => {
+    if (
+      sourceIndex === targetIndex ||
+      sourceIndex < 0 ||
+      targetIndex < 0 ||
+      sourceIndex >= cardList.length ||
+      targetIndex >= cardList.length ||
+      busy
+    ) {
+      return;
+    }
+    const previous = methods;
+    const updatedCards = [...cardList];
+    const [moved] = updatedCards.splice(sourceIndex, 1);
+    updatedCards.splice(targetIndex, 0, moved);
+
+    setMethods((prev) =>
+      prev.map((m) =>
+        m.id === paymentMethodId ? { ...m, cardOptions: updatedCards } : m,
+      ),
+    );
+    setBusy(true);
+    try {
+      const reordered = await reorderPaymentCardOptionsApi(
+        paymentMethodId,
+        updatedCards.map((c) => c.id),
+      );
+      setMethods((prev) =>
+        prev.map((m) =>
+          m.id === paymentMethodId ? { ...m, cardOptions: reordered } : m,
+        ),
+      );
+      toast.success('บันทึกลำดับประเภทบัตรเรียบร้อย');
+      setError('');
+    } catch (err) {
+      setMethods(previous);
+      const message =
+        err instanceof Error ? err.message : 'บันทึกลำดับประเภทบัตรไม่สำเร็จ';
+      setError(message);
+      toast.error(message);
+    } finally {
+      setBusy(false);
+      setCardDraggedIndex(null);
+      setCardDragOverIndex(null);
+      setCardCanDrag(false);
     }
   };
 
@@ -369,6 +433,34 @@ export function PaymentMethodsPanel() {
           const isZeroPercent = currentMethod.name === '0% Credit Card';
           const cardList = currentMethod.cardOptions ?? [];
 
+          const saveCardEdit = (cardId: string) => {
+            const trimmedName = editCardNameValue.trim();
+            if (!trimmedName) {
+              toast.error('กรุณาระบุชื่อประเภทบัตร');
+              return;
+            }
+            const parsedMonths = isZeroPercent
+              ? parseInstallmentMonths(editMonthsValue)
+              : undefined;
+            if (isZeroPercent && parsedMonths && parsedMonths.length === 0) {
+              toast.error('กรุณาระบุจำนวนเดือนผ่อนเป็นตัวเลขอย่างน้อย 1 ค่า');
+              return;
+            }
+            void run(async () => {
+              await updatePaymentCardOptionApi(cardId, {
+                name: trimmedName,
+                ...(isZeroPercent ? { installmentMonths: parsedMonths } : {}),
+              });
+              setEditingCardId(null);
+            }, 'บันทึกข้อมูลประเภทบัตรเรียบร้อย');
+          };
+
+          const cancelCardEdit = () => {
+            setEditingCardId(null);
+            setEditCardNameValue('');
+            setEditMonthsValue('');
+          };
+
           return (
             <Modal
               isOpen={true}
@@ -386,14 +478,17 @@ export function PaymentMethodsPanel() {
               }
               onClose={() => {
                 setSelectedMethodForCards(null);
-                setEditingCardId(null);
+                cancelCardEdit();
+                setCardDraggedIndex(null);
+                setCardDragOverIndex(null);
+                setCardCanDrag(false);
               }}
-              maxWidth="680px"
+              maxWidth="760px"
             >
               <p className="muted" style={{ marginTop: 0 }}>
                 {isZeroPercent
-                  ? 'กำหนดประเภทบัตรและจำนวนเดือนผ่อนที่รองรับสำหรับ 0% Credit Card'
-                  : 'กำหนดประเภทบัตรเครดิตที่ยอมรับสำหรับ Full Credit Card'}
+                  ? 'กำหนดประเภทบัตรและจำนวนเดือนผ่อนที่รองรับสำหรับ 0% Credit Card (ลากไอคอน ⠿ หรือใช้ลูกศรเพื่อสลับลำดับ)'
+                  : 'กำหนดประเภทบัตรเครดิตที่ยอมรับสำหรับ Full Credit Card (ลากไอคอน ⠿ หรือใช้ลูกศรเพื่อสลับลำดับ)'}
               </p>
               <form
                 className="payment-add-form"
@@ -402,11 +497,12 @@ export function PaymentMethodsPanel() {
                   e.preventDefault();
                   if (!newCardName.trim()) return;
                   const months = isZeroPercent
-                    ? newCardMonths
-                        .split(/[\s,]+/)
-                        .map((n) => parseInt(n.trim(), 10))
-                        .filter((n) => !isNaN(n) && n > 0)
+                    ? parseInstallmentMonths(newCardMonths)
                     : null;
+                  if (isZeroPercent && months && months.length === 0) {
+                    toast.error('กรุณาระบุจำนวนเดือนผ่อนเป็นตัวเลขอย่างน้อย 1 ค่า');
+                    return;
+                  }
                   void run(async () => {
                     await createPaymentCardOptionApi(
                       currentMethod.id,
@@ -414,7 +510,7 @@ export function PaymentMethodsPanel() {
                       months,
                     );
                     setNewCardName('');
-                    if (isZeroPercent) setNewCardMonths('3, 6, 10');
+                    if (isZeroPercent) setNewCardMonths('3, 4, 5, 6, 9, 10, 12, 15, 18, 20, 24, 36, 48');
                   }, `เพิ่มประเภทบัตร "${newCardName.trim()}" เรียบร้อย`);
                 }}
               >
@@ -429,11 +525,11 @@ export function PaymentMethodsPanel() {
                 {isZeroPercent && (
                   <input
                     required
-                    placeholder="จำนวนเดือน เช่น 3, 6, 10"
+                    placeholder="จำนวนเดือน เช่น 3, 4, 5, 6, 9, 10, 12, 15, 18, 20, 24, 36, 48"
                     value={newCardMonths}
                     onChange={(e) => setNewCardMonths(e.target.value)}
                     style={{ width: '160px' }}
-                    title="ระบุจำนวนเดือนคั่นด้วยเครื่องหมายจุลภาค เช่น 3, 6, 10"
+                    title="ระบุจำนวนเดือนคั่นด้วยเครื่องหมายจุลภาค เช่น 3, 4, 5, 6, 9, 10, 12, 15, 18, 20, 24, 36, 48"
                   />
                 )}
                 <Button
@@ -460,11 +556,12 @@ export function PaymentMethodsPanel() {
                   <table className="admin-table">
                     <thead>
                       <tr>
+                        <th style={{ width: '36px', textAlign: 'center' }}></th>
                         <th style={{ width: '50px' }}>ลำดับ</th>
                         <th>ชื่อประเภทบัตร</th>
                         {isZeroPercent && <th>จำนวนเดือนที่ผ่อน</th>}
                         <th style={{ width: '90px' }}>สถานะ</th>
-                        <th style={{ width: '180px' }}>Actions</th>
+                        <th style={{ width: '210px' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -472,65 +569,153 @@ export function PaymentMethodsPanel() {
                         const monthsList = Array.isArray(card.installmentMonths)
                           ? (card.installmentMonths as number[])
                           : [];
-                        const isEditingMonths = editingCardId === card.id;
+                        const isEditing = editingCardId === card.id;
+                        const isDragging = cardDraggedIndex === idx;
+                        const isOver =
+                          cardDragOverIndex === idx && cardDraggedIndex !== idx;
 
                         return (
-                          <tr key={card.id}>
+                          <tr
+                            key={card.id}
+                            draggable={
+                              cardCanDrag && !busy && editingCardId === null
+                            }
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData('text/plain', String(idx));
+                              e.dataTransfer.effectAllowed = 'move';
+                              setCardDraggedIndex(idx);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              if (cardDragOverIndex !== idx) {
+                                setCardDragOverIndex(idx);
+                              }
+                            }}
+                            onDragLeave={() => {
+                              if (cardDragOverIndex === idx) {
+                                setCardDragOverIndex(null);
+                              }
+                            }}
+                            onDragEnd={() => {
+                              setCardDraggedIndex(null);
+                              setCardDragOverIndex(null);
+                              setCardCanDrag(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (
+                                cardDraggedIndex !== null &&
+                                cardDraggedIndex !== idx
+                              ) {
+                                void handleCardReorder(
+                                  currentMethod.id,
+                                  cardList,
+                                  cardDraggedIndex,
+                                  idx,
+                                );
+                              } else {
+                                setCardDraggedIndex(null);
+                                setCardDragOverIndex(null);
+                                setCardCanDrag(false);
+                              }
+                            }}
+                            style={{
+                              opacity: isDragging ? 0.35 : 1,
+                              backgroundColor: isOver ? '#f0fdfa' : undefined,
+                              boxShadow: isOver
+                                ? cardDraggedIndex !== null &&
+                                  cardDraggedIndex < idx
+                                  ? 'inset 0 -2px 0 0 #0abab5'
+                                  : 'inset 0 2px 0 0 #0abab5'
+                                : undefined,
+                              transition:
+                                'background-color 0.15s ease, opacity 0.15s ease',
+                            }}
+                          >
+                            <td
+                              style={{
+                                textAlign: 'center',
+                                cursor:
+                                  busy || editingCardId !== null
+                                    ? 'default'
+                                    : 'grab',
+                                color: '#94a3b8',
+                                userSelect: 'none',
+                              }}
+                              onMouseEnter={() => {
+                                if (editingCardId === null) setCardCanDrag(true);
+                              }}
+                              onMouseLeave={() => {
+                                if (cardDraggedIndex === null)
+                                  setCardCanDrag(false);
+                              }}
+                              onMouseDown={() => {
+                                if (editingCardId === null) setCardCanDrag(true);
+                              }}
+                              title="คลิกค้างแล้วลากเพื่อสลับลำดับ"
+                            >
+                              <GripVertical size={16} />
+                            </td>
                             <td>{idx + 1}</td>
                             <td>
-                              <strong>{card.name}</strong>
+                              {isEditing ? (
+                                <input
+                                  type="text"
+                                  maxLength={64}
+                                  aria-label={`ชื่อประเภทบัตร ${card.name}`}
+                                  value={editCardNameValue}
+                                  onChange={(e) =>
+                                    setEditCardNameValue(e.target.value)
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      saveCardEdit(card.id);
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelCardEdit();
+                                    }
+                                  }}
+                                  style={{
+                                    width: '100%',
+                                    minWidth: '120px',
+                                    padding: '4px 6px',
+                                    fontSize: '13px',
+                                  }}
+                                  placeholder="ชื่อประเภทบัตร"
+                                  autoFocus
+                                />
+                              ) : (
+                                <strong>{card.name}</strong>
+                              )}
                             </td>
                             {isZeroPercent && (
                               <td>
-                                {isEditingMonths ? (
-                                  <div
-                                    style={{
-                                      display: 'flex',
-                                      gap: '4px',
-                                      alignItems: 'center',
-                                    }}
-                                  >
-                                    <input
-                                      type="text"
-                                      value={editMonthsValue}
-                                      onChange={(e) =>
-                                        setEditMonthsValue(e.target.value)
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    aria-label={`จำนวนเดือนผ่อน ${card.name}`}
+                                    value={editMonthsValue}
+                                    onChange={(e) =>
+                                      setEditMonthsValue(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        saveCardEdit(card.id);
+                                      } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        cancelCardEdit();
                                       }
-                                      style={{
-                                        width: '120px',
-                                        padding: '4px 6px',
-                                        fontSize: '12px',
-                                      }}
-                                      placeholder="เช่น 3, 6, 10"
-                                    />
-                                    <Button
-                                      size="sm"
-                                      onClick={() => {
-                                        const parsed = editMonthsValue
-                                          .split(/[\s,]+/)
-                                          .map((n) => parseInt(n.trim(), 10))
-                                          .filter((n) => !isNaN(n) && n > 0);
-                                        void run(async () => {
-                                          await updatePaymentCardOptionApi(
-                                            card.id,
-                                            {
-                                              installmentMonths: parsed,
-                                            },
-                                          );
-                                          setEditingCardId(null);
-                                        }, 'บันทึกจำนวนเดือนผ่อนเรียบร้อย');
-                                      }}
-                                    >
-                                      บันทึก
-                                    </Button>
-                                    <Button
-                                      variant="secondary"
-                                      size="sm"
-                                      onClick={() => setEditingCardId(null)}
-                                    >
-                                      ยกเลิก
-                                    </Button>
-                                  </div>
+                                    }}
+                                    style={{
+                                      width: '130px',
+                                      padding: '4px 6px',
+                                      fontSize: '12px',
+                                    }}
+                                    placeholder="เช่น 3, 4, 5, 6, 9, 10, 12, 15, 18, 20, 24, 36, 48"
+                                  />
                                 ) : (
                                   <div
                                     style={{
@@ -555,26 +740,6 @@ export function PaymentMethodsPanel() {
                                         {m} เดือน
                                       </span>
                                     ))}
-                                    <button
-                                      type="button"
-                                      style={{
-                                        border: 'none',
-                                        background: 'none',
-                                        color: '#0abab5',
-                                        cursor: 'pointer',
-                                        fontSize: '11px',
-                                        textDecoration: 'underline',
-                                        marginLeft: '4px',
-                                      }}
-                                      onClick={() => {
-                                        setEditingCardId(card.id);
-                                        setEditMonthsValue(
-                                          monthsList.join(', '),
-                                        );
-                                      }}
-                                    >
-                                      แก้ไข
-                                    </button>
                                   </div>
                                 )}
                               </td>
@@ -587,88 +752,115 @@ export function PaymentMethodsPanel() {
                               </span>
                             </td>
                             <td>
-                              <div style={{ display: 'flex', gap: '4px' }}>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={busy || idx === 0}
-                                  aria-label="เลื่อนขึ้น"
-                                  onClick={() => {
-                                    const next = [...cardList];
-                                    [next[idx], next[idx - 1]] = [
-                                      next[idx - 1],
-                                      next[idx],
-                                    ];
-                                    void run(async () => {
-                                      await reorderPaymentCardOptionsApi(
-                                        currentMethod.id,
-                                        next.map((c) => c.id),
-                                      );
-                                    }, 'บันทึกลำดับประเภทบัตรเรียบร้อย');
-                                  }}
-                                >
-                                  <ArrowUp size={14} />
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={busy || idx === cardList.length - 1}
-                                  aria-label="เลื่อนลง"
-                                  onClick={() => {
-                                    const next = [...cardList];
-                                    [next[idx], next[idx + 1]] = [
-                                      next[idx + 1],
-                                      next[idx],
-                                    ];
-                                    void run(async () => {
-                                      await reorderPaymentCardOptionsApi(
-                                        currentMethod.id,
-                                        next.map((c) => c.id),
-                                      );
-                                    }, 'บันทึกลำดับประเภทบัตรเรียบร้อย');
-                                  }}
-                                >
-                                  <ArrowDown size={14} />
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    void run(
-                                      () =>
-                                        updatePaymentCardOptionApi(card.id, {
-                                          active: !card.active,
-                                        }),
-                                      card.active
-                                        ? 'ปิดใช้งานประเภทบัตรแล้ว'
-                                        : 'เปิดใช้งานประเภทบัตรแล้ว',
-                                    )
-                                  }
-                                >
-                                  {card.active ? 'ปิด' : 'เปิด'}
-                                </Button>
-                                <Button
-                                  variant="secondary"
-                                  size="sm"
-                                  disabled={busy}
-                                  aria-label="ลบประเภทบัตร"
-                                  onClick={() => {
-                                    if (
-                                      window.confirm(
-                                        `ยืนยันลบประเภทบัตร "${card.name}" หรือไม่?`,
-                                      )
-                                    ) {
-                                      void run(
-                                        () => deletePaymentCardOptionApi(card.id),
-                                        'ลบประเภทบัตรเรียบร้อย',
-                                      );
+                              {isEditing ? (
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <Button
+                                    size="sm"
+                                    disabled={
+                                      busy || !editCardNameValue.trim()
                                     }
-                                  }}
-                                >
-                                  <Trash2 size={14} />
-                                </Button>
-                              </div>
+                                    onClick={() => saveCardEdit(card.id)}
+                                  >
+                                    บันทึก
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={cancelCardEdit}
+                                  >
+                                    ยกเลิก
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={busy || idx === 0}
+                                    aria-label="เลื่อนขึ้น"
+                                    onClick={() =>
+                                      void handleCardReorder(
+                                        currentMethod.id,
+                                        cardList,
+                                        idx,
+                                        idx - 1,
+                                      )
+                                    }
+                                  >
+                                    <ArrowUp size={14} />
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={
+                                      busy || idx === cardList.length - 1
+                                    }
+                                    aria-label="เลื่อนลง"
+                                    onClick={() =>
+                                      void handleCardReorder(
+                                        currentMethod.id,
+                                        cardList,
+                                        idx,
+                                        idx + 1,
+                                      )
+                                    }
+                                  >
+                                    <ArrowDown size={14} />
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() => {
+                                      setEditingCardId(card.id);
+                                      setEditCardNameValue(card.name);
+                                      setEditMonthsValue(monthsList.join(', '));
+                                    }}
+                                  >
+                                    แก้ไข
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={busy}
+                                    onClick={() =>
+                                      void run(
+                                        () =>
+                                          updatePaymentCardOptionApi(card.id, {
+                                            active: !card.active,
+                                          }),
+                                        card.active
+                                          ? 'ปิดใช้งานประเภทบัตรแล้ว'
+                                          : 'เปิดใช้งานประเภทบัตรแล้ว',
+                                      )
+                                    }
+                                  >
+                                    {card.active ? 'ปิด' : 'เปิด'}
+                                  </Button>
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    disabled={busy}
+                                    aria-label="ลบประเภทบัตร"
+                                    onClick={() => {
+                                      if (
+                                        window.confirm(
+                                          `ยืนยันลบประเภทบัตร "${card.name}" หรือไม่?`,
+                                        )
+                                      ) {
+                                        void run(
+                                          () =>
+                                            deletePaymentCardOptionApi(card.id),
+                                          'ลบประเภทบัตรเรียบร้อย',
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 size={14} />
+                                  </Button>
+                                </div>
+                              )}
                             </td>
                           </tr>
                         );

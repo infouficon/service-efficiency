@@ -1882,3 +1882,13 @@ A Codex review of the v4.1 script set and the FileMaker integration (owner asked
    "Cellular" the two disagreed. The web now passes the model name too (`Product.modelName`), the same inputs as the server.
 9. **Order page wording** for the release answers (`RELEASED`, `NOTHING_TO_RELEASE`, `BILL_CONFIRMED`, `BILL_IN_USE`, `RELEASE_FAILED`) and
    `QUERY_FAILED` tells the cashier what to do instead of "FileMaker ไม่รับ … แจ้ง ADMIN".
+
+**v4.3 (same day, after the FMP team's answers).** The FMP team confirmed: the real bill in `pos_front_sale` carries `ses_id`; both
+`pos_front_sale` and `pos_front_sale_tmp` have `status`, which is `cancel` when cancelled; the sales screen's Comment box is the `comment`
+field on both tables; receipt type, card and installment months already exist in FileMaker (field names not given yet). So v4.3:
+`$NOTE_FIELD = "pos_front_sale_tmp::comment"` (no `ses_note` field needed); `$REAL_BILL_ACTIVE_SQL` counts real bills of the `ses_id`
+whose `status` is empty or not `cancel` (case-insensitive); a draft the cashier cancelled (`status = cancel`) is released like a `hold`
+draft (lines and draft deleted, SNs free) in place of `BILL_IN_USE`; and an ADMIN resend of the same round after the cashier cancelled the
+draft opens a new draft in place of `ALREADY_DONE`. `$UNKNOWN_REOPEN` stays 1: with the query set, `UNKNOWN` only means no real bill
+carries this `ses_id` (the draft was deleted in FileMaker), where opening a new draft is safe. `$RECEIPT_FIELD` / `$CARD_FIELD` /
+`$INSTALLMENT_FIELD` and the maps wait for the field names and values.

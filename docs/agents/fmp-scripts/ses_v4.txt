@@ -21,6 +21,11 @@
 # [SES v4.2]   5) เขียนหมายเหตุลง $NOTE_FIELD ไม่ได้ (ชื่อฟิลด์ผิด) = ยกเลิกทั้งบิลพร้อมบอกสาเหตุ ไม่เงียบ
 # [SES v4.2]   6) บัตร / เดือนผ่อน (paymentDetails) ประเภทใบเสร็จ (receiptType) และ VAT Refund ต่อท้ายหมายเหตุ
 # [SES v4.2]      และลงฟิลด์ FMP ได้ถ้าตั้ง $RECEIPT_FIELD / $CARD_FIELD / $INSTALLMENT_FIELD (แปลงค่าด้วย $RECEIPT_MAP / $CARD_MAP)
+# [SES v4.3] 2026-11-11 ตามที่ทีม FMP ตอบ ทุกจุดที่เปลี่ยนมี [SES v4.3] นำหน้า:
+# [SES v4.3]   1) หมายเหตุลงช่อง Comment (pos_front_sale_tmp::comment ติดไปบิลจริงตอนยืนยัน) ไม่ต้องเพิ่มฟิลด์ ses_note แล้ว
+# [SES v4.3]   2) ตั้ง $REAL_BILL_ACTIVE_SQL แล้ว: บิลจริงที่ status = cancel ถือว่ายกเลิก
+# [SES v4.3]   3) ร่างที่แคชเชียร์ยกเลิก (pos_front_sale_tmp status = cancel) เอาออกได้เหมือนร่าง hold (ลบรายการ ปล่อย SN)
+# [SES v4.3]      ไม่ตอบ BILL_IN_USE แล้ว · ADMIN กด "ส่งซ้ำ" รอบเดิมหลังแคชเชียร์ยกเลิกร่าง = เปิดร่างใหม่ (เดิมตอบ ALREADY_DONE)
 # =====================================================================
 # [SES v3] 2026-11-05 ทีม SES: สคริปต์ ses เวอร์ชัน 3 = v2 + "สแกน SN ทีหลัง" (ทุกจุดที่เปลี่ยนมี [SES v3] นำหน้า, ดู README.md)
 # [SES v3] เครื่องอยู่ที่ร้านแล้วแต่ FMP ยังไม่อัปเดต (เช่น ยังไม่รับโอน: SN_WRONG_BRANCH) หรือ STOCK ยังสแกนไม่ได้: เปิดบิลพักได้
@@ -42,6 +47,7 @@
 # Version: v3.2 2026-11-06 ตัวที่ทีม FMP ใช้งานจริง + แก้ 3.3 Payments ให้อ่าน "paymentTypes"
 # Version: v3.3 2026-11-10 เพิ่ม "snCheck" ในผลลัพธ์ (ผลตรวจ SN ทีละเครื่อง ให้ SES แสดงและส่งกลับให้ Stock สแกนใหม่เฉพาะเครื่องที่ผิด)
 # Version: v3.4 2026-11-10 รับ event RETURNED_TO_STOCK / CANCELLED (เอาบิลพักออก) และ revision (เปิดบิลพักใหม่แทนใบเดิม พร้อมหมายเหตุ)
+# Version: v4.3 2026-11-11 หมายเหตุลง comment, บิลจริง status cancel = ยกเลิก, ร่าง cancel เอาออก / ส่งซ้ำเปิดใหม่ได้
 # Version: v4   2026-11-10 = v3.4 + PayBy ตามชื่อช่องทาง ($PAYBY_MAP) + เก็บกวาด
 # Version: v4.1 2026-11-10 ร่างบิล = ลบทิ้ง, ร่างหาย = BILL_CONFIRMED, หมายเหตุเลือกฟิลด์ได้ ($NOTE_FIELD)
 # Version: v4.2 2026-11-11 ร่างหายไม่วนติด, PROCESSING หมดเวลา, กันชนส่งกลับ STOCK, SQL error ไม่เดา, บัตร/ใบเสร็จ (ชุดล่าสุด)
@@ -68,7 +74,8 @@ Set Variable [ $ALLOW_SN_LATER ; Value: 1 ]
 # [SES v4.1] ฟิลด์ที่ใส่หมายเหตุ SES ("SES-… · คิว A002 · แก้ไขครั้งที่ 2: เหตุผล") ใส่ชื่อเต็ม "ตาราง::ฟิลด์"
 # [SES v4.1] แนะนำช่อง Comment บนหน้าจอขายหน้าร้าน ถ้าช่องนั้นติดไปบิลจริง (pos_front_sale) ตอนยืนยัน หมายเหตุจะอยู่บนบิลจริงด้วย
 # [SES v4.1] ใช้ช่องที่มีอยู่แล้ว = ไม่ต้องเพิ่มฟิลด์ ses_note
-Set Variable [ $NOTE_FIELD ; Value: "pos_front_sale_tmp::ses_note" ]
+# [SES v4.3] ทีม FMP ยืนยัน 2026-11-11: ช่อง Comment = ฟิลด์ comment มีทั้ง pos_front_sale_tmp และ pos_front_sale
+Set Variable [ $NOTE_FIELD ; Value: "pos_front_sale_tmp::comment" ]
 # [SES v4.2] record ses ที่ค้าง PROCESSING นานกว่านี้ (นาที) = รอบก่อนหยุดกลางทาง ทำต่อได้ (บิลเขียนใน Transaction เดียว ล้มกลางทางไม่มีร่างค้าง)
 Set Variable [ $PROCESSING_TIMEOUT_MIN ; Value: 5 ]
 # [SES v4.2] ตรวจบิลจริง (pos_front_sale) ของออเดอร์ ตอนร่างหายไปแล้ว ("?" แทน ses_id ของออเดอร์)
@@ -76,7 +83,8 @@ Set Variable [ $PROCESSING_TIMEOUT_MIN ; Value: 5 ]
 # [SES v4.2]   $REAL_BILL_ACTIVE_SQL = นับเฉพาะบิลจริงที่ "ยังไม่ยกเลิก" ทีม FMP ใส่เงื่อนไขบิลที่ยกเลิกเอง เช่น AND "status" <> 'cancel'
 # [SES v4.2]   ปล่อย $REAL_BILL_ACTIVE_SQL ว่าง = ตรวจไม่ได้: ไม่เปิดร่างทันที ตอบ BILL_CONFIRMED แต่ปล่อย record ให้รอบส่งถัดไปเปิดร่างใหม่
 Set Variable [ $REAL_BILL_SQL ; Value: "SELECT COUNT(*) FROM pos_front_sale WHERE ses_id = ?" ]
-Set Variable [ $REAL_BILL_ACTIVE_SQL ; Value: "" ]
+# [SES v4.3] ทีม FMP ยืนยัน 2026-11-11: บิลจริงมี ses_id · ยกเลิกแล้ว status = cancel (status ว่าง = ยังไม่ยกเลิก)
+Set Variable [ $REAL_BILL_ACTIVE_SQL ; Value: "SELECT COUNT(*) FROM pos_front_sale WHERE ses_id = ? AND ( \"status\" IS NULL OR LOWER(\"status\") <> 'cancel' )" ]
 # [SES v4.2] ตรวจบิลจริงไม่ได้ (ยังไม่ตั้ง $REAL_BILL_ACTIVE_SQL หรือบิลจริงไม่มี ses_id):
 # [SES v4.2]   1 = ปล่อย record ให้รอบส่งถัดไปเปิดร่างใหม่ (ไม่วนติด แต่ถ้าแคชเชียร์ลืมยกเลิกบิลจริงใบเดิม จะมีบิลสองใบ)
 # [SES v4.2]   0 = ไม่เปิดร่างใหม่จนกว่าจะตรวจได้ว่าบิลจริงยกเลิกแล้ว (ต้องตั้ง $REAL_BILL_ACTIVE_SQL ให้ใช้ได้ ไม่งั้นวนติดแบบ v4.1)
@@ -183,8 +191,10 @@ End If
 If [ $isRelease and $busy ]
 	Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "IN_PROGRESS" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "message" ; "FMP กำลังเปิดบิลของออเดอร์นี้อยู่ ยังไม่ได้เอาออก" ; JSONString ] ) ]
 End If
+# [SES v4.3] ร่างของรอบที่ทำไปแล้วถูกแคชเชียร์ยกเลิก (status = cancel): ส่งซ้ำรอบเดิมก็เปิดร่างใหม่ได้ ไม่ตอบ ALREADY_DONE
+Set Variable [ $draftCancelled ; Value: ses::ses_status = "DONE" and not IsEmpty ( ses::sale_id ) and Lower ( ExecuteSQL ( "SELECT \"status\" FROM pos_front_sale_tmp WHERE \"_PrimaryKey\" = ?" ; "" ; "" ; ses::sale_id ) ) = "cancel" ]
 # ----- เอาบิลพักออก: เมื่อส่งกลับ STOCK / ยกเลิก หรือ STOCK ส่งรอบใหม่ (revision มากกว่า) ขณะบิลพักรอบก่อนยังอยู่ -----
-If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
+If [ $isRelease or ( ses::ses_status = "DONE" and ( $rev > $lastRev or $draftCancelled ) ) ]
 	Set Variable [ $holdKey ; Value: ses::sale_id ]
 	Set Variable [ $released ; Value: 0 ]
 	Set Variable [ $hStatus ; Value: "" ]
@@ -237,7 +247,8 @@ If [ $isRelease or ( ses::ses_status = "DONE" and $rev > $lastRev ) ]
 			Set Variable [ $holdKey ; Value: "" ]
 		End If
 		# ร่างถูกเปิดทำรายการอยู่ (status ไม่ใช่ hold) หรือมีรายการออกใบกำกับแล้ว: ไม่แตะ แคชเชียร์ต้องจัดการเอง
-		If [ not $voided and ( $hStatus ≠ "hold" or GetAsNumber ( $inUse ) > 0 ) ]
+		# [SES v4.3] ร่างที่แคชเชียร์ยกเลิกแล้ว (status = cancel) เอาออกได้เหมือน hold (ลบรายการให้ SN ว่าง)
+		If [ not $voided and ( ( $hStatus ≠ "hold" and Lower ( $hStatus ) ≠ "cancel" ) or GetAsNumber ( $inUse ) > 0 ) ]
 			Exit Script [ Text Result: JSONSetElement ( "{}" ; [ "ok" ; False ; JSONBoolean ] ; [ "code" ; "BILL_IN_USE" ; JSONString ] ; [ "sesID" ; $sesID ; JSONString ] ; [ "saleID" ; $holdKey ; JSONString ] ; [ "message" ; "บิลพักถูกเปิดทำรายการหรือชำระแล้ว (status " & $hStatus & ") ไม่ได้เอาออก แคชเชียร์ต้องจัดการใน FMP เอง" ; JSONString ] ) ]
 		End If
 	End If

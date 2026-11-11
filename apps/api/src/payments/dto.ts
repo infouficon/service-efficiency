@@ -51,3 +51,45 @@ export class PaymentMethodFmpTypeDto {
   @IsIn(FMP_PAYMENT_TYPES)
   fmpType!: string | null;
 }
+
+/** D127: card option create DTO (bank name and optional installment months) */
+export class PaymentCardOptionCreateDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(64)
+  name!: string;
+
+  @IsOptional()
+  @IsArray()
+  installmentMonths?: number[] | null;
+}
+
+/** D127: card option update DTO */
+export class PaymentCardOptionUpdateDto {
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(64)
+  name?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  active?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  installmentMonths?: number[] | null;
+}
+
+export class PaymentCardOptionReorderDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  ids!: string[];
+}

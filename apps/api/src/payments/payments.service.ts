@@ -43,6 +43,12 @@ export class PaymentsService {
   list(all = false) {
     return this.prisma.paymentMethod.findMany({
       where: all ? undefined : { active: true },
+      include: {
+        cardOptions: {
+          where: all ? undefined : { active: true },
+          orderBy: [{ position: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+        },
+      },
       orderBy: ORDER,
     });
   }
@@ -139,6 +145,108 @@ export class PaymentsService {
         }
       }
       return tx.paymentMethod.findMany({ orderBy: ORDER });
+    });
+  }
+
+  /** D127: Add a card option to a payment method */
+  async addCardOption(
+    paymentMethodId: string,
+    name: string,
+    installmentMonths?: number[] | null,
+  ) {
+    const method = await this.prisma.paymentMethod.findUnique({
+      where: { id: paymentMethodId },
+    });
+    if (!method) throw new NotFoundException('ไม่พบช่องทางชำระเงิน');
+
+    const last = await this.prisma.paymentCardOption.aggregate({
+      where: { paymentMethodId },
+      _max: { position: true },
+    });
+
+    try {
+      return await this.prisma.paymentCardOption.create({
+        data: {
+          paymentMethodId,
+          name,
+          installmentMonths: installmentMonths
+            ? (installmentMonths as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
+          position: (last._max.position ?? 0) + 1,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      )
+        throw new ConflictException(`มีประเภทบัตร "${name}" ในช่องทางนี้อยู่แล้ว`);
+      throw err;
+    }
+  }
+
+  /** D127: Update a card option */
+  async updateCardOption(
+    id: string,
+    data: {
+      name?: string;
+      active?: boolean;
+      installmentMonths?: number[] | null;
+    },
+  ) {
+    const card = await this.prisma.paymentCardOption.findUnique({
+      where: { id },
+    });
+    if (!card) throw new NotFoundException('ไม่พบประเภทบัตร');
+
+    try {
+      return await this.prisma.paymentCardOption.update({
+        where: { id },
+        data: {
+          name: data.name,
+          active: data.active,
+          installmentMonths:
+            data.installmentMonths !== undefined
+              ? data.installmentMonths === null
+                ? Prisma.JsonNull
+                : (data.installmentMonths as Prisma.InputJsonValue)
+              : undefined,
+        },
+      });
+    } catch (err) {
+      if (
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === 'P2002'
+      )
+        throw new ConflictException(`มีประเภทบัตร "${data.name}" ในช่องทางนี้อยู่แล้ว`);
+      throw err;
+    }
+  }
+
+  /** D127: Delete a card option */
+  async deleteCardOption(id: string) {
+    const card = await this.prisma.paymentCardOption.findUnique({
+      where: { id },
+    });
+    if (!card) throw new NotFoundException('ไม่พบประเภทบัตร');
+    return this.prisma.paymentCardOption.delete({
+      where: { id },
+    });
+  }
+
+  /** D127: Reorder card options */
+  async reorderCardOptions(paymentMethodId: string, ids: string[]) {
+    return this.prisma.$transaction(async (tx) => {
+      for (const [index, id] of ids.entries()) {
+        await tx.paymentCardOption.update({
+          where: { id, paymentMethodId },
+          data: { position: index + 1 },
+        });
+      }
+      return tx.paymentCardOption.findMany({
+        where: { paymentMethodId },
+        orderBy: [{ position: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
+      });
     });
   }
 }

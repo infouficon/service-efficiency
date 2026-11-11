@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
-import { Button, Notice, Panel } from '../../components/ui';
+import { ArrowDown, ArrowUp, CreditCard, GripVertical, Plus, Trash2 } from 'lucide-react';
+import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import {
+  createPaymentCardOptionApi,
   createPaymentMethodApi,
+  deletePaymentCardOptionApi,
   fetchPaymentMethodsApi,
   movePaymentMethodApi,
+  reorderPaymentCardOptionsApi,
   reorderPaymentMethodsApi,
   setPaymentMethodActiveApi,
   setPaymentMethodFmpTypeApi,
+  updatePaymentCardOptionApi,
 } from '../../services/sessionApi';
 import { fmpPaymentTypes } from '../../constants/options';
 import type { PaymentMethod } from '../../types/session';
@@ -28,6 +32,11 @@ export function PaymentMethodsPanel() {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [canDrag, setCanDrag] = useState(false);
+  const [selectedMethodForCards, setSelectedMethodForCards] = useState<PaymentMethod | null>(null);
+  const [newCardName, setNewCardName] = useState('');
+  const [newCardMonths, setNewCardMonths] = useState('3, 6, 10');
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editMonthsValue, setEditMonthsValue] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -324,6 +333,25 @@ export function PaymentMethodsPanel() {
                           >
                             {method.active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
                           </Button>
+                          {(method.name === 'Full Credit Card' ||
+                            method.name === '0% Credit Card') && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => setSelectedMethodForCards(method)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <CreditCard size={14} />
+                              ตั้งค่าบัตร
+                              {method.cardOptions?.length
+                                ? ` (${method.cardOptions.length})`
+                                : ''}
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -333,6 +361,325 @@ export function PaymentMethodsPanel() {
             </table>
           </div>
         )}
+
+        {selectedMethodForCards && (() => {
+          const currentMethod =
+            methods.find((m) => m.id === selectedMethodForCards.id) ??
+            selectedMethodForCards;
+          const isZeroPercent = currentMethod.name === '0% Credit Card';
+          const cardList = currentMethod.cardOptions ?? [];
+
+          return (
+            <Modal
+              isOpen={true}
+              title={
+                <span
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  <CreditCard size={18} />
+                  ตั้งค่าประเภทบัตร: {currentMethod.name}
+                </span>
+              }
+              onClose={() => {
+                setSelectedMethodForCards(null);
+                setEditingCardId(null);
+              }}
+              maxWidth="680px"
+            >
+              <p className="muted" style={{ marginTop: 0 }}>
+                {isZeroPercent
+                  ? 'กำหนดประเภทบัตรและจำนวนเดือนผ่อนที่รองรับสำหรับ 0% Credit Card'
+                  : 'กำหนดประเภทบัตรเครดิตที่ยอมรับสำหรับ Full Credit Card'}
+              </p>
+              <form
+                className="payment-add-form"
+                style={{ marginBottom: '16px' }}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!newCardName.trim()) return;
+                  const months = isZeroPercent
+                    ? newCardMonths
+                        .split(/[\s,]+/)
+                        .map((n) => parseInt(n.trim(), 10))
+                        .filter((n) => !isNaN(n) && n > 0)
+                    : null;
+                  void run(async () => {
+                    await createPaymentCardOptionApi(
+                      currentMethod.id,
+                      newCardName.trim(),
+                      months,
+                    );
+                    setNewCardName('');
+                    if (isZeroPercent) setNewCardMonths('3, 6, 10');
+                  }, `เพิ่มประเภทบัตร "${newCardName.trim()}" เรียบร้อย`);
+                }}
+              >
+                <input
+                  required
+                  maxLength={64}
+                  placeholder="ชื่อประเภทบัตร เช่น KBank, SCB"
+                  value={newCardName}
+                  onChange={(e) => setNewCardName(e.target.value)}
+                  style={{ flex: 1 }}
+                />
+                {isZeroPercent && (
+                  <input
+                    required
+                    placeholder="จำนวนเดือน เช่น 3, 6, 10"
+                    value={newCardMonths}
+                    onChange={(e) => setNewCardMonths(e.target.value)}
+                    style={{ width: '160px' }}
+                    title="ระบุจำนวนเดือนคั่นด้วยเครื่องหมายจุลภาค เช่น 3, 6, 10"
+                  />
+                )}
+                <Button
+                  type="submit"
+                  disabled={busy || !newCardName.trim()}
+                >
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Plus size={16} />
+                    เพิ่มบัตร
+                  </span>
+                </Button>
+              </form>
+
+              {cardList.length === 0 ? (
+                <Notice>ยังไม่มีประเภทบัตร กดเพิ่มบัตรด้านบนได้ทันที</Notice>
+              ) : (
+                <div className="table-responsive">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th style={{ width: '50px' }}>ลำดับ</th>
+                        <th>ชื่อประเภทบัตร</th>
+                        {isZeroPercent && <th>จำนวนเดือนที่ผ่อน</th>}
+                        <th style={{ width: '90px' }}>สถานะ</th>
+                        <th style={{ width: '180px' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cardList.map((card, idx) => {
+                        const monthsList = Array.isArray(card.installmentMonths)
+                          ? (card.installmentMonths as number[])
+                          : [];
+                        const isEditingMonths = editingCardId === card.id;
+
+                        return (
+                          <tr key={card.id}>
+                            <td>{idx + 1}</td>
+                            <td>
+                              <strong>{card.name}</strong>
+                            </td>
+                            {isZeroPercent && (
+                              <td>
+                                {isEditingMonths ? (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: '4px',
+                                      alignItems: 'center',
+                                    }}
+                                  >
+                                    <input
+                                      type="text"
+                                      value={editMonthsValue}
+                                      onChange={(e) =>
+                                        setEditMonthsValue(e.target.value)
+                                      }
+                                      style={{
+                                        width: '120px',
+                                        padding: '4px 6px',
+                                        fontSize: '12px',
+                                      }}
+                                      placeholder="เช่น 3, 6, 10"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      onClick={() => {
+                                        const parsed = editMonthsValue
+                                          .split(/[\s,]+/)
+                                          .map((n) => parseInt(n.trim(), 10))
+                                          .filter((n) => !isNaN(n) && n > 0);
+                                        void run(async () => {
+                                          await updatePaymentCardOptionApi(
+                                            card.id,
+                                            {
+                                              installmentMonths: parsed,
+                                            },
+                                          );
+                                          setEditingCardId(null);
+                                        }, 'บันทึกจำนวนเดือนผ่อนเรียบร้อย');
+                                      }}
+                                    >
+                                      บันทึก
+                                    </Button>
+                                    <Button
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => setEditingCardId(null)}
+                                    >
+                                      ยกเลิก
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      gap: '4px',
+                                      alignItems: 'center',
+                                      flexWrap: 'wrap',
+                                    }}
+                                  >
+                                    {monthsList.map((m) => (
+                                      <span
+                                        key={m}
+                                        style={{
+                                          padding: '2px 6px',
+                                          borderRadius: '4px',
+                                          background: '#e0f2fe',
+                                          color: '#0369a1',
+                                          fontSize: '11px',
+                                          fontWeight: 600,
+                                        }}
+                                      >
+                                        {m} เดือน
+                                      </span>
+                                    ))}
+                                    <button
+                                      type="button"
+                                      style={{
+                                        border: 'none',
+                                        background: 'none',
+                                        color: '#0abab5',
+                                        cursor: 'pointer',
+                                        fontSize: '11px',
+                                        textDecoration: 'underline',
+                                        marginLeft: '4px',
+                                      }}
+                                      onClick={() => {
+                                        setEditingCardId(card.id);
+                                        setEditMonthsValue(
+                                          monthsList.join(', '),
+                                        );
+                                      }}
+                                    >
+                                      แก้ไข
+                                    </button>
+                                  </div>
+                                )}
+                              </td>
+                            )}
+                            <td>
+                              <span
+                                className={`status-tag ${card.active ? 'status-found' : 'status-outcome'}`}
+                              >
+                                {card.active ? 'ใช้งาน' : 'ปิดใช้งาน'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy || idx === 0}
+                                  aria-label="เลื่อนขึ้น"
+                                  onClick={() => {
+                                    const next = [...cardList];
+                                    [next[idx], next[idx - 1]] = [
+                                      next[idx - 1],
+                                      next[idx],
+                                    ];
+                                    void run(async () => {
+                                      await reorderPaymentCardOptionsApi(
+                                        currentMethod.id,
+                                        next.map((c) => c.id),
+                                      );
+                                    }, 'บันทึกลำดับประเภทบัตรเรียบร้อย');
+                                  }}
+                                >
+                                  <ArrowUp size={14} />
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy || idx === cardList.length - 1}
+                                  aria-label="เลื่อนลง"
+                                  onClick={() => {
+                                    const next = [...cardList];
+                                    [next[idx], next[idx + 1]] = [
+                                      next[idx + 1],
+                                      next[idx],
+                                    ];
+                                    void run(async () => {
+                                      await reorderPaymentCardOptionsApi(
+                                        currentMethod.id,
+                                        next.map((c) => c.id),
+                                      );
+                                    }, 'บันทึกลำดับประเภทบัตรเรียบร้อย');
+                                  }}
+                                >
+                                  <ArrowDown size={14} />
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy}
+                                  onClick={() =>
+                                    void run(
+                                      () =>
+                                        updatePaymentCardOptionApi(card.id, {
+                                          active: !card.active,
+                                        }),
+                                      card.active
+                                        ? 'ปิดใช้งานประเภทบัตรแล้ว'
+                                        : 'เปิดใช้งานประเภทบัตรแล้ว',
+                                    )
+                                  }
+                                >
+                                  {card.active ? 'ปิด' : 'เปิด'}
+                                </Button>
+                                <Button
+                                  variant="secondary"
+                                  size="sm"
+                                  disabled={busy}
+                                  aria-label="ลบประเภทบัตร"
+                                  onClick={() => {
+                                    if (
+                                      window.confirm(
+                                        `ยืนยันลบประเภทบัตร "${card.name}" หรือไม่?`,
+                                      )
+                                    ) {
+                                      void run(
+                                        () => deletePaymentCardOptionApi(card.id),
+                                        'ลบประเภทบัตรเรียบร้อย',
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Modal>
+          );
+        })()}
       </Panel>
     </>
   );

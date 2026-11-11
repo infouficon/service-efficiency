@@ -1806,3 +1806,23 @@ The owner asked for one latest version of the FileMaker scripts instead of v3.x 
    field named in `$NOTE_FIELD` (`Set Field By Name`; default `pos_front_sale_tmp::ses_note`, the screen's Comment field suggested so
    the note follows the confirmed bill).
 
+## D127 — Credit card options: card type selection for Full Credit Card and installment months for 0% Credit Card (2026-11-10)
+
+Owner instruction via `/grill-me`: when staff pick "Full Credit Card" or "0% Credit Card", an option to choose 1 card type is displayed. For "0% Credit Card", the supported installment months are displayed underneath for selection. Both card types and their installment months are managed by ADMIN in Admin → ช่องทางชำระเงิน (Payment Methods).
+
+1. **Card Options Model & Admin Management:**
+   - `PaymentCardOption`: `id`, `paymentMethodId` (FK to `PaymentMethod`), `name` (unique per method), `active` (boolean), `position` (int), `installmentMonths` (JSON array of integers, e.g. `[3, 6, 10]`, or `null` for full payment).
+   - In Admin → ช่องทางชำระเงิน (`PaymentMethodsPanel`), a "ตั้งค่าบัตร" button opens a modal to manage card types for `Full Credit Card` and `0% Credit Card`: add new cards, toggle active/inactive, reorder, delete, and configure supported installment months per card.
+   - Migration `202611100004_payment_card_options` seeds popular Thai bank cards (KBank, SCB, KTC, BBL, Krungsri, TTB, UOB, CardX, First Choice) with default 0% installment months `[3, 6, 10]`.
+
+2. **Session Selection & Validation:**
+   - In `SelectionEditor`, selecting `Full Credit Card` renders choice chips for active card types (1 choice required).
+   - Selecting `0% Credit Card` renders choice chips for active card types, and when a card is selected, renders choice chips for its supported installment months (1 choice required).
+   - `paymentsAreValid(payments, paymentDetails)` enforces that if `Full Credit Card` is picked, a card type is required; if `0% Credit Card` is picked, both card type and installment months are required before proceeding to review/confirm.
+
+3. **Storage & Integration Safety:**
+   - `SessionPayment` gains optional `cardType` (string) and `installmentMonths` (integer).
+   - `orderView` continues to send base method names in `payments` (e.g. `'Full Credit Card'`, `'0% Credit Card'`) and standard types in `paymentTypes` (e.g. `'บัตรเครดิต'`, `'บัตรเงินผ่อน'`), maintaining 100% compatibility with FileMaker script set v4 (`$PAYBY_MAP`, D126) and POS bills.
+   - In Summary, Receipt, and Session Logs, payments are formatted with details, e.g. `Full Credit Card (KBank)` and `0% Credit Card (SCB 10 เดือน)`.
+
+

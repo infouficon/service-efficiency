@@ -77,6 +77,16 @@ export interface Product {
   branchActive?: boolean;
 }
 
+/** D127: card options (banks/issuers and installment months) for payment methods */
+export interface PaymentCardOption {
+  id: string;
+  paymentMethodId: string;
+  name: string;
+  active: boolean;
+  position: number;
+  installmentMonths?: number[] | null;
+}
+
 /** A payment method staff can pick (F6): kept by ADMIN. The name is what a session stores. */
 export interface PaymentMethod {
   id: string;
@@ -85,6 +95,8 @@ export interface PaymentMethod {
   position: number;
   /** D89: the FMP payment type this method is filed under; null = not set (FileMaker is told "อื่นๆ") */
   fmpType: string | null;
+  /** D127: card options (e.g. for Full Credit Card and 0% Credit Card) */
+  cardOptions?: PaymentCardOption[];
 }
 
 /** A product category (D72), kept by ADMIN and added by the warroom sync. The name is what products store. */
@@ -119,6 +131,12 @@ export interface SelectionItem {
   serials?: { id: string; sn: string }[];
 }
 
+export interface PaymentDetail {
+  method: string;
+  cardType?: string | null;
+  installmentMonths?: number | null;
+}
+
 export interface Selection {
   /** The main products, in the order the staff added them; empty = none chosen yet. */
   items: SelectionItem[];
@@ -127,6 +145,8 @@ export interface Selection {
   points: string[];
   burnPoints: string[];
   payments: string[];
+  /** D127: structured payment details including cardType and installmentMonths */
+  paymentDetails?: PaymentDetail[];
   /** D121: customer requests VAT refund (tourists). */
   vatRefund?: boolean;
   /** D121: customer requests full tax invoice. */

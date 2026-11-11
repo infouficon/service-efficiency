@@ -10,7 +10,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
-  Matches,
+  Max,
   MaxLength,
   Min,
   ValidateNested,
@@ -186,6 +186,23 @@ export class SessionItemDto {
   quantity!: number;
 }
 
+export class SessionPaymentDetailDto {
+  @IsString()
+  @MaxLength(64)
+  method!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cardType?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  installmentMonths?: number;
+}
+
 export class UpdateSelectionDto {
   @IsOptional()
   @IsString()
@@ -225,6 +242,13 @@ export class UpdateSelectionDto {
   @IsArray()
   @IsString({ each: true })
   payments?: string[];
+
+  /** D127: structured payment details with optional cardType and installmentMonths */
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SessionPaymentDetailDto)
+  paymentDetails?: SessionPaymentDetailDto[];
 
   /** D121: customer requests VAT refund (tourists). */
   @IsOptional()

@@ -3,6 +3,7 @@ import type {
   AppSettings,
   CustomerType,
   Category,
+  PaymentCardOption,
   PaymentMethod,
   MockSession,
   Outcome,
@@ -82,7 +83,7 @@ export interface ApiSession {
   ontop?: { name: string }[];
   points?: { name: string }[];
   burnPoints?: { name: string }[];
-  payments?: { method: string }[];
+  payments?: { method: string; cardType?: string | null; installmentMonths?: number | null }[];
   stockReview?: {
     missingItems?: string[];
     missingItemIds?: string[];
@@ -174,6 +175,13 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       points: s.points ? s.points.map((p) => p.name) : [],
       burnPoints: s.burnPoints ? s.burnPoints.map((b) => b.name) : [],
       payments: s.payments ? s.payments.map((p) => p.method) : [],
+      paymentDetails: s.payments
+        ? s.payments.map((p) => ({
+            method: p.method,
+            cardType: p.cardType ?? undefined,
+            installmentMonths: p.installmentMonths ?? undefined,
+          }))
+        : [],
       vatRefund: Boolean(s.vatRefund),
       taxInvoice: Boolean(s.taxInvoice),
     },
@@ -267,6 +275,52 @@ export function reorderPaymentMethodsApi(ids: string[]): Promise<PaymentMethod[]
   return api<PaymentMethod[]>('/payment-methods/reorder', 'PUT', { ids });
 }
 
+/** D127: card options for payment methods (e.g. Full Credit Card, 0% Credit Card) */
+export function createPaymentCardOptionApi(
+  paymentMethodId: string,
+  name: string,
+  installmentMonths?: number[] | null,
+): Promise<PaymentCardOption> {
+  return api<PaymentCardOption>(
+    `/payment-methods/${encodeURIComponent(paymentMethodId)}/cards`,
+    'POST',
+    { name, installmentMonths },
+  );
+}
+
+export function updatePaymentCardOptionApi(
+  cardId: string,
+  data: {
+    name?: string;
+    active?: boolean;
+    installmentMonths?: number[] | null;
+  },
+): Promise<PaymentCardOption> {
+  return api<PaymentCardOption>(
+    `/payment-methods/cards/${encodeURIComponent(cardId)}`,
+    'PUT',
+    data,
+  );
+}
+
+export function deletePaymentCardOptionApi(cardId: string): Promise<PaymentCardOption> {
+  return api<PaymentCardOption>(
+    `/payment-methods/cards/${encodeURIComponent(cardId)}`,
+    'DELETE',
+  );
+}
+
+export function reorderPaymentCardOptionsApi(
+  paymentMethodId: string,
+  ids: string[],
+): Promise<PaymentCardOption[]> {
+  return api<PaymentCardOption[]>(
+    `/payment-methods/${encodeURIComponent(paymentMethodId)}/cards/reorder`,
+    'PUT',
+    { ids },
+  );
+}
+
 /** Active customer types in letter order; `all` (ADMIN) includes the switched-off ones. */
 export function fetchCustomerTypesApi(all = false): Promise<CustomerType[]> {
   return api<CustomerType[]>(`/customer-types${all ? '?all=true' : ''}`);
@@ -349,6 +403,7 @@ export async function updateSelectionApi(
     points: selection.points,
     burnPoints: selection.burnPoints,
     payments: selection.payments,
+    paymentDetails: selection.paymentDetails,
     vatRefund: Boolean(selection.vatRefund),
     taxInvoice: Boolean(selection.taxInvoice),
     // F3: the main products as a whole list (SKU id + quantity)

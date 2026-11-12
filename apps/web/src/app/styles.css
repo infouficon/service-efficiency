@@ -3797,6 +3797,7 @@ input[aria-invalid='true'] {
 .category-picture {
   display: block;
   object-fit: contain;
+  mix-blend-mode: multiply;
 }
 .picker-category-tiles .wizard-tile-category {
   min-height: 96px;

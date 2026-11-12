@@ -58,7 +58,7 @@ export const notBuyReasons = [
  * again ("ซื้อใหม่") with its old data and its old queue number. Keep equal to `CHANGE_REASONS` in the API's sessions.service.ts.
  */
 export const changeReasons = [
-  'เปลี่ยนรุ่น สี หรือ ความจุ',
+  'ต้องการเปลี่ยนรุ่น สี หรือ ความจุ',
   'พนักงานเลือกสินค้าผิดพลาด',
 ] as const;
 export const cancelReasons = [

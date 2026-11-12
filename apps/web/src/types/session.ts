@@ -115,9 +115,13 @@ export interface Category {
   productCount?: number;
 }
 
-/** Global ADMIN switches (D59). `updatedAt` / `updatedBy` are sent to ADMIN only. */
+/** D130: where an order sent to the cashier goes: the real FileMaker (U POS), nowhere, or the test FileMaker. */
+export type FmpPushMode = 'production' | 'off' | 'uat';
+
+/** Global ADMIN switches (D59, D130). `updatedAt` / `updatedBy` are sent to ADMIN only. */
 export interface AppSettings {
   stockUnlimited: boolean;
+  fmpPushMode: FmpPushMode;
   updatedAt?: string | null;
   updatedBy?: string | null;
 }
@@ -257,8 +261,10 @@ export type AppView =
 
 /** D100: what the shop sees of FileMaker for one order. */
 export interface FmpStatus {
-  /** delivery of SES's message: pending / sending / sent / failed */
-  status: 'pending' | 'sending' | 'sent' | 'failed';
+  /** delivery of SES's message: pending / sending / sent / failed; skipped = held back by ADMIN's switch (D130) */
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
+  /** D130: which FileMaker it went to: PRODUCTION, UAT, or NONE (skipped) */
+  target?: 'PRODUCTION' | 'UAT' | 'NONE';
   attempts: number;
   error: string | null;
   /** FileMaker's answer (the `ses` script or a callback): success / error / reported; null = no answer yet */

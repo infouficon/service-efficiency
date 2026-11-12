@@ -11,6 +11,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Put,
   Query,
   Req,
   UnauthorizedException,
@@ -18,14 +19,20 @@ import {
 } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { IsString, MaxLength, MinLength } from 'class-validator';
+import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 import type { Request, Response } from 'express';
 import { OriginGuard } from '../accounts/accounts.controller';
 import { AccountsService } from '../accounts/accounts.service';
+import { FMP_PUSH_MODES, type FmpPushMode } from '../settings/settings.service';
 import { FmpService } from './fmp.service';
 
 export class FmpResendDto {
   @IsString() @MinLength(1) @MaxLength(32) reference!: string;
+}
+
+/** D130: where orders sent to the cashier go: `production` (real FileMaker / U POS), `off` (nothing leaves SES) or `uat`. */
+export class FmpModeDto {
+  @IsIn(FMP_PUSH_MODES) mode!: FmpPushMode;
 }
 
 /** ADMIN view of the orders SES sends to FileMaker (D88): status, the latest messages, retry and resend. */
@@ -98,6 +105,13 @@ export class FmpController {
     const row = await this.fmp.logDetail(id);
     if (!row) throw new NotFoundException('ไม่พบรายการ log');
     return row;
+  }
+
+  /** D130: ADMIN switches where orders go (400 when the chosen FileMaker is not set). Logged in the FileMaker log. */
+  @Put('mode')
+  async mode(@Req() req: Request, @Body() dto: FmpModeDto) {
+    const user = await this.admin(req);
+    return this.fmp.setMode(dto.mode, user.staffId);
   }
 
   /** A failed message goes again at once (and gets a fresh set of attempts). */

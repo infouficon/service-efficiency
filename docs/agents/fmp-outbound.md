@@ -74,7 +74,7 @@ it never creates a second record (D96).
   the message goes when STOCK presses "send"; exactly `quantity` per product (D111: STOCK can no longer send with serials missing, so
   `items[].snMissing` is 0 on new orders; the field stays for the `ses` v3 contract), none repeated, none
   in another open order; they are typed or scanned as the shop reads them, so a wrong one is only caught by your script (`SN_*`). `upc` is
-  the warroom barcode (null if unknown). `version` is 1 until a field changes meaning; `test` is false for real orders; `createdAt` is the
+  the warroom barcode (null if unknown). `version` is 1 until a field changes meaning; `test` is false for real orders (true only for the UAT FileMaker, D130); `createdAt` is the
   moment the message was made, in Thai time with its offset (your script reads the digits as written). `customerPhone` is personal data.
 - Times are ISO 8601 UTC. Once `FMP_SCRIPT` is set (the script is named `ses`), the create call also runs it with `script.param` = the
   order's **reference** as plain text (`SES-20261030-000002`), nothing else (D91). A reference can have two records (the first send and a
@@ -91,6 +91,8 @@ it never creates a second record (D96).
 | Token dropped mid-round | logs in again once |
 | Script error from FileMaker | recorded, the message counts as sent (the record exists) |
 | Two containers | a message is claimed before it is sent, so one sends it |
+| ADMIN switch `off` (D130) | nothing is sent; a new message is kept as `skipped` (`target NONE`) with the reason and never sent later; messages queued before wait and go when switched back on |
+| ADMIN switch `uat` (D130) | new messages go to `FMP_UAT_*` with `test: true`; a send-back / cancel still goes to the server that has the order's held bill; record ids are only reused within one target |
 
 ## Notes from reading the `ses` script (2026-11-02), for the FileMaker team
 

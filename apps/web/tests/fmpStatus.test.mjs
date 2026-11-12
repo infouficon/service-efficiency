@@ -53,3 +53,17 @@ test('answers about taking the held draft out read as what the cashier must do (
   // anything else keeps its old wording
   assert.equal(fmpStatusText({ ...base, ackStatus: 'success', ackMessage: 'CREATED saleID S-1 (1 รายการ)' }).text, 'FileMaker รับแล้ว: CREATED saleID S-1 (1 รายการ)');
 });
+
+test('D130: a message ADMIN held back says U POS got nothing and the cashier keys the bill in', () => {
+  const line = fmpStatusText({ status: 'skipped', target: 'NONE', attempts: 0, error: 'ADMIN ปิดการส่งเข้า U POS (FileMaker) อยู่', ackStatus: null, ackMessage: null, at: '2026-11-12T10:00:00Z' });
+  assert.equal(line.tone, 'warn');
+  assert.match(line.text, /^ไม่ได้ส่งเข้า U POS: ADMIN ปิดการส่ง/);
+  assert.match(line.hint, /คีย์บิลเองใน U POS/);
+});
+
+test('D130: an order sent to the test FileMaker is labelled UAT; production orders read as before', () => {
+  const base = { status: 'sent', attempts: 1, error: null, ackStatus: 'success', ackMessage: 'CREATED', at: '2026-11-12T10:00:00Z' };
+  assert.match(fmpStatusText({ ...base, target: 'UAT' }).text, /^\[UAT ทดสอบ\] FileMaker รับแล้ว/);
+  assert.equal(fmpStatusText({ ...base, target: 'PRODUCTION' }).text, fmpStatusText(base).text);
+  assert.doesNotMatch(fmpStatusText({ ...base, target: 'PRODUCTION' }).text, /UAT/);
+});

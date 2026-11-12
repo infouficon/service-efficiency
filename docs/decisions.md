@@ -1892,3 +1892,32 @@ draft (lines and draft deleted, SNs free) in place of `BILL_IN_USE`; and an ADMI
 draft opens a new draft in place of `ALREADY_DONE`. `$UNKNOWN_REOPEN` stays 1: with the query set, `UNKNOWN` only means no real bill
 carries this `ses_id` (the draft was deleted in FileMaker), where opening a new draft is safe. `$RECEIPT_FIELD` / `$CARD_FIELD` /
 `$INSTALLMENT_FIELD` and the maps wait for the field names and values.
+
+## D130 — A switch for what reaches U POS (FileMaker): production / off / UAT (2026-11-12)
+
+Owner: "ทำระบบเปิด ปิด ที่ยิงเข้า upos จริงให้หน่อย เพราะตอนนี้เข้า FMP จริงเลย หรือสามารถเข้าเซิฟ UAT ได้ไหม". Until now the only way
+to stop SES from opening held bills in the real FileMaker was to remove `FMP_*` in Coolify and restart; every test order opened a real
+draft. Answers chosen by the owner the same day:
+
+1. **ADMIN switch, three modes** (Admin → ส่งไป FileMaker; `Setting` row `fmpPushMode`, `PUT /api/admin/fmp/mode`, ADMIN only, logged
+   in the FileMaker log as `mode`): `production` = as before (the default, also when no row), `off` = nothing leaves SES, `uat` = the test
+   FileMaker set by `FMP_UAT_HOST` / `FMP_UAT_DATABASE` / `FMP_UAT_USER` / `FMP_UAT_PASSWORD` (layout, field and script default to
+   production's, `FMP_UAT_LAYOUT` / `_FIELD` / `_SCRIPT` override). A mode whose server is not set is refused (400). Everybody reads the
+   mode (`GET /settings` → `fmpPushMode`) and the stock screen shows a red notice while it is not `production`.
+2. **While off, an order sent to the cashier is not sent, ever**: its message is kept as `status = skipped`, `target = NONE`, with the
+   reason in `lastError` and a `skipped` row in the log, and it does not go when the switch comes back on (so a test order never reaches
+   production later). The order shows "ไม่ได้ส่งเข้า U POS" and appears in "ออเดอร์ที่ต้องดู" after 30 min like any order with no
+   bill; the cashier keys the bill in U POS, or ADMIN uses "ส่งซ้ำ" (a fresh message in the current mode) or closes the sale. Messages
+   queued **before** the switch went off wait (the worker sends nothing while off) and go when it is back on: they were real orders.
+3. **Each message keeps its target** (`FmpOutbox.target`, migration `202611120001_fmp_outbox_target`, default `PRODUCTION`): a FileMaker
+   record id belongs to one server, so a later send of the same order only updates a record of the same target (never a production
+   record id on the UAT server). A message whose server is no longer set fails and retries; it never falls over to the other server.
+4. **A release goes where the held bill is**: a send-back or a cancel (D123) goes to the target of the order's last message that was not
+   held back, whatever the switch says now, so a test never leaves a real draft behind. An order only ever held back queues nothing on a
+   send-back or cancel (it has no draft anywhere). While off, a release is held back too (logged); ADMIN resends it when back on.
+5. **UAT messages carry `test: true`** (the production ones `false`, as before). The `ses` script has `$ALLOW_TEST`; the FMP team is asked
+   to set it to 0 on production (a stray test message is then refused with `TEST_NOT_ALLOWED`) and 1 on the UAT copy.
+6. **The test FileMaker does not exist yet.** SES is ready for it; the FMP team (KoB) is asked for a copy of UFService (for example on
+   fms4) with the `ses` layout and the v4 scripts, a Data API account for SES, and, if FileMaker should report back to SES, the same
+   callback / POS keys (its reports then change the test orders on the one SES, which has no UAT of its own).
+

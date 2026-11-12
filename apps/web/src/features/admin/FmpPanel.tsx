@@ -3,6 +3,8 @@ import { Check, RefreshCw, RotateCcw, Send, X } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
+import { fetchSettingsApi, saveFmpPushModeApi } from '../../services/sessionApi';
+import type { FmpPushMode } from '../../types/session';
 
 /** D119: one serial number as the FileMaker `ses` script v3.3 checked it */
 export interface SnCheck {
@@ -68,6 +70,8 @@ interface FmpRow {
   ackAt: string | null;
   ackTimeText: string | null;
   ackReceivedAt: string | null;
+  /** D130: PRODUCTION | UAT | NONE (held back) */
+  target: string;
 }
 interface FmpLogRow {
   id: string;
@@ -97,15 +101,41 @@ interface FmpStatus {
   field: string | null;
   script: string | null;
   callback: { path: string; keySet: boolean };
-  counts: { pending: number; sending: number; sent: number; failed: number };
+  /** D130: ADMIN's switch and the test FileMaker it can point at */
+  mode: { mode: FmpPushMode; updatedAt: string | null; updatedBy: string | null };
+  uat: { configured: boolean; host: string | null; database: string | null };
+  counts: { pending: number; sending: number; sent: number; failed: number; skipped: number };
   rows: FmpRow[];
 }
+
+/** D130: the three ways orders sent to the cashier can go, in ADMIN's words, with what each one does. */
+const MODE: Record<FmpPushMode, { label: string; tag: string; effect: string }> = {
+  production: {
+    label: 'ส่งจริง',
+    tag: 'status-found',
+    effect: 'ออเดอร์ที่ STOCK กด "ส่งให้แคชเชียร์" จะเปิดร่างบิลใน U POS (FileMaker จริง) ทันที',
+  },
+  off: {
+    label: 'ปิด',
+    tag: 'status-outcome',
+    effect:
+      'ไม่ส่งอะไรออกจาก SES: ออเดอร์ที่ส่งแคชเชียร์ระหว่างนี้จะจดไว้ใน log ว่า "ไม่ได้ส่ง" และไม่ถูกส่งตามทีหลัง (แคชเชียร์คีย์บิลเองใน U POS) · คิวที่ค้างจากก่อนปิดจะรอ แล้วส่งต่อเมื่อเปิดกลับ',
+  },
+  uat: {
+    label: 'UAT (ทดสอบ)',
+    tag: 'status-searching',
+    effect:
+      'ออเดอร์ใหม่ไป FileMaker ทดสอบ (FMP_UAT_*) พร้อม test=true ไม่เข้า U POS จริง · ยกเว้นการเอาร่างบิลออก (ส่งกลับ STOCK / ยกเลิก) ของออเดอร์ที่ไปถึงของจริงแล้ว ยังไปที่ของจริง',
+  },
+};
+const TARGET: Record<string, string> = { PRODUCTION: 'จริง', UAT: 'UAT', NONE: '—' };
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: 'รอส่ง', cls: 'status-searching' },
   sending: { label: 'กำลังส่ง', cls: 'status-searching' },
   sent: { label: 'ส่งแล้ว', cls: 'status-found' },
   failed: { label: 'ล้มเหลว (ต้องส่งซ้ำเอง)', cls: 'status-outcome' },
+  skipped: { label: 'ไม่ได้ส่ง (ปิดการส่งอยู่)', cls: 'status-outcome' },
 };
 const ACK: Record<string, { label: string; cls: string }> = {
   success: { label: 'สำเร็จ', cls: 'status-found' },
@@ -127,6 +157,8 @@ const KIND: Record<string, string> = {
   resend: 'สั่งส่งออเดอร์ซ้ำ',
   'will-retry': 'ไม่สำเร็จ จะลองใหม่',
   'gave-up': 'ไม่สำเร็จ เลิกส่ง',
+  skipped: 'ไม่ได้ส่ง (สวิตช์)',
+  mode: 'ADMIN เปลี่ยนการส่ง',
 };
 const EVENT: Record<string, string> = {
   SENT_TO_CASHIER: 'ส่งถึงแคชเชียร์',
@@ -158,6 +190,7 @@ export function FmpPanel() {
   const [logReference, setLogReference] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [askMode, setAskMode] = useState<FmpPushMode | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -203,6 +236,69 @@ export function FmpPanel() {
           <Notice>กำลังโหลด…</Notice>
         ) : (
           <>
+            <div style={{ marginBottom: '1rem' }}>
+              <strong>การส่งเข้า U POS (FileMaker): </strong>
+              <span className={`status-tag ${MODE[status.mode.mode].tag}`}>{MODE[status.mode.mode].label}</span>
+              {status.mode.updatedBy && (
+                <span className="fine muted">
+                  {' '}
+                  · เปลี่ยนล่าสุดโดย {status.mode.updatedBy}
+                  {status.mode.updatedAt ? ` ${fmt(status.mode.updatedAt)}` : ''}
+                </span>
+              )}
+              <p className="fine muted" style={{ margin: '4px 0 8px' }}>
+                {MODE[status.mode.mode].effect}
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {(Object.keys(MODE) as FmpPushMode[]).map((mode) => (
+                  <Button
+                    key={mode}
+                    type="button"
+                    size="sm"
+                    variant={mode === status.mode.mode ? 'primary' : 'secondary'}
+                    disabled={
+                      busy ||
+                      mode === status.mode.mode ||
+                      (mode === 'uat' && !status.uat.configured) ||
+                      (mode === 'production' && !status.configured)
+                    }
+                    onClick={() => setAskMode(mode)}
+                  >
+                    {MODE[mode].label}
+                  </Button>
+                ))}
+              </div>
+              {!status.uat.configured && (
+                <p className="fine muted" style={{ marginTop: '4px' }}>
+                  UAT ใช้ไม่ได้จนกว่าจะตั้ง <code>FMP_UAT_HOST</code>, <code>FMP_UAT_DATABASE</code>, <code>FMP_UAT_USER</code>,{' '}
+                  <code>FMP_UAT_PASSWORD</code> ใน Coolify ของ api (เซิร์ฟเวอร์ FileMaker ทดสอบที่ทีม FMP เตรียม)
+                </p>
+              )}
+              {askMode && (
+                <Notice error={askMode === 'production'}>
+                  <div>
+                    เปลี่ยนเป็น <strong>{MODE[askMode].label}</strong>: {MODE[askMode].effect}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        const mode = askMode;
+                        setAskMode(null);
+                        void run(() => saveFmpPushModeApi(mode), `เปลี่ยนการส่งเข้า U POS เป็น "${MODE[mode].label}" แล้ว`);
+                      }}
+                    >
+                      ยืนยัน
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => setAskMode(null)}>
+                      ยกเลิก
+                    </Button>
+                  </div>
+                </Notice>
+              )}
+            </div>
             <dl className="erp-sync-facts">
               <div>
                 <dt>การเชื่อมต่อ</dt>
@@ -211,6 +307,10 @@ export function FmpPanel() {
               <div>
                 <dt>เซิร์ฟเวอร์ / ฐานข้อมูล</dt>
                 <dd>{status.configured ? `${status.host} / ${status.database}` : '—'}</dd>
+              </div>
+              <div>
+                <dt>FileMaker UAT (ทดสอบ)</dt>
+                <dd>{status.uat.configured ? `${status.uat.host} / ${status.uat.database}` : 'ยังไม่ได้ตั้งค่า'}</dd>
               </div>
               <div>
                 <dt>Layout / ฟิลด์</dt>
@@ -243,6 +343,10 @@ export function FmpPanel() {
                 <dd>
                   {status.counts.sent} / <strong>{status.counts.failed}</strong>
                 </dd>
+              </div>
+              <div>
+                <dt>ไม่ได้ส่ง (ปิดการส่งอยู่)</dt>
+                <dd>{status.counts.skipped}</dd>
               </div>
             </dl>
             {!status.configured && (
@@ -300,6 +404,7 @@ export function FmpPanel() {
                     <th>Reference</th>
                     <th>เหตุการณ์</th>
                     <th>สถานะ</th>
+                    <th>ปลายทาง</th>
                     <th>ครั้งที่ลอง</th>
                     <th>recordId (FMP)</th>
                     <th>FMP รายงานกลับ</th>
@@ -321,6 +426,7 @@ export function FmpPanel() {
                           )}
                           {row.lastError && <div className="fine muted">{row.lastError}</div>}
                         </td>
+                        <td>{TARGET[row.target] ?? row.target}</td>
                         <td>{row.attempts}</td>
                         <td>
                           {row.fmpRecordId ?? '—'}
@@ -560,5 +666,34 @@ function FmpLogLine({ row, open, detail, onToggle }: { row: FmpLogRow; open: boo
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * D130: everybody at the stock screen: a one-line warning while orders sent to the cashier do NOT open a held bill in the real
+ * U POS (ADMIN switched the push off, or to the test FileMaker), so the cashier knows to key the bill in by hand.
+ */
+export function FmpPushBanner() {
+  const [mode, setMode] = useState<FmpPushMode | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetchSettingsApi()
+      .then((settings) => {
+        if (active) setMode(settings.fmpPushMode ?? 'production');
+      })
+      .catch(() => undefined); // the banner is a reminder only: no settings, no banner
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (!mode || mode === 'production') return null;
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <Notice error>
+        {mode === 'off'
+          ? 'ตอนนี้ ADMIN ปิดการส่งเข้า U POS: กด "ส่งให้แคชเชียร์" แล้ว U POS จะไม่มีร่างบิล แคชเชียร์คีย์บิลเอง'
+          : 'โหมดทดสอบ (UAT): ออเดอร์ไป FileMaker ทดสอบ ไม่เข้า U POS จริง แคชเชียร์คีย์บิลเองถ้าเป็นการขายจริง'}
+      </Notice>
+    </div>
   );
 }

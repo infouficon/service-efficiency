@@ -12,6 +12,7 @@ import type {
   Timestamp,
   WorkflowState,
   FmpStatus,
+  FmpPushMode,
 } from '../types/session';
 import { formatQueue, isTaxInvoiceReceipt } from '../features/session/workflow';
 
@@ -232,6 +233,11 @@ export function fetchSettingsApi(): Promise<AppSettings> {
 
 export function saveStockUnlimitedApi(stockUnlimited: boolean): Promise<AppSettings> {
   return api<AppSettings>('/settings', 'PUT', { stockUnlimited });
+}
+
+/** D130: ADMIN only. 400 when the chosen FileMaker (FMP_* / FMP_UAT_*) is not set on the server. */
+export function saveFmpPushModeApi(mode: FmpPushMode): Promise<{ mode: FmpPushMode; updatedAt: string | null; updatedBy: string | null }> {
+  return api('/admin/fmp/mode', 'PUT', { mode });
 }
 
 /** Payment methods in display order (F6); `all` (ADMIN) includes the switched-off ones. */

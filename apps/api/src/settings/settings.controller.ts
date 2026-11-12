@@ -13,7 +13,10 @@ import { AccountsService } from '../accounts/accounts.service';
 import { SettingsUpdateDto } from './dto';
 import { SettingsService } from './settings.service';
 
-/** Global switches (D59): everybody reads them (the staff screen needs "stock unlimited"), only ADMIN changes them. */
+/**
+ * Global switches (D59, D130): everybody reads them (the staff screen needs "stock unlimited" and where orders go), only ADMIN
+ * changes them. The FileMaker push mode is changed through `PUT /admin/fmp/mode` (it checks the UAT server is set first).
+ */
 @Controller('settings')
 @UseGuards(OriginGuard)
 export class SettingsController {
@@ -26,10 +29,12 @@ export class SettingsController {
   @Get()
   async read(@Req() req: Request) {
     const user = await this.accounts.authenticate(req);
-    const { stockUnlimited, updatedAt, updatedBy } = await this.settings.read();
+    const { stockUnlimited, fmpPushMode, updatedAt, updatedBy } =
+      await this.settings.read();
+    // D130: everybody sees where orders go, so STOCK knows when U POS gets no held bill
     return user.roles.includes('ADMIN')
-      ? { stockUnlimited, updatedAt, updatedBy }
-      : { stockUnlimited };
+      ? { stockUnlimited, fmpPushMode, updatedAt, updatedBy }
+      : { stockUnlimited, fmpPushMode };
   }
 
   @Put()

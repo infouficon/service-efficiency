@@ -390,7 +390,7 @@ export class SessionsService {
       ? await this.prisma.fmpOutbox.findMany({
           where: { sessionId: { in: ids } },
           orderBy: { createdAt: 'desc' },
-          select: { sessionId: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, ackReceivedAt: true, sentAt: true, createdAt: true },
+          select: { sessionId: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, ackReceivedAt: true, sentAt: true, createdAt: true, target: true },
         })
       : [];
     const latest = new Map<string, (typeof rows)[number]>();
@@ -401,7 +401,8 @@ export class SessionsService {
         ...s,
         fmp: r
           ? {
-              status: r.status, // pending | sending | sent | failed
+              status: r.status, // pending | sending | sent | failed | skipped (D130: held back by ADMIN's switch)
+              target: r.target, // D130: PRODUCTION | UAT | NONE (skipped)
               attempts: r.attempts,
               error: r.status === 'sent' ? null : r.lastError,
               ackStatus: r.ackStatus, // success | error | reported | null (no answer yet)

@@ -122,6 +122,9 @@ model FmpOutbox {
   ackReceivedAt DateTime? @db.DateTime(3)
   // D119: the `ses` script's per-serial check (v3.3 "snCheck"), cleaned by `parseSnCheck`; null = the script did not send one
   snCheck       Json?
+  // D130: which FileMaker the message goes to (`PRODUCTION` = FMP_*, `UAT` = FMP_UAT_*), fixed when it is queued; `NONE` for a
+  // message ADMIN's switch held back (status `skipped`, never sent). A resend of the same order only reuses records of its target.
+  target        String    @default("PRODUCTION") @db.VarChar(16)
 
   @@index([status, nextAttemptAt])
   @@index([reference])

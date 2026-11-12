@@ -63,6 +63,8 @@ const ageText = (minutes: number | null) => {
 };
 const fmpText = (fmp: WaitingRow['fmp']) => {
   if (!fmp) return 'ยังไม่ได้ส่ง FMP';
+  // D130: ADMIN's switch held it back: U POS has no held bill, the cashier keys it in (or ADMIN closes the sale here)
+  if (fmp.status === 'skipped') return 'ไม่ได้ส่ง FMP (ปิดการส่งอยู่ตอนกดส่ง)';
   if (fmp.ackStatus === 'error')
     return `FMP แจ้งผิดพลาด${fmp.ackMessage ? `: ${fmp.ackMessage}` : ''}`;
   if (fmp.status === 'failed')

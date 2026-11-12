@@ -13,6 +13,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
+import { FmpPushBanner } from '../admin/FmpPanel';
 import { Summary } from '../session/Summary';
 import { SerialScan } from './SerialScan';
 import { ReasonForm } from '../session/ReasonForm';
@@ -281,6 +282,7 @@ export function StockWorkspace({
 
   return (
     <div className="stock-workspace">
+      <FmpPushBanner />
       <div className="workspace-header-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Package size={24} color="#0abab5" />

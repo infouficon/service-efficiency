@@ -8,6 +8,19 @@ export function fmpStatusText(
   fmp: FmpStatus | null | undefined,
 ): { tone: 'ok' | 'warn' | 'wait' | 'bad'; text: string; hint?: string } | null {
   if (!fmp) return null;
+  // D130: ADMIN's switch held the message back: U POS got nothing, the cashier keys the bill in by hand
+  if (fmp.status === 'skipped')
+    return {
+      tone: 'warn',
+      text: `ไม่ได้ส่งเข้า U POS: ${fmp.error ?? 'ADMIN ปิดการส่งอยู่'}`,
+      hint: 'แคชเชียร์คีย์บิลเองใน U POS · ถ้าต้องการส่งเข้า U POS จริง ADMIN กด "ส่งซ้ำ" ที่ Admin → ส่งไป FileMaker หลังเปิดการส่ง',
+    };
+  const line = statusLine(fmp);
+  // D130: an order that went to the test FileMaker says so, so nobody looks for its bill in the real U POS
+  return line && fmp.target === 'UAT' ? { ...line, text: `[UAT ทดสอบ] ${line.text}` } : line;
+}
+
+function statusLine(fmp: FmpStatus): { tone: 'ok' | 'warn' | 'wait' | 'bad'; text: string; hint?: string } | null {
   // D123 / D129: answers to "take the held draft out" (sent back to STOCK, cancelled, or a new round from STOCK)
   const release = releaseText(fmp);
   if (release) return release;

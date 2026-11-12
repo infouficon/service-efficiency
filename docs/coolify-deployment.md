@@ -97,8 +97,11 @@
 | `FMP_SCRIPT` | ชื่อสคริปต์ที่ให้ FMP เรียกต่อหลังสร้าง record ว่าง = สร้าง record เฉย ๆ |
 | `FMP_CALLBACK_KEY` | กุญแจที่ FileMaker ใช้เรียก `POST /api/integrations/fmp/callback` เพื่อรายงานผลกลับ (D90) · อย่างน้อย 32 ตัวอักษร เช่น `openssl rand -hex 32` · ตั้งเป็น **Sensitive** · ส่งให้ทีม FMP ทางช่องทางที่ปลอดภัย ห้ามใส่ใน git/แชต · ไม่ตั้ง = ประตูปิด (404) |
 | `FMP_WORKER_INTERVAL_SECONDS` | ความถี่ของตัวส่ง (ค่าเริ่มต้น 10; 0 = ปิดตัวส่งอัตโนมัติ) |
+| `FMP_UAT_HOST`, `FMP_UAT_DATABASE`, `FMP_UAT_USER`, `FMP_UAT_PASSWORD` | (D130) FileMaker **ทดสอบ** สำหรับโหมด "UAT" ของสวิตช์ใน Admin → ส่งไป FileMaker · ไม่ตั้ง = เลือกโหมด UAT ไม่ได้ · `FMP_UAT_LAYOUT` / `FMP_UAT_FIELD` / `FMP_UAT_SCRIPT` ไม่ตั้ง = ใช้ค่าเดียวกับของจริง · ตั้ง `FMP_UAT_PASSWORD` เป็น **Sensitive** |
 
 ตั้ง 4 ตัวแรกครบ + Restart = เริ่มส่ง (ออเดอร์ที่ถึงแคชเชียร์หลังจากนั้น) ไม่ตั้ง = ไม่ส่งและไม่เก็บอะไร ดูผลที่ Admin → "ส่งไป FileMaker" รูปแบบข้อมูลและกติกา: `docs/agents/fmp-outbound.md`
+
+**สวิตช์การส่งเข้า U POS (D130):** ไม่ต้องลบ env แล้ว restart อีก ADMIN เลือกได้ที่ Admin → ส่งไป FileMaker: **ส่งจริง** (ค่าเริ่มต้น) / **ปิด** (ไม่ส่งอะไรออก ออเดอร์ระหว่างนั้นจดใน log ว่าไม่ได้ส่ง) / **UAT** (ส่งไป FileMaker ทดสอบ `FMP_UAT_*` พร้อม `test: true`) มีผลทันที ไม่ต้อง restart
 
 #### Environment ของการเข้าสู่ระบบด้วย OTP ทาง LINE (D85, D113, D117: ไม่มี SMS แล้ว)
 

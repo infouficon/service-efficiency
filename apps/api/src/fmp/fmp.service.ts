@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { loadPaymentTypes, orderView, type OrderViewSource } from '../sessions/order-view';
+import { SettingsService, type FmpPushMode } from '../settings/settings.service';
 
 /**
  * What `enqueue` needs of a session: the order view plus its branch, its outcome (an ended order is never billed) and its
@@ -45,7 +46,14 @@ export function fmpRevision(session: Pick<FmpSession, 'events'>, event: string):
         : null;
   return { revision, revisionNote };
 }
-type Outbox = Pick<PrismaService, 'fmpOutbox' | 'fmpLog' | 'paymentMethod'> | Prisma.TransactionClient;
+type Outbox = Pick<PrismaService, 'fmpOutbox' | 'fmpLog' | 'paymentMethod' | 'setting'> | Prisma.TransactionClient;
+
+/**
+ * D130: the two FileMaker servers SES can send to. `PRODUCTION` reads `FMP_*`, `UAT` reads `FMP_UAT_*` (layout, field and script
+ * default to production's). A queued message keeps its target; `NONE` marks one ADMIN's switch held back (status `skipped`).
+ */
+export type FmpTarget = 'PRODUCTION' | 'UAT';
+const RELEASE_EVENTS: readonly string[] = ['RETURNED_TO_STOCK', 'CANCELLED'];
 /** D123: the stages before the cashier: an order resent from there was sent back to stock (its held bill must go). */
 const AT_STOCK = ['STOCK_REQUESTED', 'SEARCHING', 'FOUND'];
 
@@ -72,6 +80,7 @@ export function bangkokIso(date: Date): string {
 export const FMP_CALLBACK_PATH = '/api/integrations/fmp/callback';
 
 interface FmpConfig {
+  target: FmpTarget;
   base: string;
   database: string;
   user: string;
@@ -303,29 +312,36 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   private get(name: string): string {
     return (this.config.get<string>(name) ?? '').trim();
   }
-  private cfg(): FmpConfig | null {
-    const base = this.get('FMP_HOST').replace(/\/+$/, '');
-    const database = this.get('FMP_DATABASE');
-    const user = this.get('FMP_USER');
-    const password = this.config.get<string>('FMP_PASSWORD') ?? '';
+  /** The server of one target (D130): `FMP_*` for production, `FMP_UAT_*` for the test FileMaker; null when its four values are not all set. */
+  private cfg(target: FmpTarget = 'PRODUCTION'): FmpConfig | null {
+    const prefix = target === 'UAT' ? 'FMP_UAT_' : 'FMP_';
+    const base = this.get(`${prefix}HOST`).replace(/\/+$/, '');
+    const database = this.get(`${prefix}DATABASE`);
+    const user = this.get(`${prefix}USER`);
+    const password = this.config.get<string>(`${prefix}PASSWORD`) ?? '';
     if (!base || !database || !user || !password) return null;
+    // the UAT copy of UFService has the same layout, field and script unless FMP_UAT_* says otherwise
+    const pick = (name: string) => this.get(`${prefix}${name}`) || (target === 'UAT' ? this.get(`FMP_${name}`) : '');
     return {
+      target,
       base,
       database,
       user,
       password,
-      layout: this.get('FMP_LAYOUT') || 'ses',
-      field: this.get('FMP_FIELD') || 'ses_body',
-      script: this.get('FMP_SCRIPT') || null,
+      layout: pick('LAYOUT') || 'ses',
+      field: pick('FIELD') || 'ses_body',
+      script: pick('SCRIPT') || null,
     };
   }
-  configured(): boolean {
-    return this.cfg() !== null;
+  /** Is a FileMaker set at all (either target), or this one target. */
+  configured(target?: FmpTarget): boolean {
+    return target ? this.cfg(target) !== null : this.cfg('PRODUCTION') !== null || this.cfg('UAT') !== null;
   }
 
   onApplicationBootstrap(): void {
@@ -339,7 +355,10 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     this.timer.unref();
     this.first = setTimeout(() => void this.tick(), 5_000);
     this.first.unref();
-    this.log.log(`FileMaker push on: layout ${this.cfg()!.layout}, field ${this.cfg()!.field}, every ${seconds} s`);
+    for (const target of ['PRODUCTION', 'UAT'] as const) {
+      const cfg = this.cfg(target);
+      if (cfg) this.log.log(`FileMaker push on (${target}): layout ${cfg.layout}, field ${cfg.field}, every ${seconds} s`);
+    }
   }
   onModuleDestroy(): void {
     if (this.timer) clearInterval(this.timer);
@@ -393,6 +412,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
    */
   async enqueue(db: Outbox, session: FmpSession, event: string): Promise<string | null> {
     if (!this.configured()) return null;
+    const route = await this.route(db, session.id, event);
+    if (!route) return null;
     const id = randomUUID();
     const paymentTypes = await loadPaymentTypes(db);
     const queued = new Date();
@@ -403,7 +424,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       // D92: what the FileMaker `ses` script checks before it opens a bill: the contract version, `test` (false: a real order)
       // and `createdAt` as Thai local time with its offset (the script reads the digits as they are written)
       version: FMP_MESSAGE_VERSION,
-      test: false,
+      // D130: true only for the test FileMaker; the production `ses` script refuses it when its $ALLOW_TEST is 0
+      test: route.target === 'UAT',
       createdAt: bangkokIso(queued),
       event,
       outboxId: id,
@@ -419,14 +441,58 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       accessories: [],
       accessoriesForCashier: view.accessories,
     });
+    if (route.skip) {
+      // D130: ADMIN's switch holds it back: kept (status `skipped`, never sent) so the log and the order say why U POS has no bill
+      await db.fmpOutbox.create({
+        data: { id, sessionId: session.id, reference: session.reference, event, payload, status: 'skipped', target: 'NONE', lastError: route.skip.slice(0, 255) },
+      });
+      await this.record(
+        { direction: 'SES', kind: 'skipped', ok: true, outboxId: id, reference: session.reference, summary: `ไม่ได้ส่งไป FileMaker (${event}): ${route.skip}`, request: maskedJson(payload) },
+        db,
+      );
+      return id;
+    }
     await db.fmpOutbox.create({
-      data: { id, sessionId: session.id, reference: session.reference, event, payload },
+      data: { id, sessionId: session.id, reference: session.reference, event, payload, target: route.target },
     });
     await this.record(
-      { direction: 'SES', kind: 'queued', ok: true, outboxId: id, reference: session.reference, summary: `ใส่คิวส่งไป FileMaker (${event})`, request: maskedJson(payload) },
+      {
+        direction: 'SES',
+        kind: 'queued',
+        ok: true,
+        outboxId: id,
+        reference: session.reference,
+        summary: `ใส่คิวส่งไป FileMaker${route.target === 'UAT' ? ' UAT' : ''} (${event})`,
+        request: maskedJson(payload),
+      },
       db,
     );
     return id;
+  }
+
+  /**
+   * D130: where one message goes, by ADMIN's switch (`Setting` fmpPushMode). A message that takes a held bill away (sent back to
+   * stock, cancelled) goes to the FileMaker that has the bill: the target of the order's last message that was not held back,
+   * whatever the switch says now, so a test never leaves a real held bill behind. `off` holds every message back. Null = nothing
+   * to queue (production chosen but `FMP_*` not set: the same as before the switch existed).
+   */
+  private async route(db: Outbox, sessionId: string, event: string): Promise<{ target: FmpTarget; skip: string | null } | null> {
+    const mode: FmpPushMode = await this.settings.fmpPushMode(db);
+    let target: FmpTarget = mode === 'uat' ? 'UAT' : 'PRODUCTION';
+    if (RELEASE_EVENTS.includes(event)) {
+      const last = await db.fmpOutbox.findFirst({
+        where: { sessionId, status: { not: 'skipped' } },
+        orderBy: { createdAt: 'desc' },
+        select: { target: true },
+      });
+      if (last?.target === 'UAT' || last?.target === 'PRODUCTION') target = last.target;
+    }
+    if (mode === 'off') return { target, skip: 'ADMIN ปิดการส่งเข้า U POS (FileMaker) อยู่' };
+    if (!this.configured(target)) {
+      if (target === 'PRODUCTION' && mode === 'production') return null;
+      return { target, skip: `ยังไม่ได้ตั้งค่า FileMaker ${target === 'UAT' ? 'UAT (FMP_UAT_*)' : 'จริง (FMP_*)'}` };
+    }
+    return { target, skip: null };
   }
 
   /**
@@ -436,7 +502,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
    */
   async release(db: Outbox, session: FmpSession, event: FmpReleaseEvent): Promise<string | null> {
     if (!this.configured()) return null;
-    const sent = await db.fmpOutbox.count({ where: { sessionId: session.id } });
+    // D130: a message the switch held back never reached FileMaker, so it left no held bill to take away
+    const sent = await db.fmpOutbox.count({ where: { sessionId: session.id, status: { not: 'skipped' } } });
     return sent ? this.enqueue(db, session, event) : null;
   }
 
@@ -445,9 +512,10 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   // ---------------------------------------------------------------------------
   /** One round: send what is due. Safe to call from several containers (a row is claimed before it is sent). */
   async tick(): Promise<{ sent: number; failed: number }> {
-    const cfg = this.cfg();
     const result = { sent: 0, failed: 0 };
-    if (!cfg || this.running) return result;
+    if (!this.configured() || this.running) return result;
+    // D130: `off` = nothing leaves SES; what was queued before waits and goes when ADMIN switches back on
+    if ((await this.settings.fmpPushMode()) === 'off') return result;
     this.running = true;
     const batchId = randomUUID();
     try {
@@ -463,7 +531,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
         take: BATCH,
       });
       if (!due.length) return result;
-      let token: string | null = null;
+      // D130: one Data API session per FileMaker (production / UAT) for the whole round
+      const tokens = new Map<FmpTarget, { cfg: FmpConfig; token: string }>();
       try {
         for (const row of due) {
           const claimed = await this.prisma.fmpOutbox.updateMany({
@@ -472,14 +541,21 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
           });
           if (claimed.count !== 1) continue; // another container took it
           try {
-            token ??= await this.login(cfg, batchId);
+            const target: FmpTarget = row.target === 'UAT' ? 'UAT' : 'PRODUCTION';
+            const cfg = this.cfg(target);
+            if (!cfg) throw new Error(`ยังไม่ได้ตั้งค่า FileMaker ${target === 'UAT' ? 'UAT (FMP_UAT_*)' : 'จริง (FMP_*)'}`);
+            let session = tokens.get(target);
+            if (!session) {
+              session = { cfg, token: await this.login(cfg, batchId) };
+              tokens.set(target, session);
+            }
             let out;
             try {
-              out = await this.deliver(cfg, token, row, batchId);
+              out = await this.deliver(cfg, session.token, row, batchId);
             } catch (error) {
               if (!(error instanceof TokenExpired)) throw error;
-              token = await this.login(cfg, batchId); // the token was dropped: once more with a new one
-              out = await this.deliver(cfg, token, row, batchId);
+              session.token = await this.login(cfg, batchId); // the token was dropped: once more with a new one
+              out = await this.deliver(cfg, session.token, row, batchId);
             }
             await this.prisma.fmpOutbox.update({
               where: { id: row.id },
@@ -501,7 +577,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
           }
         }
       } finally {
-        if (token) await this.logout(cfg, token, batchId);
+        for (const { cfg, token } of tokens.values()) await this.logout(cfg, token, batchId);
       }
     } catch (error) {
       this.log.error(`FileMaker push round failed: ${safe(error)}`);
@@ -553,6 +629,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const started = Date.now();
     // the path as logged: no host, and the session token that ends a logout path masked
     const logPath = `/fmi/data/vLatest/databases/${encodeURIComponent(cfg.database)}${path}`.replace(/\/sessions\/[^/]+$/, '/sessions/[token]');
+    const label = cfg.target === 'UAT' ? '[UAT] ' : ''; // D130
     const entry = { direction: 'OUT' as const, kind: trace.kind, batchId: trace.batchId, outboxId: trace.outboxId, reference: trace.reference, method, path: logPath, request: trace.request };
     try {
       const res = await fetch(`${cfg.base}/fmi/data/vLatest/databases/${encodeURIComponent(cfg.database)}${path}`, {
@@ -578,14 +655,14 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
         httpStatus: out.status,
         fmCode: out.code,
         durationMs: Date.now() - started,
-        summary: `${trace.what} → HTTP ${out.status}${out.code ? ` · code ${out.code}` : ''}${out.message ? ` ${out.message}` : ''}${recordId}`,
+        summary: `${label}${trace.what} → HTTP ${out.status}${out.code ? ` · code ${out.code}` : ''}${out.message ? ` ${out.message}` : ''}${recordId}`,
         response: cut(redactToken(text)),
       });
       return out;
     } catch (error) {
       // never echo error.message: a runtime may quote the URL or headers in it
       const message = error instanceof Error && error.name === 'AbortError' ? `FileMaker ไม่ตอบภายใน ${Math.round(timeoutMs / 1000)} วินาที` : 'เชื่อมต่อ FileMaker ไม่สำเร็จ';
-      await this.record({ ...entry, ok: false, durationMs: Date.now() - started, summary: `${trace.what} → ${message}` });
+      await this.record({ ...entry, ok: false, durationMs: Date.now() - started, summary: `${label}${trace.what} → ${message}` });
       throw new Error(message);
     } finally {
       clearTimeout(timer);
@@ -622,8 +699,9 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     row: { id: string; reference: string; event: string; payload: string; attempts: number },
     batchId: string,
   ) {
+    // D130: a record id belongs to one FileMaker: never update a production record on the UAT server or the other way round
     const earlier = await this.prisma.fmpOutbox.findFirst({
-      where: { reference: row.reference, id: { not: row.id }, fmpRecordId: { not: null } },
+      where: { reference: row.reference, id: { not: row.id }, fmpRecordId: { not: null }, target: cfg.target },
       orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
       select: { fmpRecordId: true },
     });
@@ -720,7 +798,8 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   // ---------------------------------------------------------------------------
   async status() {
     const cfg = this.cfg();
-    const [counts, rows] = await Promise.all([
+    const uat = this.cfg('UAT');
+    const [counts, rows, mode] = await Promise.all([
       this.prisma.fmpOutbox.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.fmpOutbox.findMany({
         orderBy: { createdAt: 'desc' },
@@ -743,8 +822,10 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
           ackTimeText: true,
           ackReceivedAt: true,
           snCheck: true,
+          target: true,
         },
       }),
+      this.settings.fmpPushModeRow(),
     ]);
     const count = (s: string) => counts.find((c) => c.status === s)?._count._all ?? 0;
     return {
@@ -755,9 +836,26 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       field: cfg?.field ?? null,
       script: cfg?.script ?? null,
       callback: { path: FMP_CALLBACK_PATH, keySet: this.callbackKey() !== null },
-      counts: { pending: count('pending'), sending: count('sending'), sent: count('sent'), failed: count('failed') },
+      // D130: ADMIN's switch, and the test FileMaker it can point at
+      mode,
+      uat: { configured: uat !== null, host: uat ? new URL(uat.base).host : null, database: uat?.database ?? null },
+      counts: { pending: count('pending'), sending: count('sending'), sent: count('sent'), failed: count('failed'), skipped: count('skipped') },
       rows,
     };
+  }
+
+  /**
+   * D130: ADMIN switches where orders go. `uat` needs `FMP_UAT_*`, `production` needs `FMP_*` (400 otherwise); `off` is always
+   * allowed. Applies to the next message: one already queued keeps its target (and waits while `off`).
+   */
+  async setMode(mode: FmpPushMode, staffId: string) {
+    if (mode === 'uat' && !this.configured('UAT')) throw new BadRequestException('ยังไม่ได้ตั้งค่า FileMaker UAT (FMP_UAT_HOST, FMP_UAT_DATABASE, FMP_UAT_USER, FMP_UAT_PASSWORD)');
+    if (mode === 'production' && !this.configured('PRODUCTION')) throw new BadRequestException('ยังไม่ได้ตั้งค่า FileMaker จริง (FMP_HOST, FMP_DATABASE, FMP_USER, FMP_PASSWORD)');
+    const before = await this.settings.fmpPushMode();
+    const row = await this.settings.setFmpPushMode(mode, staffId);
+    const names: Record<FmpPushMode, string> = { production: 'ส่งจริง', off: 'ปิด', uat: 'UAT' };
+    await this.record({ direction: 'SES', kind: 'mode', ok: true, summary: `ADMIN ${staffId} เปลี่ยนการส่งเข้า U POS: ${names[before]} → ${names[mode]}` });
+    return row;
   }
 
   /**

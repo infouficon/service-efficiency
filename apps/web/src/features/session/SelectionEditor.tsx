@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import iphoneIcon from '../../assets/category-icons/iphone.avif';
 import ipadIcon from '../../assets/category-icons/ipad.avif';
-import macIcon from '../../assets/category-icons/macBook.avif';
+import macIcon from '../../assets/category-icons/macBook.webp';
 import watchIcon from '../../assets/category-icons/watch.avif';
 import airPodsIcon from '../../assets/category-icons/airPods.avif';
 import appleTvIcon from '../../assets/category-icons/apple_TV.jpg';

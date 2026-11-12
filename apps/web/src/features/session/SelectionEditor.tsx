@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
-import iphoneIcon from '../../assets/category-icons/iphone.png';
-import ipadIcon from '../../assets/category-icons/ipad.png';
-import macIcon from '../../assets/category-icons/mac.png';
-import watchIcon from '../../assets/category-icons/watch.png';
+import iphoneIcon from '../../assets/category-icons/iphone.jpg';
+import ipadIcon from '../../assets/category-icons/ipad.jpg';
+import macIcon from '../../assets/category-icons/macBook.jpg';
+import watchIcon from '../../assets/category-icons/watch.jpg';
+import airPodsIcon from '../../assets/category-icons/airPods.jpg';
+import appleTvIcon from '../../assets/category-icons/apple_TV.jpg';
+import homePodIcon from '../../assets/category-icons/homePod.jpg';
+import airTagIcon from '../../assets/category-icons/airTag.jpg';
 import accessoriesIcon from '../../assets/category-icons/accessories.png';
 import batteryIcon from '../../assets/category-icons/battery.png';
 import {
@@ -61,6 +65,10 @@ const CATEGORY_PICTURES: Record<string, string> = {
   iPad: ipadIcon,
   Mac: macIcon,
   Watch: watchIcon,
+  AirPods: airPodsIcon,
+  'Apple TV': appleTvIcon,
+  HomePod: homePodIcon,
+  AirTag: airTagIcon,
   Accessories: accessoriesIcon,
   Battery: batteryIcon,
 };

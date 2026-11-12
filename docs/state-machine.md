@@ -63,7 +63,7 @@ Role permissions are the union of assigned roles. MANAGER alone receives no auto
 
 - Create at walk-in with no Product; multiple active Sessions for one Customer are allowed (D5, D8). Never add auto-timeout/abandonment/closure (D7).
 - Start DEMO only when that Staff has no other active DEMO. Release of workload on DEMO end or terminal cancellation must be atomic; reassignment rules remain OPEN.
-- Capture decision from exactly `BUY`, `NOT_BUY`. NOT_BUY result is exactly: `ราคา`, `ยังไม่ตัดสินใจ`, `เปลี่ยนใจ`, `สินค้าไม่ตรงความต้องการ`, `ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ`, `อื่น ๆ`. For `อื่น ๆ`, additional text is required (D17).
+- Capture decision from exactly `BUY`, `NOT_BUY`. NOT_BUY result is exactly: `ราคา`, `สินค้าไม่ตรงความต้องการ`, `ต้องการเปลี่ยนรุ่น สี หรือ ความจุ`, `พนักงานเลือกสินค้าผิดพลาด`, `รอนาน`, `อื่น ๆ`. For `อื่น ๆ`, additional text is required (D17).
 - Purchase fields and selections are editable only before accepted confirmation. Do not silently add a reverse transition from CONFIRMATION or later states. Confirmation and Stock request timestamps must reflect their actual actions, even if eventually implemented as one command.
 - Cancellation requires select reason → additional text when applicable → confirmation → terminal outcome → return to queue (D18–20). Exact reasons: `ลูกค้าเปลี่ยนใจ`, `รอนาน`, `อื่น ๆ`. Text is optional for the first two, required for `อื่น ๆ`. Store trusted actor, reason/text and server time. No undo/reopen.
 - No synthetic `demo_end_at`, `stock_found_at`, or other unperformed milestone is written when cancellation/out-of-stock skips it. Their terminal event records the actual outcome.

@@ -47,10 +47,10 @@ export const payments = [
 ] as const;
 export const notBuyReasons = [
   'ราคา',
-  'ยังไม่ตัดสินใจ',
-  'เปลี่ยนใจ',
   'สินค้าไม่ตรงความต้องการ',
-  'ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ',
+  'ต้องการเปลี่ยนรุ่น สี หรือ ความจุ',
+  'พนักงานเลือกสินค้าผิดพลาด',
+  'รอนาน',
   'อื่น ๆ',
 ] as const;
 /**
@@ -58,17 +58,12 @@ export const notBuyReasons = [
  * again ("ซื้อใหม่") with its old data and its old queue number. Keep equal to `CHANGE_REASONS` in the API's sessions.service.ts.
  */
 export const changeReasons = [
-  'เปลี่ยนรุ่น',
-  'เปลี่ยนสี',
-  'เปลี่ยนความจุ',
+  'เปลี่ยนรุ่น สี หรือ ความจุ',
   'พนักงานเลือกสินค้าผิดพลาด',
 ] as const;
 export const cancelReasons = [
   'ราคา',
-  'ยังไม่ตัดสินใจ',
-  'เปลี่ยนใจ',
   'สินค้าไม่ตรงความต้องการ',
-  'ต้องการสอบถามราคาหรือรายละเอียดเฉยๆ',
   ...changeReasons,
   'รอนาน',
   'อื่น ๆ',

@@ -1,4 +1,45 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+@font-face {
+  font-family: 'SF Pro Thai';
+  src: url('/fonts/SFProTH.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  src: url('/fonts/SFProTH.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  src: url('/fonts/SFProText-Regular.woff2') format('woff2'),
+       url('/fonts/SFProText-Regular.woff') format('woff');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  src: url('/fonts/SFProText-Medium.woff2') format('woff2'),
+       url('/fonts/SFProText-Medium.woff') format('woff');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'SF Pro';
+  src: url('/fonts/SFProText-Semibold.woff2') format('woff2'),
+       url('/fonts/SFProText-Semibold.woff') format('woff');
+  font-weight: 600 700;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   /* COLOR PALETTE TOKENS */
@@ -64,8 +105,8 @@
 
   /* BASE STYLES */
   font-family:
-    'IBM Plex Sans Thai',
-    'IBM Plex Sans',
+    'SF Pro',
+    'SF Pro Thai',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
@@ -91,8 +132,8 @@ html {
 body {
   margin: 0;
   font-family:
-    'IBM Plex Sans Thai',
-    'IBM Plex Sans',
+    'SF Pro',
+    'SF Pro Thai',
     -apple-system,
     BlinkMacSystemFont,
     'Segoe UI',
@@ -412,16 +453,18 @@ nav button span {
 }
 
 .avatar {
-  border-radius: var(--radius-circle);
+  border-radius: var(--radius-pill);
   background: var(--bg-muted);
-  width: 34px;
+  min-width: 34px;
   height: 34px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: var(--font-sm);
+  font-size: 13px;
   color: var(--primary-dark);
+  letter-spacing: 0.02em;
 }
 
 .text-button {
@@ -1382,8 +1425,9 @@ footer {
   }
 
   .user .avatar {
-    width: 32px;
+    min-width: 32px;
     height: 32px;
+    padding: 0 8px;
     font-size: 11px;
   }
 

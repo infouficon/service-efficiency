@@ -554,7 +554,7 @@ export function App({
           </div>
 
           <div className="user">
-            <span className="avatar">{user.staffId.slice(0, 2)}</span>
+            <span className="avatar">{user.staffId}</span>
             <div className="user-details">
               <strong>{user.name || user.staffId}</strong>
               <small>{user.roles.join(' · ')}</small>

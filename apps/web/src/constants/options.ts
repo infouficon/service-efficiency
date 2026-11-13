@@ -75,6 +75,7 @@ export const rejectReasons = [
   'อื่น ๆ',
 ] as const;
 export const stages = [
+  'ลูกค้าสนใจอะไร',
   'กรอกเบอร์โทร',
   'เลือกสินค้า',
   'ตรวจสอบยืนยัน',

@@ -254,6 +254,23 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
     category: '2. ข้อมูลสินค้าและอุปกรณ์',
     columns: [
       {
+        key: 'interestedProduct',
+        label: 'สินค้าที่สนใจในขั้นตอนแรก',
+        getValue: (s) => {
+          const createdEvt = s.events?.find((e) => e.eventType === 'SESSION_CREATED');
+          const meta = createdEvt?.metadata as Record<string, unknown> | undefined;
+          if (meta) {
+            if (Array.isArray(meta.interestedProducts)) {
+              return meta.interestedProducts.join('; ');
+            }
+            if (typeof meta.interestedProduct === 'string') {
+              return meta.interestedProduct;
+            }
+          }
+          return '';
+        },
+      },
+      {
         key: 'category',
         label: 'หมวดหมู่สินค้า',
         getValue: (s) =>

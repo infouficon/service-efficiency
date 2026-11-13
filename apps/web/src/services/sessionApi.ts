@@ -212,16 +212,20 @@ export async function fetchSessionsApi(branchId?: string): Promise<MockSession[]
   return data.map(mapApiSessionToMockSession);
 }
 
-/** D56/D57: a walk-in starts with the customer's phone number and a customer type; the server gives it the queue number. */
+/** D56/D57/D131/D132: a walk-in starts with the customer's interested product(s) and phone number; the server gives it the queue number. */
 export async function createWalkInApi(
   branchId: string | undefined,
   phone: string,
   customerTypeId?: string,
+  skuId?: string,
+  skuIds?: string[],
 ): Promise<MockSession> {
   const data = await api<ApiSession>('/sessions', 'POST', {
     branchId,
     phone,
     customerTypeId,
+    skuId,
+    skuIds,
   });
   return mapApiSessionToMockSession(data);
 }

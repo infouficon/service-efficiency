@@ -48,6 +48,7 @@ import {
   isUnlimited,
   modelChoices,
   toCatalog,
+  toProduct,
   type CatalogModel,
   type CatalogProduct,
   type CatalogSku,
@@ -72,28 +73,13 @@ const CATEGORY_PICTURES: Record<string, string> = {
   Accessories: accessoriesIcon,
   Battery: batteryIcon,
 };
-function CategoryPicture({ cat, size = 48 }: { cat: string; size?: number }) {
+export function CategoryPicture({ cat, size = 48 }: { cat: string; size?: number }) {
   const src = CATEGORY_PICTURES[cat];
   return src ? (
     <img src={src} width={size} height={size} alt="" className="category-picture" />
   ) : (
     <CategoryIcon category={cat} size={size * 0.7} />
   );
-}
-
-/** The catalog entry an item stands for (`id` = the SKU id). */
-function toProduct(p: CatalogProduct, m: CatalogModel, s: CatalogSku): Product {
-  return {
-    id: s.id,
-    category: p.category,
-    product: p.name,
-    model: s.name || m.name,
-    sku: s.sku,
-    stock: s.stock,
-    stockSource: s.stockSource,
-    erpAsOf: s.erpAsOf,
-    branchActive: true,
-  };
 }
 
 /** The line above the picker about how fresh the stock figures are (F16): unlimited, or the oldest warroom snapshot behind the numbers. */
@@ -114,7 +100,7 @@ function stockInfoLine(skus: CatalogSku[]): string {
   return `ข้อมูล Stock ณ ${oldest} (อัปเดตจาก ERP ทุกประมาณ 3 ชั่วโมง)`;
 }
 
-function StockBadge({ sku }: { sku: CatalogSku }) {
+export function StockBadge({ sku }: { sku: CatalogSku }) {
   if (!isUnlimited(sku) && typeof sku.stock !== 'number') return null;
   const unlimited = isUnlimited(sku);
   const out = isOutOfStock(sku);
@@ -607,9 +593,9 @@ export function SelectionEditor({
                       disabled={count === 0}
                       onClick={() => handleCategoryChange(cat)}
                     >
-                      <CategoryPicture cat={cat} size={68} />
+                      <CategoryPicture cat={cat} size={64} />
                       <strong>{cat}</strong>
-                      {count === 0 && <small>ไม่มีสินค้า</small>}
+                      {count === 0 && <span className="no-stock-label">ไม่มีสินค้า</span>}
                     </button>
                   );
                 })}

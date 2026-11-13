@@ -1921,3 +1921,42 @@ draft. Answers chosen by the owner the same day:
    fms4) with the `ses` layout and the v4 scripts, a Data API account for SES, and, if FileMaker should report back to SES, the same
    callback / POS keys (its reports then change the test orders on the one SES, which has no UAT of its own).
 
+## D131 — Staff Walk-in Step 1 "Customer Interest" Pre-filling Product Selection (2026-11-13)
+
+Owner instruction via `/grill-me`: "เพิ่มในขั้นตอนแรกของ staff เป็นหน้า ลูกค้าสนใจอะไร โดยเลือกสินค้าแบบตอนเลือกสินค้าหลัก และเมื่อเข้าสู่หน้า เลือกสินค้าข้อมูลนั่นจะต้องใส่ในหน้านี้ให้แล้วไม่ต้องกดเลือกใหม่"
+
+1. **Two-Step Walk-in Flow:**
+   - **Step 1: ลูกค้าสนใจอะไร (Customer Interest):** Staff selects the category (iPhone, iPad, Mac, Watch, etc.) and specific SKU (Model, RAM, Storage, Colour) using the standard product catalog picker. Only in-stock items (`stock > 0`) can be selected. Selecting 1 main product is required before proceeding to Step 2.
+   - **Step 2: กรอกเบอร์โทรศัพท์ (Customer Phone):** Shows a summary card of the chosen product with an option to go back ("ย้อนกลับ" / "เปลี่ยนสินค้า") to adjust the selection. Staff enters the customer's phone number and clicks "เริ่มบริการ".
+2. **Automatic Pre-fill in Product Selection:**
+   - The session is created directly with the chosen product in `items` (`SessionItem`).
+   - When entering the Product Selection screen, the product is already populated in the order items without requiring re-selection.
+   - Staff retains full flexibility to modify, delete, or add additional products/accessories as normal.
+3. **Progress Stepper Updated to 6 Steps:**
+   - 1. ลูกค้าสนใจอะไร (Done upon walk-in)
+   - 2. กรอกเบอร์โทร (Done upon walk-in)
+   - 3. เลือกสินค้า (Active during product selection)
+   - 4. ตรวจสอบยืนยัน (Active during review)
+   - 5. ฝ่ายคลัง (Active while in stock)
+   - 6. แคชเชียร์ (Active while at cashier)
+4. **Data Recording & Export:**
+   - Initial interested product is recorded in `SESSION_CREATED` event metadata (`interestedSkuId`, `interestedProduct`) for audit and conversion analytics.
+   - A new column "สินค้าที่สนใจในขั้นตอนแรก" is added to the CSV export under category 2 (ข้อมูลสินค้าและอุปกรณ์).
+
+## D132 — Walk-in Multi-Product Interest Selection (Up to 3 Items) and Redesign (2026-11-13)
+
+Owner instruction via `/grill-me`: "ปรับ design ส่วน เลือกสินค้าที่ลูกค้าสนใจ ลูกค้าสนใจอะไร ให้เรียบร้อย สวยงาม พร้อมเลือกได้สูงสุด 3 สินค้า"
+
+1. **Selection Capacity & Rules:**
+   - Staff can select 1 to 3 distinct main products (`skuIds`, maximum 3 items).
+   - Duplicate SKUs are disallowed to prevent redundant entries; multiple items are intended for model/color comparison or multi-device interests (e.g. iPhone + Apple Watch).
+2. **Two-Section Redesigned Layout:**
+   - **Top Section (Selected Interested Products):** Shows a clean counter badge ("สินค้าที่สนใจ (X/3 รายการ)") and cards displaying each chosen item's category thumbnail, model name, spec chips, SKU code, stock badge, and a remove (trash) button. An empty state prompt guides staff when 0 items are added.
+   - **Bottom Section (Product Picker):** Shows category tiles and `SkuPicker`. Selecting a spec previews the candidate item with a "+ เพิ่มในรายการที่สนใจ (X/3)" button. Duplicate SKUs and out-of-stock items are flagged and blocked from being added. When 3 items are reached, adding is paused with a clear notice until an item is removed.
+3. **Session Creation & Pre-fill:**
+   - `POST /sessions` accepts `skuIds?: string[]` (and `skuId?: string` backward compatible).
+   - All selected products (1–3 items, quantity 1 each) are created as `SessionItem`s on the session and pre-fill into the Product Selection screen upon entry.
+   - In `SESSION_CREATED` event metadata, `interestedSkuIds`, `interestedProducts`, and `interestedProduct` (joined by `; `) are recorded.
+   - In CSV export, the "สินค้าที่สนใจในขั้นตอนแรก" column lists all selected products separated by `; `.
+
+

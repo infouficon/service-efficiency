@@ -1,4 +1,5 @@
 /** The branch catalog as the product pickers use it (SkuPicker, D107): types, the API shape, stock rules, the model list. */
+import type { Product } from '../../types/session';
 
 /** A SKU as the branch product list returns it (D41, D52, D59). */
 export interface CatalogSku {
@@ -115,4 +116,19 @@ export interface Picked {
   product: CatalogProduct;
   model: CatalogModel;
   sku: CatalogSku;
+}
+
+/** The catalog entry an item stands for (`id` = the SKU id). */
+export function toProduct(p: CatalogProduct, m: CatalogModel, s: CatalogSku): Product {
+  return {
+    id: s.id,
+    category: p.category,
+    product: p.name,
+    model: s.name || m.name,
+    sku: s.sku,
+    stock: s.stock,
+    stockSource: s.stockSource,
+    erpAsOf: s.erpAsOf,
+    branchActive: true,
+  };
 }

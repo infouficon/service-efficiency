@@ -123,13 +123,13 @@ export function reasonIsValid(reason: string, text: string) {
   return Boolean(reason) && (reason !== 'อื่น ๆ' || Boolean(text.trim()));
 }
 export function progressIndex(session: MockSession, isReviewing = false): number {
-  if (session.state === 'WALK_IN') return 0;
+  if (session.state === 'WALK_IN') return 1;
   if (session.state === 'PRODUCT_SELECTION') {
-    if (session.confirmed) return 2;
-    return isReviewing ? 2 : 1;
+    if (session.confirmed) return 3;
+    return isReviewing ? 3 : 2;
   }
   if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state))
-    return 3;
+    return 4;
   if (
     [
       'SENT_TO_CASHIER',
@@ -139,8 +139,8 @@ export function progressIndex(session: MockSession, isReviewing = false): number
       'COMPLETED',
     ].includes(session.state)
   )
-    return 4;
-  return 1;
+    return 5;
+  return 2;
 }
 
 /**

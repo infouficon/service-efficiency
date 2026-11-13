@@ -31,6 +31,7 @@ import { ReturnToStockForm } from './ReturnToStockForm';
 import { WalkInForm } from './WalkInForm';
 import { ChangeItemModal } from './ChangeItemModal';
 import { ReceiptSheet, nowText } from './Receipt';
+import type { Picked } from './catalog';
 import {
   advance,
   confirmSelection,
@@ -119,6 +120,7 @@ export function StaffWorkspace({
   const [error, setError] = useState('');
   const [printSession, setPrintSession] = useState<MockSession | null>(null);
   const [changingItemSession, setChangingItemSession] = useState<MockSession | null>(null);
+  const [walkInStep, setWalkInStep] = useState<'product' | 'phone'>('product');
 
   // Filter staff's branch sessions for today
   const branchSessions = sessions.filter((s) => {
@@ -187,14 +189,33 @@ export function StaffWorkspace({
     }
   };
 
-  const startNewWalkIn = async (phone: string) => {
+  const startNewWalkIn = async (phone: string, pickedItems: Picked[] = []) => {
     setBusy(true);
     setError('');
     try {
-      const newS = await createWalkInApi(user.branchCode, phone);
+      const skuIds = pickedItems.map((item) => item.sku.id);
+      const newS = await createWalkInApi(user.branchCode, phone, undefined, undefined, skuIds);
+      if (pickedItems.length > 0 && (!newS.selection?.items || newS.selection.items.length === 0)) {
+        newS.selection = {
+          ...newS.selection,
+          items: pickedItems.map((item) => ({
+            id: item.sku.id,
+            quantity: 1,
+            product: {
+              id: item.sku.id,
+              category: item.product.category,
+              product: item.product.name,
+              model: item.sku.name || item.model.name,
+              modelName: item.model.name,
+              sku: item.sku.sku,
+            },
+          })),
+        };
+      }
       onAddSession(newS);
       setActiveSessionRef(newS.reference);
       setForm('normal');
+      setWalkInStep('product');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'สร้าง Session ไม่สำเร็จ');
     } finally {
@@ -582,10 +603,14 @@ export function StaffWorkspace({
           {!activeSession ? (
             <div className="content-grid">
               <Panel
-                title="รับลูกค้าใหม่"
-                eyebrow="ลงทะเบียนลูกค้าหน้าร้าน"
+                title={walkInStep === 'product' ? 'ลูกค้าสนใจอะไร' : 'รับลูกค้าใหม่'}
+                eyebrow={walkInStep === 'product' ? 'เลือกสินค้าที่ลูกค้าสนใจ' : 'ลงทะเบียนลูกค้าหน้าร้าน'}
               >
-                <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
+                <WalkInForm
+                  busy={busy}
+                  onStepChange={setWalkInStep}
+                  onSubmit={startNewWalkIn}
+                />
               </Panel>
             </div>
           ) : (

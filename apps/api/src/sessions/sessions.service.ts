@@ -482,6 +482,43 @@ export class SessionsService {
       // D70: queue number is allocated at confirmation, not at walk-in.
       const reference = await this.newReference(tx, day);
 
+      // D131, D132: look up the SKU(s) the customer was interested in at walk-in (up to 3 distinct SKUs)
+      const targetSkuKeys = (dto.skuIds && dto.skuIds.length > 0)
+        ? dto.skuIds
+        : dto.skuId
+          ? [dto.skuId]
+          : [];
+
+      if (targetSkuKeys.length > 3) {
+        throw new BadRequestException('สามารถเลือกสินค้าที่สนใจได้สูงสุดไม่เกิน 3 รายการ');
+      }
+
+      const resolvedInitialSkus: Prisma.ProductSkuGetPayload<{
+        include: { model: { include: { product: true } } };
+      }>[] = [];
+
+      for (const key of targetSkuKeys) {
+        const found = await tx.productSku.findFirst({
+          where: { OR: [{ id: key }, { sku: key }] },
+          include: { model: { include: { product: true } } },
+        });
+        if (!found) {
+          throw new BadRequestException(`ไม่พบสินค้า (SKU) ${key}`);
+        }
+        if (resolvedInitialSkus.some((s) => s.id === found.id)) {
+          throw new BadRequestException(`สินค้า (SKU) ${found.sku} ซ้ำในรายการ`);
+        }
+        resolvedInitialSkus.push(found);
+      }
+
+      const interestedProducts = resolvedInitialSkus.map((sku) =>
+        [sku.model.product.name, sku.model.name, sku.storage, sku.color]
+          .filter(Boolean)
+          .join(' ')
+          .replace(/\s+/g, ' ')
+          .trim(),
+      );
+
       return tx.customerSession.create({
         data: {
           reference,
@@ -495,6 +532,14 @@ export class SessionsService {
           state: 'PRODUCT_SELECTION',
           customerWalkInAt: now,
           productSelectionStartAt: now,
+          items: resolvedInitialSkus.length > 0
+            ? {
+                create: resolvedInitialSkus.map((sku) => ({
+                  skuId: sku.id,
+                  quantity: 1,
+                })),
+              }
+            : undefined,
           events: {
             create: [
               {
@@ -503,6 +548,14 @@ export class SessionsService {
                 createdAt: now,
                 metadata: {
                   phone: normalizedPhone,
+                  ...(resolvedInitialSkus.length > 0
+                    ? {
+                        interestedSkuIds: resolvedInitialSkus.map((s) => s.id),
+                        interestedSkuId: resolvedInitialSkus[0]?.id,
+                        interestedProducts,
+                        interestedProduct: interestedProducts.join('; '),
+                      }
+                    : {}),
                 },
               },
               {

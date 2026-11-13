@@ -54,6 +54,19 @@ export class CreateSessionDto {
   @IsString()
   @MaxLength(36)
   customerTypeId?: string;
+
+  /** D131, D132: the product(s) the customer was interested in at walk-in (optional, up to 3 SKUs). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  skuId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  skuIds?: string[];
 }
 
 /** D92: the serial numbers scanned for one main product (`itemId` = the SessionItem), exactly `quantity` of them. */

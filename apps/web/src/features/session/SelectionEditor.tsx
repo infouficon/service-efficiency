@@ -1116,11 +1116,6 @@ export function SelectionEditor({
           กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
         </Notice>
       )}
-      {!receiptValid && (
-        <Notice error>
-          กรุณาเลือกประเภทใบเสร็จก่อนตรวจสอบรายการ
-        </Notice>
-      )}
       <div className="actions">
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span

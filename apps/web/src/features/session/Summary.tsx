@@ -80,6 +80,12 @@ export function Summary({
               <span className="info-item-label">สาขา:</span>
               <span className="info-item-value">{branchLabel}</span>
             </div>
+            {session.currentAppleDevices && session.currentAppleDevices.length > 0 && (
+              <div className="info-item-row">
+                <span className="info-item-label">สินค้า Apple ที่ใช้อยู่:</span>
+                <span className="info-item-value">{session.currentAppleDevices.join(', ')}</span>
+              </div>
+            )}
           </div>
         </div>
 

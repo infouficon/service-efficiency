@@ -30,10 +30,12 @@ export function SkuPicker({
   models,
   onPick,
   onComplete,
+  allowOutOfStock = false,
 }: {
   models: ModelChoice[];
   onPick: (picked: Picked | null) => void;
   onComplete?: (picked: Picked) => void;
+  allowOutOfStock?: boolean;
 }) {
   const [modelKey, setModelKey] = useState('');
   const [memory, setMemory] = useState('');
@@ -75,15 +77,15 @@ export function SkuPicker({
 
   /** Keep the state and tell the parent which SKU (if any) it now stands for. */
   const settle = (choice: ModelChoice | null, mem: string, st: string, triggerComplete = false) => {
-    const next = choice ? settleChoice(choice.model.skus, mem, st) : { memory: '', storage: '', skuId: '' };
+    // D133: Always require explicit colour selection; do not auto-pick skuId
+    const next = choice ? settleChoice(choice.model.skus, mem, st, false) : { memory: '', storage: '', skuId: '' };
     setMemory(next.memory);
     setStorage(next.storage);
     setSkuId(next.skuId);
     const sku = choice?.model.skus.find((s) => s.id === next.skuId);
     const pickedObj = choice && sku ? { product: choice.product, model: choice.model, sku } : null;
-    // a single SKU taken for the user can be out of stock: the parent says so and does not let it be added
     onPick(pickedObj);
-    if (triggerComplete && pickedObj && !isOutOfStock(pickedObj.sku) && next.skuId) {
+    if (triggerComplete && pickedObj && (allowOutOfStock || !isOutOfStock(pickedObj.sku)) && next.skuId) {
       onComplete?.(pickedObj);
     }
   };
@@ -91,7 +93,7 @@ export function SkuPicker({
   const pickModel = (choice: ModelChoice) => {
     setModelKey(choice.key);
     setQuery('');
-    settle(choice, '', '', choice.model.skus.length === 1);
+    settle(choice, '', '', false);
 
     const choiceMemories = distinct(choice.model.skus.map((s) => s.memory));
     const choiceStorages = distinct(choice.model.skus.map((s) => s.storage));
@@ -119,7 +121,7 @@ export function SkuPicker({
   };
 
   const handleStorageChange = (st: string) => {
-    settle(chosen, memory, st, true);
+    settle(chosen, memory, st, false);
     setTimeout(() => {
       colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
@@ -127,7 +129,7 @@ export function SkuPicker({
 
   const pickColour = (id: string) => {
     const sku = modelSkus.find((s) => s.id === id);
-    if (!chosen || !sku || isOutOfStock(sku)) return;
+    if (!chosen || !sku || (!allowOutOfStock && isOutOfStock(sku))) return;
     setSkuId(id);
     const pickedObj = { product: chosen.product, model: chosen.model, sku };
     onPick(pickedObj);
@@ -223,7 +225,7 @@ export function SkuPicker({
               value: s.id,
               label: colourLabels[i],
               sub: stockText(s),
-              disabled: isOutOfStock(s),
+              disabled: !allowOutOfStock && isOutOfStock(s),
             }))}
             value={skuId}
             onChange={pickColour}

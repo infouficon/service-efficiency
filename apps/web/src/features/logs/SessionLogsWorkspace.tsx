@@ -271,6 +271,21 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         },
       },
       {
+        key: 'currentAppleDevices',
+        label: 'สินค้า Apple ที่ลูกค้าใช้อยู่',
+        getValue: (s) => {
+          if (Array.isArray(s.currentAppleDevices) && s.currentAppleDevices.length > 0) {
+            return s.currentAppleDevices.join('; ');
+          }
+          const createdEvt = s.events?.find((e) => e.eventType === 'SESSION_CREATED');
+          const meta = createdEvt?.metadata as Record<string, unknown> | undefined;
+          if (meta && Array.isArray(meta.currentAppleDevices)) {
+            return meta.currentAppleDevices.join('; ');
+          }
+          return '';
+        },
+      },
+      {
         key: 'category',
         label: 'หมวดหมู่สินค้า',
         getValue: (s) =>

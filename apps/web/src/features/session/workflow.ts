@@ -122,14 +122,22 @@ export function toggleOption(selected: string[], option: string): string[] {
 export function reasonIsValid(reason: string, text: string) {
   return Boolean(reason) && (reason !== 'อื่น ๆ' || Boolean(text.trim()));
 }
-export function progressIndex(session: MockSession, isReviewing = false): number {
-  if (session.state === 'WALK_IN') return 1;
+export function progressIndex(
+  session: MockSession | null | undefined,
+  isReviewing = false,
+): number {
+  if (!session) return 0;
+  if (!session.phone || !session.phone.trim()) {
+    if (session.currentAppleDevices === undefined) return 1;
+    return 2;
+  }
+  if (session.state === 'WALK_IN') return 2;
   if (session.state === 'PRODUCT_SELECTION') {
-    if (session.confirmed) return 3;
-    return isReviewing ? 3 : 2;
+    if (session.confirmed) return 4;
+    return isReviewing ? 4 : 3;
   }
   if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state))
-    return 4;
+    return 5;
   if (
     [
       'SENT_TO_CASHIER',
@@ -139,8 +147,8 @@ export function progressIndex(session: MockSession, isReviewing = false): number
       'COMPLETED',
     ].includes(session.state)
   )
-    return 5;
-  return 2;
+    return 6;
+  return 3;
 }
 
 /**
@@ -762,6 +770,7 @@ export function settleChoice(
   skus: ChoiceSku[],
   memory: string,
   storage: string,
+  autoPickSku = true,
 ): { memory: string; storage: string; skuId: string } {
   const memories = distinct(skus.map((s) => s.memory));
   let mem = memory;
@@ -782,7 +791,7 @@ export function settleChoice(
   return {
     memory: mem,
     storage: st,
-    skuId: candidates.length === 1 ? candidates[0].id : '',
+    skuId: autoPickSku && candidates.length === 1 ? candidates[0].id : '',
   };
 }
 

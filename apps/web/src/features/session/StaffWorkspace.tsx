@@ -13,6 +13,7 @@ import {
   Plane,
   ReceiptText,
   RefreshCw,
+  ArrowRight,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { PhoneInput } from '../../components/PhoneInput';
@@ -20,21 +21,23 @@ import { formatDisplayPhone } from '../../utils/phone';
 import {
   cancelReasons,
   changeReasons,
+  customerAppleCategories,
   notBuyReasons,
   stages,
 } from '../../constants/options';
 import type { MockSession, MockUser, Selection } from '../../types/session';
-import { SelectionEditor } from './SelectionEditor';
+import { SelectionEditor, CategoryPicture, StockBadge } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
 import { ReturnToStockForm } from './ReturnToStockForm';
 import { WalkInForm } from './WalkInForm';
 import { ChangeItemModal } from './ChangeItemModal';
 import { ReceiptSheet, nowText } from './Receipt';
-import type { Picked } from './catalog';
+import { isOutOfStock, toProduct, type Picked } from './catalog';
 import {
   advance,
   confirmSelection,
+  itemName,
   itemsText,
   phoneIsValid,
   progressIndex,
@@ -115,6 +118,7 @@ export function StaffWorkspace({
   const [activeSessionRef, setActiveSessionRef] = useState<string | null>(null);
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
   const [phoneAttempted, setPhoneAttempted] = useState<Record<string, boolean>>({});
+  const [selectedAppleDevices, setSelectedAppleDevices] = useState<string[]>([]);
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -132,12 +136,34 @@ export function StaffWorkspace({
   const activeSession =
     branchSessions.find((s) => s.reference === activeSessionRef) || null;
 
+  useEffect(() => {
+    if (activeSession) {
+      setSelectedAppleDevices(activeSession.currentAppleDevices ?? []);
+    } else {
+      setSelectedAppleDevices([]);
+    }
+  }, [activeSession?.reference]);
+
   const currentPhone = activeSession
     ? (phoneDrafts[activeSession.reference] ?? activeSession.phone ?? '')
     : '';
 
   const finished = Boolean(
     activeSession?.outcome || activeSession?.state === 'COMPLETED',
+  );
+
+  const isAppleDeviceStep = Boolean(
+    activeSession &&
+      !finished &&
+      (!activeSession.phone || activeSession.phone.trim() === '') &&
+      activeSession.currentAppleDevices === undefined,
+  );
+
+  const isPhoneStep = Boolean(
+    activeSession &&
+      !finished &&
+      (!activeSession.phone || activeSession.phone.trim() === '') &&
+      activeSession.currentAppleDevices !== undefined,
   );
 
   const progressContainerRef = useRef<HTMLOListElement>(null);
@@ -189,26 +215,19 @@ export function StaffWorkspace({
     }
   };
 
-  const startNewWalkIn = async (phone: string, pickedItems: Picked[] = []) => {
+  const startNewWalkIn = async (pickedItems: Picked[] = []) => {
     setBusy(true);
     setError('');
     try {
       const skuIds = pickedItems.map((item) => item.sku.id);
-      const newS = await createWalkInApi(user.branchCode, phone, undefined, undefined, skuIds);
-      if (pickedItems.length > 0 && (!newS.selection?.items || newS.selection.items.length === 0)) {
+      const newS = await createWalkInApi(user.branchCode, '', undefined, undefined, skuIds);
+      if (pickedItems.length > 0) {
         newS.selection = {
           ...newS.selection,
           items: pickedItems.map((item) => ({
             id: item.sku.id,
             quantity: 1,
-            product: {
-              id: item.sku.id,
-              category: item.product.category,
-              product: item.product.name,
-              model: item.sku.name || item.model.name,
-              modelName: item.model.name,
-              sku: item.sku.sku,
-            },
+            product: toProduct(item.product, item.model, item.sku),
           })),
         };
       }
@@ -218,6 +237,72 @@ export function StaffWorkspace({
       setWalkInStep('product');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'สร้าง Session ไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleToggleAppleDevice = (cat: string) => {
+    if (cat === 'ยังไม่เคยใช้สินค้า Apple') {
+      if (selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')) {
+        setSelectedAppleDevices([]);
+      } else {
+        setSelectedAppleDevices(['ยังไม่เคยใช้สินค้า Apple']);
+      }
+    } else {
+      const next = selectedAppleDevices.includes(cat)
+        ? selectedAppleDevices.filter((c) => c !== cat)
+        : [...selectedAppleDevices.filter((c) => c !== 'ยังไม่เคยใช้สินค้า Apple'), cat];
+      setSelectedAppleDevices(next);
+    }
+  };
+
+  const handleConfirmAppleDeviceStep = async () => {
+    if (!activeSession) return;
+    const devicesToSave = selectedAppleDevices.length > 0 ? selectedAppleDevices : ['ไม่ระบุ'];
+    setBusy(true);
+    setError('');
+    try {
+      if (activeSession.id) {
+        const updated = await updateSelectionApi(
+          activeSession.id,
+          activeSession.selection,
+          activeSession.phone || '',
+          devicesToSave,
+        );
+        onUpdateSession({ ...updated, currentAppleDevices: devicesToSave });
+      } else {
+        onUpdateSession({ ...activeSession, currentAppleDevices: devicesToSave });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleConfirmPhoneStep = async () => {
+    if (!activeSession) return;
+    if (!phoneIsValid(currentPhone)) {
+      setPhoneAttempted((prev) => ({ ...prev, [activeSession.reference]: true }));
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      if (activeSession.id) {
+        const updated = await updateSelectionApi(
+          activeSession.id,
+          activeSession.selection,
+          currentPhone,
+          activeSession.currentAppleDevices,
+        );
+        onUpdateSession(updated);
+      } else {
+        onUpdateSession({ ...activeSession, phone: currentPhone });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกเบอร์โทรศัพท์ไม่สำเร็จ');
     } finally {
       setBusy(false);
     }
@@ -600,15 +685,42 @@ export function StaffWorkspace({
         </div>
 
         <div className="staff-main-panel">
+          <ol className="progress" ref={progressContainerRef}>
+            {stages.map((label, index) => {
+              const pIndex = progressIndex(activeSession, form === 'review');
+              return (
+                <li
+                  key={label}
+                  className={
+                    index === pIndex
+                      ? 'current'
+                      : index < pIndex
+                        ? 'done'
+                        : ''
+                  }
+                  aria-current={
+                    index === pIndex
+                      ? 'step'
+                      : undefined
+                  }
+                >
+                  <span>
+                    {index < pIndex ? <Check size={14} /> : index + 1}
+                  </span>
+                  {label}
+                </li>
+              );
+            })}
+          </ol>
+
           {!activeSession ? (
             <div className="content-grid">
               <Panel
-                title={walkInStep === 'product' ? 'ลูกค้าสนใจอะไร' : 'รับลูกค้าใหม่'}
-                eyebrow={walkInStep === 'product' ? 'เลือกสินค้าที่ลูกค้าสนใจ' : 'ลงทะเบียนลูกค้าหน้าร้าน'}
+                title="ลูกค้าสนใจอะไร"
+                eyebrow="ขั้นตอนที่ 1: เลือกสินค้าที่ลูกค้าสนใจ (สูงสุด 3 รายการ)"
               >
                 <WalkInForm
                   busy={busy}
-                  onStepChange={setWalkInStep}
                   onSubmit={startNewWalkIn}
                 />
               </Panel>
@@ -706,34 +818,6 @@ export function StaffWorkspace({
                 </div>
               </section>
 
-              <ol className="progress" ref={progressContainerRef}>
-                {stages.map((label, index) => {
-                  const pIndex = progressIndex(activeSession, form === 'review');
-                  return (
-                    <li
-                      key={label}
-                      className={
-                        index === pIndex
-                          ? 'current'
-                          : index < pIndex
-                            ? 'done'
-                            : ''
-                      }
-                      aria-current={
-                        index === pIndex
-                          ? 'step'
-                          : undefined
-                      }
-                    >
-                      <span>
-                        {index < pIndex ? <Check size={14} /> : index + 1}
-                      </span>
-                      {label}
-                    </li>
-                  );
-                })}
-              </ol>
-
               <div className="content-grid">
                 <div>
                   <Panel
@@ -746,9 +830,21 @@ export function StaffWorkspace({
                             ? 'ยืนยันการยกเลิกบริการ'
                             : form === 'return'
                               ? 'ส่งสินค้ากลับ Stock (หยิบผิด)'
-                              : undefined
+                              : isAppleDeviceStep
+                                ? 'ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง'
+                                : isPhoneStep
+                                  ? 'กรอกเบอร์โทรศัพท์ลูกค้า'
+                                  : undefined
                     }
-                    eyebrow={!finished && form === 'normal' ? undefined : 'ขั้นตอนปัจจุบัน'}
+                    eyebrow={
+                      !finished && form === 'normal' && !isAppleDeviceStep && !isPhoneStep
+                        ? undefined
+                        : isAppleDeviceStep
+                          ? `ขั้นตอนที่ 2: รหัสคำขอ ${activeSession.reference}`
+                          : isPhoneStep
+                            ? `ขั้นตอนที่ 3: รหัสคำขอ ${activeSession.reference}`
+                            : 'ขั้นตอนปัจจุบัน'
+                    }
                   >
                     {finished ? (
                       <>
@@ -870,10 +966,278 @@ export function StaffWorkspace({
                           </div>
                         )}
 
-                        {(activeSession.state === 'PRODUCT_SELECTION' ||
+                        {isAppleDeviceStep ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            {/* Customer interested products from Step 1 */}
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                <strong style={{ fontSize: '14px', color: '#0f172a' }}>
+                                  รายการสินค้าที่สนใจ ({activeSession.selection?.items?.length ?? 0} รายการ)
+                                </strong>
+                              </div>
+                              {(!activeSession.selection?.items || activeSession.selection.items.length === 0) ? (
+                                <p className="muted" style={{ margin: 0 }}>ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก</p>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {activeSession.selection.items.map((item) => {
+                                    const outOfStock = isOutOfStock(item.product);
+                                    return (
+                                      <div
+                                        key={item.product.id}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          padding: '8px 12px',
+                                          background: '#ffffff',
+                                          border: '1px solid #edf2f7',
+                                          borderRadius: '8px',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                          <CategoryPicture cat={item.product.category} size={32} />
+                                          <div>
+                                            <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>
+                                              {itemName(item)}
+                                            </div>
+                                            <small style={{ color: '#64748b' }}>{item.product.sku}</small>
+                                          </div>
+                                        </div>
+                                        <div>
+                                          {outOfStock ? (
+                                            <span
+                                              className="stock-badge stock-badge-out"
+                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                            >
+                                              สินค้าหมด (สนใจ)
+                                            </span>
+                                          ) : (
+                                            <span
+                                              className="stock-badge stock-badge-in"
+                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                            >
+                                              มีสินค้า
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Apple devices survey */}
+                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                              <label style={{ display: 'block', fontWeight: 600, fontSize: '15px', marginBottom: '6px', color: '#0f172a' }}>
+                                ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง?
+                              </label>
+                              <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>
+                                เลือกหมวดหมู่ที่ลูกค้ากำลังใช้งานอยู่ในปัจจุบัน
+                              </p>
+                              <div className="wizard-tiles picker-category-tiles" role="group" aria-label="หมวดหมู่สินค้า Apple ที่ลูกค้าใช้อยู่">
+                                {customerAppleCategories
+                                  .filter((cat) => cat !== 'ยังไม่เคยใช้สินค้า Apple')
+                                  .map((cat) => {
+                                    const isSelected = selectedAppleDevices.includes(cat);
+                                    return (
+                                      <button
+                                        key={cat}
+                                        type="button"
+                                        className={`wizard-tile wizard-tile-category${isSelected ? ' selected' : ''}`}
+                                        aria-pressed={isSelected}
+                                        onClick={() => handleToggleAppleDevice(cat)}
+                                        style={{ position: 'relative' }}
+                                      >
+                                        {isSelected && (
+                                          <span
+                                            style={{
+                                              position: 'absolute',
+                                              top: '6px',
+                                              right: '6px',
+                                              width: '20px',
+                                              height: '20px',
+                                              borderRadius: '50%',
+                                              background: '#0abab5',
+                                              color: '#ffffff',
+                                              display: 'grid',
+                                              placeItems: 'center',
+                                              boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                                            }}
+                                          >
+                                            <Check size={12} strokeWidth={3} />
+                                          </span>
+                                        )}
+                                        <CategoryPicture cat={cat} size={64} />
+                                        <strong>{cat}</strong>
+                                      </button>
+                                    );
+                                  })}
+                              </div>
+
+                              <div style={{ marginTop: '14px' }}>
+                                <button
+                                  type="button"
+                                  className={`wizard-tile${selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple') ? ' selected' : ''}`}
+                                  onClick={() => handleToggleAppleDevice('ยังไม่เคยใช้สินค้า Apple')}
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px 18px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '10px',
+                                    borderRadius: '10px',
+                                    border: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
+                                      ? '2px solid #0abab5'
+                                      : '1.5px dashed #cbd5e1',
+                                    background: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
+                                      ? '#f0fdfa'
+                                      : '#ffffff',
+                                    color: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
+                                      ? '#0f766e'
+                                      : '#64748b',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  <span>ยังไม่เคยใช้สินค้า Apple</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px' }}>
+                              <Button
+                                variant="primary"
+                                onClick={handleConfirmAppleDeviceStep}
+                                disabled={busy}
+                              >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                  ถัดไป
+                                  <ArrowRight size={16} />
+                                </span>
+                              </Button>
+                            </div>
+                          </div>
+                        ) : isPhoneStep ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                              <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#0f172a' }}>
+                                เบอร์โทรศัพท์ลูกค้า <span style={{ color: '#dc2626' }}>*</span>
+                              </label>
+                              <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#64748b' }}>
+                                ใช้สำหรับติดต่อ และบันทึกประวัติการรับบริการ
+                              </p>
+                              <div style={{ width: '100%' }}>
+                                <PhoneInput
+                                  value={currentPhone}
+                                  onChange={(newPhone, valid) => handleUpdatePhone(newPhone, valid)}
+                                />
+                              </div>
+                              {phoneAttempted[activeSession.reference] && !phoneIsValid(currentPhone) && (
+                                <p className="field-error" style={{ margin: '6px 0 0', fontSize: '13px' }}>
+                                  กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง
+                                </p>
+                              )}
+                            </div>
+
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                                <strong style={{ fontSize: '14px', color: '#0f172a' }}>
+                                  รายการสินค้าที่สนใจ ({activeSession.selection?.items?.length ?? 0} รายการ)
+                                </strong>
+                              </div>
+                              {(!activeSession.selection?.items || activeSession.selection.items.length === 0) ? (
+                                <p className="muted" style={{ margin: 0 }}>ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก</p>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                  {activeSession.selection.items.map((item) => {
+                                    const outOfStock = isOutOfStock(item.product);
+                                    return (
+                                      <div
+                                        key={item.product.id}
+                                        style={{
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          justifyContent: 'space-between',
+                                          padding: '8px 12px',
+                                          background: '#ffffff',
+                                          border: '1px solid #edf2f7',
+                                          borderRadius: '8px',
+                                        }}
+                                      >
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                          <CategoryPicture cat={item.product.category} size={32} />
+                                          <div>
+                                            <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>
+                                              {itemName(item)}
+                                            </div>
+                                            <small style={{ color: '#64748b' }}>{item.product.sku}</small>
+                                          </div>
+                                        </div>
+                                        <div>
+                                          {outOfStock ? (
+                                            <span
+                                              className="stock-badge stock-badge-out"
+                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                            >
+                                              สินค้าหมด (สนใจ)
+                                            </span>
+                                          ) : (
+                                            <span
+                                              className="stock-badge stock-badge-in"
+                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                            >
+                                              มีสินค้า
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Apple devices summary from Step 2 */}
+                            {activeSession.currentAppleDevices && activeSession.currentAppleDevices.length > 0 && (
+                              <div style={{ background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: '12px', padding: '12px 16px' }}>
+                                <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f766e', marginBottom: '4px' }}>
+                                  สินค้า Apple ที่ลูกค้าใช้อยู่ในปัจจุบัน:
+                                </div>
+                                <div style={{ fontSize: '13px', color: '#115e59', fontWeight: 500 }}>
+                                  {activeSession.currentAppleDevices.join(', ')}
+                                </div>
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px' }}>
+                              <Button
+                                variant="primary"
+                                onClick={handleConfirmPhoneStep}
+                                disabled={busy || !phoneIsValid(currentPhone)}
+                              >
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                  เริ่มบริการ
+                                  <ArrowRight size={16} />
+                                </span>
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (activeSession.state === 'PRODUCT_SELECTION' ||
                           ['WALK_IN', 'DEMO', 'DECISION'].includes(activeSession.state)) &&
                           (form === 'review' ? (
                             <>
+                              {activeSession.selection.items.some((i) => isOutOfStock(i.product)) && (
+                                <div style={{ marginBottom: '1rem' }}>
+                                  <Notice error>
+                                    มีสินค้าหมดสต็อกในรายการ กรุณากลับไปแก้ไขก่อนยืนยันการสั่งซื้อ
+                                  </Notice>
+                                </div>
+                              )}
                               <div
                                 style={{
                                   marginBottom: '1rem',
@@ -899,7 +1263,7 @@ export function StaffWorkspace({
                                 )}
                               </div>
                               <Summary session={activeSession} />
-                              <div className="actions">
+                              <div className="actions" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginTop: '16px' }}>
                                 <Button
                                   variant="secondary"
                                   onClick={() => setForm('normal')}
@@ -908,7 +1272,14 @@ export function StaffWorkspace({
                                     <ArrowLeft size={16} /> กลับไปแก้ไข
                                   </span>
                                 </Button>
-                                <Button onClick={handleConfirm} disabled={!phoneIsValid(currentPhone)}>
+                                <Button
+                                  onClick={handleConfirm}
+                                  disabled={
+                                    !phoneIsValid(currentPhone) ||
+                                    activeSession.selection.items.some((i) => isOutOfStock(i.product)) ||
+                                    busy
+                                  }
+                                >
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                     <Check size={16} /> ยืนยันการสั่งซื้อ
                                   </span>

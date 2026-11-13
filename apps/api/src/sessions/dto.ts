@@ -13,6 +13,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -44,16 +45,24 @@ export class CreateSessionDto {
   @IsString()
   branchId?: string;
 
-  /** D56, D120: a walk-in starts at the customer's phone number. Supports Thai mobile, 9-digit company, and international (E.164). */
+  /** D56, D120, D133: a walk-in can start at interested products before phone number is entered. */
+  @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined && val !== null && val !== '')
   @IsString()
   @IsCustomerPhone()
-  phone!: string;
+  phone?: string;
 
   /** D57: the customer type picked at the phone step. Left out, the active type with the lowest letter is used. */
   @IsOptional()
   @IsString()
   @MaxLength(36)
   customerTypeId?: string;
+
+  /** D134: customer's currently used Apple product categories */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  currentAppleDevices?: string[];
 
   /** D131, D132: the product(s) the customer was interested in at walk-in (optional, up to 3 SKUs). */
   @IsOptional()
@@ -226,6 +235,7 @@ export class SessionPaymentDetailDto {
 
 export class UpdateSelectionDto {
   @IsOptional()
+  @ValidateIf((_obj, val) => val !== undefined && val !== null && val !== '')
   @IsString()
   @IsCustomerPhone()
   phone?: string;
@@ -285,6 +295,12 @@ export class UpdateSelectionDto {
   @IsOptional()
   @IsIn(RECEIPT_TYPES)
   receiptType?: ReceiptTypeValue;
+
+  /** D134: customer's currently used Apple product categories */
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  currentAppleDevices?: string[];
 }
 
 export class ReportStockMissingDto {

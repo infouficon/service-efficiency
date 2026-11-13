@@ -1,16 +1,12 @@
-import { useState, useMemo, useEffect, type FormEvent } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
-  UserCheck,
   ArrowRight,
-  ArrowLeft,
   Trash2,
   CheckCircle2,
   Smartphone,
   AlertCircle,
 } from 'lucide-react';
 import { Button } from '../../components/ui';
-import { PhoneInput } from '../../components/PhoneInput';
-import { phoneIsValid } from './workflow';
 import { deviceCategories } from '../../constants/options';
 import { SkuPicker } from './SkuPicker';
 import { CategoryPicture, StockBadge } from './SelectionEditor';
@@ -28,21 +24,18 @@ import {
 import type { Category } from '../../types/session';
 
 /**
- * Step 1 & 2 of a walk-in (D56, D68, D70, D120, D131, D132):
- * Step 1: "ลูกค้าสนใจอะไร" - Pick up to 3 distinct main products of interest. Auto-adds on selection complete.
- * Step 2: "กรอกเบอร์โทรศัพท์" - Enter customer phone number.
- * Submitting creates the session in PRODUCT_SELECTION with all chosen items pre-filled.
+ * Step 1 of staff workflow (D131, D132, D133):
+ * "ลูกค้าสนใจอะไร" - Pick up to 3 distinct main products of interest (even if out of stock).
+ * Colors are always shown and must be explicitly clicked.
+ * Clicking "ถัดไป" creates the session with reference SES-YYYYMMDD-000001 and moves to Step 2.
  */
 export function WalkInForm({
   busy,
-  onStepChange,
   onSubmit,
 }: {
   busy: boolean;
-  onStepChange?: (step: 'product' | 'phone') => void;
-  onSubmit: (phone: string, pickedItems: Picked[]) => void;
+  onSubmit: (pickedItems: Picked[]) => void;
 }) {
-  const [step, setStep] = useState<'product' | 'phone'>('product');
   const [catalog, setCatalog] = useState<CatalogProduct[] | null>(null);
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
   const [category, setCategory] = useState<string>('');
@@ -50,9 +43,6 @@ export function WalkInForm({
   const [pickerRun, setPickerRun] = useState(0);
   const [loadError, setLoadError] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState('');
-
-  const [phone, setPhone] = useState('');
-  const [attempted, setAttempted] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -83,11 +73,6 @@ export function WalkInForm({
     };
   }, []);
 
-  const changeStep = (nextStep: 'product' | 'phone') => {
-    setStep(nextStep);
-    onStepChange?.(nextStep);
-  };
-
   const categoryTiles = useMemo<readonly string[]>(
     () =>
       categoryList
@@ -105,10 +90,11 @@ export function WalkInForm({
   };
 
   /**
-   * Auto-add to interested list immediately upon completing selection (D132)
+   * Auto-add to interested list immediately upon completing selection (D132, D133)
+   * Out of stock products are allowed in this step to track customer interest.
    */
   const handleCompletePick = (pickedObj: Picked) => {
-    if (!pickedObj || isOutOfStock(pickedObj.sku)) return;
+    if (!pickedObj) return;
     if (selectedItems.length >= 3) return;
 
     // Disallow duplicate SKU
@@ -132,106 +118,92 @@ export function WalkInForm({
     setDuplicateWarning('');
   };
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (selectedItems.length === 0) {
-      changeStep('product');
-      return;
-    }
-    if (!phoneIsValid(phone)) {
-      setAttempted(true);
-      return;
-    }
-    onSubmit(phone, selectedItems);
-  };
-
-  const isInvalid = attempted && !phoneIsValid(phone);
-
-  if (step === 'product') {
-    return (
-      <div className="walkin-product-flow">
-        {/* Top Section: Selected Interested Products (Up to 3) */}
+  return (
+    <div className="walkin-product-flow">
+      {/* Top Section: Selected Interested Products (Up to 3) */}
+      <div
+        style={{
+          background: '#ffffff',
+          borderRadius: '12px',
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          padding: '18px 20px',
+          marginBottom: '20px',
+        }}
+      >
         <div
           style={{
-            background: '#ffffff',
-            borderRadius: '12px',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            padding: '18px 20px',
-            marginBottom: '20px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: selectedItems.length > 0 ? '14px' : '0',
           }}
         >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>
+              สินค้าที่สนใจ
+            </span>
+            <span
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '12px',
+                background: selectedItems.length === 3 ? '#ecfdf5' : '#f1f5f9',
+                color: selectedItems.length === 3 ? '#047857' : '#475569',
+              }}
+            >
+              {selectedItems.length} / 3 รายการ
+            </span>
+          </div>
+          {selectedItems.length === 3 && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                color: '#059669',
+              }}
+            >
+              <CheckCircle2 size={15} />
+              เลือกครบ 3 รายการแล้ว
+            </span>
+          )}
+        </div>
+
+        {selectedItems.length === 0 ? (
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: selectedItems.length > 0 ? '14px' : '0',
+              marginTop: '12px',
+              padding: '24px 16px',
+              borderRadius: '8px',
+              background: '#f8fafc',
+              border: '1.5px dashed #cbd5e1',
+              textAlign: 'center',
+              color: '#64748b',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>
-                สินค้าที่สนใจ
-              </span>
-              <span
-                style={{
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  background: selectedItems.length === 3 ? '#ecfdf5' : '#f1f5f9',
-                  color: selectedItems.length === 3 ? '#047857' : '#475569',
-                }}
-              >
-                {selectedItems.length} / 3 รายการ
-              </span>
+            <Smartphone size={28} style={{ margin: '0 auto 8px', color: '#94a3b8' }} />
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#334155' }}>
+              ยังไม่มีสินค้าในรายการ
             </div>
-            {selectedItems.length === 3 && (
-              <span
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  color: '#059669',
-                }}
-              >
-                <CheckCircle2 size={15} />
-                เลือกครบ 3 รายการแล้ว
-              </span>
-            )}
+            <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
+              เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง ระบบจะเพิ่มลงรายการให้อัตโนมัติ (เลือกได้ 1–3 รายการ)
+            </div>
           </div>
-
-          {selectedItems.length === 0 ? (
-            <div
-              style={{
-                marginTop: '12px',
-                padding: '24px 16px',
-                borderRadius: '8px',
-                background: '#f8fafc',
-                border: '1.5px dashed #cbd5e1',
-                textAlign: 'center',
-                color: '#64748b',
-              }}
-            >
-              <Smartphone size={28} style={{ margin: '0 auto 8px', color: '#94a3b8' }} />
-              <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#334155' }}>
-                ยังไม่มีสินค้าในรายการ
-              </div>
-              <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
-                เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง ระบบจะเพิ่มลงรายการให้อัตโนมัติ (เลือกได้ 1–3 รายการ)
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-                gap: '10px',
-              }}
-            >
-              {selectedItems.map((item, idx) => (
+        ) : (
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+              gap: '10px',
+            }}
+          >
+            {selectedItems.map((item, idx) => {
+              const outOfStock = isOutOfStock(item.sku);
+              return (
                 <div
                   key={item.sku.id}
                   style={{
@@ -240,8 +212,8 @@ export function WalkInForm({
                     justifyContent: 'space-between',
                     padding: '10px 12px',
                     borderRadius: '8px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
+                    background: outOfStock ? '#fef2f2' : '#f8fafc',
+                    border: outOfStock ? '1px solid #fecaca' : '1px solid #e2e8f0',
                     gap: '10px',
                   }}
                 >
@@ -251,7 +223,7 @@ export function WalkInForm({
                         width: '20px',
                         height: '20px',
                         borderRadius: '50%',
-                        background: '#0284c7',
+                        background: outOfStock ? '#ef4444' : '#0abab5',
                         color: '#fff',
                         fontSize: '0.75rem',
                         fontWeight: 700,
@@ -291,6 +263,9 @@ export function WalkInForm({
                           .filter(Boolean)
                           .join(' · ')}
                       </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                        <StockBadge sku={item.sku} />
+                      </div>
                     </div>
                   </div>
                   <button
@@ -323,296 +298,157 @@ export function WalkInForm({
                     <Trash2 size={16} />
                   </button>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Bottom Section: Product Picker */}
-        <div
-          style={{
-            background: '#ffffff',
-            borderRadius: '12px',
-            border: '1px solid #e2e8f0',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-            padding: '18px 20px',
-            marginBottom: '20px',
-          }}
-        >
-          {selectedItems.length >= 3 ? (
-            <div
-              style={{
-                padding: '18px 16px',
-                borderRadius: '8px',
-                background: '#f0fdf4',
-                border: '1px solid #bbf7d0',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                color: '#166534',
-              }}
-            >
-              <CheckCircle2 size={24} style={{ flexShrink: 0, color: '#16a34a' }} />
-              <div>
-                <div style={{ fontWeight: 600 }}>เลือกสินค้าที่สนใจครบ 3 รายการแล้ว</div>
-                <div style={{ fontSize: '0.85rem', color: '#15803d', marginTop: '2px' }}>
-                  สามารถกดปุ่ม <strong>"ถัดไป"</strong> ด้านล่างเพื่อดำเนินการต่อ หรือกดไอคอนถังขยะด้านบนเพื่อเปลี่ยนสินค้า
-                </div>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '12px',
-                }}
-              >
-                <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#1e293b' }}>
-                  {selectedItems.length === 0
-                    ? 'เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจ'
-                    : `เลือกสินค้าที่ ${selectedItems.length + 1} เพิ่มเติม (ไม่บังคับ)`}
-                </span>
-                <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                  เลือกได้สูงสุดอีก {3 - selectedItems.length} รายการ
-                </span>
-              </div>
-
-              {duplicateWarning && (
-                <div
-                  style={{
-                    marginBottom: '12px',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    background: '#fffbeb',
-                    border: '1px solid #fde68a',
-                    color: '#b45309',
-                    fontSize: '0.88rem',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <AlertCircle size={18} style={{ flexShrink: 0 }} />
-                  <span>{duplicateWarning}</span>
-                </div>
-              )}
-
-              {loadError && <p className="field-error">{loadError}</p>}
-
-              {/* 8 Categories grid: 4 columns on desktop/tablet, 3 on mobile */}
-              <div className="wizard-tiles picker-category-tiles" role="group" aria-label="ประเภทอุปกรณ์">
-                {categoryTiles.map((cat) => {
-                  const active = category === cat;
-                  const count = (catalog ?? []).filter((p) => p.category === cat).length;
-                  return (
-                    <button
-                      key={cat}
-                      type="button"
-                      className={`wizard-tile wizard-tile-category${active ? ' selected' : ''}`}
-                      aria-pressed={active}
-                      disabled={count === 0}
-                      onClick={() => handleCategoryChange(cat)}
-                    >
-                      <CategoryPicture cat={cat} size={64} />
-                      <strong>{cat}</strong>
-                      {count === 0 && <span className="no-stock-label">ไม่มีสินค้า</span>}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div style={{ marginTop: '16px' }}>
-                {category ? (
-                  <SkuPicker
-                    key={`${category}:${pickerRun}`}
-                    models={models}
-                    onPick={() => {}}
-                    onComplete={handleCompletePick}
-                  />
-                ) : (
-                  <p className="muted picker-hint" style={{ marginTop: '16px' }}>
-                    เลือกประเภทอุปกรณ์ด้านบน เพื่อเลือกรุ่นและสเปก (เมื่อเลือกครบระบบจะเพิ่มลงรายการให้อัตโนมัติ)
-                  </p>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Footer Navigation Bar */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingTop: '6px',
-          }}
-        >
-          <div style={{ fontSize: '0.9rem', color: '#64748b' }}>
-            {selectedItems.length > 0 ? (
-              <span>
-                พร้อมเริ่มบริการด้วย <strong>{selectedItems.length}</strong> รายการสินค้า
-              </span>
-            ) : (
-              <span>กรุณาเลือกสินค้าอย่างน้อย 1 รายการเพื่อดำเนินการต่อ</span>
-            )}
+              );
+            })}
           </div>
-          <Button
-            type="button"
-            size="lg"
-            disabled={selectedItems.length === 0 || busy}
-            onClick={() => changeStep('phone')}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              ถัดไป {selectedItems.length > 0 ? `(${selectedItems.length} รายการ)` : ''}
-              <ArrowRight size={18} />
-            </span>
-          </Button>
-        </div>
+        )}
       </div>
-    );
-  }
 
-  // Step 2: Phone Input
-  return (
-    <form className="walkin-form" onSubmit={submit} noValidate>
+      {/* Bottom Section: Product Picker */}
       <div
         style={{
-          marginBottom: '20px',
-          padding: '16px 18px',
-          borderRadius: '12px',
           background: '#ffffff',
+          borderRadius: '12px',
           border: '1px solid #e2e8f0',
           boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          padding: '18px 20px',
+          marginBottom: '20px',
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '12px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#0f172a' }}>
-              สินค้าที่ลูกค้าสนใจ
-            </span>
-            <span
-              style={{
-                fontSize: '0.8rem',
-                fontWeight: 600,
-                padding: '2px 8px',
-                borderRadius: '12px',
-                background: '#f1f5f9',
-                color: '#475569',
-              }}
-            >
-              {selectedItems.length} รายการ
-            </span>
-          </div>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            disabled={busy}
-            onClick={() => changeStep('product')}
+        {selectedItems.length >= 3 ? (
+          <div
+            style={{
+              padding: '18px 16px',
+              borderRadius: '8px',
+              background: '#f0fdf4',
+              border: '1px solid #bbf7d0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              color: '#166534',
+            }}
           >
-            แก้ไขสินค้าที่สนใจ
-          </Button>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {selectedItems.map((item, idx) => (
+            <CheckCircle2 size={24} style={{ flexShrink: 0, color: '#16a34a' }} />
+            <div>
+              <div style={{ fontWeight: 600 }}>เลือกสินค้าที่สนใจครบ 3 รายการแล้ว</div>
+              <div style={{ fontSize: '0.85rem', color: '#15803d', marginTop: '2px' }}>
+                สามารถกดปุ่ม <strong>"ถัดไป"</strong> ด้านล่างเพื่อเริ่มสร้าง Session และกรอกเบอร์โทรศัพท์ลูกค้า หรือกดไอคอนถังขยะด้านบนหากต้องการเปลี่ยนสินค้า
+              </div>
+            </div>
+          </div>
+        ) : (
+          <>
             <div
-              key={item.sku.id}
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '12px',
-                padding: '8px 10px',
-                borderRadius: '8px',
-                background: '#f8fafc',
-                border: '1px solid #f1f5f9',
+                justifyContent: 'space-between',
+                marginBottom: '12px',
               }}
             >
+              <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#1e293b' }}>
+                {selectedItems.length === 0
+                  ? 'เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจ'
+                  : `เลือกสินค้าที่ ${selectedItems.length + 1} เพิ่มเติม (ไม่บังคับ)`}
+              </span>
+              <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
+                เลือกได้สูงสุดอีก {3 - selectedItems.length} รายการ
+              </span>
+            </div>
+
+            {duplicateWarning && (
               <div
                 style={{
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '50%',
-                  background: '#0284c7',
-                  color: '#fff',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
+                  marginBottom: '12px',
+                  padding: '10px 14px',
+                  borderRadius: '8px',
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
+                  color: '#b45309',
+                  fontSize: '0.88rem',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
+                  gap: '8px',
                 }}
               >
-                {idx + 1}
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{duplicateWarning}</span>
               </div>
-              <CategoryPicture cat={item.product.category} size={36} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: '#0f172a' }}>
-                  {item.model.name}
-                </div>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
-                  {[item.sku.memory, item.sku.storage, item.sku.color].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-              <StockBadge sku={item.sku} />
+            )}
+
+            {loadError && <p className="field-error">{loadError}</p>}
+
+            {/* 8 Categories grid: 4 columns on desktop/tablet, 3 on mobile */}
+            <div className="wizard-tiles picker-category-tiles" role="group" aria-label="ประเภทอุปกรณ์">
+              {categoryTiles.map((cat) => {
+                const active = category === cat;
+                const count = (catalog ?? []).filter((p) => p.category === cat).length;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    className={`wizard-tile wizard-tile-category${active ? ' selected' : ''}`}
+                    aria-pressed={active}
+                    disabled={count === 0}
+                    onClick={() => handleCategoryChange(cat)}
+                  >
+                    <CategoryPicture cat={cat} size={64} />
+                    <strong>{cat}</strong>
+                    {count === 0 && <span className="no-stock-label">ไม่มีสินค้า</span>}
+                  </button>
+                );
+              })}
             </div>
-          ))}
-        </div>
+
+            <div style={{ marginTop: '16px' }}>
+              {category ? (
+                <SkuPicker
+                  key={`${category}:${pickerRun}`}
+                  models={models}
+                  onPick={() => {}}
+                  onComplete={handleCompletePick}
+                  allowOutOfStock={true}
+                />
+              ) : (
+                <p className="muted picker-hint" style={{ marginTop: '16px' }}>
+                  เลือกประเภทอุปกรณ์ด้านบน เพื่อเลือกรุ่นและสเปก (เมื่อกดเลือกสีระบบจะเพิ่มลงรายการให้อัตโนมัติ)
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
 
-      <label style={{ display: 'block', marginBottom: '8px' }}>
-        <span style={{ display: 'block', marginBottom: '6px', fontWeight: 600 }}>
-          หมายเลขโทรศัพท์ลูกค้า
-        </span>
-        <PhoneInput
-          value={phone}
-          onChange={(newPhone) => {
-            setPhone(newPhone);
-            setAttempted(false);
-          }}
-          autoFocus
-          disabled={busy}
-          ariaInvalid={isInvalid}
-          ariaDescribedBy="walkin-phone-help"
-        />
-      </label>
-      <p id="walkin-phone-help" className={isInvalid ? 'field-error' : 'fine'}>
-        {isInvalid
-          ? 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (เบอร์ไทยไม่ต้องใส่ 0 นำหน้า หรือเลือกประเทศสำหรับเบอร์ต่างประเทศ)'
-          : 'กรอกเบอร์โทรศัพท์ลูกค้าเพื่อเริ่มให้บริการ'}
-      </p>
-
-      <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+      {/* Footer Navigation Bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingTop: '6px',
+        }}
+      >
+        <div style={{ fontSize: '0.9rem', color: '#64748b' }}>
+          {selectedItems.length > 0 ? (
+            <span>
+              พร้อมเริ่มบริการด้วย <strong>{selectedItems.length}</strong> รายการสินค้า
+            </span>
+          ) : (
+            <span>กรุณาเลือกสินค้าอย่างน้อย 1 รายการเพื่อดำเนินการต่อ</span>
+          )}
+        </div>
         <Button
           type="button"
-          variant="secondary"
           size="lg"
-          disabled={busy}
-          onClick={() => changeStep('product')}
+          disabled={selectedItems.length === 0 || busy}
+          onClick={() => onSubmit(selectedItems)}
         >
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <ArrowLeft size={18} />
-            ย้อนกลับ
-          </span>
-        </Button>
-        <Button type="submit" size="lg" disabled={busy}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            <UserCheck size={18} />
-            {busy ? 'กำลังเริ่มบริการ…' : 'เริ่มบริการ'}
+            ถัดไป {selectedItems.length > 0 ? `(${selectedItems.length} รายการ)` : ''}
+            <ArrowRight size={18} />
           </span>
         </Button>
       </div>
-    </form>
+    </div>
   );
 }

@@ -203,6 +203,13 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
         }
       : undefined,
     events: s.events,
+    currentAppleDevices: (() => {
+      const createdEvt = (s.events ?? []).find((e) => e.eventType === 'SESSION_CREATED');
+      const meta = createdEvt?.metadata as Record<string, unknown> | undefined;
+      return Array.isArray(meta?.currentAppleDevices)
+        ? (meta?.currentAppleDevices as string[])
+        : undefined;
+    })(),
   };
 }
 
@@ -405,6 +412,7 @@ export async function updateSelectionApi(
   id: string,
   selection: Selection,
   phone: string,
+  currentAppleDevices?: string[],
 ): Promise<MockSession> {
   const accessoriesList = Object.entries(selection.accessories).map(([accessoryName, qty]) => ({
     accessoryName,
@@ -412,7 +420,7 @@ export async function updateSelectionApi(
   }));
 
   const payload: Record<string, unknown> = {
-    phone,
+    phone: phone && phone.trim() ? phone.trim() : undefined,
     accessories: accessoriesList,
     ontop: selection.ontop,
     points: selection.points,
@@ -422,6 +430,7 @@ export async function updateSelectionApi(
     vatRefund: Boolean(selection.vatRefund),
     taxInvoice: isTaxInvoiceReceipt(selection.receiptType, Boolean(selection.taxInvoice)),
     receiptType: selection.receiptType ?? undefined,
+    currentAppleDevices,
     // F3: the main products as a whole list (SKU id + quantity)
     items: selection.items.map((item) => ({
       skuId: item.product.id,

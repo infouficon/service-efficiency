@@ -10,6 +10,7 @@ import airTagIcon from '../../assets/category-icons/airTag.jpg';
 import accessoriesIcon from '../../assets/category-icons/accessories.png';
 import batteryIcon from '../../assets/category-icons/battery.png';
 import {
+  AlertTriangle,
   ArrowRight,
   CreditCard,
   Pencil,
@@ -272,8 +273,10 @@ export function SelectionEditor({
   const stockInfo = stockInfoLine(allSkus);
   const paymentsValid = paymentsAreValid(value.payments, value.paymentDetails);
   const receiptValid = receiptTypeIsValid(value.receiptType);
+  const hasOutOfStockItem = value.items.some((i) => isOutOfStock(i.product));
   const reviewDisabled =
     value.items.length === 0 ||
+    hasOutOfStockItem ||
     !quantitiesAreValid(value.accessories) ||
     !paymentsValid ||
     !receiptValid;
@@ -471,69 +474,92 @@ export function SelectionEditor({
 
       <fieldset className="chosen-items" ref={chosenSectionRef}>
         <legend>สินค้าหลักที่เลือก</legend>
+        {hasOutOfStockItem && (
+          <div style={{ margin: '10px 0' }}>
+            <Notice error>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <AlertTriangle size={16} />
+                มีสินค้าหมดสต็อกในรายการ กรุณาลบออกหรือเปลี่ยนเป็นสินค้าอื่นก่อนดำเนินการต่อ
+              </span>
+            </Notice>
+          </div>
+        )}
         {value.items.length === 0 ? (
           <p className="muted">ยังไม่ได้เลือกสินค้าหลัก</p>
         ) : (
           <ul>
-            {value.items.map((item) => (
-              <li key={item.product.id} className="chosen-item">
-                <span className="chosen-item-name">
-                  <span className="chosen-item-category">
-                    <CategoryPicture cat={item.product.category} size={36} />
+            {value.items.map((item) => {
+              const outOfStock = isOutOfStock(item.product);
+              return (
+                <li key={item.product.id} className="chosen-item">
+                  <span className="chosen-item-name">
+                    <span className="chosen-item-category">
+                      <CategoryPicture cat={item.product.category} size={36} />
+                    </span>
+                    <span>
+                      <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        {itemName(item)}
+                        {outOfStock && (
+                          <span
+                            className="stock-badge stock-badge-out"
+                            style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}
+                          >
+                            สินค้าหมด
+                          </span>
+                        )}
+                      </strong>
+                      <small>{item.product.sku}</small>
+                    </span>
                   </span>
-                  <span>
-                    <strong>{itemName(item)}</strong>
-                    <small>{item.product.sku}</small>
-                  </span>
-                </span>
-                <div className="qty-stepper">
+                  <div className="qty-stepper">
+                    <button
+                      type="button"
+                      aria-label={`ลดจำนวน ${itemName(item)}`}
+                      onClick={() =>
+                        onChange({
+                          ...value,
+                          items: stepItem(value.items, item.product.id, -1),
+                        })
+                      }
+                    >
+                      −
+                    </button>
+                    <span className="qty-value" aria-live="polite">
+                      {item.quantity}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`เพิ่มจำนวน ${itemName(item)}`}
+                      disabled={!canRaise(item)}
+                      title={canRaise(item) ? undefined : 'เกินจำนวน Stock ที่มี'}
+                      onClick={() =>
+                        onChange({
+                          ...value,
+                          items: stepItem(value.items, item.product.id, 1),
+                        })
+                      }
+                    >
+                      +
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    aria-label={`ลดจำนวน ${itemName(item)}`}
+                    className="chosen-item-remove"
+                    aria-label={`ลบ ${itemName(item)}`}
                     onClick={() =>
                       onChange({
                         ...value,
-                        items: stepItem(value.items, item.product.id, -1),
+                        items: value.items.filter(
+                          (i) => i.product.id !== item.product.id,
+                        ),
                       })
                     }
                   >
-                    −
+                    <X size={16} />
                   </button>
-                  <span className="qty-value" aria-live="polite">
-                    {item.quantity}
-                  </span>
-                  <button
-                    type="button"
-                    aria-label={`เพิ่มจำนวน ${itemName(item)}`}
-                    disabled={!canRaise(item)}
-                    title={canRaise(item) ? undefined : 'เกินจำนวน Stock ที่มี'}
-                    onClick={() =>
-                      onChange({
-                        ...value,
-                        items: stepItem(value.items, item.product.id, 1),
-                      })
-                    }
-                  >
-                    +
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className="chosen-item-remove"
-                  aria-label={`ลบ ${itemName(item)}`}
-                  onClick={() =>
-                    onChange({
-                      ...value,
-                      items: value.items.filter(
-                        (i) => i.product.id !== item.product.id,
-                      ),
-                    })
-                  }
-                >
-                  <X size={16} />
-                </button>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
         {!formOpen && (
@@ -1103,7 +1129,7 @@ export function SelectionEditor({
           กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
         </Notice>
       )}
-      <div className="actions">
+      <div className="actions" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '20px' }}>
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}

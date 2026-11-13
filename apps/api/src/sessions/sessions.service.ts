@@ -462,14 +462,19 @@ export class SessionsService {
       const now = new Date();
       const day = bangkokDay(now);
 
-      const normalizedPhone = normalizePhone(dto.phone) ?? dto.phone;
+      let normalizedPhone: string | null = null;
+      let customerId: string | null = null;
 
-      // D56, D120: a walk-in starts at the phone number, so the Customer exists from the first moment.
-      const customer = await tx.customer.upsert({
-        where: { phone: normalizedPhone },
-        create: { phone: normalizedPhone },
-        update: {},
-      });
+      if (dto.phone && dto.phone.trim()) {
+        normalizedPhone = normalizePhone(dto.phone) ?? dto.phone.trim();
+        // D56, D120: when phone is provided at walk-in, the Customer exists from the first moment.
+        const customer = await tx.customer.upsert({
+          where: { phone: normalizedPhone },
+          create: { phone: normalizedPhone },
+          update: {},
+        });
+        customerId = customer.id;
+      }
       if (dto.customerTypeId) {
         const type = await tx.customerType.findUnique({
           where: { id: dto.customerTypeId },
@@ -524,7 +529,7 @@ export class SessionsService {
           reference,
           branchId: targetBranch.id,
           staffId: user.staffId,
-          customerId: customer.id,
+          customerId,
           phone: normalizedPhone,
           customerTypeId: null,
           queueLetter: null,
@@ -556,6 +561,7 @@ export class SessionsService {
                         interestedProduct: interestedProducts.join('; '),
                       }
                     : {}),
+                  currentAppleDevices: dto.currentAppleDevices ?? [],
                 },
               },
               {
@@ -1010,7 +1016,7 @@ export class SessionsService {
     }
 
     let normalizedPhone: string | undefined;
-    if (dto.phone) {
+    if (dto.phone && dto.phone.trim()) {
       const normalized = normalizePhone(dto.phone);
       if (!normalized) {
         throw new BadRequestException('Phone number must be a valid phone number (Thai or international)');
@@ -1202,6 +1208,31 @@ export class SessionsService {
         nextReceiptType != null
           ? nextReceiptType === 'TAX_CORPORATE' || nextReceiptType === 'TAX_INDIVIDUAL'
           : (dto.taxInvoice ?? session.taxInvoice);
+
+      // D134: update customer's current Apple devices in SESSION_CREATED metadata
+      if (dto.currentAppleDevices !== undefined) {
+        const createdEvent = await tx.sessionEvent.findFirst({
+          where: { sessionId: session.id, eventType: 'SESSION_CREATED' },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (createdEvent) {
+          const prevMeta =
+            createdEvent.metadata &&
+            typeof createdEvent.metadata === 'object' &&
+            !Array.isArray(createdEvent.metadata)
+              ? (createdEvent.metadata as Record<string, unknown>)
+              : {};
+          await tx.sessionEvent.update({
+            where: { id: createdEvent.id },
+            data: {
+              metadata: {
+                ...prevMeta,
+                currentAppleDevices: dto.currentAppleDevices,
+              },
+            },
+          });
+        }
+      }
 
       return tx.customerSession.update({
         where: { id: session.id },

@@ -76,11 +76,25 @@ export const rejectReasons = [
 ] as const;
 export const stages = [
   'ลูกค้าสนใจอะไร',
+  'สินค้า Apple ที่ใช้',
   'กรอกเบอร์โทร',
   'เลือกสินค้า',
   'ตรวจสอบยืนยัน',
   'ฝ่ายคลัง',
   'แคชเชียร์',
+] as const;
+
+/** D134: Apple device categories surveyed in Step 2 of walk-in (8 categories matching Step 1 + haven't used Apple) */
+export const customerAppleCategories = [
+  'iPhone',
+  'iPad',
+  'Mac',
+  'Watch',
+  'AirPods',
+  'Apple TV',
+  'HomePod',
+  'AirTag',
+  'ยังไม่เคยใช้สินค้า Apple',
 ] as const;
 export const cancellationStages = [
   'DEMO',

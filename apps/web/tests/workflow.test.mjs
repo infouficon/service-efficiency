@@ -434,19 +434,26 @@ test('the receipt QR is a real QR matrix: finder patterns in three corners, the 
   assert.ok(qrCode(`https://pos.example.test/register?branch=${'x'.repeat(200)}`).size > a.size);
 });
 
-test('progressIndex maps to the 6 steps: interest, phone, product, confirmation, stock, cashier (D131)', () => {
+test('progressIndex maps to the 7 steps: interest, apple devices, phone, product, confirmation, stock, cashier (D131, D134)', () => {
+  assert.equal(progressIndex(null), 0, 'step 1 interest');
+  const sNoPhone = fixture();
+  sNoPhone.phone = '';
+  sNoPhone.currentAppleDevices = undefined;
+  assert.equal(progressIndex(sNoPhone), 1, 'step 2 apple devices survey');
+  sNoPhone.currentAppleDevices = ['iPhone'];
+  assert.equal(progressIndex(sNoPhone), 2, 'step 3 phone input');
   const s = fixture();
   s.state = 'PRODUCT_SELECTION';
-  assert.equal(progressIndex(s, false), 2, 'selecting product');
-  assert.equal(progressIndex(s, true), 3, 'reviewing before confirmation');
+  assert.equal(progressIndex(s, false), 3, 'selecting product');
+  assert.equal(progressIndex(s, true), 4, 'reviewing before confirmation');
   s.state = 'STOCK_REQUESTED';
-  assert.equal(progressIndex(s), 4, 'stock queue');
+  assert.equal(progressIndex(s), 5, 'stock queue');
   s.state = 'SEARCHING';
-  assert.equal(progressIndex(s), 4, 'stock searching');
+  assert.equal(progressIndex(s), 5, 'stock searching');
   s.state = 'SENT_TO_CASHIER';
-  assert.equal(progressIndex(s), 5, 'cashier stage');
+  assert.equal(progressIndex(s), 6, 'cashier stage');
   s.state = 'COMPLETED';
-  assert.equal(progressIndex(s), 5, 'completed');
+  assert.equal(progressIndex(s), 6, 'completed');
 });
 
 test('itemChangeNotice extracts item change details and clears after STOCK_FOUND (D78)', () => {

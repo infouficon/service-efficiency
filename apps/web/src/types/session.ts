@@ -250,6 +250,8 @@ export interface MockSession {
   };
   timestamps: Partial<Record<Timestamp, string>>;
   events?: SessionEventItem[];
+  /** D134: Apple device categories surveyed in Step 2 */
+  currentAppleDevices?: string[];
 }
 
 export type AppView =

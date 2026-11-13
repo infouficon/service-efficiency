@@ -1959,4 +1959,68 @@ Owner instruction via `/grill-me`: "ปรับ design ส่วน เลื�
    - In `SESSION_CREATED` event metadata, `interestedSkuIds`, `interestedProducts`, and `interestedProduct` (joined by `; `) are recorded.
    - In CSV export, the "สินค้าที่สนใจในขั้นตอนแรก" column lists all selected products separated by `; `.
 
+## D133 — Explicit Colour Selection, Out-of-Stock Interest Tracking, Session Creation at Step 1, and Stepper Pill Layout (2026-11-13)
+
+Owner instruction via `/grill-me`:
+1. "ขึ้นสีให้กดก่อน ถึงจะเหลือ ต่อให้จะเหลือสีเดียวก็ตาม ต่อให้สินค้าหมดก็ต้องกดได้ แต่มีแจ้งว่าสินค้าหมด เพื่อเก็บไว้เป็นประวัติว่ามีลูกค้าสนใจ"
+2. "ด้านบนแสดงส่วน stap แบบในภาพทุก step"
+3. "Session เริ่มตั้งแต่กด ถัดไป จาก step 1 โดยใช้เลข SES-YYYYMMDD-00001 เรียงไปเรื่อยๆ ก่อนมีเบอร์โทร หรือ เลขคิว"
+4. "หน้า เลือกสินค้า ตอน เลือกสินค้าหลัก ให้กดเลือกสีก่อน ถึงเพิ่มอัตโนมัติ ถึงจะมีสีเดียวก็ขึ้นให้กดก่อน เพื่อจะได้รู้ว่าสินค้าเหลือสีเดียว"
+5. "เลือกสินค้า เมื่อเลือกครบแล้ว ให้เพิ่มลงใน สินค้าที่สนใจ อัตโนมัติ ไม่ต้องมากด เพิ่มในรายการที่สนใจ อีกครั้ง"
+6. "สินค้าที่แสดงทั้ง 8 หมวดมหู่ให้แสดงแถวละ 4 ถ้าเป็น mobile แสดงเป็น 3 กรอบมนมีระยะหว่างระหว่างแต่ละอัน เท่ากันและขนาดกรอบเท่ากัน ข้อความ ไม่มีสินค้า เป็นอีกบรรทัด"
+
+Decisions:
+1. **Explicit Colour Selection Required (No Auto-Pick for Single Colour):**
+   - In both Step 1 ("ลูกค้าสนใจอะไร") and Step 3 ("เลือกสินค้า"), choosing a model or storage never auto-settles the colour chip even if only one colour exists (`settleChoice(..., false)`).
+   - Staff must explicitly click the colour chip so they are clearly aware of the remaining colour and its stock status.
+2. **Auto-Add Upon Colour Click:**
+   - Once the colour is explicitly clicked by staff, the SKU is auto-added immediately:
+     - In Step 1: Added to the interested items list (up to 3 items) without requiring a second click on "+ เพิ่มในรายการที่สนใจ".
+     - In Step 3: Added directly to `selection.items` without requiring "+ เพิ่มลงในรายการ".
+3. **Out-of-Stock Interest Tracking & Guardrails:**
+   - In Step 1, out-of-stock colours are clickable (`allowOutOfStock=true`) and show a "สินค้าหมด" badge. This allows staff to capture customer interest for inventory/conversion tracking in `SESSION_CREATED` events and CSV reports.
+   - In Step 3, out-of-stock colours cannot be clicked to add (`allowOutOfStock=false`).
+   - If an out-of-stock item chosen in Step 1 is pre-filled into Step 3, it displays a "สินค้าหมด" badge and a warning notice. Advancing to review and confirming to stock is blocked until the item is replaced or deleted.
+4. **Session Creation at Step 1 "ถัดไป":**
+   - Clicking "ถัดไป" from Step 1 immediately generates the session with daily running reference `SES-YYYYMMDD-00001` before customer phone or queue number exists (`POST /sessions` with optional `phone`).
+   - The session enters Step 2 ("กรอกเบอร์โทร").
+   - Clicking "เริ่มบริการ" saves the validated phone via `updateSelectionApi` and transitions to Step 3.
+5. **Universal Stepper Pill Layout Across All Steps:**
+   - The 6-stage progress stepper (`stages`) is rendered at the top of the main panel on every step (Step 1, Step 2, and Steps 3–6).
+   - Styled matching the pill design:
+     - Done step: Mint background (`#f0fdf4`), green border (`#86efac`), dark green text (`#166534`), white circle with green checkmark `(✓)`.
+     - Current step: Teal background (`#f0fdfa`), teal border (`#5eead4`), dark teal text (`#0f766e`), solid teal circle (`#0abab5`) with white step number.
+     - Upcoming step: White background, light grey border (`#e2e8f0`), slate text (`#64748b`), outline circle with grey number.
+6. **8 Category Cards Grid:**
+   - 4 per row on desktop/tablet, 3 per row on mobile (<=640px).
+   - Equal dimensions, equal gap, rounded corners (12px desktop / 10px mobile), and "ไม่มีสินค้า" on its own separate line.
+
+## D134 — Customer Currently Used Apple Devices Survey Step (7-Step Workflow) (2026-11-13)
+
+Owner instruction via `/grill-me`: "เพิ่ม step 2 เป็น 'ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง' แล้วขยับ กรอกเบอร์ลูกค้าเป็นต้นไป ไปที่ step 3 ไปเรื่อยๆ เลือกเป็นหมวดหมู่ก็พอไม่บังคับให้กรอกรายละเอียด"
+
+Decisions:
+1. **7-Stage Workflow Order (`stages`):**
+   - 1. ลูกค้าสนใจอะไร
+   - 2. สินค้า Apple ที่ใช้ (Stepper pill label: "สินค้า Apple ที่ใช้", page title: "ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง")
+   - 3. กรอกเบอร์โทร
+   - 4. เลือกสินค้า
+   - 5. ตรวจสอบยืนยัน
+   - 6. ฝ่ายคลัง
+   - 7. แคชเชียร์
+2. **Step 2 "ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง" (Survey Screen):**
+   - Shows active session reference (e.g. `SES-20261113-000001`) and interested products summary cards from Step 1.
+   - Multi-select category options (`customerAppleCategories`): `iPhone`, `iPad`, `Mac`, `Apple Watch`, `AirPods`, `Apple TV / HomePod`, `อุปกรณ์เสริมอื่น ๆ`, and `ยังไม่เคยใช้สินค้า Apple`.
+   - Selecting "ยังไม่เคยใช้สินค้า Apple" clears specific device selections; selecting any device clears "ยังไม่เคยใช้สินค้า Apple".
+   - Navigation:
+     - Right button: "ถัดไป (กรอกเบอร์โทร)" (records devices and transitions to Step 3).
+3. **Step 3 "กรอกเบอร์โทร" (Customer Phone Input Screen):**
+   - Shows reference, interested products summary, and Apple devices surveyed in Step 2.
+   - Validates customer phone before moving to Step 4 ("เลือกสินค้า").
+4. **Data Storage & Reports:**
+   - Saved in session event metadata under `SESSION_CREATED` (`metadata.currentAppleDevices: string[]`).
+   - Supported in `CreateSessionDto` and `UpdateSelectionDto` as `currentAppleDevices?: string[]`.
+   - Exported in Session Logs CSV under Category 2 ("ข้อมูลสินค้าและอุปกรณ์") as "สินค้า Apple ที่ลูกค้าใช้อยู่" (joined by `; `).
+   - Displayed in Order & Payment Summary card under "ข้อมูลลูกค้า & ผู้ให้บริการ".
+
 

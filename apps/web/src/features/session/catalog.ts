@@ -65,7 +65,7 @@ export function toCatalog(data: unknown): CatalogProduct[] {
 /** No stock figure blocks a product while the ADMIN switch "stock unlimited" is on (D59). */
 export const isUnlimited = (s: { stockSource?: string }) =>
   s.stockSource === 'unlimited';
-export const isOutOfStock = (s: CatalogSku) =>
+export const isOutOfStock = (s: { stockSource?: string; stock?: number | null }) =>
   !isUnlimited(s) && typeof s.stock === 'number' && s.stock <= 0;
 
 /** One model of a category, as the model list shows it. */

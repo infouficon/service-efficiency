@@ -885,8 +885,8 @@ input[type='radio'] {
   display: flex;
   list-style: none;
   padding: 0;
-  margin: 18px 0 24px;
-  gap: 8px;
+  margin: 12px 0 20px;
+  gap: 10px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
@@ -895,51 +895,57 @@ input[type='radio'] {
 
 .progress li {
   display: flex;
-  flex: 1;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 6px;
-  font-size: var(--font-sm);
-  color: var(--text-muted);
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
   white-space: nowrap;
-  padding: 6px 10px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  transition: all 0.2s ease;
 }
 
 .progress li span {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-circle);
-  font-size: var(--font-xs);
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
   flex-shrink: 0;
 }
 
 .progress .current {
-  color: var(--primary-dark);
-  border-color: var(--primary-border);
+  color: #0f766e;
+  border-color: #5eead4;
   font-weight: 700;
-  background: var(--primary-subtle);
+  background: #f0fdfa;
 }
 
 .progress .current span {
-  background: var(--primary);
-  color: var(--text-inverse);
-  border-color: var(--primary);
+  background: #0abab5;
+  color: #ffffff;
+  border-color: #0abab5;
 }
 
 .progress .done {
-  color: var(--color-success);
-  border-color: var(--border-success);
+  color: #166534;
+  border-color: #86efac;
+  font-weight: 600;
+  background: #f0fdf4;
 }
 
 .progress .done span {
-  background: var(--bg-success);
-  border-color: var(--border-success);
-  color: var(--color-success);
+  background: #ffffff;
+  border-color: #86efac;
+  color: #16a34a;
 }
 
 /* TIMELINE */
@@ -1714,24 +1720,22 @@ footer {
     overflow-x: auto;
     max-width: 100%;
     overscroll-behavior-x: contain;
-    padding-bottom: 8px;
+    padding-bottom: 6px;
     -webkit-overflow-scrolling: touch;
     margin-bottom: 16px;
   }
 
   .progress li {
     flex: 0 0 auto;
-    font-size: 11px;
-    padding: 6px 10px;
-    background: white;
-    border: 1px solid #d8e3dc;
-    border-radius: 20px;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 9999px;
   }
 
   .progress li span {
-    width: 18px;
-    height: 18px;
-    font-size: 10px;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
   }
 
   /* SESSION STRIP */
@@ -4316,7 +4320,6 @@ input[aria-invalid='true'] {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 92px;
   padding: 12px;
   text-align: center;
   background: var(--bg-surface);
@@ -4387,6 +4390,70 @@ input[aria-invalid='true'] {
   color: #94a3b8;
   line-height: 1.1;
   font-weight: 500;
+}
+
+/* APPLE DEVICES SURVEY (STEP 2, D134) */
+.apple-device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.apple-device-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+}
+
+.apple-device-chip:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.apple-device-chip.selected {
+  border-color: #0abab5;
+  background: #f0fdfa;
+  color: #0f766e;
+  font-weight: 600;
+}
+
+.apple-device-chip .chip-check {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+  color: #0abab5;
+  flex-shrink: 0;
+}
+
+.apple-device-chip.selected .chip-check {
+  border-color: #0abab5;
+  background: #0abab5;
+  color: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .apple-device-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .apple-device-chip {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
 }
 @media (max-width: 640px) {
   .picker-category-tiles {
@@ -4769,7 +4836,6 @@ input[aria-invalid='true'] {
     gap: 8px;
   }
   .wizard-tile {
-    min-height: 64px;
     padding: 10px 8px;
   }
   .wizard-tile-category {

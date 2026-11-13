@@ -569,7 +569,7 @@ export function StaffWorkspace({
           {!activeSession ? (
             <div className="content-grid">
               <Panel
-                title="รับลูกค้าใหม่ (Walk-in)"
+                title="รับลูกค้าใหม่"
                 eyebrow="ลงทะเบียนลูกค้าหน้าร้าน"
               >
                 <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
@@ -578,17 +578,22 @@ export function StaffWorkspace({
           ) : (
             <>
               <section className="session-strip">
-                <div>
-                  <button
-                    type="button"
-                    className="mobile-back-to-queue-btn"
-                    onClick={() => setActiveSessionRef(null)}
-                  >
-                    <ArrowLeft size={14} /> ลูกค้าวันนี้ ({branchSessions.length})
-                  </button>
-                  <span className="eyebrow">
+                <div className="session-strip-main">
+                  <div className="session-strip-top-row">
+                    <button
+                      type="button"
+                      className="mobile-back-to-queue-btn"
+                      onClick={() => setActiveSessionRef(null)}
+                    >
+                      <ArrowLeft size={14} /> ลูกค้าวันนี้ ({branchSessions.length})
+                    </button>
+                    <span className={`state-pill only-mobile ${finished ? 'terminal' : ''}`}>
+                      {stateLabel(activeSession)}
+                    </span>
+                  </div>
+                  {/* <span className="eyebrow">
                     {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
-                  </span>
+                  </span> */}
                   <h2 className="queue-title">
                     {activeSession.queueNo != null
                       ? `${activeSession.queue}`
@@ -640,9 +645,8 @@ export function StaffWorkspace({
                     </span>
                   )}
                 </div>
-                <span className={`state-pill ${finished ? 'terminal' : ''}`}>
-                  <span className="only-desktop">{activeSession.outcome ?? activeSession.state}</span>
-                  <span className="only-mobile">{stateLabel(activeSession)}</span>
+                <span className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}>
+                  {activeSession.outcome ?? stateLabel(activeSession)}
                 </span>
               </section>
 
@@ -686,9 +690,9 @@ export function StaffWorkspace({
                             ? 'ยืนยันการยกเลิกบริการ'
                             : form === 'return'
                               ? 'ส่งสินค้ากลับ Stock (หยิบผิด)'
-                              : 'ดำเนินการบริการ'
+                              : undefined
                     }
-                    eyebrow="ขั้นตอนปัจจุบัน"
+                    eyebrow={!finished && form === 'normal' ? undefined : 'ขั้นตอนปัจจุบัน'}
                   >
                     {finished ? (
                       <>
@@ -824,7 +828,7 @@ export function StaffWorkspace({
                                 }}
                               >
                                 <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
-                                  เบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
+                                  เบอร์โทรศัพท์ลูกค้า
                                 </label>
                                 <div style={{ maxWidth: '360px', marginTop: '6px' }}>
                                   <PhoneInput
@@ -936,26 +940,6 @@ export function StaffWorkspace({
                     )}
                   </Panel>
                 </div>
-
-                {/* <div>
-                  <Panel
-                    title="ประวัติเวลาการบริการ"
-                    eyebrow="บันทึกเวลาจากระบบ"
-                  >
-                    <ol className="timeline">
-                      {Object.entries(activeSession.timestamps).map(
-                        ([name, time]) => (
-                          <li key={name}>
-                            <span>{name}</span>
-                            <time dateTime={time}>
-                              {new Date(time).toLocaleTimeString('th-TH')}
-                            </time>
-                          </li>
-                        ),
-                      )}
-                    </ol>
-                  </Panel>
-                </div> */}
               </div>
             </>
           )}

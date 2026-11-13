@@ -802,8 +802,8 @@ export class AccountsService {
       }
 
       switch (e.eventType) {
-        case 'SESSION_CREATED': label = 'สร้างรายการบริการ (Walk-in)'; break;
-        case 'DEMO_STARTED': label = 'เริ่มสาธิตสินค้า (Demo)'; break;
+        case 'SESSION_CREATED': label = 'สร้างรายการบริการ'; break;
+        case 'DEMO_STARTED': label = 'เริ่มสาธิตสินค้า'; break;
         case 'DEMO_ENDED': label = 'สิ้นสุดการสาธิตสินค้า'; break;
         case 'DECISION_MADE': label = 'บันทึกการตัดสินใจของลูกค้า'; break;
         case 'PRODUCT_SELECTION_STARTED': label = 'เริ่มเลือกสินค้าและอุปกรณ์'; break;

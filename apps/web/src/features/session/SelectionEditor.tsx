@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import iphoneIcon from '../../assets/category-icons/iphone.avif';
 import ipadIcon from '../../assets/category-icons/ipad.avif';
 import macIcon from '../../assets/category-icons/macBook.webp';
@@ -235,6 +235,8 @@ export function SelectionEditor({
   );
 
   const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
+  const skuPickerSectionRef = useRef<HTMLDivElement>(null);
+  const chosenSectionRef = useRef<HTMLFieldSetElement>(null);
 
   const handleResetForm = () => {
     setCategory('');
@@ -245,16 +247,26 @@ export function SelectionEditor({
   const handleCategoryChange = (cat: string) => {
     setCategory(cat);
     setPicked(null);
+    setTimeout(() => {
+      skuPickerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
   };
 
-  const handleAddItem = () => {
-    if (!picked || isOutOfStock(picked.sku)) return;
+  const handleAddPicked = (pickedObj: Picked) => {
+    if (!pickedObj || isOutOfStock(pickedObj.sku)) return;
     onChange({
       ...value,
-      items: addItem(value.items, toProduct(picked.product, picked.model, picked.sku)),
+      items: addItem(value.items, toProduct(pickedObj.product, pickedObj.model, pickedObj.sku)),
     });
     handleResetForm();
     setOpen(false);
+    setTimeout(() => {
+      chosenSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 50);
+  };
+
+  const handleAddItem = () => {
+    if (picked) handleAddPicked(picked);
   };
 
   // The methods with an FMP type come first, the rest under the heading "ช่องทางอื่น", all always shown (D107; ADMIN moves one
@@ -411,7 +423,7 @@ export function SelectionEditor({
   };
 
   const renderPaymentChoices = (optionsList: string[]) => (
-    <div className="choices">
+    <div className="choices payment-choices">
       {optionsList.map((option) => {
         const checked = value.payments.includes(option);
         const label = formatPaymentLabel(option, value.paymentDetails);
@@ -467,13 +479,10 @@ export function SelectionEditor({
 
   return (
     <>
-      <p className="muted">
-        เลือกสินค้าหลักที่ลูกค้าต้องการ (เพิ่มได้หลายรายการ)
-      </p>
       {stockInfo && <p className="fine stock-info-line">{stockInfo}</p>}
       {loadError && <Notice error>{loadError}</Notice>}
 
-      <fieldset className="chosen-items">
+      <fieldset className="chosen-items" ref={chosenSectionRef}>
         <legend>สินค้าหลักที่เลือก</legend>
         {value.items.length === 0 ? (
           <p className="muted">ยังไม่ได้เลือกสินค้าหลัก</p>
@@ -483,7 +492,7 @@ export function SelectionEditor({
               <li key={item.product.id} className="chosen-item">
                 <span className="chosen-item-name">
                   <span className="chosen-item-category">
-                    <CategoryIcon category={item.product.category} size={15} />
+                    <CategoryPicture cat={item.product.category} size={36} />
                   </span>
                   <span>
                     <strong>{itemName(item)}</strong>
@@ -597,18 +606,25 @@ export function SelectionEditor({
                       disabled={count === 0}
                       onClick={() => handleCategoryChange(cat)}
                     >
-                      <CategoryPicture cat={cat} size={52} />
+                      <CategoryPicture cat={cat} size={68} />
                       <strong>{cat}</strong>
                       {count === 0 && <small>ไม่มีสินค้า</small>}
                     </button>
                   );
                 })}
               </div>
-              {category ? (
-                <SkuPicker key={`${category}:${pickerRun}`} models={models} onPick={setPicked} />
-              ) : (
-                <p className="muted picker-hint">เลือกประเภทอุปกรณ์ด้านบนก่อน</p>
-              )}
+              <div ref={skuPickerSectionRef}>
+                {category ? (
+                  <SkuPicker
+                    key={`${category}:${pickerRun}`}
+                    models={models}
+                    onPick={setPicked}
+                    onComplete={handleAddPicked}
+                  />
+                ) : (
+                  <p className="muted picker-hint">เลือกประเภทอุปกรณ์ด้านบนก่อน</p>
+                )}
+              </div>
 
               {/* Selected SKU summary preview */}
               {picked && (

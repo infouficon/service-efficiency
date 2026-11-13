@@ -318,7 +318,7 @@ export function App({
           </button>
         </div>
 
-        <p className="nav-label">พื้นที่ทำงาน</p>
+        <p className="nav-label"></p>
         <nav>
           {canAccessStaff && (
             <button
@@ -511,6 +511,24 @@ export function App({
             </div>
           )}
         </nav>
+
+        <div className="sidebar-footer">
+          <div className="sidebar-user-card">
+            <span className="avatar">{user.staffId}</span>
+            <div className="sidebar-user-details">
+              <strong>{user.name || user.staffId}</strong>
+              <small>{user.roles.join(' · ')}</small>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={onLogout}
+          >
+            <LogOut size={16} />
+            <span>ออกจากระบบ</span>
+          </button>
+        </div>
       </aside>
 
       <div className="workspace">
@@ -559,18 +577,6 @@ export function App({
               <strong>{user.name || user.staffId}</strong>
               <small>{user.roles.join(' · ')}</small>
             </div>
-            <button
-              className="text-button logout-btn"
-              onClick={onLogout}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <LogOut size={14} />
-              <span className="logout-text">ออกจากระบบ</span>
-            </button>
           </div>
         </header>
 

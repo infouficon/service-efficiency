@@ -146,7 +146,7 @@ export function CameraScan({
 
   const left = Math.max(0, expect - got.length);
   return (
-    <div className="camera-scan" role="dialog" aria-modal="true" aria-label={`สแกน SN ด้วยกล้อง: ${title}`}>
+    <div className="camera-scan" role="dialog" aria-modal="true" aria-label={`สแกนด้วยกล้อง: ${title}`}>
       <video ref={videoRef} className="camera-scan-video" playsInline muted autoPlay />
       <div className="camera-scan-guide" aria-hidden="true" />
       <div className="camera-scan-top">

@@ -1926,6 +1926,67 @@ footer {
   background: #fff5f3;
   border-color: #f7c1b7;
 }
+.stock-accessory-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.stock-accessory-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.stock-accessory-label {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.stock-accessory-name {
+  display: inline;
+  flex: 1;
+}
+.stock-accessory-missing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  margin-left: auto;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+@media (max-width: 640px) {
+  .stock-accessory-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "header missing"
+      "name   name";
+    gap: 6px 8px;
+    align-items: center;
+  }
+  .stock-accessory-header {
+    grid-area: header;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .stock-accessory-missing-toggle {
+    grid-area: missing;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    justify-self: end;
+    margin: 0;
+  }
+  .stock-accessory-name {
+    grid-area: name;
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+}
 .accessory-row {
   display: flex;
   align-items: center;
@@ -4407,6 +4468,21 @@ input[aria-invalid='true'] {
    ========================================================================== */
 .only-mobile {
   display: none;
+}
+.only-tablet-mobile {
+  display: none !important;
+}
+.vat-desktop {
+  display: inline-flex !important;
+}
+
+@media (max-width: 1024px) {
+  .only-tablet-mobile {
+    display: inline-flex !important;
+  }
+  .vat-desktop {
+    display: none !important;
+  }
 }
 
 @media (max-width: 768px) {

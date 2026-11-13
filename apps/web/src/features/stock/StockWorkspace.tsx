@@ -11,6 +11,7 @@ import {
   ArrowLeft,
   AlertTriangle,
   AlertCircle,
+  Plane,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { FmpPushBanner } from '../admin/FmpPanel';
@@ -37,7 +38,9 @@ import {
   needsStockAck,
   serialsComplete,
   serialsLeft,
+  stateLabel,
 } from '../session/workflow';
+import { formatDisplayPhone } from '../../utils/phone';
 
 const previewTime = () => new Date().toISOString();
 
@@ -533,18 +536,64 @@ export function StockWorkspace({
 
           <div className="stock-detail-column">
             {selectedSession ? (
-              <Panel
-                title={`รายละเอียดคำขอ: คิว ${selectedSession.queue}`}
-                eyebrow={`สถานะปัจจุบัน: ${selectedSession.state}`}
-              >
-                <button
-                  type="button"
-                  className="mobile-back-to-queue-btn"
-                  onClick={() => setMobileShowDetail(false)}
-                >
-                  <ArrowLeft size={14} /> คิวสินค้า ({filteredQueue.length})
-                </button>
-                <div className="detail-status-banner">
+              <>
+                <section className="session-strip">
+                  <div className="session-strip-main">
+                    <div className="session-strip-top-row">
+                      <button
+                        type="button"
+                        className="mobile-back-to-queue-btn"
+                        onClick={() => setMobileShowDetail(false)}
+                      >
+                        <ArrowLeft size={14} /> คิวสินค้า ({filteredQueue.length})
+                      </button>
+                      <span className="state-pill only-mobile">
+                        {stateLabel(selectedSession)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%' }}>
+                      <h2 className="queue-title" style={{ margin: 0 }}>
+                        {selectedSession.queue || selectedSession.reference}
+                      </h2>
+                      {(selectedSession.vatRefund ?? selectedSession.selection?.vatRefund) && (
+                        <span className="only-tablet-mobile" style={{ marginLeft: 'auto' }}>
+                          <span
+                            className="status-tag"
+                            style={{
+                              background: 'var(--bg-warning)',
+                              color: 'var(--color-warning)',
+                              border: '1px solid var(--border-warning)',
+                            }}
+                          >
+                            <Plane size={12} strokeWidth={1.6} />
+                            VAT Refund
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    {(selectedSession.vatRefund ?? selectedSession.selection?.vatRefund) && (
+                      <span
+                        className="status-tag vat-desktop"
+                        style={{
+                          background: 'var(--bg-warning)',
+                          color: 'var(--color-warning)',
+                          border: '1px solid var(--border-warning)',
+                        }}
+                      >
+                        <Plane size={12} strokeWidth={1.6} />
+                        VAT Refund
+                      </span>
+                    )}
+                    <span className="state-pill only-desktop">
+                      {stateLabel(selectedSession)}
+                    </span>
+                  </div>
+                </section>
+
+                <Panel>
+                  <div className="detail-status-banner">
                   {selectedSession.stockPendingReview && (
                     <Notice error>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -658,14 +707,6 @@ export function StockWorkspace({
                       </span>
                     </Notice>
                   )}
-                  {!selectedSession.stockPendingReview && selectedSession.state === 'SEARCHING' && (
-                    <Notice>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        <Search size={16} />
-                        กำลังค้นหา: สแกน SN สินค้าหลักทุกเครื่อง แล้วกด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของ (อุปกรณ์เสริมไม่ต้องสแกน)
-                      </span>
-                    </Notice>
-                  )}
                   {!selectedSession.stockPendingReview && selectedSession.state === 'FOUND' && (
                     <Notice>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -718,7 +759,7 @@ export function StockWorkspace({
                       >
                         <div className="product-title">
                           {itemName(item)}{' '}
-                          <span className="qty-badge">× {item.quantity}</span>
+                          <span className="qty-badge">{item.quantity}</span>
                           {isNewSwappedItem && (
                             <span
                               style={{
@@ -885,7 +926,7 @@ export function StockWorkspace({
                         {accessories.length > 0 && (
                           <div style={{ marginTop: '12px' }}>
                             <h4 style={{ margin: '0 0 8px', fontSize: '13px', color: '#496357' }}>
-                              อุปกรณ์เสริมที่ต้องหยิบ (ไม่ต้องสแกน SN ไม่ต้องติ๊ก · ของไม่มีเท่านั้น ติ๊ก "ขาด/หมด" แล้วกดแจ้ง Staff):
+                              อุปกรณ์เสริมที่ต้องหยิบ (ไม่ต้องสแกน SN · เลือกเมื่อของ"ขาด/หมด"เท่านั้น เพื่อแจ้ง Staff):
                             </h4>
                             <div className="accessory-list">
                               {accessories.map(([name, qty]) => {
@@ -899,18 +940,22 @@ export function StockWorkspace({
                                     className={`accessory-item ${isMissing ? 'out-of-stock-item' : ''}`}
                                     style={wrongBadge ? { borderColor: '#ef4444', backgroundColor: '#fff5f5' } : undefined}
                                   >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                                      <span>
-                                        <strong>อุปกรณ์เสริม:</strong> {name} (จำนวน: {qty} ชิ้น)
-                                      </span>
-                                      {wrongBadge && (
-                                        <span className="status-tag" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
-                                          {wrongBadge}
-                                        </span>
-                                      )}
+                                    <div className="stock-accessory-row">
+                                      <div className="stock-accessory-header">
+                                        <strong className="stock-accessory-label">อุปกรณ์เสริม:</strong>
+                                        {wrongBadge && (
+                                          <span className="status-tag" style={{ background: '#fef2f2', color: '#b91c1c', border: '1px solid #fecaca' }}>
+                                            {wrongBadge}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="stock-accessory-name">
+                                        {name} (จำนวน: {qty} ชิ้น)
+                                      </div>
                                       {/* D111: the box only marks a missing accessory for the report; picking needs no tick */}
                                       <label
-                                        style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', margin: '0 0 0 auto', fontWeight: 600, color: isMissing ? '#b91c1c' : '#496357' }}
+                                        className="stock-accessory-missing-toggle"
+                                        style={{ color: isMissing ? '#b91c1c' : '#496357' }}
                                       >
                                         <input
                                           type="checkbox"
@@ -975,7 +1020,7 @@ export function StockWorkspace({
                                 }}
                               >
                                 <AlertTriangle size={16} />
-                                แจ้งสินค้าไม่ครบ/หมด → ส่งเรื่องให้ Staff
+                                แจ้งสินค้าขาด/หมด
                               </span>
                             </Button>
                           )}
@@ -1028,7 +1073,8 @@ export function StockWorkspace({
                   <Summary session={selectedSession} />
                 </details>
               </Panel>
-            ) : (
+            </>
+          ) : (
               <Panel title="กรุณาเลือกรายการคำขอ" eyebrow="จัดการคิวคลังสินค้า">
                 <p className="muted">
                   เลือกรายการจากคิวทางด้านซ้ายเพื่อดูรายละเอียดและดำเนินการ

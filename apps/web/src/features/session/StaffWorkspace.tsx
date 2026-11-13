@@ -270,8 +270,21 @@ export function StaffWorkspace({
       }
       setForm('normal');
       setPrintSession(updated);
+
+      const handleAfterPrint = () => {
+        window.removeEventListener('afterprint', handleAfterPrint);
+        setActiveSessionRef(null);
+        setForm('normal');
+        setPrintSession(null);
+      };
+      window.addEventListener('afterprint', handleAfterPrint, { once: true });
+
       setTimeout(() => {
-        window.print();
+        if (typeof window.print === 'function') {
+          window.print();
+        } else {
+          handleAfterPrint();
+        }
       }, 150);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ยืนยันการสั่งซื้อไม่สำเร็จ');
@@ -594,11 +607,28 @@ export function StaffWorkspace({
                   {/* <span className="eyebrow">
                     {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
                   </span> */}
-                  <h2 className="queue-title">
-                    {activeSession.queueNo != null
-                      ? `${activeSession.queue}`
-                      : `${formatDisplayPhone(activeSession.phone) || activeSession.reference}`}
-                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%' }}>
+                    <h2 className="queue-title" style={{ margin: 0 }}>
+                      {activeSession.queueNo != null
+                        ? `${activeSession.queue}`
+                        : `${formatDisplayPhone(activeSession.phone) || activeSession.reference}`}
+                    </h2>
+                    {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
+                      <span className="only-tablet-mobile" style={{ marginLeft: 'auto' }}>
+                        <span
+                          className="status-tag"
+                          style={{
+                            background: 'var(--bg-warning)',
+                            color: 'var(--color-warning)',
+                            border: '1px solid var(--border-warning)',
+                          }}
+                        >
+                          <Plane size={12} strokeWidth={1.6} />
+                          VAT Refund
+                        </span>
+                      </span>
+                    )}
+                  </div>
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>
                       ซื้อใหม่ (ใช้คิวเดิม)
@@ -624,20 +654,6 @@ export function StaffWorkspace({
                       </span>
                     ) : null;
                   })()}
-                  {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
-                    <span
-                      className="status-tag"
-                      style={{
-                        background: 'var(--bg-warning)',
-                        color: 'var(--color-warning)',
-                        border: '1px solid var(--border-warning)',
-                        marginRight: '6px',
-                      }}
-                    >
-                      <Plane size={12} strokeWidth={1.6} />
-                      VAT Refund
-                    </span>
-                  )}
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}
                   {activeSession.queueNo != null && (
                     <span className="muted">
@@ -645,9 +661,24 @@ export function StaffWorkspace({
                     </span>
                   )}
                 </div>
-                <span className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}>
-                  {activeSession.outcome ?? stateLabel(activeSession)}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
+                    <span
+                      className="status-tag vat-desktop"
+                      style={{
+                        background: 'var(--bg-warning)',
+                        color: 'var(--color-warning)',
+                        border: '1px solid var(--border-warning)',
+                      }}
+                    >
+                      <Plane size={12} strokeWidth={1.6} />
+                      VAT Refund
+                    </span>
+                  )}
+                  <span className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}>
+                    {activeSession.outcome ?? stateLabel(activeSession)}
+                  </span>
+                </div>
               </section>
 
               <ol className="progress" ref={progressContainerRef}>

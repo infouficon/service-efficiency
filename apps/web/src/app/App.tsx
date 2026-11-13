@@ -296,7 +296,13 @@ export function App({
               handleSelectView(getDefaultView(user));
             }}
           >
-            <span className="brand-mark">S</span>
+            <img
+              src="/Uficon-ses-logo.png"
+              alt="Service Efficiency"
+              className="brand-logo"
+              width={36}
+              height={36}
+            />
             <span>
               Service
               <br />

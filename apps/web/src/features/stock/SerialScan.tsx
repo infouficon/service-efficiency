@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Camera, Check, X } from 'lucide-react';
-import { Notice } from '../../components/ui';
+import { AlertCircle, Camera, Check, X } from 'lucide-react';
+import { Button, Modal, Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
@@ -73,6 +73,7 @@ export function SerialScan({
   const [checks, setChecks] = useState<Record<string, StockCheck>>({});
   const [cameraFor, setCameraFor] = useState<string | null>(null);
   const [allDone, setAllDone] = useState('');
+  const [showGuideModal, setShowGuideModal] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
   const queue = useRef<Scan[]>([]);
@@ -204,13 +205,106 @@ export function SerialScan({
 
   return (
     <div className="stock-note-section serial-scan" ref={rootRef}>
-      <strong>
-        สแกน Serial Number เครื่องที่หยิบจริง ({saved}/{total})
-      </strong>
-      <p className="muted" style={{ margin: '4px 0 10px' }}>
-        สแกนบาร์โค้ด Serial No. บนกล่องทีละเครื่องตอนหยิบ (Mac / iPad Wi-Fi / Watch GPS ใช้ Serial No. ขึ้นต้นด้วยตัวอักษร · iPhone / iPad Cellular / Watch Cellular ใช้ IMEI 15 หลัก) เครื่องสแกนยิงได้เลยไม่ต้องกดที่ช่อง
-        หรือกดปุ่มกล้องเพื่อใช้กล้องมือถือ สแกนผิดกด × แล้วสแกนใหม่ ต้องครบทุกเครื่องก่อนกดส่ง (อุปกรณ์เสริมไม่ต้องสแกน)
-      </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+        <strong>
+          สแกน Serial Number / IMEI ({saved}/{total})
+        </strong>
+        <button
+          type="button"
+          onClick={() => setShowGuideModal(true)}
+          aria-label="ดูคำแนะนำการสแกน Serial Number"
+          title="ดูคำแนะนำการสแกน"
+          style={{
+            border: 'none',
+            background: 'rgba(10, 186, 181, 0.12)',
+            color: 'var(--primary)',
+            borderRadius: '50%',
+            width: '24px',
+            height: '24px',
+            minWidth: '24px',
+            minHeight: '24px',
+            maxWidth: '24px',
+            maxHeight: '24px',
+            aspectRatio: '1 / 1',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            padding: 0,
+            flexShrink: 0,
+            alignSelf: 'center',
+            transition: 'background-color 150ms ease',
+          }}
+        >
+          <AlertCircle size={15} />
+        </button>
+      </div>
+
+      <Modal
+        isOpen={showGuideModal}
+        onClose={() => setShowGuideModal(false)}
+        title={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: 'var(--primary-dark)' }}>
+            <AlertCircle size={20} color="var(--primary)" />
+            คำแนะนำการสแกน Serial Number
+          </span>
+        }
+        maxWidth="520px"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', fontSize: '14px', lineHeight: '1.5' }}>
+          <div>
+            <h4 style={{ margin: '0 0 6px', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              1. ชนิดของรหัสที่ต้องสแกนตามหมวดสินค้า
+            </h4>
+            <ul style={{ margin: '0', paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+              <li>
+                <strong>Mac / iPad รุ่น Wi-Fi / Watch รุ่น GPS:</strong> ใช้ <em>Serial Number</em> (ขึ้นต้นด้วยตัวอักษร)
+              </li>
+              <li>
+                <strong>iPhone / iPad รุ่น Cellular / Watch รุ่น Cellular:</strong> ใช้ <em>IMEI</em> (เลข 15 หลัก)
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 style={{ margin: '0 0 6px', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              2. วิธีการสแกน
+            </h4>
+            <ul style={{ margin: '0', paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+              <li>
+                <strong>เครื่องสแกนบาร์โค้ด (Wedge Scanner):</strong> สามารถยิงบาร์โค้ดบนกล่องได้ทันทีโดยไม่ต้องคลิกโฟกัสที่ช่องใดๆ
+              </li>
+              <li>
+                <strong>กล้องสมาร์ทโฟน/แท็บเล็ต:</strong> กดปุ่มไอคอนกล้อง <Camera size={13} style={{ verticalAlign: 'middle' }} /> เพื่อเปิดกล้องสแกน
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 style={{ margin: '0 0 6px', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              3. การแก้ไขข้อผิดพลาด
+            </h4>
+            <ul style={{ margin: '0', paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+              <li>หากสแกนผิดกล่องหรือผิดเครื่อง ให้กดปุ่ม <strong>×</strong> บนกล่อง Serial นั้นเพื่อลบออก แล้วสแกนใหม่</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 style={{ margin: '0 0 6px', fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+              4. เงื่อนไขการส่งต่อ
+            </h4>
+            <ul style={{ margin: '0', paddingLeft: '20px', color: 'var(--text-secondary)' }}>
+              <li>ต้องสแกนให้ครบถ้วนทุกเครื่องตามจำนวนที่แสดง จึงจะสามารถกดส่งมอบได้ (อุปกรณ์เสริมไม่ต้องสแกน)</li>
+            </ul>
+          </div>
+
+          <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+            <Button variant="primary" onClick={() => setShowGuideModal(false)}>
+              เข้าใจแล้ว
+            </Button>
+          </div>
+        </div>
+      </Modal>
       {allDone && <span className="serial-scan-problem">{allDone}</span>}
       {items.map((item) => {
         const itemId = item.id as string;
@@ -218,6 +312,17 @@ export function SerialScan({
         const done = serialsLeft(item) === 0;
         const problem = problems[itemId];
         const warned = (item.serials ?? []).map((serial) => checks[serial.sn]).find((check) => check && check.verdict !== 'here');
+        const kind = serialKindOf(
+          item.product.category,
+          item.product.product,
+          item.product.modelName,
+          item.product.model,
+          item.product.sku,
+        );
+        const isImei = kind === 'imei';
+        const codeLabel = isImei ? 'IMEI' : 'Serial Number';
+        const codeLabelShort = isImei ? 'IMEI' : 'SN';
+        const scanPlaceholder = isImei ? 'สแกน IMEI' : 'สแกน SN';
         return (
           <div key={itemId} className="serial-scan-item">
             <div className="serial-scan-head">
@@ -236,7 +341,7 @@ export function SerialScan({
                     <StockMark check={checks[serial.sn]} />
                     <button
                       type="button"
-                      aria-label={`ลบ SN ${serial.sn}`}
+                      aria-label={`ลบ ${codeLabelShort} ${serial.sn}`}
                       title="สแกนผิด ลบแล้วสแกนใหม่"
                       disabled={removing || queued.length > 0}
                       onClick={() => remove(item, serial.id)}
@@ -257,9 +362,6 @@ export function SerialScan({
             {remaining > 0 && (
               <div className="serial-scan-row">
                 <label className="serial-scan-box">
-                  <span className="fine muted">
-                    เครื่องที่ {item.quantity - remaining + 1}/{item.quantity}
-                  </span>
                   <input
                     ref={(element) => {
                       boxes.current[itemId] = element;
@@ -269,8 +371,8 @@ export function SerialScan({
                     autoComplete="off"
                     spellCheck={false}
                     enterKeyHint="done"
-                    placeholder="สแกน SN"
-                    aria-label={`${itemName(item)} Serial Number เครื่องที่ ${item.quantity - remaining + 1}`}
+                    placeholder={scanPlaceholder}
+                    aria-label={`${itemName(item)} ${codeLabel} เครื่องที่ ${item.quantity - remaining + 1}`}
                     aria-invalid={Boolean(problem)}
                     onChange={(e) => setValues((current) => ({ ...current, [itemId]: e.target.value.toUpperCase() }))}
                     onKeyDown={(e) => {
@@ -282,7 +384,12 @@ export function SerialScan({
                 </label>
                 <div className="serial-scan-actions">
                   {canUseCamera() && (
-                    <button type="button" className="serial-scan-camera" onClick={() => setCameraFor(itemId)}>
+                    <button
+                      type="button"
+                      className="serial-scan-camera"
+                      onClick={() => setCameraFor(itemId)}
+                      aria-label={`สแกน ${codeLabelShort} ด้วยกล้อง: ${itemName(item)}`}
+                    >
                       <Camera size={18} />
                       กล้อง
                     </button>
@@ -292,14 +399,14 @@ export function SerialScan({
             )}
             {cameraFor === itemId && (
               <CameraScan
-                title={itemName(item)}
+                title={`${itemName(item)} (${codeLabelShort})`}
                 expect={remaining}
                 skip={[
                   ...session.selection.items.flatMap((one) => (one.serials ?? []).map((serial) => serial.sn)),
                   ...queued.map((scan) => scan.sn),
                 ]}
                 problem={problem}
-                accepts={(sn) => !serialProblem(sn, serialKindOf(item.product.category, item.product.product, item.product.modelName, item.product.model))}
+                accepts={(sn) => !serialProblem(sn, kind)}
                 onScan={(sn) => submit(item, sn)}
                 onClose={() => setCameraFor(null)}
               />

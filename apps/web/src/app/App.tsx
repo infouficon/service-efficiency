@@ -20,6 +20,8 @@ import {
   BookOpen,
   MessageSquare,
   Send,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
@@ -106,6 +108,25 @@ export function App({
   const [notice, setNotice] = useState('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [dismissedAlertRefs, setDismissedAlertRefs] = useState<string[]>([]);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ses_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('ses_sidebar_collapsed', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
   // Sync view state with browser hash routing (Back/Forward buttons)
   useEffect(() => {
@@ -286,7 +307,9 @@ export function App({
         />
       )}
 
-      <aside className={`sidebar ${isMobileMenuOpen ? 'sidebar-open' : ''}`}>
+      <aside
+        className={`sidebar ${isMobileMenuOpen ? 'sidebar-open' : ''} ${isSidebarCollapsed ? 'sidebar-collapsed' : ''}`}
+      >
         <div className="sidebar-header-row">
           <a
             className="brand"
@@ -295,14 +318,34 @@ export function App({
               e.preventDefault();
               handleSelectView(getDefaultView(user));
             }}
+            title="Service Efficiency"
           >
-            <span className="brand-mark">S</span>
-            <span>
+            <img
+              src="/Uficon-ses-logo.png"
+              alt="Service Efficiency"
+              className="brand-logo"
+              width={36}
+              height={36}
+            />
+            <span className="brand-text">
               Service
               <br />
               <strong>Efficiency</strong>
             </span>
           </a>
+          <button
+            type="button"
+            className="sidebar-toggle-btn only-desktop"
+            onClick={toggleSidebar}
+            aria-label={isSidebarCollapsed ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'}
+            title={isSidebarCollapsed ? 'ขยายแถบเมนู' : 'ย่อแถบเมนู'}
+          >
+            {isSidebarCollapsed ? (
+              <PanelLeftOpen size={18} />
+            ) : (
+              <PanelLeftClose size={18} />
+            )}
+          </button>
           <button
             className="sidebar-close-btn"
             onClick={() => setIsMobileMenuOpen(false)}
@@ -312,14 +355,15 @@ export function App({
           </button>
         </div>
 
-        <p className="nav-label">พื้นที่ทำงาน</p>
+        <p className="nav-label"></p>
         <nav>
           {canAccessStaff && (
             <button
               className={view === 'staff' ? 'nav-active' : ''}
               onClick={() => handleSelectView('staff')}
+              title="หน้าร้าน(Staff Service)"
             >
-              <UserIcon size={18} /> <span>หน้าร้าน (Staff Service)</span>
+              <UserIcon size={18} /> <span>หน้าร้าน</span>
             </button>
           )}
 
@@ -327,8 +371,9 @@ export function App({
             <button
               className={view === 'stock' ? 'nav-active' : ''}
               onClick={() => handleSelectView('stock')}
+              title="คลังสินค้า"
             >
-              <Package size={18} /> <span>คลังสินค้า (Stock)</span>
+              <Package size={18} /> <span>คลังสินค้า</span>
               {stockPendingCount > 0 && (
                 <span className="nav-counter">{stockPendingCount}</span>
               )}
@@ -338,6 +383,7 @@ export function App({
           <button
             className={view === 'logs' ? 'nav-active' : ''}
             onClick={() => handleSelectView('logs')}
+            title="ประวัติการทำรายการ"
           >
             <ClipboardList size={18} /> <span>ประวัติการทำรายการ</span>
           </button>
@@ -347,6 +393,7 @@ export function App({
               <button
                 className={view === 'products' ? 'nav-active' : ''}
                 onClick={() => handleSelectView('products')}
+                title="จัดการสินค้า"
               >
                 <ShoppingBag size={18} /> <span>จัดการสินค้า</span>
               </button>
@@ -360,6 +407,7 @@ export function App({
                       setProductSubView('MAIN');
                       setIsMobileMenuOpen(false);
                     }}
+                    title="รายการสินค้า"
                   >
                     <ShoppingBag size={14} /> <span>รายการสินค้า</span>
                   </button>
@@ -370,6 +418,7 @@ export function App({
                       setProductSubView('STOCK');
                       setIsMobileMenuOpen(false);
                     }}
+                    title="Stock สินค้า"
                   >
                     <Package size={14} /> <span>Stock สินค้า</span>
                   </button>
@@ -383,6 +432,7 @@ export function App({
               <button
                 className={view === 'admin' ? 'nav-active' : ''}
                 onClick={() => handleSelectView('admin')}
+                title="จัดการระบบ"
               >
                 <ShieldCheck size={18} /> <span>จัดการระบบ</span>
               </button>
@@ -505,6 +555,29 @@ export function App({
             </div>
           )}
         </nav>
+
+        <div className="sidebar-footer">
+          <div
+            className="sidebar-user-card"
+            title={`${user.name || user.staffId} (${user.roles.join(' · ')})`}
+          >
+            <span className="avatar">{user.staffId}</span>
+            <div className="sidebar-user-details">
+              <strong>{user.name || user.staffId}</strong>
+              <small>{user.roles.join(' · ')}</small>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="sidebar-logout-btn"
+            onClick={onLogout}
+            title="ออกจากระบบ"
+            aria-label="ออกจากระบบ"
+          >
+            <LogOut size={16} />
+            <span>ออกจากระบบ</span>
+          </button>
+        </div>
       </aside>
 
       <div className="workspace">
@@ -548,23 +621,11 @@ export function App({
           </div>
 
           <div className="user">
-            <span className="avatar">{user.staffId.slice(0, 2)}</span>
+            <span className="avatar">{user.staffId}</span>
             <div className="user-details">
               <strong>{user.name || user.staffId}</strong>
               <small>{user.roles.join(' · ')}</small>
             </div>
-            <button
-              className="text-button logout-btn"
-              onClick={onLogout}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-              }}
-            >
-              <LogOut size={14} />
-              <span className="logout-text">ออกจากระบบ</span>
-            </button>
           </div>
         </header>
 

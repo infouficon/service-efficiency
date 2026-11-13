@@ -270,8 +270,21 @@ export function StaffWorkspace({
       }
       setForm('normal');
       setPrintSession(updated);
+
+      const handleAfterPrint = () => {
+        window.removeEventListener('afterprint', handleAfterPrint);
+        setActiveSessionRef(null);
+        setForm('normal');
+        setPrintSession(null);
+      };
+      window.addEventListener('afterprint', handleAfterPrint, { once: true });
+
       setTimeout(() => {
-        window.print();
+        if (typeof window.print === 'function') {
+          window.print();
+        } else {
+          handleAfterPrint();
+        }
       }, 150);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ยืนยันการสั่งซื้อไม่สำเร็จ');
@@ -569,7 +582,7 @@ export function StaffWorkspace({
           {!activeSession ? (
             <div className="content-grid">
               <Panel
-                title="รับลูกค้าใหม่ (Walk-in)"
+                title="รับลูกค้าใหม่"
                 eyebrow="ลงทะเบียนลูกค้าหน้าร้าน"
               >
                 <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
@@ -578,22 +591,44 @@ export function StaffWorkspace({
           ) : (
             <>
               <section className="session-strip">
-                <div>
-                  <button
-                    type="button"
-                    className="mobile-back-to-queue-btn"
-                    onClick={() => setActiveSessionRef(null)}
-                  >
-                    <ArrowLeft size={14} /> ลูกค้าวันนี้ ({branchSessions.length})
-                  </button>
-                  <span className="eyebrow">
+                <div className="session-strip-main">
+                  <div className="session-strip-top-row">
+                    <button
+                      type="button"
+                      className="mobile-back-to-queue-btn"
+                      onClick={() => setActiveSessionRef(null)}
+                    >
+                      <ArrowLeft size={14} /> ลูกค้าวันนี้ ({branchSessions.length})
+                    </button>
+                    <span className={`state-pill only-mobile ${finished ? 'terminal' : ''}`}>
+                      {stateLabel(activeSession)}
+                    </span>
+                  </div>
+                  {/* <span className="eyebrow">
                     {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
-                  </span>
-                  <h2 className="queue-title">
-                    {activeSession.queueNo != null
-                      ? `${activeSession.queue}`
-                      : `${formatDisplayPhone(activeSession.phone) || activeSession.reference}`}
-                  </h2>
+                  </span> */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%' }}>
+                    <h2 className="queue-title" style={{ margin: 0 }}>
+                      {activeSession.queueNo != null
+                        ? `${activeSession.queue}`
+                        : `${formatDisplayPhone(activeSession.phone) || activeSession.reference}`}
+                    </h2>
+                    {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
+                      <span className="only-tablet-mobile" style={{ marginLeft: 'auto' }}>
+                        <span
+                          className="status-tag"
+                          style={{
+                            background: 'var(--bg-warning)',
+                            color: 'var(--color-warning)',
+                            border: '1px solid var(--border-warning)',
+                          }}
+                        >
+                          <Plane size={12} strokeWidth={1.6} />
+                          VAT Refund
+                        </span>
+                      </span>
+                    )}
+                  </div>
                   {activeSession.rebuyOf && (
                     <span className="status-tag status-found" style={{ marginRight: '8px' }}>
                       ซื้อใหม่ (ใช้คิวเดิม)
@@ -619,20 +654,6 @@ export function StaffWorkspace({
                       </span>
                     ) : null;
                   })()}
-                  {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
-                    <span
-                      className="status-tag"
-                      style={{
-                        background: 'var(--bg-warning)',
-                        color: 'var(--color-warning)',
-                        border: '1px solid var(--border-warning)',
-                        marginRight: '6px',
-                      }}
-                    >
-                      <Plane size={12} strokeWidth={1.6} />
-                      VAT Refund
-                    </span>
-                  )}
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}
                   {activeSession.queueNo != null && (
                     <span className="muted">
@@ -640,10 +661,24 @@ export function StaffWorkspace({
                     </span>
                   )}
                 </div>
-                <span className={`state-pill ${finished ? 'terminal' : ''}`}>
-                  <span className="only-desktop">{activeSession.outcome ?? activeSession.state}</span>
-                  <span className="only-mobile">{stateLabel(activeSession)}</span>
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
+                    <span
+                      className="status-tag vat-desktop"
+                      style={{
+                        background: 'var(--bg-warning)',
+                        color: 'var(--color-warning)',
+                        border: '1px solid var(--border-warning)',
+                      }}
+                    >
+                      <Plane size={12} strokeWidth={1.6} />
+                      VAT Refund
+                    </span>
+                  )}
+                  <span className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}>
+                    {activeSession.outcome ?? stateLabel(activeSession)}
+                  </span>
+                </div>
               </section>
 
               <ol className="progress" ref={progressContainerRef}>
@@ -686,9 +721,9 @@ export function StaffWorkspace({
                             ? 'ยืนยันการยกเลิกบริการ'
                             : form === 'return'
                               ? 'ส่งสินค้ากลับ Stock (หยิบผิด)'
-                              : 'ดำเนินการบริการ'
+                              : undefined
                     }
-                    eyebrow="ขั้นตอนปัจจุบัน"
+                    eyebrow={!finished && form === 'normal' ? undefined : 'ขั้นตอนปัจจุบัน'}
                   >
                     {finished ? (
                       <>
@@ -824,7 +859,7 @@ export function StaffWorkspace({
                                 }}
                               >
                                 <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
-                                  เบอร์โทรศัพท์ลูกค้า (Customer Phone Number)
+                                  เบอร์โทรศัพท์ลูกค้า
                                 </label>
                                 <div style={{ maxWidth: '360px', marginTop: '6px' }}>
                                   <PhoneInput
@@ -936,26 +971,6 @@ export function StaffWorkspace({
                     )}
                   </Panel>
                 </div>
-
-                {/* <div>
-                  <Panel
-                    title="ประวัติเวลาการบริการ"
-                    eyebrow="บันทึกเวลาจากระบบ"
-                  >
-                    <ol className="timeline">
-                      {Object.entries(activeSession.timestamps).map(
-                        ([name, time]) => (
-                          <li key={name}>
-                            <span>{name}</span>
-                            <time dateTime={time}>
-                              {new Date(time).toLocaleTimeString('th-TH')}
-                            </time>
-                          </li>
-                        ),
-                      )}
-                    </ol>
-                  </Panel>
-                </div> */}
               </div>
             </>
           )}

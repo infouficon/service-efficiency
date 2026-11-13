@@ -82,14 +82,14 @@ export function Panel({
   eyebrow,
   children,
 }: {
-  title: ReactNode;
+  title?: ReactNode;
   eyebrow?: string;
   children: ReactNode;
 }) {
   return (
     <section className="panel">
       {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-      <h2>{title}</h2>
+      {title && <h2>{title}</h2>}
       {children}
     </section>
   );

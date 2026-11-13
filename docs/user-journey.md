@@ -16,8 +16,8 @@ sequenceDiagram
     participant System as 🖥️ SES Server
 
     Note over Customer, System: Phase 1: Walk-in & DEMO
-    Customer->>Staff: เดินเข้าสู่ร้านค้า (Walk-in)
-    Staff->>System: กด "รับลูกค้า (Walk-in)"
+    Customer->>Staff: เดินเข้าสู่ร้านค้า
+    Staff->>System: กด "รับลูกค้า"
     System-->>System: บันทึก customer_walk_in_at
     Staff->>System: กด "เริ่ม DEMO"
     System-->>System: บันทึก demo_start_at

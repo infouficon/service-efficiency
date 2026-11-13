@@ -34,7 +34,7 @@ export function WalkInForm({
     <form className="walkin-form" onSubmit={submit} noValidate>
       <label style={{ display: 'block', marginBottom: '8px' }}>
         <span style={{ display: 'block', marginBottom: '6px', fontWeight: 600 }}>
-          หมายเลขโทรศัพท์ลูกค้า (Customer Phone Number)
+          หมายเลขโทรศัพท์ลูกค้า
         </span>
         <PhoneInput
           value={phone}
@@ -54,7 +54,7 @@ export function WalkInForm({
       >
         {isInvalid
           ? 'กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (เบอร์ไทยไม่ต้องใส่ 0 นำหน้า หรือเลือกประเทศสำหรับเบอร์ต่างประเทศ)'
-          : 'กรอกเบอร์โทรศัพท์ลูกค้าเพื่อเริ่มให้บริการ (รองรับเบอร์ไทยและเบอร์ต่างประเทศ)'}
+          : 'กรอกเบอร์โทรศัพท์ลูกค้าเพื่อเริ่มให้บริการ'}
       </p>
 
       <Button type="submit" size="lg" disabled={busy}>

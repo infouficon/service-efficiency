@@ -237,6 +237,7 @@ export function SelectionEditor({
   const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
   const skuPickerSectionRef = useRef<HTMLDivElement>(null);
   const chosenSectionRef = useRef<HTMLFieldSetElement>(null);
+  const monthsSectionRef = useRef<HTMLDivElement>(null);
 
   const handleResetForm = () => {
     setCategory('');
@@ -931,6 +932,14 @@ export function SelectionEditor({
                             ) {
                               setTempSelectedMonths(null);
                             }
+                            if (isZeroPercent) {
+                              setTimeout(() => {
+                                monthsSectionRef.current?.scrollIntoView({
+                                  behavior: 'smooth',
+                                  block: 'nearest',
+                                });
+                              }, 60);
+                            }
                           }}
                         >
                           {card.name}
@@ -942,6 +951,7 @@ export function SelectionEditor({
 
                 {isZeroPercent && cards.length > 0 && (
                   <div
+                    ref={monthsSectionRef}
                     style={{
                       marginTop: '16px',
                       borderTop: '1px solid var(--border-color, #e2e8f0)',
@@ -999,16 +1009,7 @@ export function SelectionEditor({
                   </div>
                 )}
 
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                    gap: '8px',
-                    marginTop: '24px',
-                    borderTop: '1px solid var(--border-color, #e2e8f0)',
-                    paddingTop: '14px',
-                  }}
-                >
+                <div className="card-modal-footer">
                   <Button variant="secondary" onClick={handleCancelModal}>
                     ยกเลิก
                   </Button>

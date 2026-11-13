@@ -292,7 +292,7 @@ export function StockWorkspace({
           <div>
             <h2 style={{ margin: 0 }}>คลังสินค้า</h2>
             <p className="muted" style={{ margin: 0 }}>
-              จัดการรายการคำขอเบิกสินค้า ค้นหา และส่งต่อไปยังแคชเชียร์ · สาขา{' '}
+              สาขา{' '}
               {user.branch}
             </p>
           </div>

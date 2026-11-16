@@ -52,6 +52,7 @@ import {
   changeSessionItemApi,
   confirmPurchaseApi,
   createWalkInApi,
+  fetchCustomerHistoryApi,
   rebuyApi,
   recordNotBuyApi,
   resolveStockReviewApi,
@@ -119,6 +120,7 @@ export function StaffWorkspace({
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
   const [phoneAttempted, setPhoneAttempted] = useState<Record<string, boolean>>({});
   const [selectedAppleDevices, setSelectedAppleDevices] = useState<string[]>([]);
+  const [hasAutoLoadedHistory, setHasAutoLoadedHistory] = useState(false);
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -142,7 +144,7 @@ export function StaffWorkspace({
     } else {
       setSelectedAppleDevices([]);
     }
-  }, [activeSession?.reference]);
+  }, [activeSession?.reference, activeSession?.currentAppleDevices]);
 
   const currentPhone = activeSession
     ? (phoneDrafts[activeSession.reference] ?? activeSession.phone ?? '')
@@ -152,18 +154,21 @@ export function StaffWorkspace({
     activeSession?.outcome || activeSession?.state === 'COMPLETED',
   );
 
+  const hasCompletedAppleDeviceSurvey = Boolean(
+    activeSession?.currentAppleDevices && activeSession.currentAppleDevices.length > 0,
+  );
+
   const isAppleDeviceStep = Boolean(
     activeSession &&
       !finished &&
-      (!activeSession.phone || activeSession.phone.trim() === '') &&
-      activeSession.currentAppleDevices === undefined,
+      !hasCompletedAppleDeviceSurvey,
   );
 
   const isPhoneStep = Boolean(
     activeSession &&
       !finished &&
-      (!activeSession.phone || activeSession.phone.trim() === '') &&
-      activeSession.currentAppleDevices !== undefined,
+      hasCompletedAppleDeviceSurvey &&
+      (!activeSession.phone || activeSession.phone.trim() === ''),
   );
 
   const progressContainerRef = useRef<HTMLOListElement>(null);
@@ -221,6 +226,9 @@ export function StaffWorkspace({
     try {
       const skuIds = pickedItems.map((item) => item.sku.id);
       const newS = await createWalkInApi(user.branchCode, '', undefined, undefined, skuIds);
+      newS.currentAppleDevices = undefined;
+      setSelectedAppleDevices([]);
+      setHasAutoLoadedHistory(false);
       if (pickedItems.length > 0) {
         newS.selection = {
           ...newS.selection,
@@ -243,16 +251,21 @@ export function StaffWorkspace({
   };
 
   const handleToggleAppleDevice = (cat: string) => {
-    if (cat === 'ยังไม่เคยใช้สินค้า Apple') {
-      if (selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')) {
+    if (cat === 'ยังไม่เคยใช้สินค้า Apple' || cat === 'ไม่แน่ใจ / ไม่ได้ถาม') {
+      if (selectedAppleDevices.includes(cat)) {
         setSelectedAppleDevices([]);
       } else {
-        setSelectedAppleDevices(['ยังไม่เคยใช้สินค้า Apple']);
+        setSelectedAppleDevices([cat]);
       }
     } else {
       const next = selectedAppleDevices.includes(cat)
         ? selectedAppleDevices.filter((c) => c !== cat)
-        : [...selectedAppleDevices.filter((c) => c !== 'ยังไม่เคยใช้สินค้า Apple'), cat];
+        : [
+            ...selectedAppleDevices.filter(
+              (c) => c !== 'ยังไม่เคยใช้สินค้า Apple' && c !== 'ไม่แน่ใจ / ไม่ได้ถาม',
+            ),
+            cat,
+          ];
       setSelectedAppleDevices(next);
     }
   };
@@ -267,7 +280,7 @@ export function StaffWorkspace({
         const updated = await updateSelectionApi(
           activeSession.id,
           activeSession.selection,
-          activeSession.phone || '',
+          activeSession.phone || currentPhone || '',
           devicesToSave,
         );
         onUpdateSession({ ...updated, currentAppleDevices: devicesToSave });
@@ -297,7 +310,7 @@ export function StaffWorkspace({
           currentPhone,
           activeSession.currentAppleDevices,
         );
-        onUpdateSession(updated);
+        onUpdateSession({ ...updated, phone: currentPhone });
       } else {
         onUpdateSession({ ...activeSession, phone: currentPhone });
       }
@@ -487,23 +500,10 @@ export function StaffWorkspace({
     }
   };
 
-  const handleUpdatePhone = async (cleanPhone: string, isValid: boolean) => {
+  const handleUpdatePhone = (cleanPhone: string, _isValid: boolean) => {
     if (!activeSession) return;
     setPhoneDrafts((prev) => ({ ...prev, [activeSession.reference]: cleanPhone }));
     setPhoneAttempted((prev) => ({ ...prev, [activeSession.reference]: false }));
-    onUpdateSession({ ...activeSession, phone: cleanPhone });
-    if (activeSession.id && isValid) {
-      try {
-        const updated = await updateSelectionApi(
-          activeSession.id,
-          activeSession.selection,
-          cleanPhone,
-        );
-        onUpdateSession(updated);
-      } catch {
-        // Ignored until submit
-      }
-    }
   };
 
   const pendingStockSessions = branchSessions.filter(
@@ -685,33 +685,56 @@ export function StaffWorkspace({
         </div>
 
         <div className="staff-main-panel">
-          <ol className="progress" ref={progressContainerRef}>
-            {stages.map((label, index) => {
-              const pIndex = progressIndex(activeSession, form === 'review');
-              return (
-                <li
-                  key={label}
-                  className={
-                    index === pIndex
-                      ? 'current'
-                      : index < pIndex
-                        ? 'done'
-                        : ''
-                  }
-                  aria-current={
-                    index === pIndex
-                      ? 'step'
-                      : undefined
-                  }
-                >
-                  <span>
-                    {index < pIndex ? <Check size={14} /> : index + 1}
-                  </span>
-                  {label}
-                </li>
-              );
-            })}
-          </ol>
+          {(() => {
+            const pIndex = progressIndex(activeSession, form === 'review');
+            return (
+              <>
+                {/* D135: Mobile segmented stepper */}
+                <div className="mobile-stepper" role="region" aria-label="ขั้นตอนความคืบหน้า">
+                  <div className="mobile-stepper-header">
+                    <span className="mobile-stepper-title">{stages[pIndex]}</span>
+                    <span className="mobile-stepper-step">
+                      ขั้นตอน {pIndex + 1}/{stages.length}
+                    </span>
+                  </div>
+                  <div className="mobile-stepper-bars">
+                    {stages.map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`mobile-stepper-bar ${idx <= pIndex ? 'active' : ''}`}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Desktop pill stepper */}
+                <ol className="progress" ref={progressContainerRef}>
+                  {stages.map((label, index) => (
+                    <li
+                      key={label}
+                      className={
+                        index === pIndex
+                          ? 'current'
+                          : index < pIndex
+                            ? 'done'
+                            : ''
+                      }
+                      aria-current={
+                        index === pIndex
+                          ? 'step'
+                          : undefined
+                      }
+                    >
+                      <span>
+                        {index < pIndex ? <Check size={14} /> : index + 1}
+                      </span>
+                      {label}
+                    </li>
+                  ))}
+                </ol>
+              </>
+            );
+          })()}
 
           {!activeSession ? (
             <div className="content-grid">
@@ -1037,7 +1060,7 @@ export function StaffWorkspace({
                               </p>
                               <div className="wizard-tiles picker-category-tiles" role="group" aria-label="หมวดหมู่สินค้า Apple ที่ลูกค้าใช้อยู่">
                                 {customerAppleCategories
-                                  .filter((cat) => cat !== 'ยังไม่เคยใช้สินค้า Apple')
+                                  .filter((cat) => cat !== 'ยังไม่เคยใช้สินค้า Apple' && cat !== 'ไม่แน่ใจ / ไม่ได้ถาม')
                                   .map((cat) => {
                                     const isSelected = selectedAppleDevices.includes(cat);
                                     return (
@@ -1075,7 +1098,15 @@ export function StaffWorkspace({
                                   })}
                               </div>
 
-                              <div style={{ marginTop: '14px' }}>
+                              {/* Two exclusive buttons side-by-side */}
+                              <div
+                                style={{
+                                  marginTop: '14px',
+                                  display: 'grid',
+                                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                  gap: '10px',
+                                }}
+                              >
                                 <button
                                   type="button"
                                   className={`wizard-tile${selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple') ? ' selected' : ''}`}
@@ -1086,7 +1117,7 @@ export function StaffWorkspace({
                                     display: 'flex',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    gap: '10px',
+                                    gap: '8px',
                                     borderRadius: '10px',
                                     border: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
                                       ? '2px solid #0abab5'
@@ -1098,12 +1129,42 @@ export function StaffWorkspace({
                                       ? '#0f766e'
                                       : '#64748b',
                                     fontWeight: 600,
-                                    fontSize: '14px',
+                                    fontSize: '13.5px',
                                     cursor: 'pointer',
                                     transition: 'all 0.15s ease',
                                   }}
                                 >
                                   <span>ยังไม่เคยใช้สินค้า Apple</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className={`wizard-tile${selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม') ? ' selected' : ''}`}
+                                  onClick={() => handleToggleAppleDevice('ไม่แน่ใจ / ไม่ได้ถาม')}
+                                  style={{
+                                    width: '100%',
+                                    padding: '12px 18px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '8px',
+                                    borderRadius: '10px',
+                                    border: selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม')
+                                      ? '2px solid #0abab5'
+                                      : '1.5px dashed #cbd5e1',
+                                    background: selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม')
+                                      ? '#f0fdfa'
+                                      : '#ffffff',
+                                    color: selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม')
+                                      ? '#0f766e'
+                                      : '#64748b',
+                                    fontWeight: 600,
+                                    fontSize: '13.5px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s ease',
+                                  }}
+                                >
+                                  <span>ไม่แน่ใจ / ไม่ได้ถาม</span>
                                 </button>
                               </div>
                             </div>
@@ -1124,6 +1185,7 @@ export function StaffWorkspace({
                           </div>
                         ) : isPhoneStep ? (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                            {/* Customer Phone Input */}
                             <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                               <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#0f172a' }}>
                                 เบอร์โทรศัพท์ลูกค้า <span style={{ color: '#dc2626' }}>*</span>
@@ -1144,6 +1206,7 @@ export function StaffWorkspace({
                               )}
                             </div>
 
+                            {/* Customer interested products from Step 1 */}
                             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
                                 <strong style={{ fontSize: '14px', color: '#0f172a' }}>
@@ -1214,6 +1277,7 @@ export function StaffWorkspace({
                               </div>
                             )}
 
+                            {/* Actions */}
                             <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px' }}>
                               <Button
                                 variant="primary"

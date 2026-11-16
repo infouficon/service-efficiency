@@ -166,6 +166,7 @@ export function App({
 
               if (local && !local.confirmed && !local.outcome) {
                 merged.phone = local.phone || serverS.phone;
+                merged.currentAppleDevices = local.currentAppleDevices ?? serverS.currentAppleDevices;
                 merged.selection =
                   local.selection &&
                   (local.selection.items.length > 0 ||

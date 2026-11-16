@@ -434,15 +434,19 @@ test('the receipt QR is a real QR matrix: finder patterns in three corners, the 
   assert.ok(qrCode(`https://pos.example.test/register?branch=${'x'.repeat(200)}`).size > a.size);
 });
 
-test('progressIndex maps to the 7 steps: interest, apple devices, phone, product, confirmation, stock, cashier (D131, D134)', () => {
+test('progressIndex maps to the 7 steps: interest, apple devices, phone, product, confirmation, stock, cashier (D131, D134, D136)', () => {
   assert.equal(progressIndex(null), 0, 'step 1 interest');
   const sNoPhone = fixture();
+  sNoPhone.state = 'PRODUCT_SELECTION';
   sNoPhone.phone = '';
   sNoPhone.currentAppleDevices = undefined;
-  assert.equal(progressIndex(sNoPhone), 1, 'step 2 apple devices survey');
+  assert.equal(progressIndex(sNoPhone), 1, 'step 2 apple devices survey even in PRODUCT_SELECTION');
   sNoPhone.currentAppleDevices = ['iPhone'];
-  assert.equal(progressIndex(sNoPhone), 2, 'step 3 phone input');
+  sNoPhone.phone = '';
+  assert.equal(progressIndex(sNoPhone), 2, 'step 3 phone input even in PRODUCT_SELECTION');
+  sNoPhone.phone = '0812345678';
   const s = fixture();
+  s.currentAppleDevices = ['iPhone'];
   s.state = 'PRODUCT_SELECTION';
   assert.equal(progressIndex(s, false), 3, 'selecting product');
   assert.equal(progressIndex(s, true), 4, 'reviewing before confirmation');

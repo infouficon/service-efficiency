@@ -206,8 +206,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     currentAppleDevices: (() => {
       const createdEvt = (s.events ?? []).find((e) => e.eventType === 'SESSION_CREATED');
       const meta = createdEvt?.metadata as Record<string, unknown> | undefined;
-      return Array.isArray(meta?.currentAppleDevices)
-        ? (meta?.currentAppleDevices as string[])
+      return Array.isArray(meta?.currentAppleDevices) && meta.currentAppleDevices.length > 0
+        ? (meta.currentAppleDevices as string[])
         : undefined;
     })(),
   };
@@ -217,6 +217,18 @@ export async function fetchSessionsApi(branchId?: string): Promise<MockSession[]
   const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : '';
   const data = await api<ApiSession[]>(`/sessions${query}`);
   return data.map(mapApiSessionToMockSession);
+}
+
+/** D135: Look up customer's previous Apple devices by phone number. */
+export async function fetchCustomerHistoryApi(
+  phone: string,
+): Promise<{ phone: string; currentAppleDevices: string[] | null }> {
+  if (!phone || !phone.trim()) {
+    return { phone: '', currentAppleDevices: null };
+  }
+  return api<{ phone: string; currentAppleDevices: string[] | null }>(
+    `/sessions/customer-history?phone=${encodeURIComponent(phone.trim())}`,
+  );
 }
 
 /** D56/D57/D131/D132: a walk-in starts with the customer's interested product(s) and phone number; the server gives it the queue number. */

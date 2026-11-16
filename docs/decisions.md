@@ -2023,4 +2023,88 @@ Decisions:
    - Exported in Session Logs CSV under Category 2 ("ข้อมูลสินค้าและอุปกรณ์") as "สินค้า Apple ที่ลูกค้าใช้อยู่" (joined by `; `).
    - Displayed in Order & Payment Summary card under "ข้อมูลลูกค้า & ผู้ให้บริการ".
 
+## D135 — Swapped Steps (Phone First, Apple Devices Second), Customer History Pre-fill, Not-Sure Option, and Mobile Stepper Bar (2026-11-16)
+
+Owner instruction via `/grill-me`:
+1. ส่วนของ step หากเป็นการแสดงใน mobile ให้แสดงรูปแบบ แบบในภาพ (ชื่อขั้นตอน + "ขั้นตอน X/7" + segmented bars)
+2. step ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง? เพิ่มปุ่ม ไม่แน่ใจ / ไม่ได้ถาม ข้างๆ ยังไม่เคยใช้สินค้า Apple
+3. สลับ step 2 กับ 3 ให้กรอกเบอร์ก่อน ค่อยถามถึง สินค้า Apple ที่ใช้ เพื่อให้สามารถดึงข้อมูลในระบบมาได้ ถ้ามีเบอร์นั่นมีในระบบ ให้ดึงข้อมูล สินค้า Apple ที่ใช้ มา แสดงเลย และสามารถแก้ไขเลือกเพิ่มหรือเอาออกได้
+
+Decisions:
+1. **7-Stage Workflow Order (`stages`):**
+   - 1. ลูกค้าสนใจอะไร
+   - 2. กรอกเบอร์โทร (Phone input)
+   - 3. สินค้า Apple ที่ใช้ (Survey Apple devices)
+   - 4. เลือกสินค้า (Product selection)
+   - 5. ตรวจสอบยืนยัน (Confirmation / Review)
+   - 6. ฝ่ายคลัง (Stock)
+   - 7. แคชเชียร์ (Cashier)
+2. **Customer Previous History Pre-fill:**
+   - Added endpoint `GET /sessions/customer-history?phone=...` to find previous `currentAppleDevices` for the customer.
+   - On submitting Step 2 ("กรอกเบอร์โทร"), if the customer's phone has existing device history, it is automatically pre-selected in Step 3 ("สินค้า Apple ที่ใช้").
+   - Staff can see and freely add, edit, or remove categories before continuing.
+3. **Survey Bottom Options in Step 3:**
+   - Added `'ไม่แน่ใจ / ไม่ได้ถาม'` to `customerAppleCategories`.
+   - Displayed side-by-side with `'ยังไม่เคยใช้สินค้า Apple'` below the 8 category cards. Both act as mutually exclusive single options that clear specific category cards.
+4. **Mobile Stepper Design:**
+   - On mobile screens (<=640px), `.progress` pills are hidden and replaced with `.mobile-stepper`:
+     - Header: Current step name (bold) on left, "ขั้นตอน X/7" on right.
+     - Bottom: 7 segmented progress bar lines with active steps in `#0f766e` and upcoming steps in `#e2e8f0`.
+   - On desktop/tablet, the full pill stepper is preserved.
+
+## D136 — Restored Step Order (Step 2 Apple Devices, Step 3 Phone) & Isolated Phone Draft Typing (2026-11-16)
+
+Owner instruction via `/grill-me`:
+1. สลับให้ สินค้า Apple ที่ใช้ เป็น step 2 และ กรอกเบอร์ เป็น step 3 เหมือนเดิม
+2. ทำไมกรอกเบอร์พิมพ์ได้แค่เลขเดียวและไป step ต่อไปเลย
+
+Decisions:
+1. **7-Stage Workflow Order (`stages`):**
+   - 1. ลูกค้าสนใจอะไร
+   - 2. สินค้า Apple ที่ใช้ (Survey Apple devices)
+   - 3. กรอกเบอร์โทร (Customer Phone input)
+   - 4. เลือกสินค้า (Product selection)
+   - 5. ตรวจสอบยืนยัน (Confirmation / Review)
+   - 6. ฝ่ายคลัง (Stock)
+   - 7. แคชเชียร์ (Cashier)
+2. **Step Progression Guardrails:**
+   - Step 2 is active while `!hasCompletedAppleDeviceSurvey`. Staff chooses devices and clicks "ถัดไป", saving `currentAppleDevices`.
+   - Step 3 is active while `hasCompletedAppleDeviceSurvey && (!session.phone || session.phone.trim() === '')`.
+3. **Fix Premature Step Advance on Phone Typing:**
+   - Previously `handleUpdatePhone` called `onUpdateSession({ ...activeSession, phone: cleanPhone })` on every single keystroke. When typing 1 digit, `activeSession.phone` became truthy, causing the `!session.phone` check to immediately evaluate false and advance out of Step 3.
+   - Fixed by keeping phone draft strictly in `phoneDrafts` state while typing. `session.phone` is now only committed to the session/backend when staff clicks "เริ่มบริการ" (`handleConfirmPhoneStep`).
+
+## D137 — Mobile Chosen Product Name 2-Line Truncation & Out-of-Stock Badge (2026-11-16)
+
+Owner instruction via `/grill-me`:
+- หน้า สินค้าหลักที่เลือก ใน mobile ชื่อสินค้าหลักถ้าเกิน 2 บรรทัด จะเป็น ...
+
+Decisions:
+1. **Product Title 2-Line Clamp with Ellipsis (`-webkit-line-clamp: 2`):**
+   - In `SelectionEditor.tsx`, the inline `display: inline-flex` on `<strong>` previously overrode CSS `-webkit-line-clamp: 2`, causing long product names to wrap into 4+ lines without truncation.
+   - Fixed by isolating product title into `.chosen-item-title` with `display: -webkit-box`, `-webkit-line-clamp: 2`, `-webkit-box-orient: vertical`, `overflow: hidden`, `text-overflow: ellipsis`, and `title={itemName(item)}` for full name tooltip.
+   - Wrapped text info inside `.chosen-item-info` with `min-width: 0; flex: 1; display: flex; flex-direction: column;` to guarantee proper flexbox text shrinking/truncation.
+2. **Out-of-Stock Badge Placement on Mobile:**
+   - Moved the "สินค้าหมด" badge from inline with the title into `.chosen-item-sub` alongside the SKU (`<small>{item.product.sku}</small>`).
+   - This ensures the product title has the full card width across its 2 lines without getting crowded out by the badge.
+
+## D138 — Mobile Chosen Product Card: Top-Right 'X' & Compact Stepper (2026-11-16)
+
+Owner instruction via `/grill-me`:
+- ในจอ mobile ย้ายปุ่ม X ไว้มุมบนขวา ได้ไหม เพื่อให้ชื่อสินค้ามีพื้นที่แสดงมากขุ้น พร้อมลดขนาด .qty-stepper ลงหน้า
+
+Decisions:
+1. **Move Delete Button (`✕`) to Top-Right Corner on Mobile:**
+   - Changed `.chosen-item` to `position: relative`.
+   - On screens `<=640px`, `.chosen-item-remove` is positioned absolute at `top: 2px; right: 6px;` with `width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px;`.
+   - This moves the delete button higher to the top-right corner of the card and frees up horizontal space in the card for the product name.
+2. **Compact Quantity Stepper on Mobile:**
+   - Reduced stepper button size from `36x36px` to `28x28px`.
+   - Reduced quantity value min-width from `36px` to `22px`.
+   - Combined with removing `✕` from the flow, product title width on mobile increases by over 60px.
+
+
+
+
+
 

@@ -496,19 +496,21 @@ export function SelectionEditor({
                     <span className="chosen-item-category">
                       <CategoryPicture cat={item.product.category} size={36} />
                     </span>
-                    <span>
-                      <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <span className="chosen-item-info">
+                      <strong title={itemName(item)} className="chosen-item-title">
                         {itemName(item)}
+                      </strong>
+                      <div className="chosen-item-sub">
+                        <small>{item.product.sku}</small>
                         {outOfStock && (
                           <span
                             className="stock-badge stock-badge-out"
-                            style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px' }}
+                            style={{ fontSize: '11px', padding: '1px 5px', borderRadius: '4px', lineHeight: 1.2 }}
                           >
                             สินค้าหมด
                           </span>
                         )}
-                      </strong>
-                      <small>{item.product.sku}</small>
+                      </div>
                     </span>
                   </span>
                   <div className="qty-stepper">

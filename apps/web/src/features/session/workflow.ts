@@ -127,15 +127,6 @@ export function progressIndex(
   isReviewing = false,
 ): number {
   if (!session) return 0;
-  if (!session.phone || !session.phone.trim()) {
-    if (session.currentAppleDevices === undefined) return 1;
-    return 2;
-  }
-  if (session.state === 'WALK_IN') return 2;
-  if (session.state === 'PRODUCT_SELECTION') {
-    if (session.confirmed) return 4;
-    return isReviewing ? 4 : 3;
-  }
   if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state))
     return 5;
   if (
@@ -148,6 +139,14 @@ export function progressIndex(
     ].includes(session.state)
   )
     return 6;
+  if (session.confirmed || isReviewing) return 4;
+
+  if (!session.currentAppleDevices || session.currentAppleDevices.length === 0) {
+    return 1;
+  }
+  if (!session.phone || !session.phone.trim()) {
+    return 2;
+  }
   return 3;
 }
 

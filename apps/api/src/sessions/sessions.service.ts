@@ -561,7 +561,9 @@ export class SessionsService {
                         interestedProduct: interestedProducts.join('; '),
                       }
                     : {}),
-                  currentAppleDevices: dto.currentAppleDevices ?? [],
+                  ...(dto.currentAppleDevices !== undefined
+                    ? { currentAppleDevices: dto.currentAppleDevices }
+                    : {}),
                 },
               },
               {
@@ -1247,6 +1249,45 @@ export class SessionsService {
         include: sessionInclude,
       });
     });
+  }
+
+  /**
+   * D135: Given a customer's phone number, find previous Apple devices surveyed in past sessions.
+   */
+  async getCustomerHistory(rawPhone?: string): Promise<{ phone: string; currentAppleDevices: string[] | null }> {
+    if (!rawPhone || !rawPhone.trim()) {
+      return { phone: '', currentAppleDevices: null };
+    }
+    const normalized = normalizePhone(rawPhone) ?? rawPhone.trim();
+    const sessions = await this.prisma.customerSession.findMany({
+      where: { phone: normalized },
+      orderBy: { customerWalkInAt: 'desc' },
+      take: 10,
+      include: {
+        events: {
+          where: { eventType: 'SESSION_CREATED' },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        },
+      },
+    });
+
+    if (!sessions || !sessions.length) {
+      return { phone: normalized, currentAppleDevices: null };
+    }
+
+    for (const session of sessions) {
+      const createdEvent = session.events[0];
+      const meta = createdEvent?.metadata as Record<string, unknown> | undefined;
+      if (Array.isArray(meta?.currentAppleDevices) && meta.currentAppleDevices.length > 0) {
+        return {
+          phone: normalized,
+          currentAppleDevices: meta.currentAppleDevices as string[],
+        };
+      }
+    }
+
+    return { phone: normalized, currentAppleDevices: null };
   }
 
   async confirmPurchase(user: PublicAccount, id: string) {

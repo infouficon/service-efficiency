@@ -84,7 +84,7 @@ export const stages = [
   'แคชเชียร์',
 ] as const;
 
-/** D134: Apple device categories surveyed in Step 2 of walk-in (8 categories matching Step 1 + haven't used Apple) */
+/** D134, D135: Apple device categories surveyed in Step 3 of walk-in (8 categories matching Step 1 + haven't used Apple + not sure) */
 export const customerAppleCategories = [
   'iPhone',
   'iPad',
@@ -95,6 +95,7 @@ export const customerAppleCategories = [
   'HomePod',
   'AirTag',
   'ยังไม่เคยใช้สินค้า Apple',
+  'ไม่แน่ใจ / ไม่ได้ถาม',
 ] as const;
 export const cancellationStages = [
   'DEMO',

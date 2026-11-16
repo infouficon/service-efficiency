@@ -42,6 +42,15 @@ export class SessionsController {
     return this.sessions.withFmp(await this.sessions.list(user, branchId));
   }
 
+  @Get('customer-history')
+  async getCustomerHistory(
+    @Req() req: Request,
+    @Query('phone') phone?: string,
+  ) {
+    await this.accounts.authenticate(req);
+    return this.sessions.getCustomerHistory(phone);
+  }
+
   @Get(':id')
   async getById(@Req() req: Request, @Param('id') id: string) {
     const user = await this.accounts.authenticate(req);

@@ -2404,3 +2404,22 @@ Decisions:
      - Top line: Thai event label on left, bold formatted time (`HH:mm:ss น.`) on right.
      - Bottom line: Technical event code badge, Staff ID attribution, and Thai date.
    - Eliminates text collisions, truncations, and awkward wrapping on mobile viewports.
+
+## D152 — Step 2 Optional Phone Input with Customer History Auto-Lookup & Step 3 Pre-Fill (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- step 2 ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง ให้มีช่องสำหรับ กรอกเบอร์โทร ได้ โดยที่ไม่ได้บังคับ เมื่อกรอกแล้วให้ค้นหาข้อมูลที่เคยกรอกมาในส่วนของ สินค้า Apple ที่ใช้ มาแสดง โดยที่หากใน step นี้มีการกรอกเบอร์โทร ใน step 3 จะแสดงเบอร์นั้น จะได้ไม่ต้องกรอกใหม่
+
+Decisions:
+
+1. **Step 2 Optional Customer Phone Input (`StaffWorkspace.tsx`):**
+   - Added an optional customer phone input field below the Apple devices selection buttons in Step 2.
+   - Staff can optionally enter the customer's phone number during Step 2.
+2. **Customer History Auto-Lookup & Device Selection:**
+   - When a valid phone number is entered in Step 2, the system automatically calls `fetchCustomerHistoryApi(phone)` (with fallback to local in-memory sessions).
+   - If previous Apple devices are found, `selectedAppleDevices` is automatically populated and a badge/notice confirms the historical devices found.
+3. **Seamless Step 3 Pre-Population:**
+   - The phone number entered in Step 2 is preserved in session phone draft state (`phoneDrafts[sessionRef]`).
+   - In Step 2 submission (`handleConfirmAppleDeviceStep`), only `currentAppleDevices` is committed without prematurely setting the DB session phone, ensuring the workflow cleanly advances to Step 3 ("กรอกเบอร์โทรศัพท์ลูกค้า").
+   - In Step 3, the phone number is already pre-filled from Step 2, eliminating duplicate data entry for staff while allowing them to verify and proceed directly to Step 4 ("เริ่มบริการ").

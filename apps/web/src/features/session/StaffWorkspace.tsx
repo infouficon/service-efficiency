@@ -136,6 +136,8 @@ export function StaffWorkspace({
     [],
   );
   const [hasAutoLoadedHistory, setHasAutoLoadedHistory] = useState(false);
+  const [historyNotice, setHistoryNotice] = useState<string>('');
+  const [historySearching, setHistorySearching] = useState(false);
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -191,6 +193,11 @@ export function StaffWorkspace({
       setSelectedAppleDevices([]);
     }
   }, [activeSession?.reference, activeSession?.currentAppleDevices]);
+
+  useEffect(() => {
+    setHistoryNotice('');
+    setHistorySearching(false);
+  }, [activeSession?.reference]);
 
   const currentPhone = activeSession
     ? (phoneDrafts[activeSession.reference] ?? activeSession.phone ?? '')
@@ -326,6 +333,65 @@ export function StaffWorkspace({
     }
   };
 
+  const handleStep2PhoneChange = async (newPhone: string, isValid: boolean) => {
+    handleUpdatePhone(newPhone, isValid);
+    if (!newPhone || !newPhone.trim()) {
+      setHistoryNotice('');
+      setHistorySearching(false);
+      return;
+    }
+    if (isValid || phoneIsValid(newPhone)) {
+      setHistorySearching(true);
+      setHistoryNotice('');
+      try {
+        const historyData = await fetchCustomerHistoryApi(newPhone);
+        let foundDevices = historyData?.currentAppleDevices ?? [];
+        if (!foundDevices || foundDevices.length === 0) {
+          const localMatch = sessions.find(
+            (s) =>
+              s.phone === newPhone &&
+              s.currentAppleDevices &&
+              s.currentAppleDevices.length > 0,
+          );
+          if (localMatch?.currentAppleDevices) {
+            foundDevices = localMatch.currentAppleDevices;
+          }
+        }
+        if (foundDevices && foundDevices.length > 0) {
+          setSelectedAppleDevices(foundDevices);
+          setHistoryNotice(
+            `✨ พบข้อมูลประวัติลูกค้า: ${foundDevices.join(', ')}`,
+          );
+        } else {
+          setHistoryNotice('ไม่พบประวัติอุปกรณ์เดิมสำหรับเบอร์นี้');
+        }
+      } catch {
+        const localMatch = sessions.find(
+          (s) =>
+            s.phone === newPhone &&
+            s.currentAppleDevices &&
+            s.currentAppleDevices.length > 0,
+        );
+        if (
+          localMatch?.currentAppleDevices &&
+          localMatch.currentAppleDevices.length > 0
+        ) {
+          setSelectedAppleDevices(localMatch.currentAppleDevices);
+          setHistoryNotice(
+            `✨ พบข้อมูลประวัติลูกค้า: ${localMatch.currentAppleDevices.join(', ')}`,
+          );
+        } else {
+          setHistoryNotice('ไม่พบประวัติอุปกรณ์เดิมสำหรับเบอร์นี้');
+        }
+      } finally {
+        setHistorySearching(false);
+      }
+    } else {
+      setHistoryNotice('');
+      setHistorySearching(false);
+    }
+  };
+
   const handleConfirmAppleDeviceStep = async () => {
     if (!activeSession) return;
     if (selectedAppleDevices.length === 0) {
@@ -342,7 +408,7 @@ export function StaffWorkspace({
         const updated = await updateSelectionApi(
           activeSession.id,
           activeSession.selection,
-          activeSession.phone || currentPhone || '',
+          activeSession.phone || '',
           devicesToSave,
         );
         onUpdateSession({ ...updated, currentAppleDevices: devicesToSave });
@@ -1445,7 +1511,7 @@ export function StaffWorkspace({
                                   color: '#64748b',
                                 }}
                               >
-                                เลือกหมวดหมู่ที่ลูกค้าใช้งานอยู่ หรือระบุ ยังไม่เคยใช้ / ไม่แน่ใจ (จำเป็น · เลือกอย่างน้อย 1 ข้อ)
+                                เลือกหมวดหมู่ที่ลูกค้าใช้งานอยู่ หรือระบุ ยังไม่เคยใช้ / ไม่แน่ใจ (เลือกอย่างน้อย 1 ข้อ)
                               </p>
                               <div
                                 className="wizard-tiles picker-category-tiles"
@@ -1589,6 +1655,83 @@ export function StaffWorkspace({
                                   <span>ไม่แน่ใจ / ไม่ได้ถาม</span>
                                 </button>
                               </div>
+                            </div>
+
+                            {/* Optional Customer Phone Input for History Lookup */}
+                            <div
+                              style={{
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '16px 20px',
+                              }}
+                            >
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 600,
+                                  fontSize: '14px',
+                                  marginBottom: '6px',
+                                  color: '#0f172a',
+                                }}
+                              >
+                                ค้นหาประวัติจากเบอร์โทรศัพท์ลูกค้า (ไม่บังคับ)
+                              </label>
+                              <p
+                                style={{
+                                  margin: '0 0 10px',
+                                  fontSize: '12.5px',
+                                  color: '#64748b',
+                                }}
+                              >
+                                หากระบุเบอร์โทร ระบบจะค้นหาและเลือกอุปกรณ์ Apple ที่ลูกค้าเคยระบุไว้ให้อัตโนมัติ
+                              </p>
+                              <div style={{ width: '100%' }}>
+                                <PhoneInput
+                                  value={currentPhone}
+                                  onChange={(newPhone, valid) =>
+                                    handleStep2PhoneChange(newPhone, valid)
+                                  }
+                                />
+                              </div>
+                              {historySearching && (
+                                <p
+                                  style={{
+                                    margin: '8px 0 0',
+                                    fontSize: '12.5px',
+                                    color: '#0284c7',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  <span>🔍 กำลังค้นหาข้อมูลประวัติลูกค้า...</span>
+                                </p>
+                              )}
+                              {historyNotice && (
+                                <div
+                                  style={{
+                                    marginTop: '10px',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    background: historyNotice.startsWith('✨')
+                                      ? '#f0fdf4'
+                                      : '#f8fafc',
+                                    border: historyNotice.startsWith('✨')
+                                      ? '1px solid #bbf7d0'
+                                      : '1px solid #e2e8f0',
+                                    color: historyNotice.startsWith('✨')
+                                      ? '#166534'
+                                      : '#64748b',
+                                    fontSize: '13px',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  <span>{historyNotice}</span>
+                                </div>
+                              )}
                             </div>
 
                             {/* Actions Desktop */}

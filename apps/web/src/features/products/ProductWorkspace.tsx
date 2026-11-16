@@ -48,6 +48,7 @@ export interface SkuItem {
   storage?: string | null;
   /** RAM of a Mac (D79) */
   memory?: string | null;
+  price?: number | null;
   /** barcode from warroom (D72), next to the part number in `sku` */
   upc?: string | null;
   active: boolean;
@@ -77,7 +78,8 @@ export interface ProductItem {
 }
 
 /** Does this branch row carry ERP numbers? */
-const hasErpStock = (inv: BranchInventoryItem) => typeof inv.erpReady === 'number';
+const hasErpStock = (inv: BranchInventoryItem) =>
+  typeof inv.erpReady === 'number';
 
 /** Badge on a product, model or SKU the ERP sync created and owns. */
 function ErpBadge() {
@@ -114,12 +116,18 @@ interface ProductWorkspaceProps {
 /** `ALL`, or the name of a category (D72) */
 type CategoryTab = string;
 
-export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWorkspaceProps) {
+export function ProductWorkspace({
+  user,
+  subView,
+  onSubViewChange,
+}: ProductWorkspaceProps) {
   const toast = useToast();
   const isAdmin = user.roles.includes('ADMIN');
 
   // Navigation & View state
-  const [internalViewMode, setInternalViewMode] = useState<'MAIN' | 'STOCK'>('MAIN');
+  const [internalViewMode, setInternalViewMode] = useState<'MAIN' | 'STOCK'>(
+    'MAIN',
+  );
   const viewMode = subView !== undefined ? subView : internalViewMode;
 
   const handleSetViewMode = (mode: 'MAIN' | 'STOCK') => {
@@ -129,7 +137,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     setInternalViewMode(mode);
   };
 
-  const [selectedProductId, setSelectedProductId] = useState<string | 'ALL'>('ALL');
+  const [selectedProductId, setSelectedProductId] = useState<string | 'ALL'>(
+    'ALL',
+  );
 
   // Data state
   const [products, setProducts] = useState<ProductItem[]>([]);
@@ -162,7 +172,12 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
 
   // Compute branches with modified stock that have not been saved (D44)
   const unsavedBranches = useMemo(() => {
-    if (!breakdownModal.open || !breakdownModal.sku || !breakdownModal.sku.inventory) return [];
+    if (
+      !breakdownModal.open ||
+      !breakdownModal.sku ||
+      !breakdownModal.sku.inventory
+    )
+      return [];
     return breakdownModal.sku.inventory.filter((inv) => {
       const inputVal = breakdownModal.stockInputs[inv.branchId];
       return inputVal !== undefined && inputVal !== inv.stock;
@@ -225,6 +240,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     name: string;
     color: string;
     storage: string;
+    price: string;
     active: boolean;
   }>({
     open: false,
@@ -232,6 +248,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     name: '',
     color: '',
     storage: '',
+    price: '',
     active: true,
   });
 
@@ -249,7 +266,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     }
     return ids;
   }, [products]);
-  const isErpManaged = (id?: string) => id !== undefined && erpManagedIds.has(id);
+  const isErpManaged = (id?: string) =>
+    id !== undefined && erpManagedIds.has(id);
   const productLocked = isErpManaged(productModal.editingId);
   const modelLocked = isErpManaged(modelModal.editingId);
   const skuLocked = isErpManaged(skuModal.editingId);
@@ -265,7 +283,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         setBranches(brs);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'โหลดข้อมูลสินค้าไม่สำเร็จ');
+      setError(
+        err instanceof Error ? err.message : 'โหลดข้อมูลสินค้าไม่สำเร็จ',
+      );
     } finally {
       setLoading(false);
     }
@@ -285,7 +305,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(err instanceof Error ? err.message : 'โหลดข้อมูลสินค้าไม่สำเร็จ');
+          setError(
+            err instanceof Error ? err.message : 'โหลดข้อมูลสินค้าไม่สำเร็จ',
+          );
         }
       })
       .finally(() => {
@@ -330,7 +352,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   }, [isAdmin]);
   // The number staff see for a branch row: the ERP's net availability while the mode is `on` (when the row has it), else the manual stock.
   const effectiveStock = (inv: BranchInventoryItem) =>
-    erpStockLocked && typeof inv.available === 'number' ? inv.available : inv.stock;
+    erpStockLocked && typeof inv.available === 'number'
+      ? inv.available
+      : inv.stock;
 
   // Handle Branch Stock update in breakdown modal
   const handleSaveBranchStock = async (branchId: string, skuId: string) => {
@@ -354,7 +378,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         };
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ปรับปรุงสต็อกไม่สำเร็จ');
+      toast.error(
+        err instanceof Error ? err.message : 'ปรับปรุงสต็อกไม่สำเร็จ',
+      );
     } finally {
       setBusy(false);
     }
@@ -367,9 +393,13 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     try {
       const promises = unsavedBranches.map((inv) => {
         const qty = breakdownModal.stockInputs[inv.branchId] ?? inv.stock;
-        return api(`/products/branches/${inv.branchId}/skus/${breakdownModal.sku!.id}/stock`, 'PUT', {
-          stock: Number(qty),
-        });
+        return api(
+          `/products/branches/${inv.branchId}/skus/${breakdownModal.sku!.id}/stock`,
+          'PUT',
+          {
+            stock: Number(qty),
+          },
+        );
       });
       await Promise.all(promises);
       toast.success(`อัปเดตสต็อก ${unsavedBranches.length} สาขาเรียบร้อย`);
@@ -379,7 +409,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         if (!prev.sku) return prev;
         const updatedInv = (prev.sku.inventory || []).map((inv) => {
           const inputVal = prev.stockInputs[inv.branchId];
-          return inputVal !== undefined ? { ...inv, stock: Number(inputVal) } : inv;
+          return inputVal !== undefined
+            ? { ...inv, stock: Number(inputVal) }
+            : inv;
         });
         return {
           ...prev,
@@ -387,14 +419,20 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         };
       });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'ปรับปรุงสต็อกไม่สำเร็จ');
+      toast.error(
+        err instanceof Error ? err.message : 'ปรับปรุงสต็อกไม่สำเร็จ',
+      );
     } finally {
       setBusy(false);
     }
   };
 
   // Handle Branch Active Toggle
-  const handleToggleBranchActive = async (branchId: string, skuId: string, currentActive: boolean) => {
+  const handleToggleBranchActive = async (
+    branchId: string,
+    skuId: string,
+    currentActive: boolean,
+  ) => {
     setBusy(true);
     try {
       await api(`/products/branches/${branchId}/skus/${skuId}/active`, 'PUT', {
@@ -428,10 +466,14 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       if (productModal.editingId) {
         await api(`/products/${productModal.editingId}`, 'PUT', {
           // The ERP owns category and name of an ERP-managed product: send only what may change.
-          ...(productLocked ? {} : { category: productModal.category, name: productModal.name }),
+          ...(productLocked
+            ? {}
+            : { category: productModal.category, name: productModal.name }),
           active: productModal.active,
         });
-        toast.success('อัปเดตข้อมูลสินค้าเรียบร้อย (ระบบอัปเดตสถานะสาขาที่เกี่ยวข้องอัตโนมัติ)');
+        toast.success(
+          'อัปเดตข้อมูลสินค้าเรียบร้อย (ระบบอัปเดตสถานะสาขาที่เกี่ยวข้องอัตโนมัติ)',
+        );
       } else {
         await api('/products', 'POST', {
           category: productModal.category,
@@ -439,7 +481,12 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
         });
         toast.success('เพิ่มสินค้าใหม่เรียบร้อย');
       }
-      setProductModal({ open: false, category: 'iPhone', name: '', active: true });
+      setProductModal({
+        open: false,
+        category: 'iPhone',
+        name: '',
+        active: true,
+      });
       await loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึกสินค้าไม่สำเร็จ');
@@ -452,14 +499,24 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   const handleTogglePin = async (model: ModelItem) => {
     setBusy(true);
     try {
-      const updated = (await api(`/products/models/${model.id}`, 'PUT', { pinned: !model.pinnedAt })) as ModelItem;
+      const updated = (await api(`/products/models/${model.id}`, 'PUT', {
+        pinned: !model.pinnedAt,
+      })) as ModelItem;
       setProducts((current) =>
         current.map((p) => ({
           ...p,
-          models: p.models?.map((m) => (m.id === model.id ? { ...m, pinnedAt: updated.pinnedAt ?? null } : m)),
+          models: p.models?.map((m) =>
+            m.id === model.id
+              ? { ...m, pinnedAt: updated.pinnedAt ?? null }
+              : m,
+          ),
         })),
       );
-      toast.success(updated.pinnedAt ? `ปักหมุด ${model.name} ไว้บนสุดแล้ว` : `เลิกปักหมุด ${model.name}`);
+      toast.success(
+        updated.pinnedAt
+          ? `ปักหมุด ${model.name} ไว้บนสุดแล้ว`
+          : `เลิกปักหมุด ${model.name}`,
+      );
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ปักหมุดไม่สำเร็จ');
     } finally {
@@ -487,7 +544,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       setModelModal({ open: false, name: '', active: true });
       await loadData();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'บันทึกรุ่นสินค้าไม่สำเร็จ');
+      toast.error(
+        err instanceof Error ? err.message : 'บันทึกรุ่นสินค้าไม่สำเร็จ',
+      );
     } finally {
       setBusy(false);
     }
@@ -498,6 +557,11 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     e.preventDefault();
     setBusy(true);
     try {
+      const priceVal =
+        skuModal.price.trim() !== '' && !Number.isNaN(Number(skuModal.price))
+          ? Number(skuModal.price)
+          : null;
+
       if (skuModal.editingId) {
         await api(`/products/skus/${skuModal.editingId}`, 'PUT', {
           ...(skuLocked
@@ -508,6 +572,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 color: skuModal.color || undefined,
                 storage: skuModal.storage || undefined,
               }),
+          price: priceVal,
           active: skuModal.active,
         });
         toast.success('อัปเดต SKU เรียบร้อย');
@@ -517,10 +582,19 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           name: skuModal.name,
           color: skuModal.color || undefined,
           storage: skuModal.storage || undefined,
+          price: priceVal !== null ? priceVal : undefined,
         });
         toast.success('เพิ่ม SKU ใหม่เรียบร้อย');
       }
-      setSkuModal({ open: false, sku: '', name: '', color: '', storage: '', active: true });
+      setSkuModal({
+        open: false,
+        sku: '',
+        name: '',
+        color: '',
+        storage: '',
+        price: '',
+        active: true,
+      });
       await loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึก SKU ไม่สำเร็จ');
@@ -534,7 +608,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     const names = categories
       .filter((c) => c.active || (c.productCount ?? 0) > 0)
       .map((c) => c.name);
-    for (const p of products) if (!names.includes(p.category)) names.push(p.category);
+    for (const p of products)
+      if (!names.includes(p.category)) names.push(p.category);
     return names;
   }, [categories, products]);
   const activeCategoryNames = useMemo(
@@ -544,7 +619,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
   // The category select of the product form: the active categories, plus the one the product being edited already has.
   const categoryChoices = useMemo(
     () =>
-      activeCategoryNames.includes(productModal.category) || !productModal.category
+      activeCategoryNames.includes(productModal.category) ||
+      !productModal.category
         ? activeCategoryNames
         : [...activeCategoryNames, productModal.category],
     [activeCategoryNames, productModal.category],
@@ -555,10 +631,17 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     if (categoryTab !== 'ALL' && p.category !== categoryTab) return false;
     if (!search.trim()) return true;
     const query = search.toLowerCase();
-    const matchProd = p.name.toLowerCase().includes(query) || p.category.toLowerCase().includes(query);
-    const matchModel = p.models?.some((m) =>
-      m.name.toLowerCase().includes(query) ||
-      m.skus?.some((s) => s.sku.toLowerCase().includes(query) || s.name.toLowerCase().includes(query)),
+    const matchProd =
+      p.name.toLowerCase().includes(query) ||
+      p.category.toLowerCase().includes(query);
+    const matchModel = p.models?.some(
+      (m) =>
+        m.name.toLowerCase().includes(query) ||
+        m.skus?.some(
+          (s) =>
+            s.sku.toLowerCase().includes(query) ||
+            s.name.toLowerCase().includes(query),
+        ),
     );
     return matchProd || matchModel;
   });
@@ -625,13 +708,22 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
             onClick={() =>
               setProductModal({
                 open: true,
-                category: categoryTab !== 'ALL' ? categoryTab : (activeCategoryNames[0] ?? 'iPhone'),
+                category:
+                  categoryTab !== 'ALL'
+                    ? categoryTab
+                    : (activeCategoryNames[0] ?? 'iPhone'),
                 name: '',
                 active: true,
               })
             }
           >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               <Plus size={16} />
               เพิ่มสินค้าหลัก
             </span>
@@ -659,28 +751,50 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           marginBottom: '1.5rem',
         }}
       >
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="category-tabs" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+          }}
+        >
+          <div
+            className="category-tabs"
+            style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}
+          >
             {['ALL', ...tabCategories].map((cat) => (
               <button
                 key={cat}
                 className={`tab-btn ${categoryTab === cat ? 'active' : ''}`}
                 onClick={() => setCategoryTab(cat)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
               >
                 <CategoryIcon category={cat} size={15} />
                 {cat === 'ALL' ? 'ทั้งหมด' : cat}
-                {cat !== 'ALL' && categories.some((c) => c.name === cat && !c.active) && (
-                  <span className="muted fine">(ปิด)</span>
-                )}
+                {cat !== 'ALL' &&
+                  categories.some((c) => c.name === cat && !c.active) && (
+                    <span className="muted fine">(ปิด)</span>
+                  )}
               </button>
             ))}
           </div>
 
-          <div className="product-search-input-wrap" style={{ position: 'relative' }}>
+          <div
+            className="product-search-input-wrap"
+            style={{ position: 'relative' }}
+          >
             <input
               type="search"
-              placeholder={viewMode === 'STOCK' ? 'ค้นหา SKU, รุ่น หรือชื่อสินค้า...' : 'ค้นหาชื่อสินค้า, รุ่น หรือ SKU...'}
+              placeholder={
+                viewMode === 'STOCK'
+                  ? 'ค้นหา SKU, รุ่น หรือชื่อสินค้า...'
+                  : 'ค้นหาชื่อสินค้า, รุ่น หรือ SKU...'
+              }
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingLeft: '28px' }}
@@ -701,7 +815,13 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
 
         {viewMode === 'STOCK' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted, #64748b)' }}>
+            <span
+              style={{
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--text-muted, #64748b)',
+              }}
+            >
               เลือกสินค้า:
             </span>
             <select
@@ -732,18 +852,33 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
             <Notice>กำลังโหลดรายการสินค้า…</Notice>
           ) : filteredProducts.length === 0 ? (
             <Panel title="ไม่พบรายการสินค้า">
-              <p className="muted">ยังไม่มีสินค้าในหมวดหมู่นี้ หรือไม่ตรงกับคำค้นหา</p>
+              <p className="muted">
+                ยังไม่มีสินค้าในหมวดหมู่นี้ หรือไม่ตรงกับคำค้นหา
+              </p>
             </Panel>
           ) : (
-            <div className="table-responsive" style={{ background: '#fff', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+            <div
+              className="table-responsive"
+              style={{
+                background: '#fff',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                maxHeight: 'calc(100vh - 280px)',
+                overflowY: 'auto',
+              }}
+            >
               <table className="admin-table">
                 <thead>
                   <tr>
                     <th style={{ width: '36%' }}>Product</th>
                     <th style={{ width: '16%' }}>LOB</th>
                     <th style={{ width: '16%' }}>Status</th>
-                    <th style={{ width: '16%', textAlign: 'center' }}>Inventory</th>
-                    <th style={{ width: '16%', textAlign: 'center' }}>Actions</th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>
+                      Inventory
+                    </th>
+                    <th style={{ width: '16%', textAlign: 'center' }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -763,9 +898,16 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                     return (
                       <tr key={prod.id}>
                         <td>
-                          <strong style={{ fontSize: '0.95rem', color: '#0f172a' }}>{prod.name}</strong>
+                          <strong
+                            style={{ fontSize: '0.95rem', color: '#0f172a' }}
+                          >
+                            {prod.name}
+                          </strong>
                           {prod.erpManaged && <ErpBadge />}
-                          <div className="fine muted" style={{ marginTop: '2px' }}>
+                          <div
+                            className="fine muted"
+                            style={{ marginTop: '2px' }}
+                          >
                             {prod.models?.length || 0} รุ่นย่อย
                           </div>
                         </td>
@@ -787,20 +929,40 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                           </span>
                         </td>
                         <td>
-                          <span className={`status-tag ${prod.active ? 'status-found' : 'status-outcome'}`}>
+                          <span
+                            className={`status-tag ${prod.active ? 'status-found' : 'status-outcome'}`}
+                          >
                             {prod.active ? '● ใช้งาน' : '○ ปิดใช้งาน'}
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' , textAlign: 'center'}}>
-                            <strong style={{ color: totalStock > 0 ? '#047857' : '#b91c1c', fontSize: '0.9rem' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '2px',
+                              textAlign: 'center',
+                            }}
+                          >
+                            <strong
+                              style={{
+                                color: totalStock > 0 ? '#047857' : '#b91c1c',
+                                fontSize: '0.9rem',
+                              }}
+                            >
                               {totalStock}
                             </strong>
                             <span className="fine muted">{totalSkus} SKUs</span>
                           </div>
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                          <div
+                            style={{
+                              display: 'inline-flex',
+                              gap: '8px',
+                              alignItems: 'center',
+                            }}
+                          >
                             {isAdmin && (
                               <Button
                                 variant="secondary"
@@ -815,7 +977,13 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                                   })
                                 }
                               >
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                  }}
+                                >
                                   <Edit2 size={13} />
                                   แก้ไข
                                 </span>
@@ -828,7 +996,13 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                                 handleSetViewMode('STOCK');
                               }}
                             >
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                              >
                                 <Package size={13} />
                                 Stock
                               </span>
@@ -855,7 +1029,16 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <p className="muted">ไม่มี SKU ตรงกับเงื่อนไขที่เลือก</p>
             </Panel>
           ) : (
-            <div className="table-responsive" style={{ background: '#fff', borderRadius: '8px', border: '1px solid var(--border-color, #e2e8f0)', maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
+            <div
+              className="table-responsive"
+              style={{
+                background: '#fff',
+                borderRadius: '8px',
+                border: '1px solid var(--border-color, #e2e8f0)',
+                maxHeight: 'calc(100vh - 280px)',
+                overflowY: 'auto',
+              }}
+            >
               <table className="admin-table">
                 <thead>
                   <tr>
@@ -863,15 +1046,25 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                     <th style={{ width: '33%' }}>Product</th>
                     <th style={{ width: '18%' }}>Branches</th>
                     <th style={{ width: '15%' }}>Available</th>
-                    <th style={{ width: '12%', textAlign: 'center' }}>Actions</th>
+                    <th style={{ width: '12%', textAlign: 'center' }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {allSkusForStockView.map(({ sku, product, model }) => {
                     const invList = sku.inventory || [];
-                    const branchesWithStock = invList.filter((inv) => effectiveStock(inv) > 0).length;
-                    const totalBranchesCount = branches.length > 0 ? branches.length : (invList.length || 1);
-                    const totalStock = invList.reduce((sum, inv) => sum + (effectiveStock(inv) || 0), 0);
+                    const branchesWithStock = invList.filter(
+                      (inv) => effectiveStock(inv) > 0,
+                    ).length;
+                    const totalBranchesCount =
+                      branches.length > 0
+                        ? branches.length
+                        : invList.length || 1;
+                    const totalStock = invList.reduce(
+                      (sum, inv) => sum + (effectiveStock(inv) || 0),
+                      0,
+                    );
                     const isAvailable = totalStock > 0;
 
                     return (
@@ -893,16 +1086,23 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                         }}
                       >
                         <td>
-                          <strong style={{ color: '#0f172a' }}>{sku.sku}</strong>
+                          <strong style={{ color: '#0f172a' }}>
+                            {sku.sku}
+                          </strong>
                           {sku.erpManaged && <ErpBadge />}
-                          {sku.upc && <div className="fine muted">UPC {sku.upc}</div>}
+                          {sku.upc && (
+                            <div className="fine muted">UPC {sku.upc}</div>
+                          )}
                         </td>
                         <td>
                           <div style={{ fontWeight: 600 }}>
                             {product.name} · {model.name}
                           </div>
                           <div className="fine muted">
-                            {sku.name} {[sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ')}
+                            {sku.name}{' '}
+                            {[sku.memory, sku.storage, sku.color]
+                              .filter(Boolean)
+                              .join(' · ')}
                           </div>
                         </td>
                         <td>
@@ -913,8 +1113,10 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                               gap: '4px',
                               padding: '3px 8px',
                               borderRadius: '6px',
-                              backgroundColor: branchesWithStock > 0 ? '#ecfdf5' : '#f1f5f9',
-                              color: branchesWithStock > 0 ? '#047857' : '#64748b',
+                              backgroundColor:
+                                branchesWithStock > 0 ? '#ecfdf5' : '#f1f5f9',
+                              color:
+                                branchesWithStock > 0 ? '#047857' : '#64748b',
                               fontWeight: 600,
                               fontSize: '0.85rem',
                             }}
@@ -924,11 +1126,27 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                           </span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <strong style={{ color: isAvailable ? '#047857' : '#b91c1c' }}>
-                              {totalStock} 
+                          <div
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '8px',
+                            }}
+                          >
+                            <strong
+                              style={{
+                                color: isAvailable ? '#047857' : '#b91c1c',
+                              }}
+                            >
+                              {totalStock}
                             </strong>
-                            <span className={`status-tag ${isAvailable ? 'status-found' : 'status-outcome'}`} style={{ fontSize: '0.75rem', padding: '1px 6px' }}>
+                            <span
+                              className={`status-tag ${isAvailable ? 'status-found' : 'status-outcome'}`}
+                              style={{
+                                fontSize: '0.75rem',
+                                padding: '1px 6px',
+                              }}
+                            >
                               {isAvailable ? 'พร้อมจำหน่าย' : 'สินค้าหมด'}
                             </span>
                           </div>
@@ -952,7 +1170,13 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                               });
                             }}
                           >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
                               <Package size={13} />
                               ดูสต็อกสาขา
                             </span>
@@ -974,18 +1198,28 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           title={`สต็อกรายสาขา — ${breakdownModal.sku.sku}`}
           isOpen={breakdownModal.open}
           onClose={handleRequestCloseBreakdown}
-          maxWidth={breakdownModal.sku.inventory?.some(hasErpStock) ? '720px' : undefined}
+          maxWidth={
+            breakdownModal.sku.inventory?.some(hasErpStock)
+              ? '720px'
+              : undefined
+          }
         >
           <div style={{ marginBottom: '1rem' }}>
-            <div style={{ fontWeight: 600, fontSize: '1rem', color: '#0f172a' }}>
+            <div
+              style={{ fontWeight: 600, fontSize: '1rem', color: '#0f172a' }}
+            >
               {breakdownModal.productName} · {breakdownModal.modelName}
             </div>
             <div className="fine muted">
-              ตัวเลือก: {breakdownModal.sku.name} · รหัส SKU: {breakdownModal.sku.sku}
+              ตัวเลือก: {breakdownModal.sku.name} · รหัส SKU:{' '}
+              {breakdownModal.sku.sku}
             </div>
           </div>
 
-          <div className="table-responsive" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+          <div
+            className="table-responsive"
+            style={{ maxHeight: '420px', overflowY: 'auto' }}
+          >
             <table className="admin-table">
               <thead>
                 <tr>
@@ -997,7 +1231,11 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <tbody>
                 {breakdownModal.sku.inventory?.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="muted" style={{ textAlign: 'center' }}>
+                    <td
+                      colSpan={4}
+                      className="muted"
+                      style={{ textAlign: 'center' }}
+                    >
                       ยังไม่มีข้อมูลสต็อกของสาขา
                     </td>
                   </tr>
@@ -1014,33 +1252,54 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                       <tr key={inv.id}>
                         <td>
                           <strong>{inv.branch?.code || 'สาขา'}</strong>
-                          <div className="fine muted">{inv.branch?.name || ''}</div>
+                          <div className="fine muted">
+                            {inv.branch?.name || ''}
+                          </div>
                         </td>
                         <td>
                           <button
                             type="button"
                             className={`status-tag ${inv.active ? 'status-found' : 'status-outcome'}`}
-                            style={{ cursor: 'pointer', border: 'none', padding: '2px 8px', fontSize: '0.8rem', fontWeight: 600 }}
+                            style={{
+                              cursor: 'pointer',
+                              border: 'none',
+                              padding: '2px 8px',
+                              fontSize: '0.8rem',
+                              fontWeight: 600,
+                            }}
                             title="คลิกเพื่อสลับเปิด/ปิดสถานะการขายในสาขานี้"
                             onClick={() =>
-                              handleToggleBranchActive(inv.branchId, breakdownModal.sku!.id, inv.active)
+                              handleToggleBranchActive(
+                                inv.branchId,
+                                breakdownModal.sku!.id,
+                                inv.active,
+                              )
                             }
                           >
                             {inv.active ? '● เปิด' : '○ ปิด'}
                           </button>
                         </td>
                         <td
-                          className={stockLocked ? 'erp-managed-form' : undefined}
-                          title={stockLocked ? 'สต็อกสาขานี้มาจาก ERP' : undefined}
+                          className={
+                            stockLocked ? 'erp-managed-form' : undefined
+                          }
+                          title={
+                            stockLocked ? 'สต็อกสาขานี้มาจาก ERP' : undefined
+                          }
                         >
                           {isAdmin ? (
                             <input
                               type="number"
                               min="0"
-                              value={stockLocked ? effectiveStock(inv) : currentQty}
+                              value={
+                                stockLocked ? effectiveStock(inv) : currentQty
+                              }
                               disabled={stockLocked}
                               onChange={(e) => {
-                                const val = Math.max(0, parseInt(e.target.value, 10) || 0);
+                                const val = Math.max(
+                                  0,
+                                  parseInt(e.target.value, 10) || 0,
+                                );
                                 setBreakdownModal((prev) => ({
                                   ...prev,
                                   stockInputs: {
@@ -1053,12 +1312,17 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                                 width: '90px',
                                 padding: '4px 8px',
                                 borderRadius: '4px',
-                                border: '1px solid var(--border-color, #cbd5e1)',
+                                border:
+                                  '1px solid var(--border-color, #cbd5e1)',
                                 fontWeight: 600,
                               }}
                             />
                           ) : (
-                            <strong style={{ color: inv.stock > 0 ? '#047857' : '#b91c1c' }}>
+                            <strong
+                              style={{
+                                color: inv.stock > 0 ? '#047857' : '#b91c1c',
+                              }}
+                            >
                               {inv.stock} ชิ้น
                             </strong>
                           )}
@@ -1072,11 +1336,30 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
             </table>
           </div>
 
-          <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: '1rem' }}>
+          <div
+            style={{
+              marginTop: '1.25rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              borderTop: '1px solid var(--border-color, #e2e8f0)',
+              paddingTop: '1rem',
+            }}
+          >
             <div>
               {hasUnsavedChanges && (
-                <span style={{ fontSize: '0.85rem', color: '#d97706', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                  <AlertCircle size={14} /> มีการแก้ไข {unsavedBranches.length} สาขาที่ยังไม่ได้บันทึก
+                <span
+                  style={{
+                    fontSize: '0.85rem',
+                    color: '#d97706',
+                    fontWeight: 600,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <AlertCircle size={14} /> มีการแก้ไข {unsavedBranches.length}{' '}
+                  สาขาที่ยังไม่ได้บันทึก
                 </span>
               )}
             </div>
@@ -1087,7 +1370,13 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                   disabled={busy}
                   onClick={handleSaveAllBranchStock}
                 >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
                     <Save size={14} />
                     บันทึก
                   </span>
@@ -1107,33 +1396,62 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           maxWidth="460px"
         >
           <div style={{ marginBottom: '1.25rem' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-              <div style={{ color: '#d97706', marginTop: '2px', flexShrink: 0 }}>
+            <div
+              style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}
+            >
+              <div
+                style={{ color: '#d97706', marginTop: '2px', flexShrink: 0 }}
+              >
                 <AlertCircle size={26} />
               </div>
               <div>
-                <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#0f172a', marginBottom: '4px' }}>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    fontSize: '0.95rem',
+                    color: '#0f172a',
+                    marginBottom: '4px',
+                  }}
+                >
                   มีการแก้ไขสต็อกที่ยังไม่ได้บันทึก
                 </div>
-                <p style={{ margin: 0, color: '#475569', fontSize: '0.875rem', lineHeight: '1.5' }}>
-                  คุณมีการเปลี่ยนแปลงจำนวนสต็อก {unsavedBranches.length} สาขาที่ยังไม่ได้บันทึก ต้องการละทิ้งการเปลี่ยนแปลงหรือไม่?
+                <p
+                  style={{
+                    margin: 0,
+                    color: '#475569',
+                    fontSize: '0.875rem',
+                    lineHeight: '1.5',
+                  }}
+                >
+                  คุณมีการเปลี่ยนแปลงจำนวนสต็อก {unsavedBranches.length}{' '}
+                  สาขาที่ยังไม่ได้บันทึก ต้องการละทิ้งการเปลี่ยนแปลงหรือไม่?
                 </p>
               </div>
             </div>
           </div>
-          <div className="actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '1rem' }}>
+          <div
+            className="actions"
+            style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '8px',
+              borderTop: '1px solid #f1f5f9',
+              paddingTop: '1rem',
+            }}
+          >
             <Button
               variant="secondary"
               type="button"
               onClick={handleConfirmDiscard}
-              style={{ color: '#b91c1c', borderColor: '#fca5a5', backgroundColor: '#fef2f2' }}
+              style={{
+                color: '#b91c1c',
+                borderColor: '#fca5a5',
+                backgroundColor: '#fef2f2',
+              }}
             >
               ละทิ้งและปิด
             </Button>
-            <Button
-              type="button"
-              onClick={handleCancelDiscard}
-            >
+            <Button type="button" onClick={handleCancelDiscard}>
               กลับไปแก้ไข
             </Button>
           </div>
@@ -1143,13 +1461,21 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       {/* MODAL 2: PRODUCT EDIT & MODEL/SKU MANAGEMENT MODAL */}
       {productModal.open && (
         <Modal
-          title={productModal.editingId ? 'แก้ไขข้อมูลสินค้าหลัก' : 'เพิ่มสินค้าหลัก'}
+          title={
+            productModal.editingId ? 'แก้ไขข้อมูลสินค้าหลัก' : 'เพิ่มสินค้าหลัก'
+          }
           isOpen={productModal.open}
           onClose={() => setProductModal({ ...productModal, open: false })}
         >
-          <form onSubmit={handleSaveProduct} className={productLocked ? 'erp-managed-form' : undefined}>
+          <form
+            onSubmit={handleSaveProduct}
+            className={productLocked ? 'erp-managed-form' : undefined}
+          >
             {productLocked && (
-              <Notice>สินค้านี้มาจาก ERP (warroom) ชื่อและหมวดหมู่ต้องแก้ที่ ERP ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน</Notice>
+              <Notice>
+                สินค้านี้มาจาก ERP (warroom) ชื่อและหมวดหมู่ต้องแก้ที่ ERP
+                ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน
+              </Notice>
             )}
             <label>
               หมวดหมู่สินค้า (LOB / Category)
@@ -1182,7 +1508,14 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 }
               />
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={productModal.active}
@@ -1193,14 +1526,32 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                   })
                 }
               />
-              <span>เปิดใช้งานสินค้านี้ (หากปิด ทุกรุ่นย่อยและทุกสาขาจะถูกปิดอัตโนมัติ)</span>
+              <span>
+                เปิดใช้งานสินค้านี้ (หากปิด
+                ทุกรุ่นย่อยและทุกสาขาจะถูกปิดอัตโนมัติ)
+              </span>
             </label>
 
             {/* If editing existing product, show list of models to add/edit */}
             {productModal.editingId && (
-              <div style={{ marginTop: '1.5rem', borderTop: '1px solid #e2e8f0', paddingTop: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <strong style={{ fontSize: '0.9rem' }}>รุ่นและ SKU ภายใต้สินค้านี้</strong>
+              <div
+                style={{
+                  marginTop: '1.5rem',
+                  borderTop: '1px solid #e2e8f0',
+                  paddingTop: '1rem',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '0.75rem',
+                  }}
+                >
+                  <strong style={{ fontSize: '0.9rem' }}>
+                    รุ่นและ SKU ภายใต้สินค้านี้
+                  </strong>
                   <Button
                     size="sm"
                     type="button"
@@ -1230,16 +1581,32 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                         marginBottom: '8px',
                       }}
                     >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
                         <div>
-                          <Tag size={14} color="#0abab5" style={{ display: 'inline', marginRight: '6px' }} />
+                          <Tag
+                            size={14}
+                            color="#0abab5"
+                            style={{ display: 'inline', marginRight: '6px' }}
+                          />
                           <strong>{model.name}</strong>
                           {model.erpManaged && <ErpBadge />}
-                          <span className={`status-tag ${model.active ? 'status-found' : 'status-outcome'}`} style={{ marginLeft: '8px', fontSize: '0.75rem' }}>
+                          <span
+                            className={`status-tag ${model.active ? 'status-found' : 'status-outcome'}`}
+                            style={{ marginLeft: '8px', fontSize: '0.75rem' }}
+                          >
                             {model.active ? 'ใช้งาน' : 'ปิด'}
                           </span>
                           {model.pinnedAt && (
-                            <span className="status-tag status-searching" style={{ marginLeft: '6px', fontSize: '0.75rem' }}>
+                            <span
+                              className="status-tag status-searching"
+                              style={{ marginLeft: '6px', fontSize: '0.75rem' }}
+                            >
                               ปักหมุด
                             </span>
                           )}
@@ -1254,7 +1621,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                             title="รุ่นที่ปักหมุดขึ้นก่อนในหน้าเลือกสินค้า (ปักล่าสุดอยู่บนสุด) ที่เหลือเรียงใหม่ไปเก่าตาม UPC"
                             onClick={() => handleTogglePin(model)}
                           >
-                            <Pin size={13} /> {model.pinnedAt ? 'เลิกปักหมุด' : 'ปักหมุด'}
+                            <Pin size={13} />{' '}
+                            {model.pinnedAt ? 'เลิกปักหมุด' : 'ปักหมุด'}
                           </Button>
                           <Button
                             size="sm"
@@ -1282,6 +1650,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                                 name: '',
                                 color: '',
                                 storage: '',
+                                price: '',
                                 active: true,
                               })
                             }
@@ -1292,10 +1661,28 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                       </div>
 
                       {model.skus?.length > 0 && (
-                        <div style={{ marginTop: '6px', fontSize: '0.8rem', color: '#475569' }}>
+                        <div
+                          style={{
+                            marginTop: '6px',
+                            fontSize: '0.8rem',
+                            color: '#475569',
+                          }}
+                        >
                           {model.skus.map((s) => (
                             <span
                               key={s.id}
+                              onClick={() =>
+                                setSkuModal({
+                                  open: true,
+                                  editingId: s.id,
+                                  sku: s.sku,
+                                  name: s.name,
+                                  color: s.color || '',
+                                  storage: s.storage || '',
+                                  price: s.price != null ? String(s.price) : '',
+                                  active: s.active,
+                                })
+                              }
                               style={{
                                 display: 'inline-block',
                                 marginRight: '6px',
@@ -1304,9 +1691,22 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                                 background: '#fff',
                                 borderRadius: '4px',
                                 border: '1px solid #cbd5e1',
+                                cursor: 'pointer',
                               }}
+                              title="คลิกเพื่อแก้ไข SKU"
                             >
                               {s.sku} ({s.name})
+                              {s.price != null && (
+                                <span
+                                  style={{
+                                    color: '#0f766e',
+                                    fontWeight: 600,
+                                    marginLeft: '4px',
+                                  }}
+                                >
+                                  ฿{Number(s.price).toLocaleString('th-TH')}
+                                </span>
+                              )}
                               {s.erpManaged && <ErpBadge />}
                             </span>
                           ))}
@@ -1324,7 +1724,9 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
               <Button
                 variant="secondary"
                 disabled={busy}
-                onClick={() => setProductModal({ ...productModal, open: false })}
+                onClick={() =>
+                  setProductModal({ ...productModal, open: false })
+                }
               >
                 ยกเลิก
               </Button>
@@ -1336,13 +1738,23 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
       {/* MODAL 3: MODEL MODAL */}
       {modelModal.open && (
         <Modal
-          title={modelModal.editingId ? 'แก้ไขรุ่นสินค้า (Model)' : 'เพิ่มรุ่นสินค้าใหม่ (Model)'}
+          title={
+            modelModal.editingId
+              ? 'แก้ไขรุ่นสินค้า (Model)'
+              : 'เพิ่มรุ่นสินค้าใหม่ (Model)'
+          }
           isOpen={modelModal.open}
           onClose={() => setModelModal({ ...modelModal, open: false })}
         >
-          <form onSubmit={handleSaveModel} className={modelLocked ? 'erp-managed-form' : undefined}>
+          <form
+            onSubmit={handleSaveModel}
+            className={modelLocked ? 'erp-managed-form' : undefined}
+          >
             {modelLocked && (
-              <Notice>รุ่นนี้มาจาก ERP (warroom) ชื่อรุ่นต้องแก้ที่ ERP ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน</Notice>
+              <Notice>
+                รุ่นนี้มาจาก ERP (warroom) ชื่อรุ่นต้องแก้ที่ ERP
+                ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน
+              </Notice>
             )}
             <label>
               ชื่อรุ่นสินค้า (Model Name)
@@ -1356,7 +1768,14 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 }
               />
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={modelModal.active}
@@ -1367,7 +1786,10 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                   })
                 }
               />
-              <span>เปิดใช้งานรุ่นนี้ (หากปิด ทุก SKU ย่อยและทุกสาขาจะถูกปิดอัตโนมัติ)</span>
+              <span>
+                เปิดใช้งานรุ่นนี้ (หากปิด ทุก SKU
+                ย่อยและทุกสาขาจะถูกปิดอัตโนมัติ)
+              </span>
             </label>
             <div className="actions" style={{ marginTop: '1.5rem' }}>
               <Button type="submit" disabled={busy}>
@@ -1392,9 +1814,15 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
           isOpen={skuModal.open}
           onClose={() => setSkuModal({ ...skuModal, open: false })}
         >
-          <form onSubmit={handleSaveSku} className={skuLocked ? 'erp-managed-form' : undefined}>
+          <form
+            onSubmit={handleSaveSku}
+            className={skuLocked ? 'erp-managed-form' : undefined}
+          >
             {skuLocked && (
-              <Notice>SKU นี้มาจาก ERP (warroom) รหัส ชื่อ ความจุ และสีต้องแก้ที่ ERP ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน</Notice>
+              <Notice>
+                SKU นี้มาจาก ERP (warroom) รหัส ชื่อ ความจุ และสีต้องแก้ที่ ERP
+                ที่นี่ทำได้เพียงเปิด/ปิดการใช้งาน
+              </Notice>
             )}
             <label>
               รหัส SKU (SKU Code)
@@ -1420,7 +1848,14 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 }
               />
             </label>
-            <div className="form-grid-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div
+              className="form-grid-2col"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '1rem',
+              }}
+            >
               <label>
                 ความจุ (Storage)
                 <input
@@ -1444,7 +1879,27 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 />
               </label>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+            <label>
+              ราคา (บาท)
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="เช่น 37900 (เว้นว่างได้หากไม่ระบุ)"
+                value={skuModal.price}
+                onChange={(e) =>
+                  setSkuModal({ ...skuModal, price: e.target.value })
+                }
+              />
+            </label>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+              }}
+            >
               <input
                 type="checkbox"
                 checked={skuModal.active}

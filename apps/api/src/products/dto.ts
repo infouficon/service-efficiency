@@ -1,6 +1,7 @@
 import {
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   MaxLength,
@@ -83,6 +84,11 @@ export class SkuCreateDto {
   @IsString()
   @MaxLength(64)
   storage?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
 }
 
 export class SkuUpdateDto {
@@ -109,6 +115,11 @@ export class SkuUpdateDto {
   storage?: string;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @IsOptional()
   @IsBoolean()
   active?: boolean;
 }
@@ -123,4 +134,3 @@ export class BranchActiveToggleDto {
   @IsBoolean()
   active!: boolean;
 }
-

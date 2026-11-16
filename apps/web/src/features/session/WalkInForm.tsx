@@ -11,6 +11,7 @@ import { deviceCategories } from '../../constants/options';
 import { SkuPicker } from './SkuPicker';
 import { CategoryPicture, StockBadge } from './SelectionEditor';
 import {
+  formatPrice,
   isOutOfStock,
   modelChoices,
   toCatalog,
@@ -81,7 +82,10 @@ export function WalkInForm({
     [categoryList],
   );
 
-  const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
+  const models = useMemo(
+    () => modelChoices(catalog, category),
+    [catalog, category],
+  );
 
   const handleCategoryChange = (cat: string) => {
     setCategory(cat);
@@ -98,7 +102,9 @@ export function WalkInForm({
     if (selectedItems.length >= 3) return;
 
     // Disallow duplicate SKU
-    const isDup = selectedItems.some((item) => item.sku.id === pickedObj.sku.id);
+    const isDup = selectedItems.some(
+      (item) => item.sku.id === pickedObj.sku.id,
+    );
     if (isDup) {
       setDuplicateWarning(
         `สินค้ารายการนี้ (${pickedObj.model.name} ${pickedObj.sku.storage || ''} ${pickedObj.sku.color || ''}) อยู่ในรายการที่เลือกไว้แล้ว`,
@@ -140,7 +146,9 @@ export function WalkInForm({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}>
+            <span
+              style={{ fontWeight: 700, fontSize: '1rem', color: '#0f172a' }}
+            >
               สินค้าที่สนใจ
             </span>
             <span
@@ -185,12 +193,18 @@ export function WalkInForm({
               color: '#64748b',
             }}
           >
-            <Smartphone size={28} style={{ margin: '0 auto 8px', color: '#94a3b8' }} />
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#334155' }}>
+            <Smartphone
+              size={28}
+              style={{ margin: '0 auto 8px', color: '#94a3b8' }}
+            />
+            <div
+              style={{ fontWeight: 600, fontSize: '0.95rem', color: '#334155' }}
+            >
               ยังไม่มีสินค้าในรายการ
             </div>
             <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
-              เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง ระบบจะเพิ่มลงรายการให้อัตโนมัติ (เลือกได้ 1–3 รายการ)
+              เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง
+              ระบบจะเพิ่มลงรายการให้อัตโนมัติ (เลือกได้ 1–3 รายการ)
             </div>
           </div>
         ) : (
@@ -213,11 +227,20 @@ export function WalkInForm({
                     padding: '10px 12px',
                     borderRadius: '8px',
                     background: outOfStock ? '#fef2f2' : '#f8fafc',
-                    border: outOfStock ? '1px solid #fecaca' : '1px solid #e2e8f0',
+                    border: outOfStock
+                      ? '1px solid #fecaca'
+                      : '1px solid #e2e8f0',
                     gap: '10px',
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      minWidth: 0,
+                    }}
+                  >
                     <div
                       style={{
                         width: '20px',
@@ -263,7 +286,25 @@ export function WalkInForm({
                           .filter(Boolean)
                           .join(' · ')}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          marginTop: '2px',
+                        }}
+                      >
+                        {item.sku.price != null && (
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              color: '#0f766e',
+                            }}
+                          >
+                            {formatPrice(item.sku.price)}
+                          </span>
+                        )}
                         <StockBadge sku={item.sku} />
                       </div>
                     </div>
@@ -328,11 +369,24 @@ export function WalkInForm({
               color: '#166534',
             }}
           >
-            <CheckCircle2 size={24} style={{ flexShrink: 0, color: '#16a34a' }} />
+            <CheckCircle2
+              size={24}
+              style={{ flexShrink: 0, color: '#16a34a' }}
+            />
             <div>
-              <div style={{ fontWeight: 600 }}>เลือกสินค้าที่สนใจครบ 3 รายการแล้ว</div>
-              <div style={{ fontSize: '0.85rem', color: '#15803d', marginTop: '2px' }}>
-                สามารถกดปุ่ม <strong>"ถัดไป"</strong> ด้านล่างเพื่อเริ่มสร้าง Session และกรอกเบอร์โทรศัพท์ลูกค้า หรือกดไอคอนถังขยะด้านบนหากต้องการเปลี่ยนสินค้า
+              <div style={{ fontWeight: 600 }}>
+                เลือกสินค้าที่สนใจครบ 3 รายการแล้ว
+              </div>
+              <div
+                style={{
+                  fontSize: '0.85rem',
+                  color: '#15803d',
+                  marginTop: '2px',
+                }}
+              >
+                สามารถกดปุ่ม <strong>"ถัดไป"</strong> ด้านล่างเพื่อเริ่มสร้าง
+                Session และกรอกเบอร์โทรศัพท์ลูกค้า
+                หรือกดไอคอนถังขยะด้านบนหากต้องการเปลี่ยนสินค้า
               </div>
             </div>
           </div>
@@ -346,7 +400,13 @@ export function WalkInForm({
                 marginBottom: '12px',
               }}
             >
-              <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#1e293b' }}>
+              <span
+                style={{
+                  fontWeight: 600,
+                  fontSize: '0.95rem',
+                  color: '#1e293b',
+                }}
+              >
                 {selectedItems.length === 0
                   ? 'เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจ'
                   : `เลือกสินค้าที่ ${selectedItems.length + 1} เพิ่มเติม (ไม่บังคับ)`}
@@ -379,10 +439,16 @@ export function WalkInForm({
             {loadError && <p className="field-error">{loadError}</p>}
 
             {/* 8 Categories grid: 4 columns on desktop/tablet, 3 on mobile */}
-            <div className="wizard-tiles picker-category-tiles" role="group" aria-label="ประเภทอุปกรณ์">
+            <div
+              className="wizard-tiles picker-category-tiles"
+              role="group"
+              aria-label="ประเภทอุปกรณ์"
+            >
               {categoryTiles.map((cat) => {
                 const active = category === cat;
-                const count = (catalog ?? []).filter((p) => p.category === cat).length;
+                const count = (catalog ?? []).filter(
+                  (p) => p.category === cat,
+                ).length;
                 return (
                   <button
                     key={cat}
@@ -394,7 +460,9 @@ export function WalkInForm({
                   >
                     <CategoryPicture cat={cat} size={64} />
                     <strong>{cat}</strong>
-                    {count === 0 && <span className="no-stock-label">ไม่มีสินค้า</span>}
+                    {count === 0 && (
+                      <span className="no-stock-label">ไม่มีสินค้า</span>
+                    )}
                   </button>
                 );
               })}
@@ -411,7 +479,8 @@ export function WalkInForm({
                 />
               ) : (
                 <p className="muted picker-hint" style={{ marginTop: '16px' }}>
-                  เลือกหมวดสินค้า เพื่อเลือกรุ่นที่ลูกค้าสนใจ (สามารถเลือกได้สูงสุด 3 รายการ)
+                  เลือกหมวดสินค้า เพื่อเลือกรุ่นที่ลูกค้าสนใจ
+                  (สามารถเลือกได้สูงสุด 3 รายการ)
                 </p>
               )}
             </div>
@@ -431,7 +500,8 @@ export function WalkInForm({
         <div style={{ fontSize: '0.9rem', color: '#64748b' }}>
           {selectedItems.length > 0 ? (
             <span>
-              พร้อมเริ่มบริการด้วย <strong>{selectedItems.length}</strong> รายการสินค้า
+              พร้อมเริ่มบริการด้วย <strong>{selectedItems.length}</strong>{' '}
+              รายการสินค้า
             </span>
           ) : (
             <span>กรุณาเลือกสินค้าอย่างน้อย 1 รายการเพื่อดำเนินการต่อ</span>
@@ -443,8 +513,11 @@ export function WalkInForm({
           disabled={selectedItems.length === 0 || busy}
           onClick={() => onSubmit(selectedItems)}
         >
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            ถัดไป {selectedItems.length > 0 ? `(${selectedItems.length} รายการ)` : ''}
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            ถัดไป{' '}
+            {selectedItems.length > 0 ? `(${selectedItems.length} รายการ)` : ''}
             <ArrowRight size={18} />
           </span>
         </Button>

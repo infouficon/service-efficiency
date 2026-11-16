@@ -26,7 +26,13 @@ import {
   payments,
   points,
 } from '../../constants/options';
-import type { Category, PaymentDetail, PaymentMethod, Product, Selection } from '../../types/session';
+import type {
+  Category,
+  PaymentDetail,
+  PaymentMethod,
+  Product,
+  Selection,
+} from '../../types/session';
 import { MultiSelect, Button, Modal, Notice } from '../../components/ui';
 import {
   addItem,
@@ -45,6 +51,7 @@ import {
 } from './workflow';
 import { SkuPicker } from './SkuPicker';
 import {
+  formatPrice,
   isOutOfStock,
   isUnlimited,
   modelChoices,
@@ -74,10 +81,22 @@ const CATEGORY_PICTURES: Record<string, string> = {
   Accessories: accessoriesIcon,
   Battery: batteryIcon,
 };
-export function CategoryPicture({ cat, size = 48 }: { cat: string; size?: number }) {
+export function CategoryPicture({
+  cat,
+  size = 48,
+}: {
+  cat: string;
+  size?: number;
+}) {
   const src = CATEGORY_PICTURES[cat];
   return src ? (
-    <img src={src} width={size} height={size} alt="" className="category-picture" />
+    <img
+      src={src}
+      width={size}
+      height={size}
+      alt=""
+      className="category-picture"
+    />
   ) : (
     <CategoryIcon category={cat} size={size * 0.7} />
   );
@@ -145,16 +164,15 @@ export function SelectionEditor({
     null,
   );
   // F6: the payment methods ADMIN keeps; the built-in list (no FMP types known) is the fallback when they cannot be loaded
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(
-    () =>
-      payments.map((name, i) => ({
-        id: `p-${i}`,
-        name,
-        active: true,
-        position: i,
-        fmpType: null,
-        cardOptions: [],
-      })),
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>(() =>
+    payments.map((name, i) => ({
+      id: `p-${i}`,
+      name,
+      active: true,
+      position: i,
+      fmpType: null,
+      cardOptions: [],
+    })),
   );
   // D72: the categories ADMIN keeps; the four device lines are the fallback when they cannot be loaded
   const [categoryList, setCategoryList] = useState<Category[] | null>(null);
@@ -221,7 +239,10 @@ export function SelectionEditor({
     [categoryList],
   );
 
-  const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
+  const models = useMemo(
+    () => modelChoices(catalog, category),
+    [catalog, category],
+  );
   const skuPickerSectionRef = useRef<HTMLDivElement>(null);
   const chosenSectionRef = useRef<HTMLFieldSetElement>(null);
   const monthsSectionRef = useRef<HTMLDivElement>(null);
@@ -236,7 +257,10 @@ export function SelectionEditor({
     setCategory(cat);
     setPicked(null);
     setTimeout(() => {
-      skuPickerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      skuPickerSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
     }, 50);
   };
 
@@ -244,12 +268,18 @@ export function SelectionEditor({
     if (!pickedObj || isOutOfStock(pickedObj.sku)) return;
     onChange({
       ...value,
-      items: addItem(value.items, toProduct(pickedObj.product, pickedObj.model, pickedObj.sku)),
+      items: addItem(
+        value.items,
+        toProduct(pickedObj.product, pickedObj.model, pickedObj.sku),
+      ),
     });
     handleResetForm();
     setOpen(false);
     setTimeout(() => {
-      chosenSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      chosenSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
     }, 50);
   };
 
@@ -259,13 +289,16 @@ export function SelectionEditor({
 
   // The methods with an FMP type come first, the rest under the heading "ช่องทางอื่น", all always shown (D107; ADMIN moves one
   // up by giving it a type). A method switched off after it was picked on this session stays visible.
-  const typed = (m: { fmpType: string | null }) => Boolean(m.fmpType) && m.fmpType !== fmpPaymentTypeOther;
+  const typed = (m: { fmpType: string | null }) =>
+    Boolean(m.fmpType) && m.fmpType !== fmpPaymentTypeOther;
   const anyTyped = paymentMethods.some(typed);
   const mainPayments = [
     ...paymentMethods.filter((m) => !anyTyped || typed(m)).map((m) => m.name),
     ...value.payments.filter((p) => !paymentMethods.some((m) => m.name === p)),
   ];
-  const otherPayments = anyTyped ? paymentMethods.filter((m) => !typed(m)).map((m) => m.name) : [];
+  const otherPayments = anyTyped
+    ? paymentMethods.filter((m) => !typed(m)).map((m) => m.name)
+    : [];
 
   const allSkus = (catalog ?? []).flatMap((p) =>
     p.models.flatMap((m) => m.skus),
@@ -421,10 +454,7 @@ export function SelectionEditor({
           option === 'Full Credit Card' || option === '0% Credit Card';
 
         return (
-          <label
-            className={`choice ${checked ? 'selected' : ''}`}
-            key={option}
-          >
+          <label className={`choice ${checked ? 'selected' : ''}`} key={option}>
             <input
               type="checkbox"
               checked={checked}
@@ -477,9 +507,16 @@ export function SelectionEditor({
         {hasOutOfStockItem && (
           <div style={{ margin: '10px 0' }}>
             <Notice error>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
                 <AlertTriangle size={16} />
-                มีสินค้าหมดสต็อกในรายการ กรุณาลบออกหรือเปลี่ยนเป็นสินค้าอื่นก่อนดำเนินการต่อ
+                มีสินค้าหมดสต็อกในรายการ
+                กรุณาลบออกหรือเปลี่ยนเป็นสินค้าอื่นก่อนดำเนินการต่อ
               </span>
             </Notice>
           </div>
@@ -497,7 +534,10 @@ export function SelectionEditor({
                       <CategoryPicture cat={item.product.category} size={36} />
                     </span>
                     <span className="chosen-item-info">
-                      <strong title={itemName(item)} className="chosen-item-title">
+                      <strong
+                        title={itemName(item)}
+                        className="chosen-item-title"
+                      >
                         {itemName(item)}
                       </strong>
                       <div className="chosen-item-sub">
@@ -505,7 +545,12 @@ export function SelectionEditor({
                         {outOfStock && (
                           <span
                             className="stock-badge stock-badge-out"
-                            style={{ fontSize: '11px', padding: '1px 5px', borderRadius: '4px', lineHeight: 1.2 }}
+                            style={{
+                              fontSize: '11px',
+                              padding: '1px 5px',
+                              borderRadius: '4px',
+                              lineHeight: 1.2,
+                            }}
                           >
                             สินค้าหมด
                           </span>
@@ -533,7 +578,9 @@ export function SelectionEditor({
                       type="button"
                       aria-label={`เพิ่มจำนวน ${itemName(item)}`}
                       disabled={!canRaise(item)}
-                      title={canRaise(item) ? undefined : 'เกินจำนวน Stock ที่มี'}
+                      title={
+                        canRaise(item) ? undefined : 'เกินจำนวน Stock ที่มี'
+                      }
                       onClick={() =>
                         onChange({
                           ...value,
@@ -614,9 +661,15 @@ export function SelectionEditor({
           {catalog !== null && (
             <>
               {/* 1. Device category: one icon tile each (D78). A category without products is shown but cannot be picked. */}
-              <div className="wizard-tiles picker-category-tiles" role="group" aria-label="ประเภทอุปกรณ์">
+              <div
+                className="wizard-tiles picker-category-tiles"
+                role="group"
+                aria-label="ประเภทอุปกรณ์"
+              >
                 {categoryTiles.map((cat) => {
-                  const count = catalog.filter((p) => p.category === cat).length;
+                  const count = catalog.filter(
+                    (p) => p.category === cat,
+                  ).length;
                   return (
                     <button
                       type="button"
@@ -628,7 +681,9 @@ export function SelectionEditor({
                     >
                       <CategoryPicture cat={cat} size={64} />
                       <strong>{cat}</strong>
-                      {count === 0 && <span className="no-stock-label">ไม่มีสินค้า</span>}
+                      {count === 0 && (
+                        <span className="no-stock-label">ไม่มีสินค้า</span>
+                      )}
                     </button>
                   );
                 })}
@@ -642,7 +697,9 @@ export function SelectionEditor({
                     onComplete={handleAddPicked}
                   />
                 ) : (
-                  <p className="muted picker-hint">เลือกประเภทอุปกรณ์ด้านบนก่อน</p>
+                  <p className="muted picker-hint">
+                    เลือกประเภทอุปกรณ์ด้านบนก่อน
+                  </p>
                 )}
               </div>
 
@@ -651,13 +708,20 @@ export function SelectionEditor({
                 <div className="picker-sku-summary">
                   <div className="picker-sku-info">
                     <div className="picker-sku-icon">
-                      <CategoryPicture cat={picked.product.category} size={40} />
+                      <CategoryPicture
+                        cat={picked.product.category}
+                        size={40}
+                      />
                     </div>
                     <div className="picker-sku-details">
                       <div className="picker-sku-title">
                         <strong>{picked.model.name}</strong>
                         <span className="picker-sku-specs">
-                          {[picked.sku.memory, picked.sku.storage, picked.sku.color]
+                          {[
+                            picked.sku.memory,
+                            picked.sku.storage,
+                            picked.sku.color,
+                          ]
                             .filter(Boolean)
                             .join(' · ')}
                         </span>
@@ -666,6 +730,21 @@ export function SelectionEditor({
                         <span className="picker-sku-code">
                           {picked.sku.sku}
                         </span>
+                        {picked.sku.price != null && (
+                          <span
+                            style={{
+                              fontSize: '13px',
+                              fontWeight: 700,
+                              color: '#0f766e',
+                              background: '#f0fdfa',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid #ccfbf1',
+                            }}
+                          >
+                            {formatPrice(picked.sku.price)}
+                          </span>
+                        )}
                         <StockBadge sku={picked.sku} />
                       </div>
                     </div>
@@ -826,7 +905,9 @@ export function SelectionEditor({
         <table className="points-table">
           <thead>
             <tr>
-              <th scope="col"><span className="visually-hidden">บัตร</span></th>
+              <th scope="col">
+                <span className="visually-hidden">บัตร</span>
+              </th>
               <th scope="col">สะสม</th>
               <th scope="col">ใช้แต้ม (Burn)</th>
             </tr>
@@ -837,12 +918,19 @@ export function SelectionEditor({
                 <th scope="row">{card}</th>
                 {(['points', 'burnPoints'] as const).map((field) => (
                   <td key={field}>
-                    <label className={`points-cell${value[field].includes(card) ? ' selected' : ''}`}>
+                    <label
+                      className={`points-cell${value[field].includes(card) ? ' selected' : ''}`}
+                    >
                       <input
                         type="checkbox"
                         aria-label={`${field === 'points' ? 'สะสมแต้ม' : 'ใช้แต้ม'} ${card}`}
                         checked={value[field].includes(card)}
-                        onChange={() => onChange({ ...value, [field]: toggleOption(value[field], card) })}
+                        onChange={() =>
+                          onChange({
+                            ...value,
+                            [field]: toggleOption(value[field], card),
+                          })
+                        }
                       />
                     </label>
                   </td>
@@ -856,7 +944,9 @@ export function SelectionEditor({
         <legend>
           Payment <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
-        {otherPayments.length > 0 && <p className="choice-group-title">ช่องทางหลัก</p>}
+        {otherPayments.length > 0 && (
+          <p className="choice-group-title">ช่องทางหลัก</p>
+        )}
         {renderPaymentChoices(mainPayments)}
         {otherPayments.length > 0 && (
           <>
@@ -866,185 +956,191 @@ export function SelectionEditor({
         )}
 
         {/* D127: Modal for Full Credit Card & 0% Credit Card */}
-        {cardModalMethod && (() => {
-          const isZeroPercent = cardModalMethod === '0% Credit Card';
-          const methodObj = paymentMethods.find(
-            (m) => m.name === cardModalMethod,
-          );
-          const activeDbCards =
-            methodObj?.cardOptions?.filter((c) => c.active) ?? [];
+        {cardModalMethod &&
+          (() => {
+            const isZeroPercent = cardModalMethod === '0% Credit Card';
+            const methodObj = paymentMethods.find(
+              (m) => m.name === cardModalMethod,
+            );
+            const activeDbCards =
+              methodObj?.cardOptions?.filter((c) => c.active) ?? [];
 
-          // Cards list strictly from DB active card options
-          const cards = activeDbCards.map((c) => ({
-            name: c.name,
-            installmentMonths:
-              isZeroPercent && Array.isArray(c.installmentMonths)
-                ? (c.installmentMonths as number[])
-                : ([] as number[]),
-          }));
+            // Cards list strictly from DB active card options
+            const cards = activeDbCards.map((c) => ({
+              name: c.name,
+              installmentMonths:
+                isZeroPercent && Array.isArray(c.installmentMonths)
+                  ? (c.installmentMonths as number[])
+                  : ([] as number[]),
+            }));
 
-          const selectedCardObj = cards.find(
-            (c) => c.name === tempSelectedCard,
-          );
-          const availableMonths = selectedCardObj?.installmentMonths ?? [];
+            const selectedCardObj = cards.find(
+              (c) => c.name === tempSelectedCard,
+            );
+            const availableMonths = selectedCardObj?.installmentMonths ?? [];
 
-          const canConfirm = isZeroPercent
-            ? Boolean(tempSelectedCard && tempSelectedMonths)
-            : Boolean(tempSelectedCard);
+            const canConfirm = isZeroPercent
+              ? Boolean(tempSelectedCard && tempSelectedMonths)
+              : Boolean(tempSelectedCard);
 
-          return (
-            <Modal
-              isOpen={true}
-              title={
-                <span
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <CreditCard size={18} />
-                  {isZeroPercent
-                    ? 'เลือกประเภทบัตรและจำนวนเดือนผ่อน (0% Credit Card)'
-                    : 'เลือกประเภทบัตร (Full Credit Card)'}
-                </span>
-              }
-              onClose={handleCancelModal}
-              maxWidth="520px"
-            >
-              <div>
-                <div
-                  style={{
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    marginBottom: '10px',
-                  }}
-                >
-                  1. เลือกประเภทบัตร <span style={{ color: '#ef4444' }}>*</span>
-                </div>
-                {cards.length === 0 ? (
-                  <div style={{ marginBottom: '16px' }}>
-                    <Notice error>
-                      ยังไม่มีประเภทบัตรที่เปิดใช้งาน กรุณาตั้งค่าที่หน้า Admin → ช่องทางชำระเงิน
-                    </Notice>
-                  </div>
-                ) : (
-                  <div className="choices" style={{ marginBottom: '16px' }}>
-                    {cards.map((card) => {
-                      const selected = tempSelectedCard === card.name;
-                      return (
-                        <button
-                          key={card.name}
-                          type="button"
-                          className={`choice ${selected ? 'selected' : ''}`}
-                          style={{
-                            padding: '10px 16px',
-                            fontSize: '13px',
-                            fontWeight: selected ? 600 : 500,
-                            cursor: 'pointer',
-                          }}
-                          onClick={() => {
-                            setTempSelectedCard(card.name);
-                            if (
-                              isZeroPercent &&
-                              tempSelectedMonths &&
-                              !card.installmentMonths.includes(tempSelectedMonths)
-                            ) {
-                              setTempSelectedMonths(null);
-                            }
-                            if (isZeroPercent) {
-                              setTimeout(() => {
-                                monthsSectionRef.current?.scrollIntoView({
-                                  behavior: 'smooth',
-                                  block: 'nearest',
-                                });
-                              }, 60);
-                            }
-                          }}
-                        >
-                          {card.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {isZeroPercent && cards.length > 0 && (
-                  <div
-                    ref={monthsSectionRef}
+            return (
+              <Modal
+                isOpen={true}
+                title={
+                  <span
                     style={{
-                      marginTop: '16px',
-                      borderTop: '1px solid var(--border-color, #e2e8f0)',
-                      paddingTop: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
                     }}
                   >
+                    <CreditCard size={18} />
+                    {isZeroPercent
+                      ? 'เลือกประเภทบัตรและจำนวนเดือนผ่อน (0% Credit Card)'
+                      : 'เลือกประเภทบัตร (Full Credit Card)'}
+                  </span>
+                }
+                onClose={handleCancelModal}
+                maxWidth="520px"
+              >
+                <div>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: '13px',
+                      marginBottom: '10px',
+                    }}
+                  >
+                    1. เลือกประเภทบัตร{' '}
+                    <span style={{ color: '#ef4444' }}>*</span>
+                  </div>
+                  {cards.length === 0 ? (
+                    <div style={{ marginBottom: '16px' }}>
+                      <Notice error>
+                        ยังไม่มีประเภทบัตรที่เปิดใช้งาน กรุณาตั้งค่าที่หน้า
+                        Admin → ช่องทางชำระเงิน
+                      </Notice>
+                    </div>
+                  ) : (
+                    <div className="choices" style={{ marginBottom: '16px' }}>
+                      {cards.map((card) => {
+                        const selected = tempSelectedCard === card.name;
+                        return (
+                          <button
+                            key={card.name}
+                            type="button"
+                            className={`choice ${selected ? 'selected' : ''}`}
+                            style={{
+                              padding: '10px 16px',
+                              fontSize: '13px',
+                              fontWeight: selected ? 600 : 500,
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => {
+                              setTempSelectedCard(card.name);
+                              if (
+                                isZeroPercent &&
+                                tempSelectedMonths &&
+                                !card.installmentMonths.includes(
+                                  tempSelectedMonths,
+                                )
+                              ) {
+                                setTempSelectedMonths(null);
+                              }
+                              if (isZeroPercent) {
+                                setTimeout(() => {
+                                  monthsSectionRef.current?.scrollIntoView({
+                                    behavior: 'smooth',
+                                    block: 'nearest',
+                                  });
+                                }, 60);
+                              }
+                            }}
+                          >
+                            {card.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {isZeroPercent && cards.length > 0 && (
                     <div
+                      ref={monthsSectionRef}
                       style={{
-                        fontWeight: 600,
-                        fontSize: '13px',
-                        marginBottom: '10px',
+                        marginTop: '16px',
+                        borderTop: '1px solid var(--border-color, #e2e8f0)',
+                        paddingTop: '14px',
                       }}
                     >
-                      2. เลือกจำนวนเดือนที่ผ่อน{' '}
-                      {tempSelectedCard ? `(${tempSelectedCard})` : ''}{' '}
-                      <span style={{ color: '#ef4444' }}>*</span>
-                    </div>
-                    {!tempSelectedCard ? (
-                      <p
-                        className="muted"
-                        style={{ margin: 0, fontSize: '12px' }}
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: '13px',
+                          marginBottom: '10px',
+                        }}
                       >
-                        กรุณาแตะเลือกประเภทบัตรด้านบนก่อน
-                      </p>
-                    ) : availableMonths.length === 0 ? (
-                      <p
-                        className="muted"
-                        style={{ margin: 0, fontSize: '12px' }}
-                      >
-                        บัตรนี้ยังไม่มีการกำหนดเดือนผ่อน
-                      </p>
-                    ) : (
-                      <div className="choices">
-                        {availableMonths.map((months) => {
-                          const selected = tempSelectedMonths === months;
-                          return (
-                            <button
-                              key={months}
-                              type="button"
-                              className={`choice ${selected ? 'selected' : ''}`}
-                              style={{
-                                padding: '10px 18px',
-                                fontSize: '13px',
-                                fontWeight: selected ? 600 : 500,
-                                cursor: 'pointer',
-                              }}
-                              onClick={() => setTempSelectedMonths(months)}
-                            >
-                              {months} เดือน
-                            </button>
-                          );
-                        })}
+                        2. เลือกจำนวนเดือนที่ผ่อน{' '}
+                        {tempSelectedCard ? `(${tempSelectedCard})` : ''}{' '}
+                        <span style={{ color: '#ef4444' }}>*</span>
                       </div>
-                    )}
-                  </div>
-                )}
+                      {!tempSelectedCard ? (
+                        <p
+                          className="muted"
+                          style={{ margin: 0, fontSize: '12px' }}
+                        >
+                          กรุณาแตะเลือกประเภทบัตรด้านบนก่อน
+                        </p>
+                      ) : availableMonths.length === 0 ? (
+                        <p
+                          className="muted"
+                          style={{ margin: 0, fontSize: '12px' }}
+                        >
+                          บัตรนี้ยังไม่มีการกำหนดเดือนผ่อน
+                        </p>
+                      ) : (
+                        <div className="choices">
+                          {availableMonths.map((months) => {
+                            const selected = tempSelectedMonths === months;
+                            return (
+                              <button
+                                key={months}
+                                type="button"
+                                className={`choice ${selected ? 'selected' : ''}`}
+                                style={{
+                                  padding: '10px 18px',
+                                  fontSize: '13px',
+                                  fontWeight: selected ? 600 : 500,
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => setTempSelectedMonths(months)}
+                              >
+                                {months} เดือน
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
-                <div className="card-modal-footer">
-                  <Button variant="secondary" onClick={handleCancelModal}>
-                    ยกเลิก
-                  </Button>
-                  <Button disabled={!canConfirm} onClick={handleConfirmModal}>
-                    ยืนยัน
-                  </Button>
+                  <div className="card-modal-footer">
+                    <Button variant="secondary" onClick={handleCancelModal}>
+                      ยกเลิก
+                    </Button>
+                    <Button disabled={!canConfirm} onClick={handleConfirmModal}>
+                      ยืนยัน
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </Modal>
-          );
-        })()}
+              </Modal>
+            );
+          })()}
       </fieldset>
       <fieldset>
         <legend>
-          ประเภทใบเสร็จ <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+          ประเภทใบเสร็จ{' '}
+          <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
         </legend>
         <div
           role="radiogroup"
@@ -1063,9 +1159,12 @@ export function SelectionEditor({
                   padding: '12px 16px',
                   border: `1px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
                   borderRadius: '8px',
-                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                  background: selected
+                    ? 'var(--primary-subtle)'
+                    : 'var(--bg-surface)',
                   cursor: 'pointer',
-                  transition: 'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  transition:
+                    'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
                   userSelect: 'none',
                 }}
               >
@@ -1081,13 +1180,33 @@ export function SelectionEditor({
                       taxInvoice: opt.isTaxInvoice,
                     })
                   }
-                  style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    margin: 0,
+                    cursor: 'pointer',
+                    accentColor: 'var(--primary)',
+                  }}
                 />
                 <div>
-                  <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontWeight: 600,
+                      fontSize: '14px',
+                      color: 'var(--text-primary)',
+                    }}
+                  >
                     {opt.label}
                   </span>
-                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  <span
+                    style={{
+                      display: 'block',
+                      fontSize: '12px',
+                      color: 'var(--text-secondary)',
+                      marginTop: '2px',
+                    }}
+                  >
                     {opt.description}
                   </span>
                 </div>
@@ -1098,9 +1217,17 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          เอกสารภาษีเพิ่มเติม / VAT Refund <small className="legend-note">(ไม่บังคับ)</small>
+          เอกสารภาษีเพิ่มเติม / VAT Refund{' '}
+          <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            marginTop: '6px',
+          }}
+        >
           <label
             style={{
               display: 'flex',
@@ -1109,23 +1236,48 @@ export function SelectionEditor({
               padding: '12px 16px',
               border: `1px solid ${value.vatRefund ? 'var(--primary)' : 'var(--border-color)'}`,
               borderRadius: '8px',
-              background: value.vatRefund ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+              background: value.vatRefund
+                ? 'var(--primary-subtle)'
+                : 'var(--bg-surface)',
               cursor: 'pointer',
-              transition: 'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
+              transition:
+                'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
               userSelect: 'none',
             }}
           >
             <input
               type="checkbox"
               checked={Boolean(value.vatRefund)}
-              onChange={(e) => onChange({ ...value, vatRefund: e.target.checked })}
-              style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
+              onChange={(e) =>
+                onChange({ ...value, vatRefund: e.target.checked })
+              }
+              style={{
+                width: '18px',
+                height: '18px',
+                margin: 0,
+                cursor: 'pointer',
+                accentColor: 'var(--primary)',
+              }}
             />
             <div>
-              <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  color: 'var(--text-primary)',
+                }}
+              >
                 ต้องการ VAT Refund
               </span>
-              <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+              <span
+                style={{
+                  display: 'block',
+                  fontSize: '12px',
+                  color: 'var(--text-secondary)',
+                  marginTop: '2px',
+                }}
+              >
                 ขอเอกสารคืนภาษีมูลค่าเพิ่มสำหรับนักท่องเที่ยวต่างชาติ (ภ.พ.10)
               </span>
             </div>
@@ -1134,10 +1286,19 @@ export function SelectionEditor({
       </fieldset>
       {!paymentsValid && (
         <Notice error>
-          กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
+          กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card)
+          ให้ครบถ้วนก่อนตรวจสอบรายการ
         </Notice>
       )}
-      <div className="actions" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '20px' }}>
+      <div
+        className="actions"
+        style={{
+          display: 'flex',
+          justifyContent: 'flex-end',
+          alignItems: 'center',
+          marginTop: '20px',
+        }}
+      >
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}

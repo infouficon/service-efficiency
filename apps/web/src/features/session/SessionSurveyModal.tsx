@@ -307,7 +307,7 @@ export function SessionSurveyModal({
                     fontWeight: 600,
                   }}
                 >
-                  ⚡ ข้อที่มีเครื่องหมาย &quot;ตอบทันที&quot;
+                  ข้อที่มีเครื่องหมาย &quot;ตอบทันที&quot;
                   บังคับต้องตอบก่อนกด &quot;ไว้ทำทีหลัง&quot;
                 </p>
               )}
@@ -376,7 +376,7 @@ export function SessionSurveyModal({
                               fontWeight: 700,
                             }}
                           >
-                            ⚡ ตอบทันที
+                            ตอบทันที
                           </span>
                         )}
                       </div>

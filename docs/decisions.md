@@ -2238,3 +2238,28 @@ Decisions:
 3. **Workspace & Sidebar Indicators:**
    - In `App.tsx`, `pendingSurveysCount` includes sessions with no response or with `completed === false`.
    - In `SurveyWorkspace.tsx`, pending sessions with saved answers show a badge `ตอบบางส่วนแล้ว` and action button `ทำแบบสำรวจต่อ`.
+
+## D145 — Main Product Selection In-Place Expandable Cards and SKU Pricing (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- แก้ไขรูแปบบตอนเลือกสินค้าหลักให้เป็นแบบในภาพ แต่ยังคงสีเดิมของ web ไว้
+
+Decisions:
+
+1. **In-Place Expandable Model Cards (`SkuPicker.tsx`):**
+   - Replaced the collapsing model button list with rounded model cards (`border-radius: 14px`) arranged vertically.
+   - **Unselected Card:** Shows model name (e.g. `iPad Air 11" (M4)`) and starting price (e.g. `เริ่มต้น ฿23,900` if prices are defined) or model category description with subtle border and hover states.
+   - **Selected Card:** Highlighted with web primary teal border (`2px solid #0abab5`), subtle background `#f8fafc`, and a circular checkmark icon (`Check` in a 24px `#0abab5` circle) on the top right.
+   - **In-Place Expansion:** When selected, the model card expands its sub-options directly inside the card container while leaving other model cards visible above/below.
+2. **2-Column Grid Sub-Option Selection (`SpecGrid`):**
+   - RAM, ความจุ (Storage), and สี (Colour) groups are arranged in a 2-column grid (`repeat(2, minmax(0, 1fr))`).
+   - Selected option buttons adopt the primary brand teal `#0abab5` background with bold white text, subtle shadow, and clean rounded corners (`10px`).
+   - Unselected option buttons display white background, `#cbd5e1` border, and dark text.
+   - Out-of-stock items maintain strikethrough and disabled state.
+3. **Product SKU Pricing Support (`ProductSku.price`):**
+   - Added optional `price Decimal? @db.Decimal(10, 2)` to `ProductSku` schema (migration `202611160004_sku_price`).
+   - DTOs and API endpoints (`createSku`, `updateSku`, `findByBranch`) support `price`.
+   - Admin can view and edit SKU price in `ProductWorkspace.tsx`.
+   - `modelChoices` calculates `minPrice` across active SKUs of each model, automatically showing "เริ่มต้น ฿XX,XXX" or hiding price when not set.
+   - Selection preview in `SelectionEditor.tsx` and `WalkInForm.tsx` shows formatted price badges.

@@ -61,6 +61,7 @@ export interface ProductSKU {
   name: string;
   color?: string;
   storage?: string;
+  price?: number | null;
 }
 
 export interface Product {
@@ -71,6 +72,7 @@ export interface Product {
   /** The model's own name when `model` shows the SKU name instead; the IMEI/SN rule (D125) reads both, as the server does. */
   modelName?: string;
   sku: string;
+  price?: number | null;
   stock?: number;
   /** Where `stock` comes from: `unlimited` = the ADMIN switch is on (D59, nothing is blocked), `erp` = warroom (D52), `manual` = kept by ADMIN (D41). */
   stockSource?: 'unlimited' | 'erp' | 'manual';

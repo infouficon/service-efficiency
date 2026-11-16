@@ -381,6 +381,7 @@ model ProductSku {
   memory    String?           @db.VarChar(32)
   // barcode (warroom product_upc) next to the part number kept in `sku` (D72)
   upc       String?           @db.VarChar(64)
+  price     Decimal?          @db.Decimal(10, 2)
   active    Boolean           @default(true)
   erpManaged Boolean          @default(false)
   sessions  CustomerSession[]

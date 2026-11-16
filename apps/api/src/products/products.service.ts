@@ -7,7 +7,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
-import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
+import {
+  RESERVATION_HOURS,
+  warroomMode,
+} from '../warroom/warroom-sync.service';
 
 /** How long a "missing / out of stock" report (D41) keeps a SKU at 0 while warroom has not sent a newer snapshot. */
 export const OUT_OF_STOCK_HOURS = 6;
@@ -140,9 +143,16 @@ export class ProductsService implements OnModuleInit {
       const existing = await this.prisma.branchInventory.findMany({
         select: { branchId: true, skuId: true },
       });
-      const existingSet = new Set(existing.map((e) => `${e.branchId}:${e.skuId}`));
+      const existingSet = new Set(
+        existing.map((e) => `${e.branchId}:${e.skuId}`),
+      );
 
-      const toCreate: { branchId: string; skuId: string; stock: number; active: boolean }[] = [];
+      const toCreate: {
+        branchId: string;
+        skuId: string;
+        stock: number;
+        active: boolean;
+      }[] = [];
       for (const b of branches) {
         for (const s of skus) {
           if (!existingSet.has(`${b.id}:${s.id}`)) {
@@ -174,7 +184,10 @@ export class ProductsService implements OnModuleInit {
     const unlimited = await this.settings.stockUnlimited();
 
     const products = await this.prisma.product.findMany({
-      where: { active: true, category: { in: await this.activeCategoryNames() } },
+      where: {
+        active: true,
+        category: { in: await this.activeCategoryNames() },
+      },
       include: {
         models: {
           where: { active: true },
@@ -224,7 +237,8 @@ export class ProductsService implements OnModuleInit {
             skus: m.skus.map((s) => {
               const inv = s.inventory[0];
               // ERP number (net of what SES already promised) when it drives the screen, else the manual stock (D41)
-              const available = erpOn && inv ? availableUnits(inv, reservations) : null;
+              const available =
+                erpOn && inv ? availableUnits(inv, reservations) : null;
               return {
                 id: s.id,
                 modelId: s.modelId,
@@ -235,6 +249,7 @@ export class ProductsService implements OnModuleInit {
                 memory: s.memory,
                 /** D109: the newest UPC of a model puts it higher in the staff's model list */
                 upc: s.upc,
+                price: s.price != null ? Number(s.price) : null,
                 active: s.active,
                 erpManaged: s.erpManaged,
                 stock: available ?? inv?.stock ?? 0,
@@ -257,7 +272,10 @@ export class ProductsService implements OnModuleInit {
 
   async findAll() {
     return this.prisma.product.findMany({
-      where: { active: true, category: { in: await this.activeCategoryNames() } },
+      where: {
+        active: true,
+        category: { in: await this.activeCategoryNames() },
+      },
       include: {
         models: {
           where: { active: true },
@@ -336,10 +354,7 @@ export class ProductsService implements OnModuleInit {
           },
         },
       },
-      orderBy: [
-        { branch: { code: 'asc' } },
-        { sku: { sku: 'asc' } },
-      ],
+      orderBy: [{ branch: { code: 'asc' } }, { sku: { sku: 'asc' } }],
     });
   }
 
@@ -430,7 +445,10 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async updateProduct(id: string, data: { category?: string; name?: string; active?: boolean }) {
+  async updateProduct(
+    id: string,
+    data: { category?: string; name?: string; active?: boolean },
+  ) {
     if (data.category !== undefined)
       data = { ...data, category: await this.categoryName(data.category) };
     if (this.erpOn()) {
@@ -488,7 +506,10 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async updateModel(modelId: string, { pinned, ...data }: { name?: string; active?: boolean; pinned?: boolean }) {
+  async updateModel(
+    modelId: string,
+    { pinned, ...data }: { name?: string; active?: boolean; pinned?: boolean },
+  ) {
     if (this.erpOn()) {
       const cur = await this.prisma.productModel.findUnique({
         where: { id: modelId },
@@ -501,7 +522,12 @@ export class ProductsService implements OnModuleInit {
       const updated = await tx.productModel.update({
         where: { id: modelId },
         // D109: pinning stamps the time, so the last pinned model is on top
-        data: { ...data, ...(pinned !== undefined ? { pinnedAt: pinned ? new Date() : null } : {}) },
+        data: {
+          ...data,
+          ...(pinned !== undefined
+            ? { pinnedAt: pinned ? new Date() : null }
+            : {}),
+        },
         include: { skus: true },
       });
 
@@ -521,7 +547,16 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async createSku(modelId: string, data: { sku: string; name: string; color?: string; storage?: string }) {
+  async createSku(
+    modelId: string,
+    data: {
+      sku: string;
+      name: string;
+      color?: string;
+      storage?: string;
+      price?: number;
+    },
+  ) {
     const sku = await this.prisma.productSku.create({
       data: {
         modelId,
@@ -529,12 +564,16 @@ export class ProductsService implements OnModuleInit {
         name: data.name,
         color: data.color || null,
         storage: data.storage || null,
+        price:
+          data.price !== undefined && data.price !== null ? data.price : null,
         active: true,
       },
     });
 
     // Create branch inventory for all existing branches
-    const branches = await this.prisma.branch.findMany({ select: { id: true } });
+    const branches = await this.prisma.branch.findMany({
+      select: { id: true },
+    });
     if (branches.length > 0) {
       await this.prisma.branchInventory.createMany({
         data: branches.map((b) => ({
@@ -550,11 +589,27 @@ export class ProductsService implements OnModuleInit {
     return sku;
   }
 
-  async updateSku(skuId: string, data: { sku?: string; name?: string; color?: string; storage?: string; active?: boolean }) {
+  async updateSku(
+    skuId: string,
+    data: {
+      sku?: string;
+      name?: string;
+      color?: string;
+      storage?: string;
+      price?: number;
+      active?: boolean;
+    },
+  ) {
     if (this.erpOn()) {
       const cur = await this.prisma.productSku.findUnique({
         where: { id: skuId },
-        select: { erpManaged: true, sku: true, name: true, color: true, storage: true },
+        select: {
+          erpManaged: true,
+          sku: true,
+          name: true,
+          color: true,
+          storage: true,
+        },
       });
       const differs = (next: string | undefined, now: string | null) =>
         next !== undefined && (next || null) !== (now || null);
@@ -584,5 +639,3 @@ export class ProductsService implements OnModuleInit {
     });
   }
 }
-
-

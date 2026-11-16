@@ -71,6 +71,44 @@ test('surveys: configurable questions for BUY and NOT_BUY, response collection, 
       assert.equal(deleted.status, 200);
     });
 
+    await t.test('admin can reorder survey questions via drag-and-drop endpoint (D142)', async () => {
+      const q1 = await createQuestion({
+        target: 'BUY',
+        title: `${prefix} Q1`,
+        questionType: 'TEXT',
+      });
+      const q2 = await createQuestion({
+        target: 'BUY',
+        title: `${prefix} Q2`,
+        questionType: 'TEXT',
+      });
+      assert.equal(q1.status, 201);
+      assert.equal(q2.status, 201);
+
+      // Staff cannot reorder
+      const staffReorder = await request(
+        '/surveys/questions/reorder',
+        'POST',
+        { target: 'BUY', orderedIds: [q2.data.id, q1.data.id] },
+        cookies.staff,
+      );
+      assert.equal(staffReorder.status, 403);
+
+      // Admin reorders q2 before q1
+      const reorderRes = await request(
+        '/surveys/questions/reorder',
+        'POST',
+        { target: 'BUY', orderedIds: [q2.data.id, q1.data.id] },
+        cookies.admin,
+      );
+      assert.equal(reorderRes.status, 201);
+      const ids = reorderRes.data.map((q) => q.id);
+      assert.ok(ids.indexOf(q2.data.id) < ids.indexOf(q1.data.id));
+
+      await deleteQuestion(q1.data.id, 'admin');
+      await deleteQuestion(q2.data.id, 'admin');
+    });
+
     await t.test('staff submits survey responses for a session', async () => {
       // 1. Create a question for NOT_BUY
       const notBuyQ = await createQuestion({

@@ -96,6 +96,15 @@ export class MoveSurveyQuestionDto {
   direction!: 'UP' | 'DOWN';
 }
 
+export class ReorderSurveyQuestionsDto {
+  @IsEnum(SurveyTarget)
+  target!: SurveyTarget;
+
+  @IsArray()
+  @IsString({ each: true })
+  orderedIds!: string[];
+}
+
 export class SurveyAnswerDto {
   @IsString()
   @IsNotEmpty()

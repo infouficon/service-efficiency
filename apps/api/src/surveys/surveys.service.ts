@@ -118,6 +118,18 @@ export class SurveysService {
     return this.listQuestions(current.target, true);
   }
 
+  async reorderQuestions(target: SurveyTarget, orderedIds: string[]): Promise<SurveyQuestion[]> {
+    await this.prisma.$transaction(
+      orderedIds.map((id, index) =>
+        this.prisma.surveyQuestion.updateMany({
+          where: { id, target },
+          data: { sortOrder: index + 1 },
+        }),
+      ),
+    );
+    return this.listQuestions(target, true);
+  }
+
   /**
    * Submit survey response for a customer session.
    */

@@ -176,49 +176,6 @@ export function SurveyWorkspace({
             รายการแบบสำรวจความคิดเห็นของลูกค้าประจำวันสำหรับพนักงาน (สาขา {user.branch})
           </p>
         </div>
-
-        {/* Counters */}
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <div
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              background: '#fef2f2',
-              border: '1px solid #fee2e2',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <AlertCircle size={18} color="#dc2626" />
-            <div>
-              <div style={{ fontSize: '11px', color: '#991b1b', fontWeight: 600 }}>ค้างทำ</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#dc2626', lineHeight: 1 }}>
-                {pendingList.length}
-              </div>
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: '8px 16px',
-              borderRadius: '8px',
-              background: '#f0fdf4',
-              border: '1px solid #dcfce7',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
-          >
-            <CheckCircle2 size={18} color="#16a34a" />
-            <div>
-              <div style={{ fontSize: '11px', color: '#166534', fontWeight: 600 }}>ทำแล้ว</div>
-              <div style={{ fontSize: '18px', fontWeight: 700, color: '#16a34a', lineHeight: 1 }}>
-                {completedList.length}
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Main Panel */}
@@ -236,32 +193,48 @@ export function SurveyWorkspace({
             paddingBottom: '12px',
           }}
         >
-          {/* Tabs */}
-          <div style={{ display: 'flex', gap: '8px' }}>
+          {/* Segmented Control Mode Toggle */}
+          <div
+            role="tablist"
+            aria-label="เลือกโหมดแบบสำรวจ"
+            style={{
+              display: 'inline-flex',
+              backgroundColor: '#f1f5f9',
+              padding: '3px',
+              borderRadius: '10px',
+              border: '1px solid #e2e8f0',
+            }}
+          >
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'pending'}
               onClick={() => setActiveTab('pending')}
               style={{
-                padding: '8px 16px',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 border: 'none',
-                background: activeTab === 'pending' ? '#0f766e' : '#f1f5f9',
-                color: activeTab === 'pending' ? '#ffffff' : '#475569',
-                fontWeight: 600,
+                background: activeTab === 'pending' ? '#ffffff' : 'transparent',
+                color: activeTab === 'pending' ? '#0f172a' : '#64748b',
+                fontWeight: activeTab === 'pending' ? 700 : 500,
                 fontSize: '13.5px',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
-                transition: 'all 0.2s',
+                boxShadow:
+                  activeTab === 'pending'
+                    ? '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)'
+                    : 'none',
+                transition: 'all 0.15s ease',
               }}
             >
               <span>ค้างทำ (Pending)</span>
               {pendingList.length > 0 && (
                 <span
                   style={{
-                    backgroundColor: activeTab === 'pending' ? '#ffffff' : '#dc2626',
-                    color: activeTab === 'pending' ? '#0f766e' : '#ffffff',
+                    backgroundColor: activeTab === 'pending' ? '#fee2e2' : '#e2e8f0',
+                    color: activeTab === 'pending' ? '#dc2626' : '#64748b',
                     padding: '2px 7px',
                     borderRadius: '9999px',
                     fontSize: '11px',
@@ -275,35 +248,29 @@ export function SurveyWorkspace({
 
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === 'completed'}
               onClick={() => setActiveTab('completed')}
               style={{
-                padding: '8px 16px',
+                padding: '7px 16px',
                 borderRadius: '8px',
                 border: 'none',
-                background: activeTab === 'completed' ? '#0f766e' : '#f1f5f9',
-                color: activeTab === 'completed' ? '#ffffff' : '#475569',
-                fontWeight: 600,
+                background: activeTab === 'completed' ? '#ffffff' : 'transparent',
+                color: activeTab === 'completed' ? '#0f172a' : '#64748b',
+                fontWeight: activeTab === 'completed' ? 700 : 500,
                 fontSize: '13.5px',
                 cursor: 'pointer',
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '8px',
-                transition: 'all 0.2s',
+                boxShadow:
+                  activeTab === 'completed'
+                    ? '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)'
+                    : 'none',
+                transition: 'all 0.15s ease',
               }}
             >
               <span>ทำแล้ว (Completed)</span>
-              <span
-                style={{
-                  backgroundColor: activeTab === 'completed' ? '#ffffff' : '#cbd5e1',
-                  color: activeTab === 'completed' ? '#0f766e' : '#334155',
-                  padding: '2px 7px',
-                  borderRadius: '9999px',
-                  fontSize: '11px',
-                  fontWeight: 700,
-                }}
-              >
-                {completedList.length}
-              </span>
             </button>
           </div>
 

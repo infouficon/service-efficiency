@@ -653,6 +653,16 @@ export async function moveSurveyQuestionApi(
   return api<SurveyQuestion[]>(`/surveys/questions/${encodeURIComponent(id)}/move`, 'POST', { direction });
 }
 
+export async function reorderSurveyQuestionsApi(
+  target: SurveyTarget,
+  orderedIds: string[],
+): Promise<SurveyQuestion[]> {
+  return api<SurveyQuestion[]>('/surveys/questions/reorder', 'POST', {
+    target,
+    orderedIds,
+  });
+}
+
 export async function submitSurveyResponseApi(data: {
   sessionId: string;
   target: SurveyTarget;

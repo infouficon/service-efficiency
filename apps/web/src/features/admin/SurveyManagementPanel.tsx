@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowUp,
   Download,
   Edit2,
   FileQuestion,
+  GripVertical,
   Plus,
   Trash2,
   X,
@@ -15,7 +14,7 @@ import {
   createSurveyQuestionApi,
   deleteSurveyQuestionApi,
   fetchSurveyQuestionsApi,
-  moveSurveyQuestionApi,
+  reorderSurveyQuestionsApi,
   updateSurveyQuestionApi,
 } from '../../services/sessionApi';
 import type {
@@ -62,6 +61,9 @@ export function SurveyManagementPanel() {
   const [error, setError] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<QuestionFormState>(DEFAULT_FORM);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [canDrag, setCanDrag] = useState(false);
 
   const load = useCallback(async (t: SurveyTarget) => {
     setLoading(true);
@@ -195,15 +197,32 @@ export function SurveyManagementPanel() {
     }
   };
 
-  const handleMove = async (q: SurveyQuestion, direction: 'UP' | 'DOWN') => {
+  const handleReorder = async (sourceIndex: number, targetIndex: number) => {
+    if (sourceIndex === targetIndex || busy) return;
+    const previous = [...questions];
+    const updated = [...questions];
+    const [moved] = updated.splice(sourceIndex, 1);
+    updated.splice(targetIndex, 0, moved);
+    setQuestions(updated);
     setBusy(true);
     try {
-      await moveSurveyQuestionApi(q.id, direction);
-      await load(target);
+      const result = await reorderSurveyQuestionsApi(
+        target,
+        updated.map((q) => q.id),
+      );
+      setQuestions(result);
+      toast.success('บันทึกลำดับคำถามเรียบร้อย');
+      setError('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'จัดลำดับไม่สำเร็จ');
+      setQuestions(previous);
+      const msg = err instanceof Error ? err.message : 'จัดลำดับไม่สำเร็จ';
+      setError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
+      setDraggedIndex(null);
+      setDragOverIndex(null);
+      setCanDrag(false);
     }
   };
 
@@ -235,22 +254,63 @@ export function SurveyManagementPanel() {
           paddingBottom: '12px',
         }}
       >
-        <div style={{ display: 'flex', gap: '8px' }}>
+        {/* Modern Segmented Control for Target Mode */}
+        <div
+          role="tablist"
+          aria-label="เลือกโหมดแบบสำรวจ"
+          style={{
+            display: 'inline-flex',
+            backgroundColor: '#f1f5f9',
+            padding: '3px',
+            borderRadius: '10px',
+            border: '1px solid #e2e8f0',
+          }}
+        >
           <button
             type="button"
-            className={`button ${target === 'BUY' ? 'primary' : 'secondary'}`}
+            role="tab"
+            aria-selected={target === 'BUY'}
             onClick={() => setTarget('BUY')}
-            style={{ fontWeight: 600 }}
+            style={{
+              padding: '7px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              background: target === 'BUY' ? '#ffffff' : 'transparent',
+              color: target === 'BUY' ? '#0f172a' : '#64748b',
+              fontWeight: target === 'BUY' ? 700 : 500,
+              fontSize: '13.5px',
+              cursor: 'pointer',
+              boxShadow:
+                target === 'BUY'
+                  ? '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)'
+                  : 'none',
+              transition: 'all 0.15s ease',
+            }}
           >
-            แบบสำรวจ: กรณีซื้อ (BUY)
+            แบบสำรวจ: BUY
           </button>
           <button
             type="button"
-            className={`button ${target === 'NOT_BUY' ? 'primary' : 'secondary'}`}
+            role="tab"
+            aria-selected={target === 'NOT_BUY'}
             onClick={() => setTarget('NOT_BUY')}
-            style={{ fontWeight: 600 }}
+            style={{
+              padding: '7px 18px',
+              borderRadius: '8px',
+              border: 'none',
+              background: target === 'NOT_BUY' ? '#ffffff' : 'transparent',
+              color: target === 'NOT_BUY' ? '#0f172a' : '#64748b',
+              fontWeight: target === 'NOT_BUY' ? 700 : 500,
+              fontSize: '13.5px',
+              cursor: 'pointer',
+              boxShadow:
+                target === 'NOT_BUY'
+                  ? '0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04)'
+                  : 'none',
+              transition: 'all 0.15s ease',
+            }}
           >
-            แบบสำรวจ: กรณีไม่ซื้อ (NOT_BUY)
+            แบบสำรวจ: NOT BUY
           </button>
         </div>
 
@@ -297,169 +357,217 @@ export function SurveyManagementPanel() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {questions.map((q, idx) => (
-            <div
-              key={q.id}
-              style={{
-                display: 'flex',
-                alignItems: 'flex-start',
-                justifyContent: 'space-between',
-                padding: '16px',
-                background: q.active ? '#ffffff' : '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '10px',
-                opacity: q.active ? 1 : 0.65,
-                gap: '12px',
-                flexWrap: 'wrap',
-              }}
-            >
-              <div style={{ flex: 1, minWidth: '240px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                  <span
-                    style={{
-                      background: '#0f766e',
-                      color: '#ffffff',
-                      fontSize: '11px',
-                      fontWeight: 700,
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                    }}
-                  >
-                    ข้อ {idx + 1}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      background: '#f1f5f9',
-                      color: '#475569',
-                      padding: '2px 8px',
-                      borderRadius: '6px',
-                    }}
-                  >
-                    {TYPE_LABELS[q.questionType]}
-                  </span>
-                  {q.required && (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        background: '#fef2f2',
-                        color: '#b91c1c',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      จำเป็นต้องตอบ
-                    </span>
-                  )}
-                  {!q.active && (
-                    <span
-                      style={{
-                        fontSize: '11px',
-                        background: '#fee2e2',
-                        color: '#991b1b',
-                        padding: '2px 6px',
-                        borderRadius: '4px',
-                      }}
-                    >
-                      ปิดใช้งาน
-                    </span>
-                  )}
+          {questions.map((q, idx) => {
+            const isDragging = draggedIndex === idx;
+            const isOver = dragOverIndex === idx && draggedIndex !== idx;
+            return (
+              <div
+                key={q.id}
+                draggable={canDrag && !busy}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', String(idx));
+                  e.dataTransfer.effectAllowed = 'move';
+                  setDraggedIndex(idx);
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  if (dragOverIndex !== idx) {
+                    setDragOverIndex(idx);
+                  }
+                }}
+                onDragLeave={() => {
+                  if (dragOverIndex === idx) {
+                    setDragOverIndex(null);
+                  }
+                }}
+                onDragEnd={() => {
+                  setDraggedIndex(null);
+                  setDragOverIndex(null);
+                  setCanDrag(false);
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (draggedIndex !== null && draggedIndex !== idx) {
+                    void handleReorder(draggedIndex, idx);
+                  } else {
+                    setDraggedIndex(null);
+                    setDragOverIndex(null);
+                    setCanDrag(false);
+                  }
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  padding: '16px',
+                  background: isOver ? '#f0fdfa' : q.active ? '#ffffff' : '#f8fafc',
+                  border: isOver ? '1.5px dashed #0abab5' : '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  opacity: isDragging ? 0.35 : q.active ? 1 : 0.65,
+                  boxShadow: isOver
+                    ? draggedIndex !== null && draggedIndex < idx
+                      ? 'inset 0 -2px 0 0 #0abab5'
+                      : 'inset 0 2px 0 0 #0abab5'
+                    : undefined,
+                  gap: '12px',
+                  flexWrap: 'wrap',
+                  transition:
+                    'background-color 0.15s ease, opacity 0.15s ease, border 0.15s ease',
+                }}
+              >
+                {/* Drag grip handle */}
+                <div
+                  style={{
+                    cursor: busy ? 'default' : 'grab',
+                    color: '#94a3b8',
+                    padding: '4px 2px',
+                    userSelect: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    marginTop: '2px',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={() => setCanDrag(true)}
+                  onMouseLeave={() => {
+                    if (draggedIndex === null) setCanDrag(false);
+                  }}
+                  title="ลากเพื่อสลับลำดับ"
+                  aria-label="ลากเพื่อสลับลำดับ"
+                >
+                  <GripVertical size={20} />
                 </div>
 
-                <div style={{ fontWeight: 600, fontSize: '15px', color: '#0f172a', marginBottom: '4px' }}>
-                  {q.title}
-                </div>
-
-                {q.description && (
-                  <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#64748b' }}>
-                    {q.description}
-                  </p>
-                )}
-
-                {q.options && q.options.length > 0 && q.questionType !== 'TEXT' && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                    {q.options.map((opt, oIdx) => (
+                <div style={{ flex: 1, minWidth: '240px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                    <span
+                      style={{
+                        background: '#0f766e',
+                        color: '#ffffff',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                      }}
+                    >
+                      ข้อ {idx + 1}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '11.5px',
+                        background: '#f1f5f9',
+                        color: '#475569',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                      }}
+                    >
+                      {TYPE_LABELS[q.questionType]}
+                    </span>
+                    {q.required && (
                       <span
-                        key={oIdx}
                         style={{
-                          fontSize: '12px',
-                          background: '#e0f2fe',
-                          color: '#0369a1',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
+                          fontSize: '11px',
+                          background: '#fef2f2',
+                          color: '#b91c1c',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
                         }}
                       >
-                        {opt}
+                        จำเป็นต้องตอบ
                       </span>
-                    ))}
-                    {q.allowOther && (
+                    )}
+                    {!q.active && (
                       <span
                         style={{
-                          fontSize: '12px',
-                          background: '#fef3c7',
-                          color: '#92400e',
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          fontStyle: 'italic',
+                          fontSize: '11px',
+                          background: '#fee2e2',
+                          color: '#991b1b',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
                         }}
                       >
-                        + อื่น ๆ (ระบุ)
+                        ปิดใช้งาน
                       </span>
                     )}
                   </div>
-                )}
-              </div>
 
-              {/* Actions */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={idx === 0 || busy}
-                  onClick={() => handleMove(q, 'UP')}
-                  aria-label="เลื่อนขึ้น"
-                >
-                  <ArrowUp size={14} />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={idx === questions.length - 1 || busy}
-                  onClick={() => handleMove(q, 'DOWN')}
-                  aria-label="เลื่อนลง"
-                >
-                  <ArrowDown size={14} />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => handleToggleActive(q)}
-                >
-                  {q.active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => handleOpenEdit(q)}
-                >
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    <Edit2 size={13} /> แก้ไข
-                  </span>
-                </Button>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  disabled={busy}
-                  onClick={() => handleDelete(q)}
-                >
-                  <Trash2 size={13} />
-                </Button>
+                  <div style={{ fontWeight: 600, fontSize: '15px', color: '#0f172a', marginBottom: '4px' }}>
+                    {q.title}
+                  </div>
+
+                  {q.description && (
+                    <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#64748b' }}>
+                      {q.description}
+                    </p>
+                  )}
+
+                  {q.options && q.options.length > 0 && q.questionType !== 'TEXT' && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                      {q.options.map((opt, oIdx) => (
+                        <span
+                          key={oIdx}
+                          style={{
+                            fontSize: '12px',
+                            background: '#e0f2fe',
+                            color: '#0369a1',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                          }}
+                        >
+                          {opt}
+                        </span>
+                      ))}
+                      {q.allowOther && (
+                        <span
+                          style={{
+                            fontSize: '12px',
+                            background: '#fef3c7',
+                            color: '#92400e',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          + อื่น ๆ (ระบุ)
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => handleToggleActive(q)}
+                  >
+                    {q.active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    onClick={() => handleOpenEdit(q)}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <Edit2 size={13} /> แก้ไข
+                    </span>
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    disabled={busy}
+                    onClick={() => handleDelete(q)}
+                  >
+                    <Trash2 size={13} />
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

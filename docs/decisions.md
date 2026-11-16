@@ -2160,6 +2160,23 @@ Decisions:
    - For pending items, shows queue label, phone, type (ซื้อ / ไม่ซื้อ), timestamp, and a "ทำแบบสำรวจ" button to complete the survey anytime.
    - For completed items, provides a "ดูผลสำรวจ" modal to review recorded customer answers.
 
+## D142 — Drag-and-Drop Question Reordering and Segmented Control Mode Toggles (2026-11-16)
+
+Owner instruction via `/grill-me`:
+- หน้า จัดการแบบสำรวจ ไม่ต้องมีปุ่ม ขึ้น ลง ให้สามารถลากเพื่อสลับข้อได้
+- แบบสำรวจ: กรณีซื้อ (BUY) แบบสำรวจ: กรณีไม่ซื้อ (NOT_BUY) ให้ปุ่มเป็นแบบ toggle เพื่อโหมด
+- แบบสำรวจลูกค้า (Customer Surveys) ให้ปุ่มเป็นแบบ toggle ปุ่มโหมด
+
+Decisions:
+1. **Drag-and-Drop Survey Question Reordering:**
+   - Removed UP/DOWN buttons in `SurveyManagementPanel.tsx`.
+   - Added a grip handle icon (`GripVertical`) on the left of each question card. Hovering/clicking the handle enables `draggable={true}`.
+   - Dropping a card triggers optimistic reordering and calls `POST /api/surveys/questions/reorder` with `{ target, orderedIds }`.
+   - In `SurveysService`, `reorderQuestions` executes a single transaction updating `sortOrder: index + 1` for all questions in the target.
+2. **Segmented Control Mode Toggles:**
+   - In `SurveyManagementPanel`: Target switch (BUY vs NOT_BUY) is converted to a modern iOS/web segmented control with `#f1f5f9` container and floating white active pill with shadow.
+   - In `SurveyWorkspace`: Mode switch (Pending vs Completed) is similarly converted to the modern segmented control style with count badges.
+
 
 
 

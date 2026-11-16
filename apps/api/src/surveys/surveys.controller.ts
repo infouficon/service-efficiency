@@ -20,6 +20,7 @@ import { SurveysService } from './surveys.service';
 import {
   CreateSurveyQuestionDto,
   MoveSurveyQuestionDto,
+  ReorderSurveyQuestionsDto,
   SubmitSurveyResponseDto,
   UpdateSurveyQuestionDto,
 } from './dto';
@@ -87,6 +88,15 @@ export class SurveysController {
   async deleteQuestion(@Req() req: Request, @Param('id') id: string) {
     await this.admin(req);
     return this.surveys.deleteQuestion(id);
+  }
+
+  @Post('questions/reorder')
+  async reorderQuestions(
+    @Req() req: Request,
+    @Body() dto: ReorderSurveyQuestionsDto,
+  ) {
+    await this.admin(req);
+    return this.surveys.reorderQuestions(dto.target, dto.orderedIds);
   }
 
   @Post('questions/:id/move')

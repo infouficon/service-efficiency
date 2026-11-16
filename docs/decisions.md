@@ -2237,7 +2237,7 @@ Decisions:
      - Staff completes the remaining questions and clicks "บันทึก", which upserts the record with `completed: true`.
 3. **Workspace & Sidebar Indicators:**
    - In `App.tsx`, `pendingSurveysCount` includes sessions with no response or with `completed === false`.
-   - In `SurveyWorkspace.tsx`, pending sessions with saved answers show a badge `ตอบบางส่วนแล้ว` and action button `ทำแบบสำรวจต่อ`.
+   - In `SurveyWorkspace.tsx`, pending sessions with saved answers show action button `ทำแบบสำรวจต่อ`.
 
 ## D145 — Main Product Selection In-Place Expandable Cards and SKU Pricing (2026-11-16)
 
@@ -2263,3 +2263,120 @@ Decisions:
    - Admin can view and edit SKU price in `ProductWorkspace.tsx`.
    - `modelChoices` calculates `minPrice` across active SKUs of each model, automatically showing "เริ่มต้น ฿XX,XXX" or hiding price when not set.
    - Selection preview in `SelectionEditor.tsx` and `WalkInForm.tsx` shows formatted price badges.
+
+## D146 — Model Deselection, Mandatory Payment Selection, and Mobile Fixed Bottom Workflow Navigation (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- ตอนเลือกสินค้าหลัก ที่เลือกอยู่มีลูกศร หากกดตรงนั้นสามารถเอาออกเป็นการยกเลิกการเลือกได้
+- payment จำเป็นต้องเลือก อย่างน้อย 1 ถึงไป step ต่อไปได้
+- mobile display ปุ่ม ถัดไปให้ fix display แสดงไว้ด้านล่างจอ ไม่ต้องเลื่อนลงไปก็เห็นได้
+- mobile display ปุ่ม เริ่มบริการ ให้ fix display ไว้ล่างจอ ไม่ต้องเลื่อนลงไปก็กดได้
+- mobile display step 4 ไม่ต้องมีปุ่ม ตรวจสอบรายการ เพราะมีปุ่ม ถัดไป แล้ว
+- mobile display ปุ่ม กลับไปแก้ไข และ ยืนยันการสั่งซื้อ โดยที่เมื่อเลื่อนลงสุด ปุ่ม ยืนยันการสั่งซื้อ ถึงจะกดได้ เพื่อให้แน่ใจว่าดูครบแล้ว
+
+Decisions:
+
+1. **Model Deselection / Collapsing (`SkuPicker.tsx`):**
+   - Replaced static checkmark on selected model card with a circular toggle button containing `ChevronUp` (`#0abab5` background).
+   - Tapping the icon or card header collapses the model card and clears the current draft selection (`settle(null, '', '', false)`), returning the list to an unselected state so staff can choose another model.
+2. **Mandatory Payment Selection (`SelectionEditor.tsx`):**
+   - Updated Payment fieldset legend to `Payment (เลือกอย่างน้อย 1 ช่องทาง) *`.
+   - `reviewDisabled` enforces `(value.payments ?? []).length > 0`.
+3. **Mobile Sticky Bottom Navigation (Steps 2 & 3 in `StaffWorkspace.tsx`):**
+   - Step 2 (Apple devices): Fixed bottom bar (`.mobile-sticky-bar`) renders the "ถัดไป" button on mobile (`@media (max-width: 640px)`).
+   - Step 3 (Customer phone): Fixed bottom bar renders the "เริ่มบริการ" button on mobile, enabling staff to begin service immediately without scrolling.
+4. **Step 4 Redundant Button Removal (`SelectionEditor.tsx`):**
+   - Desktop in-flow button container tagged `.desktop-actions` is hidden on mobile screens (`display: none !important`), preserving only the fixed bottom bar with "ถัดไป".
+5. **Step 5 Review & Confirm Scroll-to-Bottom Enforcement (`StaffWorkspace.tsx`):**
+   - Mobile sticky bottom bar houses both "กลับไปแก้ไข" and "ยืนยันการสั่งซื้อ".
+   - An `IntersectionObserver` sentinel monitors the bottom of the review summary content.
+   - Button "ยืนยันการสั่งซื้อ" is disabled until the sentinel intersects the viewport (i.e. user has scrolled down to the end).
+   - Displays a helpful guidance indicator: "กรุณาเลื่อนดูข้อมูลสรุปให้ครบถ้วนก่อนยืนยัน" until scrolled to the bottom.
+
+## D147 — Model Deselect via Checkmark Icon, Mobile Fixed Bottom Step 1, Mandatory Step 2 Device Selection, Left-Aligned Summary Accessories, and Responsive Customer Survey Card (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- ต้องการให้ตอน เลือกรุ่นสินค้า เป็น ไอคอน ถูกเหมือนเดิม กดแล้วเป็นการเอาออก ยกเลิกการเลิก
+- mobile display ปุ่ม ถัดไป ใน step 1 ให้ fix display แสดงไว้ด้านล่างจอ ไม่ต้องเลื่อนลงไปก็เห็นได้
+- step 2 บังคับเลือกก่อนอย่างน้อย 1
+- step 5 ส่วน สรุปข้อมูลคำสั่งซื้อ & การชำระเงิน ของ อุปกรณ์เสริม: ใน mobile display ให้สินค้าชิดซ้าย
+- จากรูป หน้า แบบสำรวจลูกค้า (Customer Surveys) mobile display ปุ่ม ทำแบบสำรวจ / ทำแบบสำรวจต่อ ย้ายมาแสดงระดับเดียวกับ คิว หรือเบอร์ ส่วนข้อมูลอื่นๆ เบอร์ ซื้อสินค้า/ไม่ซื้อสินค้า เวลา ผู้ดูแลแสดงด้านล่านแบบในรูป
+
+Decisions:
+
+1. **Model Deselection via Checkmark Icon (`SkuPicker.tsx`):**
+   - Restored the circular checkmark icon (`Check` `✓`) on the selected model card.
+   - Tapping the checkmark button deselects the model (`settle(null, '', '', false)` and `setModelKey('')`), collapsing the card back to the unselected state.
+2. **Mobile Sticky Bottom Navigation for Step 1 (`WalkInForm.tsx`):**
+   - Added `.mobile-sticky-bar` containing the "ถัดไป" button fixed to the bottom of the viewport on mobile screens.
+   - Marked the in-flow desktop navigation buttons with `.desktop-actions` (hidden on mobile).
+3. **Mandatory Device Selection in Step 2 (`StaffWorkspace.tsx`):**
+   - Step 2 ("ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง?") now requires at least 1 selection before the "ถัดไป" button becomes active.
+   - Both desktop and mobile buttons are disabled when `selectedAppleDevices.length === 0`.
+   - Displays clear indicator and guidance text.
+4. **Left-Aligned Accessories in Step 5 Review (`Summary.tsx` & `styles.css`):**
+   - On mobile screens (`@media (max-width: 640px)`), `.summary-accessory-row` switches to column layout with `align-items: flex-start`, and `.summary-accessories-list` aligns chips to the left (`justify-content: flex-start !important`).
+5. **Customer Survey Card Responsive Grid on Mobile (`SurveyWorkspace.tsx` & `styles.css`):**
+   - Implemented CSS Grid (`survey-card-item`) with semantic areas:
+     - Desktop: `queue info action` in a single horizontal row.
+     - Mobile: Row 1 displays `queue` on the left and `action` button on the right at the same level; Row 2 displays `info` (phone number, buy/not-buy badge, walk-in time, and staff in charge) underneath.
+
+## D148 — Model Card Checkmark Circle Geometry Fix and Customer Survey Mobile Refinements (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- ไอคอนวงกลมติ๊กถูกตรง เลือกรุ่นสินค้า ตอนเลือกสินค้าหลัก ตอนแสดงด้วย mobile display สูงเกินไปไม่พอดี ทำไมตอนแสดงแล้วยึดไม่สวย
+- ปุ่ม ค้างทำ ทำแล้ว หน้า แบบสำรวจลูกค้า (Customer Surveys) ตอน mobile display ให้เต็มความยาว แบ่งกัน 50% 50%
+- จากรูปต้องการให้ปุ่มขนาดความสูงเท่ากับกรอบคิว โดยที่หากความยาวแสดงไม่พอ แสดงแค่ไอคอนก็พอ
+- หน้า แบบสำรวจลูกค้า (Customer Surveys) ตอน mobile display ส่วน ผู้รับผิดชอบ ไม่ต้องแสดงถ้าเป็น staff (สถานะอื่นยังแสดง) เพราะจะแสดงแค่ของตัวเองอยู่แล้ว เพื่อให้แสดง เบอร์ เวลา ซื้อ/ไม่ซื้อ เพียงบรรทัดเดียว
+
+Decisions:
+
+1. **Model Card Checkmark Circle Geometry (`SkuPicker.tsx`):**
+   - Fixed stretching and vertical distortion on mobile displays by applying strict constraints: `minWidth: 28px`, `maxWidth: 28px`, `minHeight: 28px`, `maxHeight: 28px`, `padding: 0`, `margin: 0`, `boxSizing: border-box`, `lineHeight: 1`, and setting parent flex container to `alignItems: 'center'`.
+   - Ensures an exact 28x28px symmetrical circle that aligns vertically with the model title across all browsers and devices.
+2. **Customer Survey Tabs 50/50 Mobile Split (`SurveyWorkspace.tsx` & `styles.css`):**
+   - On mobile displays (`@media (max-width: 640px)`), `.survey-mode-tabs` expands to `width: 100%`, and each tab button (`.survey-mode-tab-btn`) spans 50% (`flex: 1 1 50%`) with centered text.
+3. **Survey Card Action Button Sizing & Responsive Icon Mode (`SurveyWorkspace.tsx` & `styles.css`):**
+   - Action buttons (`ทำแบบสำรวจ` / `ทำแบบสำรวจต่อ` / `ดูผลสำรวจ`) are standardized to an exact 28px height matching the queue badge (`height: 28px`, `borderRadius: 6px`, `fontSize: 12.5px`).
+   - If the queue identifier is long (e.g. phone number `+66805935936` > 5 chars) or screen width is narrow (<= 420px), text is automatically hidden, displaying only the icon (`ClipboardList` or `Eye`) to prevent layout overflow.
+4. **Single-Line Customer Info for Staff on Mobile (`SurveyWorkspace.tsx` & `styles.css`):**
+   - When viewing as a staff member on mobile, "ผู้รับผิดชอบ" is hidden.
+   - Walk-in time (`timeStr`) is placed inline on the same row with the customer phone number and the purchase status badge (`[ซื้อสินค้า]` / `[ไม่ซื้อ / ยกเลิก]`), rendering cleanly on a single line.
+   - For non-staff (Admin/Manager), the staff attribution continues to be displayed.
+
+## D149 — Single Horizontal Level Customer Survey Card on Mobile (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- ต้องการให้ใน mobile display เป็นระดับเดียวกัน เอาส่วนในกรอบสีเหลืองย้ายไปไว้ระหว่าง คิว และ ปุ่ม โดยในเนื้อหาในกรอบเหลือง ให้แสดงเป็น เบอร์ อีกบรรทัดเป็น เวลา และ ซื้อ/ไม่ซื้อ
+- กรณีลูกค้าที่ไม่มีหมายเลขคิว: แสดงเลข 6 ตัวท้ายของเลขอ้างอิง
+
+Decisions:
+
+1. **Single Horizontal Level Layout (`SurveyWorkspace.tsx` & `styles.css`):**
+   - Refactored `.survey-card-item` to a clean horizontal flexbox row on all viewports (including mobile):
+     - Left: Queue badge (28px height, 6px border radius, min-width 48px).
+     - Middle: Customer Info (`flex: 1`, `min-width: 0`), rendering Line 1 with customer phone number, and Line 2 with time and status badge (`[ซื้อสินค้า]` / `[ไม่ซื้อ / ยกเลิก]`).
+     - Right: Action button (`height: 28px`, matching queue badge height).
+2. **Queue Display for Sessions Without Queue Number:**
+   - When a session does not have a queue number (`session.queueNo == null` or phone number in queue), the queue badge renders the last 6 digits of the reference (`session.reference.slice(-6)`), ensuring a clean, uniform badge width and avoiding duplicate phone numbers.
+3. **Responsive Action Button:**
+   - Standard 28px height matching the queue badge.
+   - If screen width is narrow (<= 480px) or queue identifier is long, the button automatically collapses text and renders as an icon-only button to guarantee zero card overflow.
+
+## D150 — Customer Survey Staff-Specific Scoping (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- แบบสำรวจลูกค้า (Customer Surveys) หากเป็น staff แสดงเฉพาะของตนเอง
+
+Decisions:
+
+1. **Staff Survey Visibility Filtering (`SurveyWorkspace.tsx`):**
+   - When the logged-in user is a staff member (`isStaff: !roles.includes('ADMIN') && !roles.includes('MANAGER')`), `eligibleSessions` strictly filters to `s.staffId === user.staffId` across both "ค้างทำ" (pending) and "ทำแล้ว" (completed) tabs.
+   - Manager and Admin users retain branch-wide / system-wide visibility to oversee all staff members' surveys.
+2. **Contextual Messaging and Subtitle:**
+   - Subtitle and empty state notifications in `SurveyWorkspace.tsx` dynamically adapt to reflect the staff member's personal scope (e.g. "คุณทำแบบสำรวจของลูกค้าที่คุณรับผิดชอบวันนี้ครบถ้วนแล้ว").

@@ -203,8 +203,7 @@ export function WalkInForm({
               ยังไม่มีสินค้าในรายการ
             </div>
             <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
-              เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง
-              ระบบจะเพิ่มลงรายการให้อัตโนมัติ (เลือกได้ 1–3 รายการ)
+              เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง (เลือกได้ 1–3 รายการ)
             </div>
           </div>
         ) : (
@@ -488,8 +487,9 @@ export function WalkInForm({
         )}
       </div>
 
-      {/* Footer Navigation Bar */}
+      {/* Desktop Footer Navigation Bar */}
       <div
+        className="desktop-actions"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -515,6 +515,31 @@ export function WalkInForm({
         >
           <span
             style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            ถัดไป{' '}
+            {selectedItems.length > 0 ? `(${selectedItems.length} รายการ)` : ''}
+            <ArrowRight size={18} />
+          </span>
+        </Button>
+      </div>
+
+      {/* Mobile Sticky Navigation Bar */}
+      <div className="mobile-sticky-bar">
+        <Button
+          type="button"
+          size="lg"
+          disabled={selectedItems.length === 0 || busy}
+          onClick={() => onSubmit(selectedItems)}
+          style={{ width: '100%', height: '48px', fontSize: '15px' }}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              width: '100%',
+            }}
           >
             ถัดไป{' '}
             {selectedItems.length > 0 ? `(${selectedItems.length} รายการ)` : ''}

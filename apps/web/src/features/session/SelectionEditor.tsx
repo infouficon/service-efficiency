@@ -304,7 +304,9 @@ export function SelectionEditor({
     p.models.flatMap((m) => m.skus),
   );
   const stockInfo = stockInfoLine(allSkus);
-  const paymentsValid = paymentsAreValid(value.payments, value.paymentDetails);
+  const hasPayments = (value.payments ?? []).length > 0;
+  const paymentsValid =
+    hasPayments && paymentsAreValid(value.payments, value.paymentDetails);
   const receiptValid = receiptTypeIsValid(value.receiptType);
   const hasOutOfStockItem = value.items.some((i) => isOutOfStock(i.product));
   const reviewDisabled =
@@ -942,7 +944,11 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          Payment <small className="legend-note">(ไม่บังคับ)</small>
+          Payment{' '}
+          <small className="legend-note">
+            (เลือกอย่างน้อย 1 ช่องทาง)
+          </small>{' '}
+          <span className="required">*</span>
         </legend>
         {otherPayments.length > 0 && (
           <p className="choice-group-title">ช่องทางหลัก</p>
@@ -1140,7 +1146,8 @@ export function SelectionEditor({
       <fieldset>
         <legend>
           ประเภทใบเสร็จ{' '}
-          <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+          <small className="legend-note">(เลือกย่างน้อย 1 ประเภท)</small>
+          <span className="required">*</span>
         </legend>
         <div
           role="radiogroup"
@@ -1284,14 +1291,14 @@ export function SelectionEditor({
           </label>
         </div>
       </fieldset>
-      {!paymentsValid && (
+      {hasPayments && !paymentsValid && (
         <Notice error>
           กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card)
           ให้ครบถ้วนก่อนตรวจสอบรายการ
         </Notice>
       )}
       <div
-        className="actions"
+        className="actions desktop-actions"
         style={{
           display: 'flex',
           justifyContent: 'flex-end',

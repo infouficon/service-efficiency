@@ -62,6 +62,8 @@ export function SurveyWorkspace({
     'pending',
   );
   const [search, setSearch] = useState('');
+  const isStaff =
+    !user.roles.includes('ADMIN') && !user.roles.includes('MANAGER');
   const [surveyModal, setSurveyModal] = useState<{
     session: MockSession;
     target: SurveyTarget;
@@ -77,6 +79,11 @@ export function SurveyWorkspace({
         s.branchCode === (user.branchCode ?? '');
       if (!matchesBranch || !isTodaySession(s)) return false;
 
+      // D150: Staff members only see their own sessions
+      if (isStaff && s.staffId !== user.staffId) {
+        return false;
+      }
+
       const isCancelled =
         s.outcome === 'CUSTOMER_CANCELLED' ||
         Boolean(s.timestamps.cancelled_at);
@@ -87,7 +94,7 @@ export function SurveyWorkspace({
 
       return isCancelled || isBought;
     });
-  }, [sessions, user]);
+  }, [sessions, user, isStaff]);
 
   const { pendingList, completedList } = useMemo(() => {
     const pending: {
@@ -199,8 +206,9 @@ export function SurveyWorkspace({
             แบบสำรวจลูกค้า (Customer Surveys)
           </h2>
           <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
-            รายการแบบสำรวจความคิดเห็นของลูกค้าประจำวันสำหรับพนักงาน (สาขา{' '}
-            {user.branch})
+            {isStaff
+              ? `รายการแบบสำรวจความคิดเห็นของลูกค้าที่รับผิดชอบวันนี้ (${user.name || user.staffId} · สาขา ${user.branch})`
+              : `รายการแบบสำรวจความคิดเห็นของลูกค้าประจำวันสำหรับพนักงาน (สาขา ${user.branch})`}
           </p>
         </div>
       </div>
@@ -209,6 +217,7 @@ export function SurveyWorkspace({
       <Panel>
         {/* Tabs & Search */}
         <div
+          className="survey-tabs-header"
           style={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -222,6 +231,7 @@ export function SurveyWorkspace({
         >
           {/* Segmented Control Mode Toggle */}
           <div
+            className="survey-mode-tabs"
             role="tablist"
             aria-label="เลือกโหมดแบบสำรวจ"
             style={{
@@ -235,6 +245,7 @@ export function SurveyWorkspace({
             <button
               type="button"
               role="tab"
+              className="survey-mode-tab-btn"
               aria-selected={activeTab === 'pending'}
               onClick={() => setActiveTab('pending')}
               style={{
@@ -277,6 +288,7 @@ export function SurveyWorkspace({
             <button
               type="button"
               role="tab"
+              className="survey-mode-tab-btn"
               aria-selected={activeTab === 'completed'}
               onClick={() => setActiveTab('completed')}
               style={{
@@ -304,7 +316,7 @@ export function SurveyWorkspace({
           </div>
 
           {/* Search */}
-          <div style={{ position: 'relative', width: '260px' }}>
+          <div className="survey-search-box" style={{ position: 'relative', width: '260px' }}>
             <Search
               size={15}
               color="#94a3b8"
@@ -353,7 +365,9 @@ export function SurveyWorkspace({
             </h4>
             <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
               {activeTab === 'pending'
-                ? 'ลูกค้าทุกคนในสาขาวันนี้ทำแบบสำรวจครบถ้วนแล้ว'
+                ? isStaff
+                  ? 'คุณทำแบบสำรวจของลูกค้าที่คุณรับผิดชอบวันนี้ครบถ้วนแล้ว'
+                  : 'ลูกค้าทุกคนในสาขาวันนี้ทำแบบสำรวจครบถ้วนแล้ว'
                 : 'เมื่อพนักงานทำแบบสำรวจ รายการจะปรากฏที่นี่'}
             </p>
           </div>
@@ -366,160 +380,191 @@ export function SurveyWorkspace({
               const timeStr = formatTime(
                 session.timestamps.customer_walk_in_at,
               );
+              const hasQueueNo =
+                session.queueNo != null &&
+                !session.queue?.startsWith('+') &&
+                session.queue !== session.phone;
+              const queueText = hasQueueNo
+                ? session.queue
+                : session.reference
+                  ? session.reference.slice(-6)
+                  : '-';
+              const isLongQueue = queueText.length > 5;
 
               return (
                 <div
                   key={session.id || session.reference}
-                  style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    padding: '14px 16px',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0',
-                    background: '#ffffff',
-                    transition: 'box-shadow 0.15s ease',
-                  }}
+                  className="survey-card-item"
                 >
-                  {/* Left: Queue, Phone, Target */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '14px',
-                      flexWrap: 'wrap',
-                    }}
-                  >
+                  {/* Left: Queue badge */}
+                  <div className="survey-card-queue">
                     <div
+                      className="survey-queue-badge"
                       style={{
-                        padding: '4px 10px',
+                        padding: '0 8px',
                         background: '#f1f5f9',
                         borderRadius: '6px',
                         fontWeight: 700,
-                        fontSize: '14px',
+                        fontSize: '13px',
                         color: '#0f172a',
-                        minWidth: '55px',
+                        minWidth: '48px',
+                        height: '28px',
+                        maxHeight: '28px',
+                        boxSizing: 'border-box',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         textAlign: 'center',
                       }}
+                      title={
+                        hasQueueNo
+                          ? `คิว ${queueText}`
+                          : `รหัสอ้างอิง ${session.reference}`
+                      }
                     >
-                      {session.queue || session.reference.slice(-4)}
-                    </div>
-
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '2px',
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                            fontWeight: 600,
-                            fontSize: '14px',
-                            color: '#1e293b',
-                          }}
-                        >
-                          <Phone size={13} color="#64748b" />
-                          {session.phone || 'ไม่ระบุเบอร์'}
-                        </span>
-
-                        <span
-                          style={{
-                            fontSize: '11px',
-                            padding: '2px 8px',
-                            borderRadius: '4px',
-                            fontWeight: 600,
-                            background: isBuy ? '#dcfce7' : '#fee2e2',
-                            color: isBuy ? '#166534' : '#991b1b',
-                          }}
-                        >
-                          {isBuy ? 'ซื้อสินค้า' : 'ไม่ซื้อ / ยกเลิก'}
-                        </span>
-
-                        {isPartial && (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontWeight: 600,
-                              background: '#fef3c7',
-                              color: '#b45309',
-                            }}
-                          >
-                            ตอบบางส่วนแล้ว
-                          </span>
-                        )}
-                      </div>
-
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '12px',
-                          fontSize: '12px',
-                          color: '#64748b',
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '4px',
-                          }}
-                        >
-                          <Clock size={12} /> {timeStr} น.
-                        </span>
-                        <span>ผู้รับผิดชอบ: {session.staffId}</span>
-                      </div>
+                      {queueText}
                     </div>
                   </div>
 
-                  {/* Right Action Button */}
-                  <div>
+                  {/* Middle: Customer Info between Queue and Action Button */}
+                  <div className="survey-card-info">
+                    {/* Line 1: Phone number */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <Phone
+                        size={12}
+                        color="#64748b"
+                        style={{ flexShrink: 0 }}
+                      />
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          fontSize: '13px',
+                          color: '#1e293b',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {session.phone || 'ไม่ระบุเบอร์'}
+                      </span>
+                    </div>
+
+                    {/* Line 2: Time and Buy / Not Buy status badge */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexWrap: 'nowrap',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          fontSize: '11.5px',
+                          color: '#64748b',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Clock size={11} style={{ flexShrink: 0 }} /> {timeStr}{' '}
+                        น.
+                      </span>
+
+                      <span
+                        style={{
+                          fontSize: '10.5px',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 600,
+                          background: isBuy ? '#dcfce7' : '#fee2e2',
+                          color: isBuy ? '#166534' : '#991b1b',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {isBuy ? 'ซื้อสินค้า' : 'ไม่ซื้อ / ยกเลิก'}
+                      </span>
+
+                      {!isStaff && (
+                        <span
+                          style={{
+                            fontSize: '11px',
+                            color: '#64748b',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          · {session.staffId}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Right: Action Button */}
+                  <div className="survey-card-action">
                     {activeTab === 'pending' ? (
                       <Button
                         variant="primary"
                         onClick={() => setSurveyModal({ session, target })}
+                        style={{
+                          height: '28px',
+                          minHeight: '28px',
+                          maxHeight: '28px',
+                          padding:'0 8px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
+                          boxSizing: 'border-box',
+                        }}
+                        title={isPartial ? 'ทำแบบสำรวจต่อ' : 'ทำแบบสำรวจ'}
                       >
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                        >
-                          <ClipboardList size={15} />
-                          {isPartial ? 'ทำแบบสำรวจต่อ' : 'ทำแบบสำรวจ'}
-                        </span>
+                        <ClipboardList size={13} />
+                        {!isLongQueue && (
+                          <span className="survey-btn-text">
+                            {isPartial ? 'ทำแบบสำรวจต่อ' : 'ทำแบบสำรวจ'}
+                          </span>
+                        )}
                       </Button>
                     ) : (
                       <Button
                         variant="secondary"
                         onClick={() => setViewingResponseSession(session)}
+                        style={{
+                          height: '28px',
+                          minHeight: '28px',
+                          maxHeight: '28px',
+                          padding: isLongQueue ? '0 8px' : '0 10px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '5px',
+                          boxSizing: 'border-box',
+                        }}
+                        title="ดูผลสำรวจ"
                       >
-                        <span
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                          }}
-                        >
-                          <Eye size={15} />
-                          ดูผลสำรวจ
-                        </span>
+                        <Eye size={13} />
+                        {!isLongQueue && (
+                          <span className="survey-btn-text">ดูผลสำรวจ</span>
+                        )}
                       </Button>
                     )}
                   </div>

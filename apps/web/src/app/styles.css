@@ -16,8 +16,9 @@
 
 @font-face {
   font-family: 'SF Pro';
-  src: url('/fonts/SFProText-Regular.woff2') format('woff2'),
-       url('/fonts/SFProText-Regular.woff') format('woff');
+  src:
+    url('/fonts/SFProText-Regular.woff2') format('woff2'),
+    url('/fonts/SFProText-Regular.woff') format('woff');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -25,8 +26,9 @@
 
 @font-face {
   font-family: 'SF Pro';
-  src: url('/fonts/SFProText-Medium.woff2') format('woff2'),
-       url('/fonts/SFProText-Medium.woff') format('woff');
+  src:
+    url('/fonts/SFProText-Medium.woff2') format('woff2'),
+    url('/fonts/SFProText-Medium.woff') format('woff');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -34,8 +36,9 @@
 
 @font-face {
   font-family: 'SF Pro';
-  src: url('/fonts/SFProText-Semibold.woff2') format('woff2'),
-       url('/fonts/SFProText-Semibold.woff') format('woff');
+  src:
+    url('/fonts/SFProText-Semibold.woff2') format('woff2'),
+    url('/fonts/SFProText-Semibold.woff') format('woff');
   font-weight: 600 700;
   font-style: normal;
   font-display: swap;
@@ -286,7 +289,9 @@ h3 {
   overflow-y: auto;
   overflow-x: hidden;
   z-index: 20;
-  transition: width 0.22s cubic-bezier(0.33, 1, 0.68, 1), padding 0.22s cubic-bezier(0.33, 1, 0.68, 1);
+  transition:
+    width 0.22s cubic-bezier(0.33, 1, 0.68, 1),
+    padding 0.22s cubic-bezier(0.33, 1, 0.68, 1);
 }
 
 .sidebar::-webkit-scrollbar {
@@ -1290,7 +1295,9 @@ footer {
   border: 1px solid #e9ecef;
   border-radius: 28px;
   padding: 36px 32px;
-  box-shadow: 0 4px 24px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -1px rgba(15, 23, 42, 0.03);
+  box-shadow:
+    0 4px 24px -2px rgba(15, 23, 42, 0.05),
+    0 2px 6px -1px rgba(15, 23, 42, 0.03);
 }
 .login-card-header {
   display: flex;
@@ -1460,7 +1467,10 @@ footer {
   background: var(--bg-surface);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
   flex-shrink: 0;
 }
 .sidebar-toggle-btn:hover {
@@ -1810,7 +1820,7 @@ footer {
     margin-bottom: 0;
   }
 
-.session-strip h2 {
+  .session-strip h2 {
     font-size: 18px;
   }
 
@@ -1869,6 +1879,48 @@ footer {
     min-height: 46px;
     font-size: 14px;
     justify-content: center;
+  }
+
+  .desktop-actions {
+    display: none !important;
+  }
+
+  .staff-main-panel {
+    padding-bottom: 90px !important;
+  }
+
+  .summary-accessory-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+  }
+
+  .summary-accessories-list {
+    justify-content: flex-start !important;
+    width: 100% !important;
+  }
+
+  /* CUSTOMER SURVEY TABS & SEARCH (Mobile) */
+  .survey-tabs-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  .survey-mode-tabs {
+    width: 100% !important;
+    display: flex !important;
+    box-sizing: border-box !important;
+  }
+
+  .survey-mode-tab-btn {
+    flex: 1 1 50% !important;
+    justify-content: center !important;
+    text-align: center !important;
+  }
+
+  .survey-search-box {
+    width: 100% !important;
   }
 
   /* MODAL AS BOTTOM SHEET */
@@ -2116,8 +2168,8 @@ footer {
     display: grid;
     grid-template-columns: 1fr auto;
     grid-template-areas:
-      "header missing"
-      "name   name";
+      'header missing'
+      'name   name';
     gap: 6px 8px;
     align-items: center;
   }
@@ -3039,6 +3091,47 @@ input[aria-invalid='true'] {
   border: 1px solid #d2e4df;
   margin: 3px 4px 3px 0;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+/* CUSTOMER SURVEY CARD (Single Horizontal Level) */
+.survey-card-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  transition: box-shadow 0.15s ease;
+}
+
+.survey-card-queue {
+  flex-shrink: 0;
+}
+
+.survey-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.survey-card-action {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+@media (max-width: 480px) {
+  .survey-card-item {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .survey-btn-text {
+    display: none !important;
+  }
 }
 
 /* ADMIN HUB & TABLES */
@@ -3974,7 +4067,9 @@ input[aria-invalid='true'] {
   background: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 10px 25px -5px rgba(0, 0, 0, 0.1),
+    0 8px 10px -6px rgba(0, 0, 0, 0.1);
   width: 340px;
   max-width: 90vw;
   max-height: 380px;
@@ -3997,7 +4092,10 @@ input[aria-invalid='true'] {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 
 .phone-search-box:focus-within {
@@ -4029,7 +4127,9 @@ input[aria-invalid='true'] {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .phone-search-clear:hover {
@@ -4304,7 +4404,9 @@ input[aria-invalid='true'] {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s, background-color 0.15s;
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 }
 .close-picker-btn:hover {
   color: var(--text-primary, #0f172a);
@@ -4810,7 +4912,6 @@ input[aria-invalid='true'] {
   color: #9f1239;
 }
 
-
 /* ==========================================================================
    MOBILE UX PASS (2026-11-06): phones only (≤ 768px); wider screens are unchanged.
    Kept at the end of the file so it wins over the rules above.
@@ -4904,7 +5005,9 @@ input[aria-invalid='true'] {
     order: -1;
     width: 100%;
   }
-  .staff-workspace[data-mobile-detail='false'] .workspace-header-bar > div:last-child {
+  .staff-workspace[data-mobile-detail='false']
+    .workspace-header-bar
+    > div:last-child {
     display: none;
   }
 

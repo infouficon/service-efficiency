@@ -263,7 +263,7 @@ export function SkuPicker({
                     <div
                       style={{
                         display: 'flex',
-                        alignItems: 'flex-start',
+                        alignItems: 'center',
                         justifyContent: 'space-between',
                         gap: '12px',
                       }}
@@ -302,24 +302,43 @@ export function SkuPicker({
                         )}
                       </div>
 
-                      {/* Checkmark Circle (when selected) */}
+                      {/* Checkmark Button to collapse/deselect when selected */}
                       {isSelected && (
-                        <div
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setModelKey('');
+                            settle(null, '', '', false);
+                          }}
                           style={{
-                            width: '24px',
-                            height: '24px',
+                            width: '28px',
+                            height: '28px',
+                            minWidth: '28px',
+                            maxWidth: '28px',
+                            minHeight: '28px',
+                            maxHeight: '28px',
                             borderRadius: '50%',
                             backgroundColor: '#0abab5',
-                            display: 'flex',
+                            border: 'none',
+                            padding: 0,
+                            margin: 0,
+                            display: 'inline-flex',
                             alignItems: 'center',
                             justifyContent: 'center',
                             color: '#ffffff',
                             flexShrink: 0,
-                            boxShadow: '0 1px 3px rgba(10, 186, 181, 0.4)',
+                            cursor: 'pointer',
+                            boxSizing: 'border-box',
+                            lineHeight: 1,
+                            boxShadow: '0 1px 4px rgba(10, 186, 181, 0.4)',
+                            transition: 'all 0.15s ease',
                           }}
+                          title="แตะเพื่อยกเลิกการเลือก"
+                          aria-label="แตะเพื่อยกเลิกการเลือก"
                         >
-                          <Check size={15} strokeWidth={3} />
-                        </div>
+                          <Check size={18} strokeWidth={2.8} />
+                        </button>
                       )}
                     </div>
 

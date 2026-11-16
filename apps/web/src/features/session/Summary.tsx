@@ -103,7 +103,6 @@ export function Summary({
                     {item.product.category ? `${item.product.category} · ` : ''}
                     {itemName(item)}{' '}
                     <strong style={{ color: '#0abab5' }}>× {item.quantity}</strong>{' '}
-                    <span className="product-sku-chip">{item.product.sku || '—'}</span>
                     {item.serials && item.serials.length > 0 && (
                       <div className="fine muted" title="Serial Number ที่ STOCK สแกน">
                         SN: {item.serials.map((serial) => serial.sn).join(', ')}
@@ -128,11 +127,15 @@ export function Summary({
                 </span>
               </div>
             )}
-            <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
+            <div
+              className="info-item-row summary-accessory-row"
+              style={{ alignItems: 'flex-start' }}
+            >
               <span className="info-item-label" style={{ paddingTop: '4px' }}>
                 อุปกรณ์เสริม:
               </span>
               <div
+                className="summary-accessories-list"
                 style={{
                   display: 'flex',
                   flexWrap: 'wrap',

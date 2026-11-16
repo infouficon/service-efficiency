@@ -147,6 +147,32 @@ export function StaffWorkspace({
     session: MockSession;
     target: SurveyTarget;
   } | null>(null);
+  const [hasScrolledReviewBottom, setHasScrolledReviewBottom] = useState(false);
+  const reviewBottomSentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (form !== 'review') {
+      setHasScrolledReviewBottom(false);
+      return;
+    }
+
+    const sentinel = reviewBottomSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setHasScrolledReviewBottom(true);
+          }
+        }
+      },
+      { threshold: 0.1 },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [form]);
 
   // Filter staff's branch sessions for today
   const branchSessions = sessions.filter((s) => {
@@ -302,8 +328,13 @@ export function StaffWorkspace({
 
   const handleConfirmAppleDeviceStep = async () => {
     if (!activeSession) return;
-    const devicesToSave =
-      selectedAppleDevices.length > 0 ? selectedAppleDevices : ['ไม่ระบุ'];
+    if (selectedAppleDevices.length === 0) {
+      setError(
+        'กรุณาเลือกอุปกรณ์ที่ลูกค้าใช้อย่างน้อย 1 รายการ หรือเลือก ยังไม่เคยใช้ / ไม่แน่ใจ',
+      );
+      return;
+    }
+    const devicesToSave = selectedAppleDevices;
     setBusy(true);
     setError('');
     try {
@@ -1404,7 +1435,8 @@ export function StaffWorkspace({
                                   color: '#0f172a',
                                 }}
                               >
-                                ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง?
+                                ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง?{' '}
+                                <span style={{ color: '#dc2626' }}>*</span>
                               </label>
                               <p
                                 style={{
@@ -1413,7 +1445,7 @@ export function StaffWorkspace({
                                   color: '#64748b',
                                 }}
                               >
-                                เลือกหมวดหมู่ที่ลูกค้ากำลังใช้งานอยู่ในปัจจุบัน
+                                เลือกหมวดหมู่ที่ลูกค้าใช้งานอยู่ หรือระบุ ยังไม่เคยใช้ / ไม่แน่ใจ (จำเป็น · เลือกอย่างน้อย 1 ข้อ)
                               </p>
                               <div
                                 className="wizard-tiles picker-category-tiles"
@@ -1559,19 +1591,26 @@ export function StaffWorkspace({
                               </div>
                             </div>
 
-                            {/* Actions */}
+                            {/* Actions Desktop */}
                             <div
+                              className="desktop-actions"
                               style={{
                                 display: 'flex',
                                 justifyContent: 'flex-end',
                                 alignItems: 'center',
+                                gap: '12px',
                                 marginTop: '16px',
                               }}
                             >
+                              {selectedAppleDevices.length === 0 && (
+                                <span style={{ fontSize: '13px', color: '#64748b' }}>
+                                  กรุณาเลือกอุปกรณ์หรือระบุสถานะอย่างน้อย 1 ข้อ
+                                </span>
+                              )}
                               <Button
                                 variant="primary"
                                 onClick={handleConfirmAppleDeviceStep}
-                                disabled={busy}
+                                disabled={busy || selectedAppleDevices.length === 0}
                               >
                                 <span
                                   style={{
@@ -1581,6 +1620,30 @@ export function StaffWorkspace({
                                   }}
                                 >
                                   ถัดไป
+                                  <ArrowRight size={16} />
+                                </span>
+                              </Button>
+                            </div>
+
+                            {/* Actions Mobile (Sticky Bottom Bar) */}
+                            <div className="mobile-sticky-bar">
+                              <Button
+                                variant="primary"
+                                onClick={handleConfirmAppleDeviceStep}
+                                disabled={busy || selectedAppleDevices.length === 0}
+                                style={{ width: '100%', minHeight: '46px' }}
+                              >
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  {selectedAppleDevices.length === 0
+                                    ? 'กรุณาเลือกอย่างน้อย 1 ข้อ'
+                                    : 'ถัดไป'}
                                   <ArrowRight size={16} />
                                 </span>
                               </Button>
@@ -1794,8 +1857,9 @@ export function StaffWorkspace({
                                 </div>
                               )}
 
-                            {/* Actions */}
+                            {/* Actions Desktop */}
                             <div
+                              className="desktop-actions"
                               style={{
                                 display: 'flex',
                                 justifyContent: 'flex-end',
@@ -1812,6 +1876,28 @@ export function StaffWorkspace({
                                   style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  เริ่มบริการ
+                                  <ArrowRight size={16} />
+                                </span>
+                              </Button>
+                            </div>
+
+                            {/* Actions Mobile (Sticky Bottom Bar) */}
+                            <div className="mobile-sticky-bar">
+                              <Button
+                                variant="primary"
+                                onClick={handleConfirmPhoneStep}
+                                disabled={busy || !phoneIsValid(currentPhone)}
+                                style={{ width: '100%', minHeight: '46px' }}
+                              >
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
                                     gap: '6px',
                                   }}
                                 >
@@ -1887,7 +1973,13 @@ export function StaffWorkspace({
                               </div>
                               <Summary session={activeSession} />
                               <div
-                                className="actions"
+                                ref={reviewBottomSentinelRef}
+                                style={{ height: '1px' }}
+                              />
+
+                              {/* Actions Desktop */}
+                              <div
+                                className="actions desktop-actions"
                                 style={{
                                   display: 'flex',
                                   justifyContent: 'flex-end',
@@ -1913,6 +2005,7 @@ export function StaffWorkspace({
                                 <Button
                                   onClick={handleConfirm}
                                   disabled={
+                                    !hasScrolledReviewBottom ||
                                     !phoneIsValid(currentPhone) ||
                                     activeSession.selection.items.some((i) =>
                                       isOutOfStock(i.product),
@@ -1930,6 +2023,76 @@ export function StaffWorkspace({
                                     <Check size={16} /> ยืนยันการสั่งซื้อ
                                   </span>
                                 </Button>
+                              </div>
+
+                              {/* Actions Mobile (Sticky Bottom Bar) */}
+                              <div
+                                className="mobile-sticky-bar"
+                                style={{
+                                  flexDirection: 'column',
+                                  gap: '6px',
+                                }}
+                              >
+                                {!hasScrolledReviewBottom && (
+                                  <div
+                                    style={{
+                                      fontSize: '11.5px',
+                                      color: '#b45309',
+                                      fontWeight: 600,
+                                      textAlign: 'center',
+                                      padding: '2px 0',
+                                    }}
+                                  >
+                                    กรุณาเลื่อนดูข้อมูลสรุปให้ครบถ้วนก่อนยืนยัน
+                                  </div>
+                                )}
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    gap: '8px',
+                                    width: '100%',
+                                  }}
+                                >
+                                  <Button
+                                    variant="secondary"
+                                    onClick={() => setForm('normal')}
+                                    style={{ flex: 1, minHeight: '44px' }}
+                                  >
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                      }}
+                                    >
+                                      <ArrowLeft size={15} /> แก้ไขข้อมูล
+                                    </span>
+                                  </Button>
+                                  <Button
+                                    onClick={handleConfirm}
+                                    disabled={
+                                      !hasScrolledReviewBottom ||
+                                      !phoneIsValid(currentPhone) ||
+                                      activeSession.selection.items.some((i) =>
+                                        isOutOfStock(i.product),
+                                      ) ||
+                                      busy
+                                    }
+                                    style={{ flex: 1.4, minHeight: '44px' }}
+                                  >
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                      }}
+                                    >
+                                      <Check size={15} /> ยืนยันการสั่งซื้อ
+                                    </span>
+                                  </Button>
+                                </div>
                               </div>
                             </>
                           ) : (

@@ -2380,3 +2380,27 @@ Decisions:
    - Manager and Admin users retain branch-wide / system-wide visibility to oversee all staff members' surveys.
 2. **Contextual Messaging and Subtitle:**
    - Subtitle and empty state notifications in `SurveyWorkspace.tsx` dynamically adapt to reflect the staff member's personal scope (e.g. "คุณทำแบบสำรวจของลูกค้าที่คุณรับผิดชอบวันนี้ครบถ้วนแล้ว").
+
+## D151 — Session Logs Detail Readability: Info Grid Card and Event Audit Log Timeline (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- หน้านี้ ปรับการแสดงให้อ่านง่ายกว่านี้ (หน้ารายละเอียด Session Logs)
+- 1) แปลงชื่อ Event เป็นภาษาไทยที่อ่านง่าย + แสดงเวลาเด่นชัด
+- 2) ปรับกล่องข้อมูลด้านบนเป็นตารางสรุปข้อมูล (Status, Phone, Staff, Branch) ไม่ให้ซ้ำซ้อน
+
+Decisions:
+
+1. **Session Info Grid Card (`SessionLogsWorkspace.tsx`):**
+   - Replaced redundant notice banner with a clean, responsive 4-column card grid summarizing:
+     - สถานะปัจจุบัน (Thai status badge + technical code)
+     - เบอร์โทรลูกค้า
+     - ผู้ดูแล (Staff ID)
+     - สาขา
+   - Prevents repetitive wall-of-text and clearly displays session parameters.
+2. **Bilingual Event Audit Log Timeline (`SessionLogsWorkspace.tsx`):**
+   - Mapped all `eventType` codes to user-friendly Thai descriptions (`EVENT_TYPE_MAP`).
+   - Clean timeline row structure:
+     - Top line: Thai event label on left, bold formatted time (`HH:mm:ss น.`) on right.
+     - Bottom line: Technical event code badge, Staff ID attribution, and Thai date.
+   - Eliminates text collisions, truncations, and awkward wrapping on mobile viewports.

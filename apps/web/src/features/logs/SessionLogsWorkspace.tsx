@@ -32,6 +32,7 @@ import {
   itemName,
   itemsText,
   receiptTypeLabel,
+  stateLabel,
   stepDurations,
   visitDuration,
 } from '../session/workflow';
@@ -55,6 +56,52 @@ type StatusFilter =
   | 'CANCELLED';
 
 type PageSize = 15 | 25 | 50;
+
+const EVENT_TYPE_MAP: Record<string, string> = {
+  SESSION_CREATED: 'สร้างคำขอ / เริ่ม Walk-in',
+  PRODUCT_SELECTION_STARTED: 'เริ่มเลือกสินค้าที่สนใจ',
+  APPLE_DEVICE_SURVEY_COMPLETED: 'บันทึกอุปกรณ์ Apple ที่ใช้',
+  PHONE_ENTERED: 'บันทึกเบอร์โทรศัพท์ลูกค้า',
+  PRODUCT_SELECTION_CONFIRMED: 'ยืนยันสินค้าที่ต้องการซื้อ',
+  SURVEY_SUBMITTED: 'ส่งแบบสำรวจลูกค้า',
+  STOCK_REQUESTED: 'ส่งคำขอจัดสินค้าไปห้อง Stock',
+  STOCK_SEARCHING: 'Stock กำลังค้นหาสินค้า',
+  STOCK_FOUND: 'Stock จัดสินค้า & สแกน Serial ครบ',
+  STOCK_PARTIAL_ACCEPTED: 'ลูกค้ายืนยันรับสินค้าเฉพาะที่มี',
+  RETURN_TO_STAFF: 'Stock ส่งคืน (สินค้าไม่ครบ/หมด)',
+  SENT_TO_CASHIER: 'ส่งต่อแคชเชียร์ / รอ U POS',
+  CASHIER_RECEIVED: 'แคชเชียร์รับออเดอร์',
+  CASHIER_SCAN: 'แคชเชียร์กำลังสแกนบิล',
+  BILL_OPENED: 'เปิดบิลใน POS สำเร็จ',
+  COMPLETED: 'ปิดการขายสำเร็จ (Sale Complete)',
+  CUSTOMER_CANCELLED: 'ลูกค้ายกเลิกคำขอ',
+  NOT_BUY: 'ลูกค้าไม่ซื้อสินค้า',
+  OUT_OF_STOCK: 'สินค้าหมดในคลัง',
+};
+
+function formatEventLabel(eventType: string): string {
+  return EVENT_TYPE_MAP[eventType] || eventType;
+}
+
+function formatEventDateTime(isoString: string) {
+  try {
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return { date: '-', time: '-' };
+    const time = d.toLocaleTimeString('th-TH', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const date = d.toLocaleDateString('th-TH', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+    return { date, time };
+  } catch {
+    return { date: '-', time: '-' };
+  }
+}
 
 function formatWalkInTime(isoStr?: string): string {
   if (!isoStr) return '—';
@@ -1226,10 +1273,33 @@ export function SessionLogsWorkspace({
 
   // If a session is selected, render the Full-page Detail View
   if (selectedRef) {
-    const detailStatusLabel = selectedSession
-      ? selectedSession.outcome ??
-        (selectedSession.stockPendingReview ? 'RETURN_TO_STAFF (สินค้าไม่ครบ)' : selectedSession.state)
-      : '';
+    const rawState = selectedSession?.outcome ?? selectedSession?.state ?? '';
+    const thaiStatus = selectedSession ? stateLabel(selectedSession) : '';
+    const isCancelled =
+      selectedSession?.outcome === 'CUSTOMER_CANCELLED' ||
+      selectedSession?.outcome === 'NOT_BUY' ||
+      selectedSession?.outcome === 'OUT_OF_STOCK';
+    const isCompleted =
+      selectedSession?.state === 'COMPLETED' && !selectedSession?.outcome;
+    const isPendingReview = Boolean(selectedSession?.stockPendingReview);
+
+    const statusBg = isCancelled
+      ? '#fee2e2'
+      : isPendingReview
+        ? '#fef3c7'
+        : isCompleted
+          ? '#dcfce7'
+          : '#e0f2fe';
+    const statusColor = isCancelled
+      ? '#991b1b'
+      : isPendingReview
+        ? '#92400e'
+        : isCompleted
+          ? '#166534'
+          : '#0369a1';
+    const statusText = isPendingReview
+      ? 'Stock แจ้งสินค้าไม่ครบ'
+      : thaiStatus;
 
     return (
       <div className="session-logs-workspace">
@@ -1251,23 +1321,142 @@ export function SessionLogsWorkspace({
 
         {selectedSession ? (
           <Panel
-            title={`${selectedSession.queue}`}
-            eyebrow={`สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''} · สถานะ: ${detailStatusLabel}`}
+            title={`คิว ${selectedSession.queue || selectedSession.reference.slice(-6)}`}
+            eyebrow={`รหัสคำขอ: ${selectedSession.reference} · สาขา ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''}`}
           >
+            {/* Session Info Grid Card */}
             <div
-              className="detail-status-banner"
-              style={{ marginBottom: '1.25rem' }}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                gap: '12px',
+                padding: '14px 16px',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                marginBottom: '1.5rem',
+              }}
             >
-              <Notice>
-                สถานะปัจจุบัน:{' '}
-                <strong>
-                  {detailStatusLabel}
-                </strong>
-                {selectedSession.phone &&
-                  ` · เบอร์โทรลูกค้า: ${formatDisplayPhone(selectedSession.phone)}`}
-                {` · ผู้ดูแล: ${selectedSession.staffId}`}
-                {` · สาขา: ${selectedSession.branchCode}${selectedSession.branchName ? ` (${selectedSession.branchName})` : ''}`}
-              </Notice>
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  สถานะปัจจุบัน
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    marginTop: '4px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <span
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      fontSize: '12.5px',
+                      fontWeight: 700,
+                      background: statusBg,
+                      color: statusColor,
+                    }}
+                  >
+                    {statusText}
+                  </span>
+                  <small
+                    style={{
+                      color: '#94a3b8',
+                      fontSize: '11px',
+                      fontFamily: 'ui-monospace, monospace',
+                    }}
+                  >
+                    ({rawState})
+                  </small>
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  เบอร์โทรลูกค้า
+                </div>
+                <div
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: 600,
+                    color: '#0f172a',
+                    marginTop: '4px',
+                  }}
+                >
+                  {selectedSession.phone
+                    ? formatDisplayPhone(selectedSession.phone)
+                    : '—'}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  ผู้ดูแล
+                </div>
+                <div
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: 600,
+                    color: '#0f172a',
+                    marginTop: '4px',
+                  }}
+                >
+                  {selectedSession.staffId}
+                </div>
+              </div>
+
+              <div>
+                <div
+                  style={{
+                    fontSize: '11px',
+                    color: '#64748b',
+                    fontWeight: 600,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  สาขา
+                </div>
+                <div
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: '#0f172a',
+                    marginTop: '4px',
+                  }}
+                >
+                  {selectedSession.branchCode}{' '}
+                </div>
+              </div>
             </div>
 
             {/* Event Timeline */}
@@ -1279,16 +1468,25 @@ export function SessionLogsWorkspace({
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
+                  gap: '8px',
                   marginBottom: '4px',
                 }}
               >
                 <Clock size={18} color="#0abab5" />
-                <h3 style={{ margin: 0 }}>ลำดับเหตุการณ์และ Event Audit Log</h3>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: '16px',
+                    fontWeight: 700,
+                    color: '#0f172a',
+                  }}
+                >
+                  ลำดับเหตุการณ์และ Event Audit Log
+                </h3>
               </div>
               <p
                 className="muted"
-                style={{ fontSize: '0.9rem', marginBottom: '1rem' }}
+                style={{ fontSize: '13px', marginBottom: '1.25rem' }}
               >
                 บันทึกกิจกรรม Server Timestamp และผู้ดำเนินการ (Actor Staff ID)
                 แบบเรียลไทม์
@@ -1296,50 +1494,135 @@ export function SessionLogsWorkspace({
 
               {selectedSession.events && selectedSession.events.length > 0 ? (
                 <ol className="timeline" style={{ paddingLeft: '0.5rem' }}>
-                  {selectedSession.events.map((evt) => (
-                    <li
-                      key={evt.id}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'flex-start',
-                        marginBottom: '0.75rem',
-                      }}
-                    >
-                      <div>
-                        <strong>{evt.eventType}</strong>
-                        <span
+                  {selectedSession.events.map((evt) => {
+                    const { date, time } = formatEventDateTime(evt.createdAt);
+                    const eventLabel = formatEventLabel(evt.eventType);
+
+                    return (
+                      <li
+                        key={evt.id}
+                        style={{
+                          paddingBottom: '16px',
+                          position: 'relative',
+                        }}
+                      >
+                        {/* Top Line: Thai Event Name on Left, Time on Right */}
+                        <div
                           style={{
-                            marginLeft: '0.5rem',
-                            fontSize: '0.85rem',
-                            color: '#64748b',
+                            display: 'flex',
+                            alignItems: 'baseline',
+                            justifyContent: 'space-between',
+                            gap: '10px',
+                            flexWrap: 'wrap',
+                            marginBottom: '3px',
                           }}
                         >
-                          โดย Staff: {evt.actorStaffId}
-                        </span>
-                      </div>
-                      <time
-                        dateTime={evt.createdAt}
-                        style={{ color: '#0f172a', fontWeight: '500' }}
-                      >
-                        {new Date(evt.createdAt).toLocaleString('th-TH')}
-                      </time>
-                    </li>
-                  ))}
+                          <span
+                            style={{
+                              fontSize: '14px',
+                              fontWeight: 700,
+                              color: '#0f172a',
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {eventLabel}
+                          </span>
+                          <time
+                            dateTime={evt.createdAt}
+                            style={{
+                              fontSize: '13.5px',
+                              fontWeight: 700,
+                              color: '#0f766e',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {time} น.
+                          </time>
+                        </div>
+
+                        {/* Bottom Line: Technical Code Tag, Staff ID, Date */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '12px',
+                            color: '#64748b',
+                            flexWrap: 'wrap',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: 'ui-monospace, monospace',
+                              fontSize: '10.5px',
+                              background: '#f1f5f9',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              color: '#475569',
+                              border: '1px solid #e2e8f0',
+                            }}
+                          >
+                            {evt.eventType}
+                          </span>
+                          <span>
+                            โดย Staff: <strong>{evt.actorStaffId}</strong>
+                          </span>
+                          <span>· {date}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
                 </ol>
               ) : (
                 <ol className="timeline">
                   {Object.entries(selectedSession.timestamps).map(
-                    ([k, time]) => (
-                      <li key={k}>
-                        <span>{k}</span>
-                        <time dateTime={time}>
-                          {time
-                            ? new Date(time).toLocaleString('th-TH')
-                            : '—'}
-                        </time>
-                      </li>
-                    ),
+                    ([k, time]) => {
+                      const dt = time ? formatEventDateTime(time) : null;
+                      return (
+                        <li key={k} style={{ paddingBottom: '14px' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'baseline',
+                              gap: '8px',
+                              flexWrap: 'wrap',
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: '13.5px',
+                                fontWeight: 600,
+                                color: '#0f172a',
+                              }}
+                            >
+                              {formatEventLabel(k.toUpperCase())}
+                            </span>
+                            <time
+                              dateTime={time}
+                              style={{
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color: '#0f766e',
+                              }}
+                            >
+                              {dt ? `${dt.time} น.` : '—'}
+                            </time>
+                          </div>
+                          {dt && (
+                            <div
+                              style={{
+                                fontSize: '11.5px',
+                                color: '#64748b',
+                                marginTop: '2px',
+                              }}
+                            >
+                              <code>{k}</code> · {dt.date}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    },
                   )}
                 </ol>
               )}

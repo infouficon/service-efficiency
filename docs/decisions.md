@@ -2423,3 +2423,73 @@ Decisions:
    - The phone number entered in Step 2 is preserved in session phone draft state (`phoneDrafts[sessionRef]`).
    - In Step 2 submission (`handleConfirmAppleDeviceStep`), only `currentAppleDevices` is committed without prematurely setting the DB session phone, ensuring the workflow cleanly advances to Step 3 ("กรอกเบอร์โทรศัพท์ลูกค้า").
    - In Step 3, the phone number is already pre-filled from Step 2, eliminating duplicate data entry for staff while allowing them to verify and proceed directly to Step 4 ("เริ่มบริการ").
+
+## D153 — Step 3 Product Recommendations with Variant Switcher & Auto-Cart Insertion (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- เพิ่ม step 3 เป็น แนะนำสินค้า โดยจะแบ่งเป็น 2 section:
+  1. สินค้าหลัก โดยจะมีการแนะนำสินค้าสำหรับแต่ละสินค้าหลัก เพิ่ม 3 ชิ้น รูปแบบประมาณในรูป
+  2. เสนอสินค้าเพิ่มเติม มีปุ่มให้เลือก มีอยู่แล้ว ใช้รุ่นเก่าอยู่
+- ปล.1 โดยเมื่อมีการแนะนำลูกค้าจะต้องกด แนะนำ เพื่อเก็บข้อมูลไว้ใช้ในการวิเคราะห์ต่อไป
+- ปล.2 รายการสินค้าจะมาจากเส้น API ในอนาคตตอนนี้ mock ไปก่อน เมื่อได้เส้น API มาแล้วจะทำการ integrate อีกครั้ง
+- เพิ่มปุ่มสนใจของสินค้านั้นๆด้วย เพื่อให้เมื่อไปถึงหน้า เลือกสินค้า จะสามารถกรอกให้โดยอัตโนมัติ แล้วมาแก้ไขทีหลังว่าสรุปซื้ออะไรบ้าง
+
+Decisions:
+
+1. **Stepper 8-Stage Architecture (`stages` & `progressIndex`):**
+   - Inserted Step 3 "แนะนำสินค้า" directly after Step 2 "สินค้า Apple ที่ใช้".
+   - Workflow stages now encompass 8 steps:
+     1. ลูกค้าสนใจอะไร
+     2. สินค้า Apple ที่ใช้
+     3. แนะนำสินค้า (New)
+     4. กรอกเบอร์โทร
+     5. เลือกสินค้า
+     6. ตรวจสอบยืนยัน
+     7. ฝ่ายคลัง
+     8. แคชเชียร์
+2. **Section 1: Main Product Accessories Recommendations (`ProductRecommendationsStep.tsx`):**
+   - Renders 3 tailored recommendations for **each** main product selected in Step 1 (grouped per product with a badge and title, e.g. "สินค้าหลัก #1 iPhone 16 Pro", "สินค้าหลัก #2 iPad Air").
+   - Card displays item category, brand, SKU code badge, title, price, and variant selector pill ("ดูตัวเลือกอื่น 5 ▾").
+   - Clicking "ดูตัวเลือกอื่น" expands an inline accordion list of alternative SKUs/colors to swap the selected item.
+   - Dual actions:
+     - "แนะนำ" (Recommended): logs presentation for analytical tracking.
+     - "สนใจ" (Interested): highlights card and auto-selects "แนะนำ".
+3. **Section 2: Additional Ecosystem Suggestions (Matching Card Design):**
+   - Presents cross-category devices (e.g. AirPods, Apple Watch, iPad, Apple Pencil Pro) styled in identical cards to Section 1.
+   - Includes circle number badge, brand/category/SKU badge, title, price, and "ดูตัวเลือกอื่น ▾" variant selector.
+   - Bottom row neatly houses "ดูตัวเลือกอื่น ▾" on the left and four status buttons on the right: "แนะนำ" (Recommended), "สนใจ" (Interested), "มีอยู่แล้ว" (Owned), and "ใช้รุ่นเก่าอยู่" (Older Model).
+4. **Auto-Populate to Cart in Step 5 (เลือกสินค้า):**
+   - When staff clicks "ถัดไป" in Step 3, items marked with "สนใจ" are merged into `session.selection.accessories` (quantity = 1).
+   - When reaching Step 5, those accessories are automatically checked/filled in, allowing staff to adjust quantities or remove them as needed before final review.
+5. **API Readiness (`recommendations.ts`):**
+   - Encapsulated mock recommendation generation in `recommendations.ts` with `fetchProductRecommendationsApi()`, ready for future backend API integration.
+
+## D154 — Recommendations Header Collapsing & Mobile Action Grid Refinement (2026-11-16)
+
+Owner instruction via `/grill-me`:
+
+- step แนะนำสินค้า ส่วน สินค้าหลัก เมื่อกดที่ส่วนหัวจะย่อเก็บได้
+- mobile display ในรูป ให้ปุ่ม แนะนำ สนใจ อยู่ บน ดูตัวเลือกอื่นๆ ขยายปุ่ม แนะนำ สนใจ ให้เต็มความยาว 50% 50% และ ดูตัวเลือกอื่นๆ 100%
+- mobile display ส่วน 2. เสนอสินค้าเพิ่มเติม (Ecosystem) ให้ปุ่ม ดูตัวเลือกอื่นๆ อยู่ล่าง ด้านบนเป็นปุ่ม มีอยู่แล้ว ใช้รุ่นเก่าอยู่ และ แนะนำ สนใจ เต็มความยาว 50% 50%
+
+Decisions:
+
+1. **Collapsible Main Product Recommendation Groups (`ProductRecommendationsStep.tsx`):**
+   - The header for each main product (e.g. `[สินค้าหลัก #1] 128GB Black (แนะนำ 3 รายการ)`) is clickable to collapse or expand its 3 recommendation cards.
+   - Includes visual toggle chevron (`ChevronDown` / `ChevronUp`) and smooth transitions.
+2. **Section 1 Mobile Action Layout (`styles.css`):**
+   - In mobile viewports (`max-width: 640px`):
+     - Top row: Buttons "แนะนำ" (50%) and "สนใจ" (50%) full width grid.
+     - Bottom row: Button "ดูตัวเลือกอื่น ▾" (100% full width).
+   - In desktop viewports:
+     - Left: Button "ดูตัวเลือกอื่น ▾".
+     - Right: Buttons "แนะนำ" and "สนใจ".
+3. **Section 2 Mobile Action Layout:**
+   - In mobile viewports (`max-width: 640px`):
+     - Row 1: "แนะนำ" (50%) and "สนใจ" (50%).
+     - Row 2: "มีอยู่แล้ว" (50%) and "ใช้รุ่นเก่าอยู่" (50%).
+     - Row 3 (Bottom): "ดูตัวเลือกอื่น ▾" (100% full width).
+   - In desktop viewports:
+     - Left: Button "ดูตัวเลือกอื่น ▾".
+     - Right: All 4 status buttons neatly grouped in a single horizontal row.

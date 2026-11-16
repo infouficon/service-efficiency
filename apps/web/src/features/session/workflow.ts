@@ -128,7 +128,7 @@ export function progressIndex(
 ): number {
   if (!session) return 0;
   if (['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(session.state))
-    return 5;
+    return 6;
   if (
     [
       'SENT_TO_CASHIER',
@@ -138,16 +138,23 @@ export function progressIndex(
       'COMPLETED',
     ].includes(session.state)
   )
-    return 6;
-  if (session.confirmed || isReviewing) return 4;
+    return 7;
+  if (session.confirmed || isReviewing) return 5;
 
   if (!session.currentAppleDevices || session.currentAppleDevices.length === 0) {
     return 1;
   }
-  if (!session.phone || !session.phone.trim()) {
+  const hasRecommendations = Boolean(
+    session.recommendationsReviewed ||
+      (session.phone && session.phone.trim() !== ''),
+  );
+  if (!hasRecommendations) {
     return 2;
   }
-  return 3;
+  if (!session.phone || !session.phone.trim()) {
+    return 3;
+  }
+  return 4;
 }
 
 /**

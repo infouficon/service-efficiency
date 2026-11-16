@@ -376,17 +376,6 @@ export function WalkInForm({
               <div style={{ fontWeight: 600 }}>
                 เลือกสินค้าที่สนใจครบ 3 รายการแล้ว
               </div>
-              <div
-                style={{
-                  fontSize: '0.85rem',
-                  color: '#15803d',
-                  marginTop: '2px',
-                }}
-              >
-                สามารถกดปุ่ม <strong>"ถัดไป"</strong> ด้านล่างเพื่อเริ่มสร้าง
-                Session และกรอกเบอร์โทรศัพท์ลูกค้า
-                หรือกดไอคอนถังขยะด้านบนหากต้องการเปลี่ยนสินค้า
-              </div>
             </div>
           </div>
         ) : (

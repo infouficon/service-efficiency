@@ -44,6 +44,7 @@ import { WalkInForm } from './WalkInForm';
 import { ChangeItemModal } from './ChangeItemModal';
 import { SessionSurveyModal } from './SessionSurveyModal';
 import { ReceiptSheet, nowText } from './Receipt';
+import { ProductRecommendationsStep } from './ProductRecommendationsStep';
 import { isOutOfStock, toProduct, type Picked } from './catalog';
 import {
   advance,
@@ -212,14 +213,27 @@ export function StaffWorkspace({
     activeSession.currentAppleDevices.length > 0,
   );
 
+  const hasCompletedRecommendations = Boolean(
+    activeSession?.recommendationsReviewed ||
+    (activeSession?.phone && activeSession.phone.trim() !== ''),
+  );
+
   const isAppleDeviceStep = Boolean(
     activeSession && !finished && !hasCompletedAppleDeviceSurvey,
+  );
+
+  const isRecommendationStep = Boolean(
+    activeSession &&
+    !finished &&
+    hasCompletedAppleDeviceSurvey &&
+    !hasCompletedRecommendations,
   );
 
   const isPhoneStep = Boolean(
     activeSession &&
     !finished &&
     hasCompletedAppleDeviceSurvey &&
+    hasCompletedRecommendations &&
     (!activeSession.phone || activeSession.phone.trim() === ''),
   );
 
@@ -416,6 +430,57 @@ export function StaffWorkspace({
         onUpdateSession({
           ...activeSession,
           currentAppleDevices: devicesToSave,
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleProceedRecommendations = async (
+    interestedAccessories: Record<string, string>,
+    records: Array<{
+      id: string;
+      name: string;
+      skuCode: string;
+      section: 'MAIN' | 'ADDITIONAL';
+      status: 'RECOMMENDED' | 'INTERESTED' | 'OWNED' | 'OLD_MODEL' | 'NONE';
+    }>,
+  ) => {
+    if (!activeSession) return;
+    setBusy(true);
+    setError('');
+    try {
+      const mergedAccessories = {
+        ...(activeSession.selection?.accessories || {}),
+        ...interestedAccessories,
+      };
+      const updatedSelection: Selection = {
+        ...activeSession.selection,
+        accessories: mergedAccessories,
+      };
+
+      if (activeSession.id) {
+        const updated = await updateSelectionApi(
+          activeSession.id,
+          updatedSelection,
+          activeSession.phone || '',
+          activeSession.currentAppleDevices,
+        );
+        onUpdateSession({
+          ...updated,
+          selection: updatedSelection,
+          recommendationsReviewed: true,
+          recommendationRecords: records,
+        });
+      } else {
+        onUpdateSession({
+          ...activeSession,
+          selection: updatedSelection,
+          recommendationsReviewed: true,
+          recommendationRecords: records,
         });
       }
     } catch (err) {
@@ -1792,6 +1857,12 @@ export function StaffWorkspace({
                               </Button>
                             </div>
                           </div>
+                        ) : isRecommendationStep ? (
+                          <ProductRecommendationsStep
+                            session={activeSession}
+                            busy={busy}
+                            onProceed={handleProceedRecommendations}
+                          />
                         ) : isPhoneStep ? (
                           <div
                             style={{

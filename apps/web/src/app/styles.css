@@ -5600,3 +5600,128 @@ input[aria-invalid='true'] {
     flex: 0 0 auto;
   }
 }
+
+/* Product Recommendation Card Actions (D154) */
+.rec-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.rec-card-variant-btn {
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  color: #0f766e;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rec-card-status-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rec-s2-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rec-s2-row-top,
+.rec-s2-row-mid {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .rec-card-footer-s1 {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .rec-card-footer-s1 .rec-card-status-btns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .rec-card-footer-s1 .rec-card-status-btns button {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .rec-card-footer-s1 .rec-card-variant-btn {
+    width: 100%;
+    justify-content: center;
+    border-radius: 8px;
+    min-height: 38px;
+  }
+
+  .rec-card-footer-s2 {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .rec-card-footer-s2 .rec-s2-right {
+    order: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .rec-card-footer-s2 .rec-s2-left {
+    order: 2;
+    width: 100%;
+  }
+
+  .rec-card-footer-s2 .rec-s2-row-top {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .rec-card-footer-s2 .rec-s2-row-top button {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .rec-card-footer-s2 .rec-s2-row-mid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .rec-card-footer-s2 .rec-s2-row-mid button {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+  }
+
+  .rec-card-footer-s2 .rec-card-variant-btn {
+    width: 100%;
+    justify-content: center;
+    border-radius: 8px;
+    min-height: 38px;
+  }
+}

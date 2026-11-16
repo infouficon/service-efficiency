@@ -33,6 +33,7 @@ import {
   serialsComplete,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
+import { stages } from '../src/constants/options.ts';
 const fixture = () => ({
   reference: 'fixture',
   phone: '1234567890',
@@ -434,7 +435,7 @@ test('the receipt QR is a real QR matrix: finder patterns in three corners, the 
   assert.ok(qrCode(`https://pos.example.test/register?branch=${'x'.repeat(200)}`).size > a.size);
 });
 
-test('progressIndex maps to the 7 steps: interest, apple devices, phone, product, confirmation, stock, cashier (D131, D134, D136)', () => {
+test('progressIndex maps to the 8 steps: interest, apple devices, recommendations, phone, product, confirmation, stock, cashier (D131, D134, D136, D153)', () => {
   assert.equal(progressIndex(null), 0, 'step 1 interest');
   const sNoPhone = fixture();
   sNoPhone.state = 'PRODUCT_SELECTION';
@@ -442,22 +443,38 @@ test('progressIndex maps to the 7 steps: interest, apple devices, phone, product
   sNoPhone.currentAppleDevices = undefined;
   assert.equal(progressIndex(sNoPhone), 1, 'step 2 apple devices survey even in PRODUCT_SELECTION');
   sNoPhone.currentAppleDevices = ['iPhone'];
+  sNoPhone.recommendationsReviewed = false;
   sNoPhone.phone = '';
-  assert.equal(progressIndex(sNoPhone), 2, 'step 3 phone input even in PRODUCT_SELECTION');
+  assert.equal(progressIndex(sNoPhone), 2, 'step 3 recommendations even in PRODUCT_SELECTION');
+  sNoPhone.recommendationsReviewed = true;
+  assert.equal(progressIndex(sNoPhone), 3, 'step 4 phone input even in PRODUCT_SELECTION');
   sNoPhone.phone = '0812345678';
   const s = fixture();
   s.currentAppleDevices = ['iPhone'];
+  s.recommendationsReviewed = true;
   s.state = 'PRODUCT_SELECTION';
-  assert.equal(progressIndex(s, false), 3, 'selecting product');
-  assert.equal(progressIndex(s, true), 4, 'reviewing before confirmation');
+  assert.equal(progressIndex(s, false), 4, 'selecting product');
+  assert.equal(progressIndex(s, true), 5, 'reviewing before confirmation');
   s.state = 'STOCK_REQUESTED';
-  assert.equal(progressIndex(s), 5, 'stock queue');
+  assert.equal(progressIndex(s), 6, 'stock queue');
   s.state = 'SEARCHING';
-  assert.equal(progressIndex(s), 5, 'stock searching');
+  assert.equal(progressIndex(s), 6, 'stock searching');
   s.state = 'SENT_TO_CASHIER';
-  assert.equal(progressIndex(s), 6, 'cashier stage');
+  assert.equal(progressIndex(s), 7, 'cashier stage');
   s.state = 'COMPLETED';
-  assert.equal(progressIndex(s), 6, 'completed');
+  assert.equal(progressIndex(s), 7, 'completed');
+});
+
+test('D153: stages contains 8 workflow stages with recommendations at step 3', () => {
+  assert.equal(stages.length, 8);
+  assert.equal(stages[0], 'ลูกค้าสนใจอะไร');
+  assert.equal(stages[1], 'สินค้า Apple ที่ใช้');
+  assert.equal(stages[2], 'แนะนำสินค้า');
+  assert.equal(stages[3], 'กรอกเบอร์โทร');
+  assert.equal(stages[4], 'เลือกสินค้า');
+  assert.equal(stages[5], 'ตรวจสอบยืนยัน');
+  assert.equal(stages[6], 'ฝ่ายคลัง');
+  assert.equal(stages[7], 'แคชเชียร์');
 });
 
 test('itemChangeNotice extracts item change details and clears after STOCK_FOUND (D78)', () => {

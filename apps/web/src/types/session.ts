@@ -256,6 +256,15 @@ export interface MockSession {
   currentAppleDevices?: string[];
   /** D140: Survey responses recorded for this session */
   surveyResponses?: SurveyResponseItem[];
+  /** D153: Step 3 product recommendations state */
+  recommendationsReviewed?: boolean;
+  recommendationRecords?: Array<{
+    id: string;
+    name: string;
+    skuCode: string;
+    section: 'MAIN' | 'ADDITIONAL';
+    status: 'RECOMMENDED' | 'INTERESTED' | 'OWNED' | 'OLD_MODEL' | 'NONE';
+  }>;
 }
 
 export type SurveyTarget = 'BUY' | 'NOT_BUY';

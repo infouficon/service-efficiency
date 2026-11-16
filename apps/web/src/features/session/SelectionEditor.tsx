@@ -565,11 +565,16 @@ export function SelectionEditor({
           </ul>
         )}
         {!formOpen && (
-          <Button variant="secondary" onClick={() => setOpen(true)}>
+          <Button
+            variant="secondary"
+            className="mobile-full-btn"
+            onClick={() => setOpen(true)}
+          >
             <span
               style={{
                 display: 'inline-flex',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: '6px',
               }}
             >
@@ -803,6 +808,7 @@ export function SelectionEditor({
         </div>
         <Button
           variant="secondary"
+          className="mobile-full-btn"
           onClick={() => onChange({ ...value, accessories: {} })}
         >
           None / ล้างรายการ

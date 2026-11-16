@@ -2103,6 +2103,18 @@ Decisions:
    - Reduced quantity value min-width from `36px` to `22px`.
    - Combined with removing `✕` from the flow, product title width on mobile increases by over 60px.
 
+## D139 — Mobile Full-Width Buttons for "+ เพิ่มสินค้าหลัก" and "None / ล้างรายการ" (2026-11-16)
+
+Owner instruction via `/grill-me`:
+- หากเป็น mobile ให้ปุ่ม เพิ่มสินค้าหลัก None / ล้างรายการ ยาวเต็มจอ
+
+Decisions:
+1. **Full-Width Buttons on Mobile (`.mobile-full-btn`):**
+   - Applied `.mobile-full-btn` to the "+ เพิ่มสินค้าหลัก" button under chosen products and "None / ล้างรายการ" button under accessories in `SelectionEditor.tsx`.
+   - Under `@media (max-width: 640px)`, `.mobile-full-btn` expands to `width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important;`.
+   - Desktop layout (>640px) remains unchanged with natural content width.
+
+
 
 
 

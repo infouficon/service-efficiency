@@ -541,6 +541,17 @@ export function App({
                         <Send size={14} /> <span>ส่งไป FileMaker</span>
                       </button>
 
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'surveys' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('surveys');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <ClipboardList size={14} /> <span>จัดการ survey</span>
+                      </button>
+
                       <a
                         className="nav-subitem"
                         href="/api/docs"

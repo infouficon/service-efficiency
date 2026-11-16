@@ -21,6 +21,7 @@ import {
   SlidersHorizontal,
   Info,
   AlertTriangle,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
@@ -283,6 +284,20 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
             return meta.currentAppleDevices.join('; ');
           }
           return '';
+        },
+      },
+      {
+        key: 'surveyAnswers',
+        label: 'ผลการตอบแบบสำรวจ (Survey)',
+        getValue: (s) => {
+          if (!s.surveyResponses || s.surveyResponses.length === 0) return '';
+          return s.surveyResponses
+            .map((sr) =>
+              (sr.answers || [])
+                .map((a) => `${a.questionTitle}: ${Array.isArray(a.answer) ? a.answer.join(', ') : a.answer}`)
+                .join(' | '),
+            )
+            .join(' || ');
         },
       },
       {
@@ -1251,6 +1266,42 @@ export function SessionLogsWorkspace({
                     {selectedSession.cancelledBy}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* D140: Survey Responses if present */}
+            {selectedSession.surveyResponses && selectedSession.surveyResponses.length > 0 && (
+              <div
+                className="survey-response-box"
+                style={{
+                  padding: '1rem',
+                  background: '#f0fdfa',
+                  borderRadius: '8px',
+                  border: '1.5px solid #0abab5',
+                  marginBottom: '1.5rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                  <ClipboardCheck size={18} color="#0d9488" />
+                  <h4 style={{ margin: 0, color: '#0f766e' }}>ผลการตอบแบบสำรวจ (Survey Responses)</h4>
+                </div>
+                {selectedSession.surveyResponses.map((sr) => (
+                  <div key={sr.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                      ประเภท: <strong>{sr.target === 'BUY' ? 'กรณีซื้อ (BUY)' : 'กรณีไม่ซื้อ (NOT_BUY)'}</strong> · บันทึกโดย Staff: {sr.actorStaffId} ({new Date(sr.createdAt).toLocaleString('th-TH')})
+                    </div>
+                    {sr.answers && Array.isArray(sr.answers) && sr.answers.map((ans, aIdx) => (
+                      <div key={aIdx} style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #ccfbf1' }}>
+                        <div style={{ fontWeight: 600, fontSize: '13px', color: '#0f172a' }}>
+                          {aIdx + 1}. {ans.questionTitle}
+                        </div>
+                        <div style={{ fontSize: '13px', color: '#0f766e', marginTop: '2px' }}>
+                          {Array.isArray(ans.answer) ? ans.answer.join(', ') : String(ans.answer)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ))}
               </div>
             )}
 

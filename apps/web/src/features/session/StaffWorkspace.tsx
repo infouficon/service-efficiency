@@ -25,13 +25,20 @@ import {
   notBuyReasons,
   stages,
 } from '../../constants/options';
-import type { MockSession, MockUser, Selection } from '../../types/session';
+import type {
+  MockSession,
+  MockUser,
+  Selection,
+  SurveyResponseItem,
+  SurveyTarget,
+} from '../../types/session';
 import { SelectionEditor, CategoryPicture, StockBadge } from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
 import { ReturnToStockForm } from './ReturnToStockForm';
 import { WalkInForm } from './WalkInForm';
 import { ChangeItemModal } from './ChangeItemModal';
+import { SessionSurveyModal } from './SessionSurveyModal';
 import { ReceiptSheet, nowText } from './Receipt';
 import { isOutOfStock, toProduct, type Picked } from './catalog';
 import {
@@ -127,6 +134,10 @@ export function StaffWorkspace({
   const [printSession, setPrintSession] = useState<MockSession | null>(null);
   const [changingItemSession, setChangingItemSession] = useState<MockSession | null>(null);
   const [walkInStep, setWalkInStep] = useState<'product' | 'phone'>('product');
+  const [surveyModal, setSurveyModal] = useState<{
+    session: MockSession;
+    target: SurveyTarget;
+  } | null>(null);
 
   // Filter staff's branch sessions for today
   const branchSessions = sessions.filter((s) => {
@@ -392,9 +403,10 @@ export function StaffWorkspace({
 
       const handleAfterPrint = () => {
         window.removeEventListener('afterprint', handleAfterPrint);
-        setActiveSessionRef(null);
         setForm('normal');
         setPrintSession(null);
+        // D140: Open survey for BUY after confirm purchase
+        setSurveyModal({ session: updated, target: 'BUY' });
       };
       window.addEventListener('afterprint', handleAfterPrint, { once: true });
 
@@ -417,11 +429,11 @@ export function StaffWorkspace({
     setBusy(true);
     setError('');
     try {
+      let updated: MockSession;
       if (activeSession.id) {
-        const updated = await cancelSessionApi(activeSession.id, reason, text);
-        onUpdateSession(updated);
+        updated = await cancelSessionApi(activeSession.id, reason, text);
       } else {
-        const updated: MockSession = {
+        updated = {
           ...activeSession,
           outcome: 'CUSTOMER_CANCELLED',
           reason,
@@ -432,13 +444,31 @@ export function StaffWorkspace({
             cancelled_at: new Date().toISOString(),
           },
         };
-        onUpdateSession(updated);
       }
+      onUpdateSession(updated);
       setForm('normal');
+      // D140: Open survey for NOT_BUY after cancel
+      setSurveyModal({ session: updated, target: 'NOT_BUY' });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ยกเลิกไม่สำเร็จ');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleSurveyComplete = (response?: SurveyResponseItem) => {
+    if (response && surveyModal?.session) {
+      const existing = surveyModal.session.surveyResponses ?? [];
+      const updatedS: MockSession = {
+        ...surveyModal.session,
+        surveyResponses: [...existing, response],
+      };
+      onUpdateSession(updatedS);
+    }
+    const wasBuy = surveyModal?.target === 'BUY';
+    setSurveyModal(null);
+    if (wasBuy) {
+      setActiveSessionRef(null);
     }
   };
 
@@ -1436,6 +1466,13 @@ export function StaffWorkspace({
           )}
         </div>
       </div>
+      {surveyModal && (
+        <SessionSurveyModal
+          session={surveyModal.session}
+          target={surveyModal.target}
+          onComplete={handleSurveyComplete}
+        />
+      )}
       {changingItemSession && (
         <ChangeItemModal
           session={changingItemSession}

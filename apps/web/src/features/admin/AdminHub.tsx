@@ -30,8 +30,9 @@ import { AttentionPanel } from './AttentionPanel';
 import { FmpPanel } from './FmpPanel';
 import { ErpExtrasPanel } from './ErpExtrasPanel';
 import { StaffSheetTools } from './StaffSheetTools';
+import { SurveyManagementPanel } from './SurveyManagementPanel';
 import { branchCodeWarning } from '../../utils/branchCode';
-/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories`, `otp` and `fmp`. */
+/** Admin sub-views. Only ADMIN sees `branches`, `audit`, `erp`, `queue`, `payments`, `categories`, `otp`, `fmp` and `surveys`. */
 export type AdminSubView =
   | 'users'
   | 'branches'
@@ -41,7 +42,8 @@ export type AdminSubView =
   | 'payments'
   | 'categories'
   | 'otp'
-  | 'fmp';
+  | 'fmp'
+  | 'surveys';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
 const erpOwnedRoles: Role[] = ['STAFF', 'STOCK', 'CASHIER'];
 interface StaffDraft {
@@ -206,7 +208,9 @@ export function AdminHub({
                         ? 'เข้าสู่ระบบด้วย OTP (LINE)'
                         : subTab === 'fmp'
                           ? 'ส่งออเดอร์ไป FileMaker (FMP)'
-                          : 'จัดการผู้ใช้ (Staff Members)'}
+                          : subTab === 'surveys'
+                            ? 'จัดการแบบสำรวจ (Survey)'
+                            : 'จัดการผู้ใช้ (Staff Members)'}
         </h1>
       </div>
       <p className="muted" style={{ marginBottom: '1.5rem' }}>
@@ -235,6 +239,8 @@ export function AdminHub({
           <AttentionPanel />
           <FmpPanel />
         </>
+      ) : admin && subTab === 'surveys' ? (
+        <SurveyManagementPanel />
       ) : (
         <>
           {error && (

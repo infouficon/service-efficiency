@@ -63,6 +63,18 @@ enum EventType {
   CASHIER_REJECTED
   STOCK_ACKNOWLEDGED_CANCEL
   ITEM_CHANGED
+  SURVEY_SUBMITTED
+}
+
+enum SurveyTarget {
+  BUY
+  NOT_BUY
+}
+
+enum SurveyQuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_CHOICE
+  TEXT
 }
 
 model Branch {
@@ -466,8 +478,9 @@ model CustomerSession {
   ontop       SessionOntop[]
   points      SessionPoint[]
   burnPoints  SessionBurnPoint[]
-  payments    SessionPayment[]
-  events      SessionEvent[]
+  payments        SessionPayment[]
+  events          SessionEvent[]
+  surveyResponses SurveyResponse[]
 
   @@index([branchId])
   @@index([staffId])
@@ -586,4 +599,35 @@ model ErpSyncRun {
 
   @@unique([kind, slot])
   @@index([startedAt])
+}
+
+// D140: Configurable survey questions for BUY and NOT_BUY cases
+model SurveyQuestion {
+  id           String             @id @default(uuid()) @db.VarChar(36)
+  target       SurveyTarget
+  title        String             @db.VarChar(255)
+  description  String?            @db.Text
+  questionType SurveyQuestionType
+  options      Json?              // string[] for choices
+  required     Boolean            @default(true)
+  active       Boolean            @default(true)
+  sortOrder    Int                @default(0)
+  createdAt    DateTime           @default(now()) @db.DateTime(3)
+  updatedAt    DateTime           @updatedAt @db.DateTime(3)
+
+  @@index([target, active, sortOrder])
+}
+
+// D140: Collected survey responses for a customer session
+model SurveyResponse {
+  id           String          @id @default(uuid()) @db.VarChar(36)
+  sessionId    String          @db.VarChar(36)
+  session      CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  target       SurveyTarget
+  actorStaffId String          @db.VarChar(64)
+  answers      Json            // Array of { questionId, questionTitle, questionType, answer: string | string[] }
+  createdAt    DateTime        @default(now()) @db.DateTime(3)
+
+  @@index([sessionId])
+  @@index([target, createdAt])
 }

@@ -119,6 +119,7 @@ const sessionInclude = {
   burnPoints: true,
   payments: true,
   events: { orderBy: { createdAt: 'asc' } },
+  surveyResponses: { orderBy: { createdAt: 'asc' } },
   // F11: the cancelled session this one was bought again from, and the one that replaced this one
   rebuyOf: { select: { id: true, reference: true } },
   rebuiltAs: { select: { id: true, reference: true } },

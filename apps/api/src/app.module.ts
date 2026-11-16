@@ -9,6 +9,7 @@ import { ProductsModule } from './products/products.module';
 import { QueueModule } from './queue/queue.module';
 import { SettingsModule } from './settings/settings.module';
 import { SessionsModule } from './sessions/sessions.module';
+import { SurveysModule } from './surveys/surveys.module';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { validateEnvironment } from './config/environment';
@@ -27,6 +28,7 @@ import { HealthController } from './health.controller';
     QueueModule,
     SettingsModule,
     SessionsModule,
+    SurveysModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath:

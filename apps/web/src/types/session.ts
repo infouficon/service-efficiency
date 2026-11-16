@@ -252,6 +252,41 @@ export interface MockSession {
   events?: SessionEventItem[];
   /** D134: Apple device categories surveyed in Step 2 */
   currentAppleDevices?: string[];
+  /** D140: Survey responses recorded for this session */
+  surveyResponses?: SurveyResponseItem[];
+}
+
+export type SurveyTarget = 'BUY' | 'NOT_BUY';
+export type SurveyQuestionType = 'SINGLE_CHOICE' | 'MULTIPLE_CHOICE' | 'TEXT';
+
+export interface SurveyQuestion {
+  id: string;
+  target: SurveyTarget;
+  title: string;
+  description?: string | null;
+  questionType: SurveyQuestionType;
+  options?: string[] | null;
+  required: boolean;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SurveyAnswer {
+  questionId: string;
+  questionTitle: string;
+  questionType: string;
+  answer: string | string[];
+}
+
+export interface SurveyResponseItem {
+  id: string;
+  sessionId: string;
+  target: SurveyTarget;
+  actorStaffId: string;
+  answers: SurveyAnswer[];
+  createdAt: string;
 }
 
 export type AppView =

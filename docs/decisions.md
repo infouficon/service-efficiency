@@ -2114,6 +2114,28 @@ Decisions:
    - Under `@media (max-width: 640px)`, `.mobile-full-btn` expands to `width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important;`.
    - Desktop layout (>640px) remains unchanged with natural content width.
 
+## D140 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
+
+Owner instruction via `/grill-me`:
+- เมื่อกด ไม่ซื้อ จะเข้าสู่การทำ survey โดยตั้งค่าคำถามในหน้า จัดการ survey ภายใต้ จัดการระบบ แยกเป็นกรณี ซื้อ ไม่ซื้อ
+
+Decisions:
+1. **Survey Trigger Points:**
+   - **NOT_BUY case:** When staff clicks "ยกเลิกคำขอบริการ", selects the cancel reason, and confirms cancellation, the session presents the NOT_BUY survey modal. Staff asks the customer and records all answers before concluding the session.
+   - **BUY case:** After confirming purchase in Step 5 ("ตรวจสอบยืนยัน") and dispatching to Stock, the BUY survey modal is presented. Staff completes the survey while Stock is picking goods.
+   - **Mandatory Answering:** All active required questions must be answered to proceed. If Admin has no active questions configured for the target, the modal displays a notice ("ยังไม่มีคำถามแบบสำรวจ") with a button to continue immediately.
+2. **Survey Management in Admin Hub (`surveys` sub-view):**
+   - Added "จัดการ survey" under Admin Hub with tabs for `BUY` and `NOT_BUY`.
+   - Starts with clean empty questions. Admin can create, edit, delete, reorder (`UP`/`DOWN`), and toggle active/inactive status.
+   - Supports 3 question types: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, and `TEXT`.
+   - Admin/Manager can export all survey responses as CSV (`/api/surveys/export`).
+3. **Data Model & Audit Event:**
+   - `SurveyQuestion`: `id`, `target` (`BUY`|`NOT_BUY`), `title`, `description`, `questionType`, `options` (JSON string array), `required`, `active`, `sortOrder`, `createdAt`, `updatedAt`.
+   - `SurveyResponse`: `id`, `sessionId`, `target`, `actorStaffId`, `answers` (JSON array of `{ questionId, questionTitle, questionType, answer }`), `createdAt`.
+   - Added `SURVEY_SUBMITTED` to `EventType`.
+   - Survey responses are visible in Session Logs (`SessionLogsWorkspace`) and exported with session logs.
+
+
 
 
 

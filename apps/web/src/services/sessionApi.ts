@@ -13,6 +13,10 @@ import type {
   WorkflowState,
   FmpStatus,
   FmpPushMode,
+  SurveyQuestion,
+  SurveyResponseItem,
+  SurveyTarget,
+  SurveyAnswer,
 } from '../types/session';
 import { formatQueue, isTaxInvoiceReceipt } from '../features/session/workflow';
 
@@ -104,6 +108,7 @@ export interface ApiSession {
     createdAt: string;
     metadata?: Record<string, unknown> | null;
   }[];
+  surveyResponses?: SurveyResponseItem[];
 }
 
 export function mapApiSessionToMockSession(s: ApiSession): MockSession {
@@ -203,6 +208,7 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
         }
       : undefined,
     events: s.events,
+    surveyResponses: s.surveyResponses,
     currentAppleDevices: (() => {
       const createdEvt = (s.events ?? []).find((e) => e.eventType === 'SESSION_CREATED');
       const meta = createdEvt?.metadata as Record<string, unknown> | undefined;
@@ -610,3 +616,61 @@ export async function serialCheckApi(sn: string, part?: string): Promise<SerialC
   const query = new URLSearchParams(part ? { sn, part } : { sn });
   return api<SerialCheck>(`/stock/serial-check?${query}`);
 }
+
+/** D140: Fetch survey questions. `all=true` for ADMIN management. */
+export async function fetchSurveyQuestionsApi(
+  target?: SurveyTarget,
+  all = false,
+): Promise<SurveyQuestion[]> {
+  const params = new URLSearchParams();
+  if (target) params.set('target', target);
+  if (all) params.set('all', 'true');
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return api<SurveyQuestion[]>(`/surveys/questions${qs}`);
+}
+
+export async function createSurveyQuestionApi(
+  data: Partial<SurveyQuestion> & { target: SurveyTarget; title: string; questionType: string },
+): Promise<SurveyQuestion> {
+  return api<SurveyQuestion>('/surveys/questions', 'POST', data);
+}
+
+export async function updateSurveyQuestionApi(
+  id: string,
+  data: Partial<SurveyQuestion>,
+): Promise<SurveyQuestion> {
+  return api<SurveyQuestion>(`/surveys/questions/${encodeURIComponent(id)}`, 'PUT', data);
+}
+
+export async function deleteSurveyQuestionApi(id: string): Promise<SurveyQuestion> {
+  return api<SurveyQuestion>(`/surveys/questions/${encodeURIComponent(id)}`, 'DELETE');
+}
+
+export async function moveSurveyQuestionApi(
+  id: string,
+  direction: 'UP' | 'DOWN',
+): Promise<SurveyQuestion[]> {
+  return api<SurveyQuestion[]>(`/surveys/questions/${encodeURIComponent(id)}/move`, 'POST', { direction });
+}
+
+export async function submitSurveyResponseApi(data: {
+  sessionId: string;
+  target: SurveyTarget;
+  answers: SurveyAnswer[];
+}): Promise<SurveyResponseItem> {
+  return api<SurveyResponseItem>('/surveys/responses', 'POST', data);
+}
+
+export async function fetchSurveyResponsesApi(query: {
+  target?: SurveyTarget;
+  sessionId?: string;
+  limit?: number;
+}): Promise<SurveyResponseItem[]> {
+  const params = new URLSearchParams();
+  if (query.target) params.set('target', query.target);
+  if (query.sessionId) params.set('sessionId', query.sessionId);
+  if (query.limit) params.set('limit', String(query.limit));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return api<SurveyResponseItem[]>(`/surveys/responses${qs}`);
+}
+

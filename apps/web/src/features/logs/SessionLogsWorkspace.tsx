@@ -849,7 +849,7 @@ function ExportModal({
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', lineHeight: 1.4 }}>
             <Info size={16} color="#0abab5" style={{ flexShrink: 0 }} />
             <span>
-              ไฟล์จะถูกบันทึกเป็น <strong>CSV (UTF-8 with BOM)</strong> ในรูปแบบวันที่-เวลา <code>YYYY-MM-DD HH:mm:ss</code> รองรับการคำนวณและเปิดใน <strong>Microsoft Excel</strong> โดยภาษาไทยไม่เพี้ยน
+              ไฟล์จะถูกบันทึกเป็น <strong>CSV (UTF-8 with BOM)</strong> ในรูปแบบวันที่-เวลา <code>YYYY-MM-DD HH:mm:ss</code> รองรับการคำนวณและเปิดใน <strong>Microsoft Excel</strong>
             </span>
           </span>
         </Notice>

@@ -609,6 +609,7 @@ model SurveyQuestion {
   description  String?            @db.Text
   questionType SurveyQuestionType
   options      Json?              // string[] for choices
+  allowOther   Boolean            @default(false)
   required     Boolean            @default(true)
   active       Boolean            @default(true)
   sortOrder    Int                @default(0)

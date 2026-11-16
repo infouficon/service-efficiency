@@ -45,6 +45,7 @@ export class SurveysService {
         description: dto.description?.trim() || null,
         questionType: dto.questionType,
         options: dto.options ? (dto.options.map((o) => o.trim()).filter(Boolean) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        allowOther: dto.allowOther ?? false,
         required: dto.required ?? true,
         active: dto.active ?? true,
         sortOrder: dto.sortOrder ?? nextOrder,
@@ -67,6 +68,7 @@ export class SurveysService {
         ...(dto.options !== undefined
           ? { options: dto.options ? (dto.options.map((o) => o.trim()).filter(Boolean) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull }
           : {}),
+        ...(dto.allowOther !== undefined ? { allowOther: dto.allowOther } : {}),
         ...(dto.required !== undefined ? { required: dto.required } : {}),
         ...(dto.active !== undefined ? { active: dto.active } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),

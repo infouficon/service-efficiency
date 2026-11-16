@@ -2117,7 +2117,7 @@ Decisions:
 ## D140 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
 
 Owner instruction via `/grill-me`:
-- เมื่อกด ไม่ซื้อ จะเข้าสู่การทำ survey โดยตั้งค่าคำถามในหน้า จัดการ survey ภายใต้ จัดการระบบ แยกเป็นกรณี ซื้อ ไม่ซื้อ
+- เมื่อกด ไม่ซื้อ จะเข้าสู่การทำ survey โดยตั้งค่าคำถามในหน้า จัดการแบบสำรวจ ภายใต้ จัดการระบบ แยกเป็นกรณี ซื้อ ไม่ซื้อ
 
 Decisions:
 1. **Survey Trigger Points:**
@@ -2125,7 +2125,7 @@ Decisions:
    - **BUY case:** After confirming purchase in Step 5 ("ตรวจสอบยืนยัน") and dispatching to Stock, the BUY survey modal is presented. Staff completes the survey while Stock is picking goods.
    - **Mandatory Answering:** All active required questions must be answered to proceed. If Admin has no active questions configured for the target, the modal displays a notice ("ยังไม่มีคำถามแบบสำรวจ") with a button to continue immediately.
 2. **Survey Management in Admin Hub (`surveys` sub-view):**
-   - Added "จัดการ survey" under Admin Hub with tabs for `BUY` and `NOT_BUY`.
+   - Added "จัดการแบบสำรวจ" under Admin Hub with tabs for `BUY` and `NOT_BUY`.
    - Starts with clean empty questions. Admin can create, edit, delete, reorder (`UP`/`DOWN`), and toggle active/inactive status.
    - Supports 3 question types: `SINGLE_CHOICE`, `MULTIPLE_CHOICE`, and `TEXT`.
    - Admin/Manager can export all survey responses as CSV (`/api/surveys/export`).
@@ -2134,6 +2134,31 @@ Decisions:
    - `SurveyResponse`: `id`, `sessionId`, `target`, `actorStaffId`, `answers` (JSON array of `{ questionId, questionTitle, questionType, answer }`), `createdAt`.
    - Added `SURVEY_SUBMITTED` to `EventType`.
    - Survey responses are visible in Session Logs (`SessionLogsWorkspace`) and exported with session logs.
+
+## D141 — Survey "Other" Option, Postpone Button, Staff Survey Workspace & Nav-Counter (2026-11-16)
+
+Owner instruction via `/grill-me`:
+- เพิ่มให้มีตัวเลือก อื่น ๆ ได้ด้วย ที่ถ้าเลือกจะต้องกรอกเพิ่ม
+- เพิ่ม ปุ่ม ไว้ทำทีหลัง เพื่อกลับมาทำ survey ทีหลัง
+- เพิ่ม sidebar tab survey พร้อมแสดง nav-counter ว่ามี survey ค้างอยู่กี่อัน
+- survey เป็นหน้าที่ของ role staff
+
+Decisions:
+1. **Configurable "Other (please specify)" Option (`allowOther`):**
+   - Added `allowOther Boolean @default(false)` to `SurveyQuestion` model and migration `202611160002_survey_question_allow_other`.
+   - In `SurveyManagementPanel`, admins can toggle "เพิ่มตัวเลือก 'อื่น ๆ (โปรดระบุ)'" for `SINGLE_CHOICE` and `MULTIPLE_CHOICE` questions.
+   - When answering, selecting "อื่น ๆ (โปรดระบุ)" displays a text field. Validates that text is provided before submission.
+   - Saves formatted answer as `อื่น ๆ: <detail>`.
+2. **Postpone Survey ("ไว้ทำทีหลัง"):**
+   - Added secondary button "ไว้ทำทีหลัง" in `SessionSurveyModal`.
+   - Closes modal without recording response, freeing the staff screen for new customers while retaining the session in the pending survey queue.
+3. **Staff Responsibility & Sidebar Tab with `nav-counter`:**
+   - Added "แบบสำรวจ" (`surveys` view) to sidebar navigation, accessible to `STAFF`, `MANAGER`, and `ADMIN`.
+   - `nav-counter` dynamically tracks today's sessions in the staff member's branch that completed purchase or were cancelled but lack a survey response.
+4. **Staff Survey Workspace (`SurveyWorkspace`):**
+   - Displays 2 tabs: "ค้างทำ (Pending)" with pending count and "ทำแล้ว (Completed)" with completed count.
+   - For pending items, shows queue label, phone, type (ซื้อ / ไม่ซื้อ), timestamp, and a "ทำแบบสำรวจ" button to complete the survey anytime.
+   - For completed items, provides a "ดูผลสำรวจ" modal to review recorded customer answers.
 
 
 

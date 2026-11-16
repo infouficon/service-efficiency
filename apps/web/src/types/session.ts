@@ -266,6 +266,7 @@ export interface SurveyQuestion {
   description?: string | null;
   questionType: SurveyQuestionType;
   options?: string[] | null;
+  allowOther?: boolean;
   required: boolean;
   active: boolean;
   sortOrder: number;
@@ -292,6 +293,7 @@ export interface SurveyResponseItem {
 export type AppView =
   | 'staff'
   | 'stock'
+  | 'surveys'
   | 'products'
   | 'logs'
   | 'admin';

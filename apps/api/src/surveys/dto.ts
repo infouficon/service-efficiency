@@ -38,6 +38,10 @@ export class CreateSurveyQuestionDto {
 
   @IsOptional()
   @IsBoolean()
+  allowOther?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   required?: boolean;
 
   @IsOptional()
@@ -69,6 +73,10 @@ export class UpdateSurveyQuestionDto {
   @IsString({ each: true })
   @ArrayMaxSize(20)
   options?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  allowOther?: boolean;
 
   @IsOptional()
   @IsBoolean()

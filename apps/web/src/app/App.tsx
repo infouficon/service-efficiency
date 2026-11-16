@@ -22,12 +22,14 @@ import {
   Send,
   PanelLeftClose,
   PanelLeftOpen,
+  ClipboardCheck,
 } from 'lucide-react';
 import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
 import type { Account } from '../types/accounts';
 import { StaffWorkspace } from '../features/session/StaffWorkspace';
 import { StockWorkspace } from '../features/stock/StockWorkspace';
+import { SurveyWorkspace } from '../features/survey/SurveyWorkspace';
 import { ProductWorkspace } from '../features/products/ProductWorkspace';
 import { SessionLogsWorkspace } from '../features/logs/SessionLogsWorkspace';
 import { AdminHub, type AdminSubView } from '../features/admin/AdminHub';
@@ -52,6 +54,7 @@ function parseHashView(hash: string): AppView | null {
   const validViews: AppView[] = [
     'staff',
     'stock',
+    'surveys',
     'logs',
     'products',
     'admin',
@@ -62,6 +65,12 @@ function parseHashView(hash: string): AppView | null {
 function isViewAllowed(v: AppView, u: MockUser): boolean {
   if (v === 'staff') return u.roles.includes('STAFF');
   if (v === 'stock') return u.roles.includes('STOCK');
+  if (v === 'surveys')
+    return (
+      u.roles.includes('STAFF') ||
+      u.roles.includes('ADMIN') ||
+      u.roles.includes('MANAGER')
+    );
   if (v === 'products')
     return u.roles.includes('ADMIN') || u.roles.includes('MANAGER');
   if (v === 'admin')
@@ -221,6 +230,20 @@ export function App({
       ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
   ).length;
 
+  // D141: Count of pending customer surveys for today in this branch
+  const pendingSurveysCount = useMemo(() => {
+    return branchSessions.filter((s) => {
+      if (!isToday(s.timestamps.customer_walk_in_at)) return false;
+      const isCancelled =
+        s.outcome === 'CUSTOMER_CANCELLED' || Boolean(s.timestamps.cancelled_at);
+      const isBought =
+        s.confirmed || Boolean(s.timestamps.product_selection_confirmed_at) || s.state === 'COMPLETED';
+      if (!isCancelled && !isBought) return false;
+      const hasSurvey = s.surveyResponses && s.surveyResponses.length > 0;
+      return !hasSurvey;
+    }).length;
+  }, [branchSessions]);
+
   const isManagerOrAdmin =
     user.roles.includes('MANAGER') || user.roles.includes('ADMIN');
   const managerAlertSessions = useMemo(() => {
@@ -377,6 +400,19 @@ export function App({
               <Package size={18} /> <span>คลังสินค้า</span>
               {stockPendingCount > 0 && (
                 <span className="nav-counter">{stockPendingCount}</span>
+              )}
+            </button>
+          )}
+
+          {canAccessStaff && (
+            <button
+              className={view === 'surveys' ? 'nav-active' : ''}
+              onClick={() => handleSelectView('surveys')}
+              title="แบบสำรวจ"
+            >
+              <ClipboardCheck size={18} /> <span>แบบสำรวจ</span>
+              {pendingSurveysCount > 0 && (
+                <span className="nav-counter">{pendingSurveysCount}</span>
               )}
             </button>
           )}
@@ -549,7 +585,7 @@ export function App({
                           setIsMobileMenuOpen(false);
                         }}
                       >
-                        <ClipboardList size={14} /> <span>จัดการ survey</span>
+                        <ClipboardList size={14} /> <span>จัดการแบบสำรวจ</span>
                       </button>
 
                       <a
@@ -814,6 +850,14 @@ export function App({
 
           {view === 'stock' && canAccessStock && (
             <StockWorkspace
+              user={user}
+              sessions={sessions}
+              onUpdateSession={handleUpdateSession}
+            />
+          )}
+
+          {view === 'surveys' && canAccessStaff && (
+            <SurveyWorkspace
               user={user}
               sessions={sessions}
               onUpdateSession={handleUpdateSession}

@@ -36,6 +36,7 @@ test('surveys: configurable questions for BUY and NOT_BUY, response collection, 
         title: `${prefix} ความพึงพอใจการบริการ`,
         questionType: 'SINGLE_CHOICE',
         options: ['ดีมาก', 'ปานกลาง', 'ควรปรับปรุง'],
+        allowOther: true,
       };
 
       for (const who of ['staff', 'stock', 'manager']) {
@@ -47,6 +48,7 @@ test('surveys: configurable questions for BUY and NOT_BUY, response collection, 
       assert.equal(created.status, 201);
       assert.equal(created.data.title, qData.title);
       assert.equal(created.data.target, 'BUY');
+      assert.equal(created.data.allowOther, true);
 
       const qId = created.data.id;
 
@@ -54,9 +56,10 @@ test('surveys: configurable questions for BUY and NOT_BUY, response collection, 
       assert.equal((await updateQuestion(qId, { title: 'Updated' }, 'staff')).status, 403);
 
       // Admin can update
-      const updated = await updateQuestion(qId, { title: `${prefix} ความพึงพอใจโดยรวม` }, 'admin');
+      const updated = await updateQuestion(qId, { title: `${prefix} ความพึงพอใจโดยรวม`, allowOther: false }, 'admin');
       assert.equal(updated.status, 200);
       assert.equal(updated.data.title, `${prefix} ความพึงพอใจโดยรวม`);
+      assert.equal(updated.data.allowOther, false);
 
       // Staff can list active questions
       const staffList = await listQuestions('staff', '?target=BUY');

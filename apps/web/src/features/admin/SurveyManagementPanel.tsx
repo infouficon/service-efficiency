@@ -31,6 +31,7 @@ interface QuestionFormState {
   description: string;
   questionType: SurveyQuestionType;
   options: string[];
+  allowOther: boolean;
   required: boolean;
   active: boolean;
 }
@@ -41,6 +42,7 @@ const DEFAULT_FORM: QuestionFormState = {
   description: '',
   questionType: 'SINGLE_CHOICE',
   options: [''],
+  allowOther: false,
   required: true,
   active: true,
 };
@@ -83,6 +85,7 @@ export function SurveyManagementPanel() {
       ...DEFAULT_FORM,
       target,
       options: ['ตัวเลือกที่ 1', 'ตัวเลือกที่ 2'],
+      allowOther: false,
     });
     setModalOpen(true);
   };
@@ -95,6 +98,7 @@ export function SurveyManagementPanel() {
       description: q.description ?? '',
       questionType: q.questionType,
       options: q.options && q.options.length > 0 ? [...q.options] : [''],
+      allowOther: q.allowOther ?? false,
       required: q.required,
       active: q.active,
     });
@@ -123,12 +127,15 @@ export function SurveyManagementPanel() {
           ? []
           : form.options.map((o) => o.trim()).filter(Boolean);
 
+      const isChoiceType = form.questionType === 'SINGLE_CHOICE' || form.questionType === 'MULTIPLE_CHOICE';
+
       if (form.id) {
         await updateSurveyQuestionApi(form.id, {
           title: form.title,
           description: form.description || undefined,
           questionType: form.questionType,
           options: cleanedOptions,
+          allowOther: isChoiceType ? form.allowOther : false,
           required: form.required,
           active: form.active,
         });
@@ -140,6 +147,7 @@ export function SurveyManagementPanel() {
           description: form.description || undefined,
           questionType: form.questionType,
           options: cleanedOptions,
+          allowOther: isChoiceType ? form.allowOther : false,
           required: form.required,
           active: form.active,
         });
@@ -205,7 +213,7 @@ export function SurveyManagementPanel() {
 
   return (
     <Panel
-      title="จัดการแบบสำรวจ (Survey)"
+      title="จัดการแบบสำรวจ"
       eyebrow="ตั้งค่าคำถามสำหรับเก็บข้อมูลความคิดเห็นลูกค้า แยกตามกรณีซื้อ และไม่ซื้อ"
     >
       {error && (
@@ -385,6 +393,20 @@ export function SurveyManagementPanel() {
                         {opt}
                       </span>
                     ))}
+                    {q.allowOther && (
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          background: '#fef3c7',
+                          color: '#92400e',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        + อื่น ๆ (ระบุ)
+                      </span>
+                    )}
                   </div>
                 )}
               </div>
@@ -577,6 +599,30 @@ export function SurveyManagementPanel() {
                   >
                     <Plus size={14} /> เพิ่มตัวเลือก
                   </button>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      fontSize: '13px',
+                      marginTop: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={form.allowOther}
+                      onChange={(e) => setForm({ ...form, allowOther: e.target.checked })}
+                    />
+                    <span style={{ fontWeight: 500, color: '#334155' }}>
+                      เพิ่มตัวเลือก <strong>&ldquo;อื่น ๆ (โปรดระบุ)&rdquo;</strong>
+                    </span>
+                  </label>
                 </div>
               </div>
             )}

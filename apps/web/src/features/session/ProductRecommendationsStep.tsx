@@ -386,7 +386,6 @@ export function ProductRecommendationsStep({
                     color: '#64748b',
                   }}
                 >
-                  <span>(แนะนำ 3 รายการ)</span>
                   {isCollapsed ? (
                     <ChevronDown size={18} color="#64748b" />
                   ) : (

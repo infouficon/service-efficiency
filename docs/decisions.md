@@ -2476,7 +2476,7 @@ Owner instruction via `/grill-me`:
 Decisions:
 
 1. **Collapsible Main Product Recommendation Groups (`ProductRecommendationsStep.tsx`):**
-   - The header for each main product (e.g. `[สินค้าหลัก #1] 128GB Black (แนะนำ 3 รายการ)`) is clickable to collapse or expand its 3 recommendation cards.
+   - The header for each main product (e.g. `[สินค้าหลัก #1] 128GB Black`) is clickable to collapse or expand its 3 recommendation cards.
    - Includes visual toggle chevron (`ChevronDown` / `ChevronUp`) and smooth transitions.
 2. **Section 1 Mobile Action Layout (`styles.css`):**
    - In mobile viewports (`max-width: 640px`):

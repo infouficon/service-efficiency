@@ -268,6 +268,7 @@ export interface SurveyQuestion {
   options?: string[] | null;
   allowOther?: boolean;
   required: boolean;
+  requiredNow?: boolean;
   active: boolean;
   sortOrder: number;
   createdAt: string;
@@ -286,17 +287,14 @@ export interface SurveyResponseItem {
   sessionId: string;
   target: SurveyTarget;
   actorStaffId: string;
+  completed?: boolean;
   answers: SurveyAnswer[];
   createdAt: string;
+  updatedAt?: string;
 }
 
 export type AppView =
-  | 'staff'
-  | 'stock'
-  | 'surveys'
-  | 'products'
-  | 'logs'
-  | 'admin';
+  'staff' | 'stock' | 'surveys' | 'products' | 'logs' | 'admin';
 
 /** D100: what the shop sees of FileMaker for one order. */
 export interface FmpStatus {
@@ -311,4 +309,3 @@ export interface FmpStatus {
   ackMessage: string | null;
   at: string;
 }
-

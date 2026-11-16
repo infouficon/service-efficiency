@@ -46,6 +46,10 @@ export class CreateSurveyQuestionDto {
 
   @IsOptional()
   @IsBoolean()
+  requiredNow?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   active?: boolean;
 
   @IsOptional()
@@ -84,6 +88,10 @@ export class UpdateSurveyQuestionDto {
 
   @IsOptional()
   @IsBoolean()
+  requiredNow?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   active?: boolean;
 
   @IsOptional()
@@ -99,6 +107,10 @@ export class MoveSurveyQuestionDto {
 export class ReorderSurveyQuestionsDto {
   @IsEnum(SurveyTarget)
   target!: SurveyTarget;
+
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
 
   @IsArray()
   @IsString({ each: true })
@@ -130,6 +142,10 @@ export class SubmitSurveyResponseDto {
 
   @IsEnum(SurveyTarget)
   target!: SurveyTarget;
+
+  @IsOptional()
+  @IsBoolean()
+  completed?: boolean;
 
   @IsArray()
   @ValidateNested({ each: true })

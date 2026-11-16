@@ -32,6 +32,7 @@ interface QuestionFormState {
   options: string[];
   allowOther: boolean;
   required: boolean;
+  requiredNow: boolean;
   active: boolean;
 }
 
@@ -43,6 +44,7 @@ const DEFAULT_FORM: QuestionFormState = {
   options: [''],
   allowOther: false,
   required: true,
+  requiredNow: false,
   active: true,
 };
 
@@ -88,6 +90,7 @@ export function SurveyManagementPanel() {
       target,
       options: ['ตัวเลือกที่ 1', 'ตัวเลือกที่ 2'],
       allowOther: false,
+      requiredNow: false,
     });
     setModalOpen(true);
   };
@@ -102,6 +105,7 @@ export function SurveyManagementPanel() {
       options: q.options && q.options.length > 0 ? [...q.options] : [''],
       allowOther: q.allowOther ?? false,
       required: q.required,
+      requiredNow: q.requiredNow ?? false,
       active: q.active,
     });
     setModalOpen(true);
@@ -114,7 +118,8 @@ export function SurveyManagementPanel() {
     }
 
     if (
-      (form.questionType === 'SINGLE_CHOICE' || form.questionType === 'MULTIPLE_CHOICE') &&
+      (form.questionType === 'SINGLE_CHOICE' ||
+        form.questionType === 'MULTIPLE_CHOICE') &&
       form.options.filter((o) => o.trim()).length < 2
     ) {
       setError('คำถามประเภทตัวเลือกต้องมีตัวเลือกอย่างน้อย 2 ตัวเลือก');
@@ -129,7 +134,9 @@ export function SurveyManagementPanel() {
           ? []
           : form.options.map((o) => o.trim()).filter(Boolean);
 
-      const isChoiceType = form.questionType === 'SINGLE_CHOICE' || form.questionType === 'MULTIPLE_CHOICE';
+      const isChoiceType =
+        form.questionType === 'SINGLE_CHOICE' ||
+        form.questionType === 'MULTIPLE_CHOICE';
 
       if (form.id) {
         await updateSurveyQuestionApi(form.id, {
@@ -138,7 +145,8 @@ export function SurveyManagementPanel() {
           questionType: form.questionType,
           options: cleanedOptions,
           allowOther: isChoiceType ? form.allowOther : false,
-          required: form.required,
+          required: form.requiredNow ? true : form.required,
+          requiredNow: form.requiredNow,
           active: form.active,
         });
         toast.success('บันทึกการแก้ไขคำถามสำเร็จ');
@@ -150,7 +158,8 @@ export function SurveyManagementPanel() {
           questionType: form.questionType,
           options: cleanedOptions,
           allowOther: isChoiceType ? form.allowOther : false,
-          required: form.required,
+          required: form.requiredNow ? true : form.required,
+          requiredNow: form.requiredNow,
           active: form.active,
         });
         toast.success('เพิ่มคำถามแบบสำรวจสำเร็จ');
@@ -186,7 +195,9 @@ export function SurveyManagementPanel() {
     setBusy(true);
     try {
       await updateSurveyQuestionApi(q.id, { active: !q.active });
-      toast.success(q.active ? 'ปิดการใช้งานคำถามแล้ว' : 'เปิดการใช้งานคำถามแล้ว');
+      toast.success(
+        q.active ? 'ปิดการใช้งานคำถามแล้ว' : 'เปิดการใช้งานคำถามแล้ว',
+      );
       await load(target);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'อัปเดตสถานะไม่สำเร็จ';
@@ -227,7 +238,10 @@ export function SurveyManagementPanel() {
   };
 
   const handleExportCsv = () => {
-    window.open(`/api/surveys/export?target=${encodeURIComponent(target)}`, '_blank');
+    window.open(
+      `/api/surveys/export?target=${encodeURIComponent(target)}`,
+      '_blank',
+    );
   };
 
   return (
@@ -316,13 +330,25 @@ export function SurveyManagementPanel() {
 
         <div style={{ display: 'flex', gap: '8px' }}>
           <Button variant="secondary" onClick={handleExportCsv}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               <Download size={15} />
-              ดาวน์โหลดรายงานผล (CSV)
+              Export data
             </span>
           </Button>
           <Button onClick={handleOpenAdd} disabled={busy}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               <Plus size={16} />
               เพิ่มคำถาม
             </span>
@@ -342,15 +368,26 @@ export function SurveyManagementPanel() {
             borderRadius: '12px',
           }}
         >
-          <FileQuestion size={44} color="#94a3b8" style={{ marginBottom: '12px' }} />
+          <FileQuestion
+            size={44}
+            color="#94a3b8"
+            style={{ marginBottom: '12px' }}
+          />
           <h4 style={{ margin: '0 0 6px', color: '#1e293b' }}>
-            ยังไม่มีคำถามแบบสำรวจสำหรับ{target === 'BUY' ? 'กรณีซื้อ' : 'กรณีไม่ซื้อ'}
+            ยังไม่มีคำถามแบบสำรวจสำหรับ
+            {target === 'BUY' ? 'กรณีซื้อ' : 'กรณีไม่ซื้อ'}
           </h4>
           <p className="muted" style={{ margin: '0 0 16px', fontSize: '13px' }}>
             คลิกปุ่ม &quot;เพิ่มคำถาม&quot; เพื่อเริ่มต้นสร้างคำถามแรก
           </p>
           <Button onClick={handleOpenAdd}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               <Plus size={16} /> เพิ่มคำถาม
             </span>
           </Button>
@@ -401,7 +438,11 @@ export function SurveyManagementPanel() {
                   alignItems: 'flex-start',
                   justifyContent: 'space-between',
                   padding: '16px',
-                  background: isOver ? '#f0fdfa' : q.active ? '#ffffff' : '#f8fafc',
+                  background: isOver
+                    ? '#f0fdfa'
+                    : q.active
+                      ? '#ffffff'
+                      : '#f8fafc',
                   border: isOver ? '1.5px dashed #0abab5' : '1px solid #e2e8f0',
                   borderRadius: '10px',
                   opacity: isDragging ? 0.35 : q.active ? 1 : 0.65,
@@ -439,7 +480,14 @@ export function SurveyManagementPanel() {
                 </div>
 
                 <div style={{ flex: 1, minWidth: '240px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      marginBottom: '6px',
+                    }}
+                  >
                     <span
                       style={{
                         background: '#0f766e',
@@ -477,6 +525,20 @@ export function SurveyManagementPanel() {
                         จำเป็นต้องตอบ
                       </span>
                     )}
+                    {q.requiredNow && (
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          background: '#fef3c7',
+                          color: '#b45309',
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          fontWeight: 700,
+                        }}
+                      >
+                        ตอบทันที
+                      </span>
+                    )}
                     {!q.active && (
                       <span
                         style={{
@@ -492,52 +554,76 @@ export function SurveyManagementPanel() {
                     )}
                   </div>
 
-                  <div style={{ fontWeight: 600, fontSize: '15px', color: '#0f172a', marginBottom: '4px' }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: '15px',
+                      color: '#0f172a',
+                      marginBottom: '4px',
+                    }}
+                  >
                     {q.title}
                   </div>
 
                   {q.description && (
-                    <p style={{ margin: '0 0 8px', fontSize: '13px', color: '#64748b' }}>
+                    <p
+                      style={{
+                        margin: '0 0 8px',
+                        fontSize: '13px',
+                        color: '#64748b',
+                      }}
+                    >
                       {q.description}
                     </p>
                   )}
 
-                  {q.options && q.options.length > 0 && q.questionType !== 'TEXT' && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                      {q.options.map((opt, oIdx) => (
-                        <span
-                          key={oIdx}
-                          style={{
-                            fontSize: '12px',
-                            background: '#e0f2fe',
-                            color: '#0369a1',
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                          }}
-                        >
-                          {opt}
-                        </span>
-                      ))}
-                      {q.allowOther && (
-                        <span
-                          style={{
-                            fontSize: '12px',
-                            background: '#fef3c7',
-                            color: '#92400e',
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            fontStyle: 'italic',
-                          }}
-                        >
-                          + อื่น ๆ (ระบุ)
-                        </span>
-                      )}
-                    </div>
-                  )}
+                  {q.options &&
+                    q.options.length > 0 &&
+                    q.questionType !== 'TEXT' && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                          marginTop: '6px',
+                        }}
+                      >
+                        {q.options.map((opt, oIdx) => (
+                          <span
+                            key={oIdx}
+                            style={{
+                              fontSize: '12px',
+                              background: '#e0f2fe',
+                              color: '#0369a1',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                            }}
+                          >
+                            {opt}
+                          </span>
+                        ))}
+                        {q.allowOther && (
+                          <span
+                            style={{
+                              fontSize: '12px',
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontStyle: 'italic',
+                            }}
+                          >
+                            + อื่น ๆ (ระบุ)
+                          </span>
+                        )}
+                      </div>
+                    )}
                 </div>
 
                 {/* Actions */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
                   <Button
                     size="sm"
                     variant="secondary"
@@ -552,7 +638,13 @@ export function SurveyManagementPanel() {
                     disabled={busy}
                     onClick={() => handleOpenEdit(q)}
                   >
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                      }}
+                    >
                       <Edit2 size={13} /> แก้ไข
                     </span>
                   </Button>
@@ -577,16 +669,32 @@ export function SurveyManagementPanel() {
           title={form.id ? 'แก้ไขคำถามแบบสำรวจ' : 'เพิ่มคำถามแบบสำรวจ'}
           onClose={() => setModalOpen(false)}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+          >
             <div>
-              <label style={{ display: 'block', fontWeight: 600, fontSize: '13.5px', marginBottom: '4px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  marginBottom: '4px',
+                }}
+              >
                 ประเภทแบบสำรวจ
               </label>
               <select
                 value={form.target}
                 disabled={Boolean(form.id)}
-                onChange={(e) => setForm({ ...form, target: e.target.value as SurveyTarget })}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                onChange={(e) =>
+                  setForm({ ...form, target: e.target.value as SurveyTarget })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                }}
               >
                 <option value="BUY">แบบสำรวจ: กรณีซื้อ (BUY)</option>
                 <option value="NOT_BUY">แบบสำรวจ: กรณีไม่ซื้อ (NOT_BUY)</option>
@@ -594,7 +702,14 @@ export function SurveyManagementPanel() {
             </div>
 
             <div>
-              <label style={{ display: 'block', fontWeight: 600, fontSize: '13.5px', marginBottom: '4px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  marginBottom: '4px',
+                }}
+              >
                 หัวข้อคำถาม <span style={{ color: '#dc2626' }}>*</span>
               </label>
               <input
@@ -602,25 +717,51 @@ export function SurveyManagementPanel() {
                 placeholder="เช่น เหตุผลหลักในการเลือกซื้อสินค้าในวันนี้"
                 value={form.title}
                 onChange={(e) => setForm({ ...form, title: e.target.value })}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontWeight: 600, fontSize: '13.5px', marginBottom: '4px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  marginBottom: '4px',
+                }}
+              >
                 คำอธิบายเพิ่มเติม (ถ้ามี)
               </label>
               <input
                 type="text"
                 placeholder="คำอธิบายสั้นๆ เพื่อให้พนักงานเข้าใจบริบทของคำถาม"
                 value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                onChange={(e) =>
+                  setForm({ ...form, description: e.target.value })
+                }
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontWeight: 600, fontSize: '13.5px', marginBottom: '4px' }}>
+              <label
+                style={{
+                  display: 'block',
+                  fontWeight: 600,
+                  fontSize: '13.5px',
+                  marginBottom: '4px',
+                }}
+              >
                 รูปแบบคำถาม <span style={{ color: '#dc2626' }}>*</span>
               </label>
               <select
@@ -637,23 +778,59 @@ export function SurveyManagementPanel() {
                           : ['ตัวเลือกที่ 1', 'ตัวเลือกที่ 2'],
                   })
                 }
-                style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                }}
               >
-                <option value="SINGLE_CHOICE">เลือกตอบข้อเดียว (Single choice)</option>
-                <option value="MULTIPLE_CHOICE">เลือกตอบหลายข้อ (Multiple choice)</option>
+                <option value="SINGLE_CHOICE">
+                  เลือกตอบข้อเดียว (Single choice)
+                </option>
+                <option value="MULTIPLE_CHOICE">
+                  เลือกตอบหลายข้อ (Multiple choice)
+                </option>
                 <option value="TEXT">พิมพ์ข้อความ (Text)</option>
               </select>
             </div>
 
             {form.questionType !== 'TEXT' && (
               <div>
-                <label style={{ display: 'block', fontWeight: 600, fontSize: '13.5px', marginBottom: '6px' }}>
+                <label
+                  style={{
+                    display: 'block',
+                    fontWeight: 600,
+                    fontSize: '13.5px',
+                    marginBottom: '6px',
+                  }}
+                >
                   รายการตัวเลือก (อย่างน้อย 2 ตัวเลือก)
                 </label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '8px',
+                  }}
+                >
                   {form.options.map((opt, idx) => (
-                    <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ fontSize: '12px', color: '#64748b', width: '20px', textAlign: 'right' }}>
+                    <div
+                      key={idx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: '12px',
+                          color: '#64748b',
+                          width: '20px',
+                          textAlign: 'right',
+                        }}
+                      >
                         {idx + 1}.
                       </span>
                       <input
@@ -665,13 +842,21 @@ export function SurveyManagementPanel() {
                           next[idx] = e.target.value;
                           setForm({ ...form, options: next });
                         }}
-                        style={{ flex: 1, padding: '7px 10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+                        style={{
+                          flex: 1,
+                          padding: '7px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                        }}
                       />
                       <button
                         type="button"
                         disabled={form.options.length <= 1}
                         onClick={() => {
-                          setForm({ ...form, options: form.options.filter((_, i) => i !== idx) });
+                          setForm({
+                            ...form,
+                            options: form.options.filter((_, i) => i !== idx),
+                          });
                         }}
                         style={{
                           border: 'none',
@@ -688,7 +873,9 @@ export function SurveyManagementPanel() {
                   ))}
                   <button
                     type="button"
-                    onClick={() => setForm({ ...form, options: [...form.options, ''] })}
+                    onClick={() =>
+                      setForm({ ...form, options: [...form.options, ''] })
+                    }
                     style={{
                       alignSelf: 'flex-start',
                       marginTop: '4px',
@@ -725,41 +912,118 @@ export function SurveyManagementPanel() {
                     <input
                       type="checkbox"
                       checked={form.allowOther}
-                      onChange={(e) => setForm({ ...form, allowOther: e.target.checked })}
+                      onChange={(e) =>
+                        setForm({ ...form, allowOther: e.target.checked })
+                      }
                     />
                     <span style={{ fontWeight: 500, color: '#334155' }}>
-                      เพิ่มตัวเลือก <strong>&ldquo;อื่น ๆ (โปรดระบุ)&rdquo;</strong>
+                      เพิ่มตัวเลือก{' '}
+                      <strong>&ldquo;อื่น ๆ (โปรดระบุ)&rdquo;</strong>
                     </span>
                   </label>
                 </div>
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: '16px', marginTop: '6px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={form.required}
-                  onChange={(e) => setForm({ ...form, required: e.target.checked })}
-                />
-                บังคับตอบคำถามนี้
-              </label>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+                marginTop: '6px',
+              }}
+            >
+              <div style={{ display: 'flex', gap: '16px' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.required || form.requiredNow}
+                    disabled={form.requiredNow}
+                    onChange={(e) =>
+                      setForm({ ...form, required: e.target.checked })
+                    }
+                  />
+                  บังคับตอบคำถามนี้
+                </label>
 
-              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', cursor: 'pointer' }}>
+                <label
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.active}
+                    onChange={(e) =>
+                      setForm({ ...form, active: e.target.checked })
+                    }
+                  />
+                  เปิดใช้งานคำถามนี้
+                </label>
+              </div>
+
+              <label
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                  padding: '8px 10px',
+                  backgroundColor: '#fffbeb',
+                  borderRadius: '6px',
+                  border: '1px solid #fef3c7',
+                }}
+              >
                 <input
                   type="checkbox"
-                  checked={form.active}
-                  onChange={(e) => setForm({ ...form, active: e.target.checked })}
+                  checked={form.requiredNow}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setForm({
+                      ...form,
+                      requiredNow: checked,
+                      required: checked ? true : form.required,
+                    });
+                  }}
                 />
-                เปิดใช้งานคำถามนี้
+                <span style={{ fontWeight: 600, color: '#92400e' }}>
+                  จำเป็นต้องตอบทันที (บังคับตอบก่อนกด&quot;ไว้ทำทีหลัง&quot;)
+                </span>
               </label>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '14px' }}>
-              <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={busy}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '8px',
+                marginTop: '14px',
+              }}
+            >
+              <Button
+                variant="secondary"
+                onClick={() => setModalOpen(false)}
+                disabled={busy}
+              >
                 ยกเลิก
               </Button>
-              <Button onClick={handleSave} disabled={busy || !form.title.trim()}>
+              <Button
+                onClick={handleSave}
+                disabled={busy || !form.title.trim()}
+              >
                 {busy ? 'กำลังบันทึก...' : 'บันทึก'}
               </Button>
             </div>

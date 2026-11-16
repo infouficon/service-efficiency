@@ -32,7 +32,11 @@ import type {
   SurveyResponseItem,
   SurveyTarget,
 } from '../../types/session';
-import { SelectionEditor, CategoryPicture, StockBadge } from './SelectionEditor';
+import {
+  SelectionEditor,
+  CategoryPicture,
+  StockBadge,
+} from './SelectionEditor';
 import { Summary } from './Summary';
 import { ReasonForm } from './ReasonForm';
 import { ReturnToStockForm } from './ReturnToStockForm';
@@ -125,14 +129,19 @@ export function StaffWorkspace({
 }: StaffWorkspaceProps) {
   const [activeSessionRef, setActiveSessionRef] = useState<string | null>(null);
   const [phoneDrafts, setPhoneDrafts] = useState<Record<string, string>>({});
-  const [phoneAttempted, setPhoneAttempted] = useState<Record<string, boolean>>({});
-  const [selectedAppleDevices, setSelectedAppleDevices] = useState<string[]>([]);
+  const [phoneAttempted, setPhoneAttempted] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [selectedAppleDevices, setSelectedAppleDevices] = useState<string[]>(
+    [],
+  );
   const [hasAutoLoadedHistory, setHasAutoLoadedHistory] = useState(false);
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [printSession, setPrintSession] = useState<MockSession | null>(null);
-  const [changingItemSession, setChangingItemSession] = useState<MockSession | null>(null);
+  const [changingItemSession, setChangingItemSession] =
+    useState<MockSession | null>(null);
   const [walkInStep, setWalkInStep] = useState<'product' | 'phone'>('product');
   const [surveyModal, setSurveyModal] = useState<{
     session: MockSession;
@@ -166,20 +175,19 @@ export function StaffWorkspace({
   );
 
   const hasCompletedAppleDeviceSurvey = Boolean(
-    activeSession?.currentAppleDevices && activeSession.currentAppleDevices.length > 0,
+    activeSession?.currentAppleDevices &&
+    activeSession.currentAppleDevices.length > 0,
   );
 
   const isAppleDeviceStep = Boolean(
-    activeSession &&
-      !finished &&
-      !hasCompletedAppleDeviceSurvey,
+    activeSession && !finished && !hasCompletedAppleDeviceSurvey,
   );
 
   const isPhoneStep = Boolean(
     activeSession &&
-      !finished &&
-      hasCompletedAppleDeviceSurvey &&
-      (!activeSession.phone || activeSession.phone.trim() === ''),
+    !finished &&
+    hasCompletedAppleDeviceSurvey &&
+    (!activeSession.phone || activeSession.phone.trim() === ''),
   );
 
   const progressContainerRef = useRef<HTMLOListElement>(null);
@@ -193,7 +201,10 @@ export function StaffWorkspace({
   useEffect(() => {
     if (activeSessionRef) {
       if (progressContainerRef.current) {
-        progressContainerRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        progressContainerRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
       } else {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
@@ -236,7 +247,13 @@ export function StaffWorkspace({
     setError('');
     try {
       const skuIds = pickedItems.map((item) => item.sku.id);
-      const newS = await createWalkInApi(user.branchCode, '', undefined, undefined, skuIds);
+      const newS = await createWalkInApi(
+        user.branchCode,
+        '',
+        undefined,
+        undefined,
+        skuIds,
+      );
       newS.currentAppleDevices = undefined;
       setSelectedAppleDevices([]);
       setHasAutoLoadedHistory(false);
@@ -273,7 +290,9 @@ export function StaffWorkspace({
         ? selectedAppleDevices.filter((c) => c !== cat)
         : [
             ...selectedAppleDevices.filter(
-              (c) => c !== 'ยังไม่เคยใช้สินค้า Apple' && c !== 'ไม่แน่ใจ / ไม่ได้ถาม',
+              (c) =>
+                c !== 'ยังไม่เคยใช้สินค้า Apple' &&
+                c !== 'ไม่แน่ใจ / ไม่ได้ถาม',
             ),
             cat,
           ];
@@ -283,7 +302,8 @@ export function StaffWorkspace({
 
   const handleConfirmAppleDeviceStep = async () => {
     if (!activeSession) return;
-    const devicesToSave = selectedAppleDevices.length > 0 ? selectedAppleDevices : ['ไม่ระบุ'];
+    const devicesToSave =
+      selectedAppleDevices.length > 0 ? selectedAppleDevices : ['ไม่ระบุ'];
     setBusy(true);
     setError('');
     try {
@@ -296,7 +316,10 @@ export function StaffWorkspace({
         );
         onUpdateSession({ ...updated, currentAppleDevices: devicesToSave });
       } else {
-        onUpdateSession({ ...activeSession, currentAppleDevices: devicesToSave });
+        onUpdateSession({
+          ...activeSession,
+          currentAppleDevices: devicesToSave,
+        });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'บันทึกข้อมูลไม่สำเร็จ');
@@ -308,7 +331,10 @@ export function StaffWorkspace({
   const handleConfirmPhoneStep = async () => {
     if (!activeSession) return;
     if (!phoneIsValid(currentPhone)) {
-      setPhoneAttempted((prev) => ({ ...prev, [activeSession.reference]: true }));
+      setPhoneAttempted((prev) => ({
+        ...prev,
+        [activeSession.reference]: true,
+      }));
       return;
     }
     setBusy(true);
@@ -326,7 +352,9 @@ export function StaffWorkspace({
         onUpdateSession({ ...activeSession, phone: currentPhone });
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'บันทึกเบอร์โทรศัพท์ไม่สำเร็จ');
+      setError(
+        err instanceof Error ? err.message : 'บันทึกเบอร์โทรศัพท์ไม่สำเร็จ',
+      );
     } finally {
       setBusy(false);
     }
@@ -338,14 +366,23 @@ export function StaffWorkspace({
     setError('');
     try {
       if (action === 'startSelection' && activeSession.id) {
-        const phoneToSave = phoneDrafts[activeSession.reference] ?? activeSession.phone ?? '';
-        await updateSelectionApi(activeSession.id, activeSession.selection, phoneToSave);
+        const phoneToSave =
+          phoneDrafts[activeSession.reference] ?? activeSession.phone ?? '';
+        await updateSelectionApi(
+          activeSession.id,
+          activeSession.selection,
+          phoneToSave,
+        );
       }
       if (activeSession.id) {
         const updated = await advanceStepApi(activeSession.id, action);
         onUpdateSession(updated);
       } else {
-        const updated = advance(activeSession, action, new Date().toISOString());
+        const updated = advance(
+          activeSession,
+          action,
+          new Date().toISOString(),
+        );
         onUpdateSession(updated);
       }
     } catch (err) {
@@ -379,7 +416,10 @@ export function StaffWorkspace({
   const handleStartSelection = () => {
     if (!activeSession) return;
     if (!phoneIsValid(currentPhone)) {
-      setPhoneAttempted((prev) => ({ ...prev, [activeSession.reference]: true }));
+      setPhoneAttempted((prev) => ({
+        ...prev,
+        [activeSession.reference]: true,
+      }));
       return;
     }
     handleStep('startSelection');
@@ -418,7 +458,9 @@ export function StaffWorkspace({
         }
       }, 150);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'ยืนยันการสั่งซื้อไม่สำเร็จ');
+      setError(
+        err instanceof Error ? err.message : 'ยืนยันการสั่งซื้อไม่สำเร็จ',
+      );
     } finally {
       setBusy(false);
     }
@@ -458,7 +500,9 @@ export function StaffWorkspace({
 
   const handleSurveyComplete = (response?: SurveyResponseItem) => {
     if (response && surveyModal?.session) {
-      const existing = surveyModal.session.surveyResponses ?? [];
+      const existing = (surveyModal.session.surveyResponses ?? []).filter(
+        (r) => r.target !== response.target,
+      );
       const updatedS: MockSession = {
         ...surveyModal.session,
         surveyResponses: [...existing, response],
@@ -484,7 +528,16 @@ export function StaffWorkspace({
     setBusy(true);
     setError('');
     try {
-      onUpdateSession(await returnToStockApi(activeSession.id, reason, text || undefined, wrongItems, wrongItemIds, wrongItemDetails));
+      onUpdateSession(
+        await returnToStockApi(
+          activeSession.id,
+          reason,
+          text || undefined,
+          wrongItems,
+          wrongItemIds,
+          wrongItemDetails,
+        ),
+      );
       setForm('normal');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'ส่งกลับ Stock ไม่สำเร็จ');
@@ -532,8 +585,14 @@ export function StaffWorkspace({
 
   const handleUpdatePhone = (cleanPhone: string, _isValid: boolean) => {
     if (!activeSession) return;
-    setPhoneDrafts((prev) => ({ ...prev, [activeSession.reference]: cleanPhone }));
-    setPhoneAttempted((prev) => ({ ...prev, [activeSession.reference]: false }));
+    setPhoneDrafts((prev) => ({
+      ...prev,
+      [activeSession.reference]: cleanPhone,
+    }));
+    setPhoneAttempted((prev) => ({
+      ...prev,
+      [activeSession.reference]: false,
+    }));
   };
 
   const pendingStockSessions = branchSessions.filter(
@@ -546,7 +605,10 @@ export function StaffWorkspace({
   );
 
   return (
-    <div className="staff-workspace" data-mobile-detail={activeSession ? 'true' : 'false'}>
+    <div
+      className="staff-workspace"
+      data-mobile-detail={activeSession ? 'true' : 'false'}
+    >
       <div className="workspace-header-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <UserIcon size={24} color="#0abab5" />
@@ -565,7 +627,13 @@ export function StaffWorkspace({
             }}
             disabled={busy}
           >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
               <Plus size={16} />
               รับลูกค้าใหม่
             </span>
@@ -580,7 +648,14 @@ export function StaffWorkspace({
       )}
 
       {pendingStockSessions.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '1.25rem' }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+            marginBottom: '1.25rem',
+          }}
+        >
           {pendingStockSessions.map((ps) => (
             <Notice key={ps.reference} error>
               <div
@@ -594,7 +669,13 @@ export function StaffWorkspace({
                 }}
               >
                 <span>
-                  <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                  <strong
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
                     <AlertTriangle size={16} color="#dc2626" />
                     ฝ่ายคลัง (Stock) แจ้งเตือน:
                   </strong>{' '}
@@ -604,11 +685,14 @@ export function StaffWorkspace({
                     </>
                   ) : (
                     <>
-                      <strong>{formatDisplayPhone(ps.phone) || ps.reference}</strong>
+                      <strong>
+                        {formatDisplayPhone(ps.phone) || ps.reference}
+                      </strong>
                     </>
                   )}{' '}
                   ({itemsText(ps.selection.items) || 'สินค้า'}) —{' '}
-                  มีสินค้าไม่พบ/หมด ({ps.stockPendingReview?.missingItems.join(', ')})
+                  มีสินค้าไม่พบ/หมด (
+                  {ps.stockPendingReview?.missingItems.join(', ')})
                 </span>
                 <Button
                   size="sm"
@@ -627,9 +711,18 @@ export function StaffWorkspace({
 
       <div className="staff-layout">
         <div className="staff-sessions-sidebar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginBottom: '12px',
+            }}
+          >
             <ClipboardList size={18} color="#0abab5" />
-            <h3 style={{ margin: 0 }}>Session หน้าร้าน ({branchSessions.length})</h3>
+            <h3 style={{ margin: 0 }}>
+              Session หน้าร้าน ({branchSessions.length})
+            </h3>
           </div>
           <div className="queue-card-list">
             {branchSessions.map((s) => (
@@ -643,7 +736,9 @@ export function StaffWorkspace({
               >
                 <div className="card-top">
                   <span className="card-ref">
-                    {s.queueNo != null ? `${s.queue}` : `${formatDisplayPhone(s.phone) || s.reference}`}
+                    {s.queueNo != null
+                      ? `${s.queue}`
+                      : `${formatDisplayPhone(s.phone) || s.reference}`}
                   </span>
                   {s.stockPendingReview ? (
                     <span
@@ -661,7 +756,9 @@ export function StaffWorkspace({
                     <span
                       className={`status-tag ${s.outcome ? 'status-outcome' : `status-${s.state.toLowerCase()}`}`}
                     >
-                      <span className="only-desktop">{s.outcome ?? s.state}</span>
+                      <span className="only-desktop">
+                        {s.outcome ?? s.state}
+                      </span>
                       <span className="only-mobile">{stateLabel(s)}</span>
                     </span>
                   )}
@@ -671,8 +768,18 @@ export function StaffWorkspace({
                 </div>
                 <div className="card-meta">
                   <span>ผู้ดูแล: {s.staffId}</span>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                    {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    {s.queueNo != null && (
+                      <span>
+                        {formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}
+                      </span>
+                    )}
                     {(() => {
                       const badge = receiptTypeBadgeLabel(
                         s.receiptType ?? s.selection?.receiptType,
@@ -720,9 +827,15 @@ export function StaffWorkspace({
             return (
               <>
                 {/* D135: Mobile segmented stepper */}
-                <div className="mobile-stepper" role="region" aria-label="ขั้นตอนความคืบหน้า">
+                <div
+                  className="mobile-stepper"
+                  role="region"
+                  aria-label="ขั้นตอนความคืบหน้า"
+                >
                   <div className="mobile-stepper-header">
-                    <span className="mobile-stepper-title">{stages[pIndex]}</span>
+                    <span className="mobile-stepper-title">
+                      {stages[pIndex]}
+                    </span>
                     <span className="mobile-stepper-step">
                       ขั้นตอน {pIndex + 1}/{stages.length}
                     </span>
@@ -749,11 +862,7 @@ export function StaffWorkspace({
                             ? 'done'
                             : ''
                       }
-                      aria-current={
-                        index === pIndex
-                          ? 'step'
-                          : undefined
-                      }
+                      aria-current={index === pIndex ? 'step' : undefined}
                     >
                       <span>
                         {index < pIndex ? <Check size={14} /> : index + 1}
@@ -772,10 +881,7 @@ export function StaffWorkspace({
                 title="ลูกค้าสนใจอะไร"
                 eyebrow="ขั้นตอนที่ 1: เลือกสินค้าที่ลูกค้าสนใจ (สูงสุด 3 รายการ)"
               >
-                <WalkInForm
-                  busy={busy}
-                  onSubmit={startNewWalkIn}
-                />
+                <WalkInForm busy={busy} onSubmit={startNewWalkIn} />
               </Panel>
             </div>
           ) : (
@@ -788,23 +894,38 @@ export function StaffWorkspace({
                       className="mobile-back-to-queue-btn"
                       onClick={() => setActiveSessionRef(null)}
                     >
-                      <ArrowLeft size={14} /> ลูกค้าวันนี้ ({branchSessions.length})
+                      <ArrowLeft size={14} /> ลูกค้าวันนี้ (
+                      {branchSessions.length})
                     </button>
-                    <span className={`state-pill only-mobile ${finished ? 'terminal' : ''}`}>
+                    <span
+                      className={`state-pill only-mobile ${finished ? 'terminal' : ''}`}
+                    >
                       {stateLabel(activeSession)}
                     </span>
                   </div>
                   {/* <span className="eyebrow">
                     {activeSession.queueNo != null ? 'QUEUE' : 'CUSTOMER'} · {activeSession.branchName}
                   </span> */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', width: '100%' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      width: '100%',
+                    }}
+                  >
                     <h2 className="queue-title" style={{ margin: 0 }}>
                       {activeSession.queueNo != null
                         ? `${activeSession.queue}`
                         : `${formatDisplayPhone(activeSession.phone) || activeSession.reference}`}
                     </h2>
-                    {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
-                      <span className="only-tablet-mobile" style={{ marginLeft: 'auto' }}>
+                    {(activeSession.vatRefund ??
+                      activeSession.selection?.vatRefund) && (
+                      <span
+                        className="only-tablet-mobile"
+                        style={{ marginLeft: 'auto' }}
+                      >
                         <span
                           className="status-tag"
                           style={{
@@ -820,15 +941,28 @@ export function StaffWorkspace({
                     )}
                   </div>
                   {activeSession.rebuyOf && (
-                    <span className="status-tag status-found" style={{ marginRight: '8px' }}>
+                    <span
+                      className="status-tag status-found"
+                      style={{ marginRight: '8px' }}
+                    >
                       ซื้อใหม่ (ใช้คิวเดิม)
                     </span>
                   )}
                   {(() => {
-                    const activeReceipt = activeSession.receiptType ?? activeSession.selection?.receiptType;
-                    const activeTax = activeSession.taxInvoice ?? activeSession.selection?.taxInvoice;
-                    const badge = receiptTypeBadgeLabel(activeReceipt, activeTax);
-                    const fullLabel = receiptTypeLabel(activeReceipt, activeTax);
+                    const activeReceipt =
+                      activeSession.receiptType ??
+                      activeSession.selection?.receiptType;
+                    const activeTax =
+                      activeSession.taxInvoice ??
+                      activeSession.selection?.taxInvoice;
+                    const badge = receiptTypeBadgeLabel(
+                      activeReceipt,
+                      activeTax,
+                    );
+                    const fullLabel = receiptTypeLabel(
+                      activeReceipt,
+                      activeTax,
+                    );
                     return badge && fullLabel ? (
                       <span
                         className="status-tag"
@@ -847,12 +981,22 @@ export function StaffWorkspace({
                   {/* the phone is the title until the order gets its queue number: then it is shown here once */}
                   {activeSession.queueNo != null && (
                     <span className="muted">
-                      Customer Phone · {formatDisplayPhone(activeSession.phone) || 'ไม่มีเบอร์โทร'}
+                      Customer Phone ·{' '}
+                      {formatDisplayPhone(activeSession.phone) ||
+                        'ไม่มีเบอร์โทร'}
                     </span>
                   )}
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-                  {(activeSession.vatRefund ?? activeSession.selection?.vatRefund) && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    flexShrink: 0,
+                  }}
+                >
+                  {(activeSession.vatRefund ??
+                    activeSession.selection?.vatRefund) && (
                     <span
                       className="status-tag vat-desktop"
                       style={{
@@ -865,7 +1009,9 @@ export function StaffWorkspace({
                       VAT Refund
                     </span>
                   )}
-                  <span className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}>
+                  <span
+                    className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}
+                  >
                     {activeSession.outcome ?? stateLabel(activeSession)}
                   </span>
                 </div>
@@ -890,7 +1036,10 @@ export function StaffWorkspace({
                                   : undefined
                     }
                     eyebrow={
-                      !finished && form === 'normal' && !isAppleDeviceStep && !isPhoneStep
+                      !finished &&
+                      form === 'normal' &&
+                      !isAppleDeviceStep &&
+                      !isPhoneStep
                         ? undefined
                         : isAppleDeviceStep
                           ? `ขั้นตอนที่ 2: รหัสคำขอ ${activeSession.reference}`
@@ -919,12 +1068,16 @@ export function StaffWorkspace({
                         {canRebuy(activeSession) && (
                           <div className="rebuy-box">
                             <p>
-                              <strong>ลูกค้าต้องการเปลี่ยนสินค้า</strong> — ซื้อใหม่ได้ทันที
-                              โดยดึงข้อมูลเดิมมาแก้ไข
-                              {activeSession.queueNo != null ? ` และใช้คิว ${activeSession.queue} เดิม` : ''}
+                              <strong>ลูกค้าต้องการเปลี่ยนสินค้า</strong> —
+                              ซื้อใหม่ได้ทันที โดยดึงข้อมูลเดิมมาแก้ไข
+                              {activeSession.queueNo != null
+                                ? ` และใช้คิว ${activeSession.queue} เดิม`
+                                : ''}
                             </p>
                             <Button onClick={handleRebuy} disabled={busy}>
-                              {activeSession.queueNo != null ? `ซื้อใหม่ (คิว ${activeSession.queue})` : 'ซื้อใหม่'}
+                              {activeSession.queueNo != null
+                                ? `ซื้อใหม่ (คิว ${activeSession.queue})`
+                                : 'ซื้อใหม่'}
                             </Button>
                           </div>
                         )}
@@ -935,7 +1088,13 @@ export function StaffWorkspace({
                               setForm('normal');
                             }}
                           >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                            <span
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                              }}
+                            >
                               <ArrowLeft size={16} />
                               กลับหน้าหลัก / พร้อมรับลูกค้าใหม่
                             </span>
@@ -950,57 +1109,138 @@ export function StaffWorkspace({
                         onSubmit={handleCancelCurrent}
                       />
                     ) : form === 'return' ? (
-                      <ReturnToStockForm session={activeSession} onBack={() => setForm('normal')} onSubmit={handleReturnToStock} />
+                      <ReturnToStockForm
+                        session={activeSession}
+                        onBack={() => setForm('normal')}
+                        onSubmit={handleReturnToStock}
+                      />
                     ) : (
                       <>
                         {activeSession.stockPendingReview && (
                           <div style={{ marginBottom: '1.25rem' }}>
                             <Notice error>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700 }}>
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '8px',
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    fontWeight: 700,
+                                  }}
+                                >
                                   <AlertTriangle size={18} color="#dc2626" />
                                   ฝ่าย Stock แจ้ง: สินค้าบางรายการไม่พบ / หมด
                                 </div>
                                 {activeSession.stockPendingReview.stockNote && (
                                   <div>
-                                    <strong>หมายเหตุจาก Stock:</strong> <em>"{activeSession.stockPendingReview.stockNote}"</em>
+                                    <strong>หมายเหตุจาก Stock:</strong>{' '}
+                                    <em>
+                                      "
+                                      {
+                                        activeSession.stockPendingReview
+                                          .stockNote
+                                      }
+                                      "
+                                    </em>
                                   </div>
                                 )}
                                 <div>
-                                  <strong style={{ color: '#991b1b' }}>รายการที่ไม่พบ/หมด:</strong>{' '}
-                                  {activeSession.stockPendingReview.missingItems.join(', ')}
+                                  <strong style={{ color: '#991b1b' }}>
+                                    รายการที่ไม่พบ/หมด:
+                                  </strong>{' '}
+                                  {activeSession.stockPendingReview.missingItems.join(
+                                    ', ',
+                                  )}
                                 </div>
-                                {activeSession.stockPendingReview.foundItems.length > 0 && (
+                                {activeSession.stockPendingReview.foundItems
+                                  .length > 0 && (
                                   <div>
-                                    <strong style={{ color: '#0d8a72' }}>รายการที่มีพร้อมส่ง:</strong>{' '}
-                                    {activeSession.stockPendingReview.foundItems.join(', ')}
+                                    <strong style={{ color: '#0d8a72' }}>
+                                      รายการที่มีพร้อมส่ง:
+                                    </strong>{' '}
+                                    {activeSession.stockPendingReview.foundItems.join(
+                                      ', ',
+                                    )}
                                   </div>
                                 )}
-                                <p style={{ margin: '4px 0 8px', fontSize: '13px' }}>
+                                <p
+                                  style={{
+                                    margin: '4px 0 8px',
+                                    fontSize: '13px',
+                                  }}
+                                >
                                   กรุณาสอบถามลูกค้าและเลือกดำเนินการตามความประสงค์:
                                 </p>
-                                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '6px' }}>
-                                    <Button
-                                      size="sm"
-                                      onClick={() => handleCustomerAcceptPartial(activeSession)}
-                                      disabled={busy || activeSession.stockPendingReview.foundItems.length === 0}
-                                      title={activeSession.stockPendingReview.foundItems.length === 0 ? 'ไม่มีสินค้าที่พบพร้อมจัดส่ง' : undefined}
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    gap: '8px',
+                                    flexWrap: 'wrap',
+                                    marginTop: '6px',
+                                  }}
+                                >
+                                  <Button
+                                    size="sm"
+                                    onClick={() =>
+                                      handleCustomerAcceptPartial(activeSession)
+                                    }
+                                    disabled={
+                                      busy ||
+                                      activeSession.stockPendingReview
+                                        .foundItems.length === 0
+                                    }
+                                    title={
+                                      activeSession.stockPendingReview
+                                        .foundItems.length === 0
+                                        ? 'ไม่มีสินค้าที่พบพร้อมจัดส่ง'
+                                        : undefined
+                                    }
+                                  >
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
                                     >
-                                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                        <Check size={14} /> 1. ยืนยันซื้อเฉพาะที่เหลือ
-                                        {activeSession.stockPendingReview.foundItems.length === 0 && (
-                                          <span style={{ fontSize: '11px', opacity: 0.8 }}>(ไม่มีสินค้าพร้อมส่ง)</span>
-                                        )}
-                                      </span>
-                                    </Button>
+                                      <Check size={14} /> 1.
+                                      ยืนยันซื้อเฉพาะที่เหลือ
+                                      {activeSession.stockPendingReview
+                                        .foundItems.length === 0 && (
+                                        <span
+                                          style={{
+                                            fontSize: '11px',
+                                            opacity: 0.8,
+                                          }}
+                                        >
+                                          (ไม่มีสินค้าพร้อมส่ง)
+                                        </span>
+                                      )}
+                                    </span>
+                                  </Button>
                                   <Button
                                     size="sm"
                                     variant="secondary"
-                                    onClick={() => handleCustomerChangeItems(activeSession)}
+                                    onClick={() =>
+                                      handleCustomerChangeItems(activeSession)
+                                    }
                                     disabled={busy}
                                   >
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                                      <Plus size={14} /> 2. เพิ่ม/เปลี่ยนสินค้าอื่น
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <Plus size={14} /> 2.
+                                      เพิ่ม/เปลี่ยนสินค้าอื่น
                                     </span>
                                   </Button>
                                   <Button
@@ -1009,7 +1249,13 @@ export function StaffWorkspace({
                                     onClick={() => setForm('cancel')}
                                     disabled={busy}
                                   >
-                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
                                       <X size={14} /> 3. ลูกค้ายกเลิกทั้งหมด
                                     </span>
                                   </Button>
@@ -1020,20 +1266,55 @@ export function StaffWorkspace({
                         )}
 
                         {isAppleDeviceStep ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '1.25rem',
+                            }}
+                          >
                             {/* Customer interested products from Step 1 */}
-                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-                                  รายการสินค้าที่สนใจ ({activeSession.selection?.items?.length ?? 0} รายการ)
+                            <div
+                              style={{
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '16px',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '12px',
+                                }}
+                              >
+                                <strong
+                                  style={{ fontSize: '14px', color: '#0f172a' }}
+                                >
+                                  รายการสินค้าที่สนใจ (
+                                  {activeSession.selection?.items?.length ?? 0}{' '}
+                                  รายการ)
                                 </strong>
                               </div>
-                              {(!activeSession.selection?.items || activeSession.selection.items.length === 0) ? (
-                                <p className="muted" style={{ margin: 0 }}>ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก</p>
+                              {!activeSession.selection?.items ||
+                              activeSession.selection.items.length === 0 ? (
+                                <p className="muted" style={{ margin: 0 }}>
+                                  ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก
+                                </p>
                               ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px',
+                                  }}
+                                >
                                   {activeSession.selection.items.map((item) => {
-                                    const outOfStock = isOutOfStock(item.product);
+                                    const outOfStock = isOutOfStock(
+                                      item.product,
+                                    );
                                     return (
                                       <div
                                         key={item.product.id}
@@ -1047,27 +1328,52 @@ export function StaffWorkspace({
                                           borderRadius: '8px',
                                         }}
                                       >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                          <CategoryPicture cat={item.product.category} size={32} />
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                          }}
+                                        >
+                                          <CategoryPicture
+                                            cat={item.product.category}
+                                            size={32}
+                                          />
                                           <div>
-                                            <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>
+                                            <div
+                                              style={{
+                                                fontWeight: 600,
+                                                fontSize: '13px',
+                                                color: '#1e293b',
+                                              }}
+                                            >
                                               {itemName(item)}
                                             </div>
-                                            <small style={{ color: '#64748b' }}>{item.product.sku}</small>
+                                            <small style={{ color: '#64748b' }}>
+                                              {item.product.sku}
+                                            </small>
                                           </div>
                                         </div>
                                         <div>
                                           {outOfStock ? (
                                             <span
                                               className="stock-badge stock-badge-out"
-                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                              style={{
+                                                fontSize: '11px',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                              }}
                                             >
                                               สินค้าหมด (สนใจ)
                                             </span>
                                           ) : (
                                             <span
                                               className="stock-badge stock-badge-in"
-                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                              style={{
+                                                fontSize: '11px',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                              }}
                                             >
                                               มีสินค้า
                                             </span>
@@ -1081,25 +1387,57 @@ export function StaffWorkspace({
                             </div>
 
                             {/* Apple devices survey */}
-                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                              <label style={{ display: 'block', fontWeight: 600, fontSize: '15px', marginBottom: '6px', color: '#0f172a' }}>
+                            <div
+                              style={{
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '16px',
+                              }}
+                            >
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 600,
+                                  fontSize: '15px',
+                                  marginBottom: '6px',
+                                  color: '#0f172a',
+                                }}
+                              >
                                 ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง?
                               </label>
-                              <p style={{ margin: '0 0 14px', fontSize: '13px', color: '#64748b' }}>
+                              <p
+                                style={{
+                                  margin: '0 0 14px',
+                                  fontSize: '13px',
+                                  color: '#64748b',
+                                }}
+                              >
                                 เลือกหมวดหมู่ที่ลูกค้ากำลังใช้งานอยู่ในปัจจุบัน
                               </p>
-                              <div className="wizard-tiles picker-category-tiles" role="group" aria-label="หมวดหมู่สินค้า Apple ที่ลูกค้าใช้อยู่">
+                              <div
+                                className="wizard-tiles picker-category-tiles"
+                                role="group"
+                                aria-label="หมวดหมู่สินค้า Apple ที่ลูกค้าใช้อยู่"
+                              >
                                 {customerAppleCategories
-                                  .filter((cat) => cat !== 'ยังไม่เคยใช้สินค้า Apple' && cat !== 'ไม่แน่ใจ / ไม่ได้ถาม')
+                                  .filter(
+                                    (cat) =>
+                                      cat !== 'ยังไม่เคยใช้สินค้า Apple' &&
+                                      cat !== 'ไม่แน่ใจ / ไม่ได้ถาม',
+                                  )
                                   .map((cat) => {
-                                    const isSelected = selectedAppleDevices.includes(cat);
+                                    const isSelected =
+                                      selectedAppleDevices.includes(cat);
                                     return (
                                       <button
                                         key={cat}
                                         type="button"
                                         className={`wizard-tile wizard-tile-category${isSelected ? ' selected' : ''}`}
                                         aria-pressed={isSelected}
-                                        onClick={() => handleToggleAppleDevice(cat)}
+                                        onClick={() =>
+                                          handleToggleAppleDevice(cat)
+                                        }
                                         style={{ position: 'relative' }}
                                       >
                                         {isSelected && (
@@ -1115,7 +1453,8 @@ export function StaffWorkspace({
                                               color: '#ffffff',
                                               display: 'grid',
                                               placeItems: 'center',
-                                              boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                                              boxShadow:
+                                                '0 1px 3px rgba(0,0,0,0.15)',
                                             }}
                                           >
                                             <Check size={12} strokeWidth={3} />
@@ -1133,14 +1472,19 @@ export function StaffWorkspace({
                                 style={{
                                   marginTop: '14px',
                                   display: 'grid',
-                                  gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                                  gridTemplateColumns:
+                                    'repeat(auto-fit, minmax(200px, 1fr))',
                                   gap: '10px',
                                 }}
                               >
                                 <button
                                   type="button"
                                   className={`wizard-tile${selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple') ? ' selected' : ''}`}
-                                  onClick={() => handleToggleAppleDevice('ยังไม่เคยใช้สินค้า Apple')}
+                                  onClick={() =>
+                                    handleToggleAppleDevice(
+                                      'ยังไม่เคยใช้สินค้า Apple',
+                                    )
+                                  }
                                   style={{
                                     width: '100%',
                                     padding: '12px 18px',
@@ -1149,13 +1493,19 @@ export function StaffWorkspace({
                                     justifyContent: 'center',
                                     gap: '8px',
                                     borderRadius: '10px',
-                                    border: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
+                                    border: selectedAppleDevices.includes(
+                                      'ยังไม่เคยใช้สินค้า Apple',
+                                    )
                                       ? '2px solid #0abab5'
                                       : '1.5px dashed #cbd5e1',
-                                    background: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
+                                    background: selectedAppleDevices.includes(
+                                      'ยังไม่เคยใช้สินค้า Apple',
+                                    )
                                       ? '#f0fdfa'
                                       : '#ffffff',
-                                    color: selectedAppleDevices.includes('ยังไม่เคยใช้สินค้า Apple')
+                                    color: selectedAppleDevices.includes(
+                                      'ยังไม่เคยใช้สินค้า Apple',
+                                    )
                                       ? '#0f766e'
                                       : '#64748b',
                                     fontWeight: 600,
@@ -1170,7 +1520,11 @@ export function StaffWorkspace({
                                 <button
                                   type="button"
                                   className={`wizard-tile${selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม') ? ' selected' : ''}`}
-                                  onClick={() => handleToggleAppleDevice('ไม่แน่ใจ / ไม่ได้ถาม')}
+                                  onClick={() =>
+                                    handleToggleAppleDevice(
+                                      'ไม่แน่ใจ / ไม่ได้ถาม',
+                                    )
+                                  }
                                   style={{
                                     width: '100%',
                                     padding: '12px 18px',
@@ -1179,13 +1533,19 @@ export function StaffWorkspace({
                                     justifyContent: 'center',
                                     gap: '8px',
                                     borderRadius: '10px',
-                                    border: selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม')
+                                    border: selectedAppleDevices.includes(
+                                      'ไม่แน่ใจ / ไม่ได้ถาม',
+                                    )
                                       ? '2px solid #0abab5'
                                       : '1.5px dashed #cbd5e1',
-                                    background: selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม')
+                                    background: selectedAppleDevices.includes(
+                                      'ไม่แน่ใจ / ไม่ได้ถาม',
+                                    )
                                       ? '#f0fdfa'
                                       : '#ffffff',
-                                    color: selectedAppleDevices.includes('ไม่แน่ใจ / ไม่ได้ถาม')
+                                    color: selectedAppleDevices.includes(
+                                      'ไม่แน่ใจ / ไม่ได้ถาม',
+                                    )
                                       ? '#0f766e'
                                       : '#64748b',
                                     fontWeight: 600,
@@ -1200,13 +1560,26 @@ export function StaffWorkspace({
                             </div>
 
                             {/* Actions */}
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                alignItems: 'center',
+                                marginTop: '16px',
+                              }}
+                            >
                               <Button
                                 variant="primary"
                                 onClick={handleConfirmAppleDeviceStep}
                                 disabled={busy}
                               >
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
                                   ถัดไป
                                   <ArrowRight size={16} />
                                 </span>
@@ -1214,41 +1587,107 @@ export function StaffWorkspace({
                             </div>
                           </div>
                         ) : isPhoneStep ? (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '1.25rem',
+                            }}
+                          >
                             {/* Customer Phone Input */}
-                            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                              <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '8px', color: '#0f172a' }}>
-                                เบอร์โทรศัพท์ลูกค้า <span style={{ color: '#dc2626' }}>*</span>
+                            <div
+                              style={{
+                                background: '#ffffff',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '16px',
+                              }}
+                            >
+                              <label
+                                style={{
+                                  display: 'block',
+                                  fontWeight: 600,
+                                  fontSize: '14px',
+                                  marginBottom: '8px',
+                                  color: '#0f172a',
+                                }}
+                              >
+                                เบอร์โทรศัพท์ลูกค้า{' '}
+                                <span style={{ color: '#dc2626' }}>*</span>
                               </label>
-                              <p style={{ margin: '0 0 10px', fontSize: '12px', color: '#64748b' }}>
+                              <p
+                                style={{
+                                  margin: '0 0 10px',
+                                  fontSize: '12px',
+                                  color: '#64748b',
+                                }}
+                              >
                                 ใช้สำหรับติดต่อ และบันทึกประวัติการรับบริการ
                               </p>
                               <div style={{ width: '100%' }}>
                                 <PhoneInput
                                   value={currentPhone}
-                                  onChange={(newPhone, valid) => handleUpdatePhone(newPhone, valid)}
+                                  onChange={(newPhone, valid) =>
+                                    handleUpdatePhone(newPhone, valid)
+                                  }
                                 />
                               </div>
-                              {phoneAttempted[activeSession.reference] && !phoneIsValid(currentPhone) && (
-                                <p className="field-error" style={{ margin: '6px 0 0', fontSize: '13px' }}>
-                                  กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง
-                                </p>
-                              )}
+                              {phoneAttempted[activeSession.reference] &&
+                                !phoneIsValid(currentPhone) && (
+                                  <p
+                                    className="field-error"
+                                    style={{
+                                      margin: '6px 0 0',
+                                      fontSize: '13px',
+                                    }}
+                                  >
+                                    กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง
+                                  </p>
+                                )}
                             </div>
 
                             {/* Customer interested products from Step 1 */}
-                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                                <strong style={{ fontSize: '14px', color: '#0f172a' }}>
-                                  รายการสินค้าที่สนใจ ({activeSession.selection?.items?.length ?? 0} รายการ)
+                            <div
+                              style={{
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '12px',
+                                padding: '16px',
+                              }}
+                            >
+                              <div
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'space-between',
+                                  marginBottom: '12px',
+                                }}
+                              >
+                                <strong
+                                  style={{ fontSize: '14px', color: '#0f172a' }}
+                                >
+                                  รายการสินค้าที่สนใจ (
+                                  {activeSession.selection?.items?.length ?? 0}{' '}
+                                  รายการ)
                                 </strong>
                               </div>
-                              {(!activeSession.selection?.items || activeSession.selection.items.length === 0) ? (
-                                <p className="muted" style={{ margin: 0 }}>ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก</p>
+                              {!activeSession.selection?.items ||
+                              activeSession.selection.items.length === 0 ? (
+                                <p className="muted" style={{ margin: 0 }}>
+                                  ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก
+                                </p>
                               ) : (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                <div
+                                  style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: '8px',
+                                  }}
+                                >
                                   {activeSession.selection.items.map((item) => {
-                                    const outOfStock = isOutOfStock(item.product);
+                                    const outOfStock = isOutOfStock(
+                                      item.product,
+                                    );
                                     return (
                                       <div
                                         key={item.product.id}
@@ -1262,27 +1701,52 @@ export function StaffWorkspace({
                                           borderRadius: '8px',
                                         }}
                                       >
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                          <CategoryPicture cat={item.product.category} size={32} />
+                                        <div
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '10px',
+                                          }}
+                                        >
+                                          <CategoryPicture
+                                            cat={item.product.category}
+                                            size={32}
+                                          />
                                           <div>
-                                            <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b' }}>
+                                            <div
+                                              style={{
+                                                fontWeight: 600,
+                                                fontSize: '13px',
+                                                color: '#1e293b',
+                                              }}
+                                            >
                                               {itemName(item)}
                                             </div>
-                                            <small style={{ color: '#64748b' }}>{item.product.sku}</small>
+                                            <small style={{ color: '#64748b' }}>
+                                              {item.product.sku}
+                                            </small>
                                           </div>
                                         </div>
                                         <div>
                                           {outOfStock ? (
                                             <span
                                               className="stock-badge stock-badge-out"
-                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                              style={{
+                                                fontSize: '11px',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                              }}
                                             >
                                               สินค้าหมด (สนใจ)
                                             </span>
                                           ) : (
                                             <span
                                               className="stock-badge stock-badge-in"
-                                              style={{ fontSize: '11px', padding: '3px 8px', borderRadius: '4px' }}
+                                              style={{
+                                                fontSize: '11px',
+                                                padding: '3px 8px',
+                                                borderRadius: '4px',
+                                              }}
                                             >
                                               มีสินค้า
                                             </span>
@@ -1296,39 +1760,81 @@ export function StaffWorkspace({
                             </div>
 
                             {/* Apple devices summary from Step 2 */}
-                            {activeSession.currentAppleDevices && activeSession.currentAppleDevices.length > 0 && (
-                              <div style={{ background: '#f0fdfa', border: '1px solid #ccfbf1', borderRadius: '12px', padding: '12px 16px' }}>
-                                <div style={{ fontSize: '12px', fontWeight: 600, color: '#0f766e', marginBottom: '4px' }}>
-                                  สินค้า Apple ที่ลูกค้าใช้อยู่ในปัจจุบัน:
+                            {activeSession.currentAppleDevices &&
+                              activeSession.currentAppleDevices.length > 0 && (
+                                <div
+                                  style={{
+                                    background: '#f0fdfa',
+                                    border: '1px solid #ccfbf1',
+                                    borderRadius: '12px',
+                                    padding: '12px 16px',
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontSize: '12px',
+                                      fontWeight: 600,
+                                      color: '#0f766e',
+                                      marginBottom: '4px',
+                                    }}
+                                  >
+                                    สินค้า Apple ที่ลูกค้าใช้อยู่ในปัจจุบัน:
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '13px',
+                                      color: '#115e59',
+                                      fontWeight: 500,
+                                    }}
+                                  >
+                                    {activeSession.currentAppleDevices.join(
+                                      ', ',
+                                    )}
+                                  </div>
                                 </div>
-                                <div style={{ fontSize: '13px', color: '#115e59', fontWeight: 500 }}>
-                                  {activeSession.currentAppleDevices.join(', ')}
-                                </div>
-                              </div>
-                            )}
+                              )}
 
                             {/* Actions */}
-                            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginTop: '16px' }}>
+                            <div
+                              style={{
+                                display: 'flex',
+                                justifyContent: 'flex-end',
+                                alignItems: 'center',
+                                marginTop: '16px',
+                              }}
+                            >
                               <Button
                                 variant="primary"
                                 onClick={handleConfirmPhoneStep}
                                 disabled={busy || !phoneIsValid(currentPhone)}
                               >
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
                                   เริ่มบริการ
                                   <ArrowRight size={16} />
                                 </span>
                               </Button>
                             </div>
                           </div>
-                        ) : (activeSession.state === 'PRODUCT_SELECTION' ||
-                          ['WALK_IN', 'DEMO', 'DECISION'].includes(activeSession.state)) &&
+                        ) : (
+                          (activeSession.state === 'PRODUCT_SELECTION' ||
+                            ['WALK_IN', 'DEMO', 'DECISION'].includes(
+                              activeSession.state,
+                            )) &&
                           (form === 'review' ? (
                             <>
-                              {activeSession.selection.items.some((i) => isOutOfStock(i.product)) && (
+                              {activeSession.selection.items.some((i) =>
+                                isOutOfStock(i.product),
+                              ) && (
                                 <div style={{ marginBottom: '1rem' }}>
                                   <Notice error>
-                                    มีสินค้าหมดสต็อกในรายการ กรุณากลับไปแก้ไขก่อนยืนยันการสั่งซื้อ
+                                    มีสินค้าหมดสต็อกในรายการ
+                                    กรุณากลับไปแก้ไขก่อนยืนยันการสั่งซื้อ
                                   </Notice>
                                 </div>
                               )}
@@ -1341,28 +1847,66 @@ export function StaffWorkspace({
                                   border: '1px solid #e2e8f0',
                                 }}
                               >
-                                <label style={{ display: 'block', fontWeight: 600, fontSize: '14px', marginBottom: '6px' }}>
+                                <label
+                                  style={{
+                                    display: 'block',
+                                    fontWeight: 600,
+                                    fontSize: '14px',
+                                    marginBottom: '6px',
+                                  }}
+                                >
                                   เบอร์โทรศัพท์ลูกค้า
                                 </label>
-                                <div style={{ maxWidth: '360px', marginTop: '6px' }}>
+                                <div
+                                  style={{
+                                    maxWidth: '360px',
+                                    marginTop: '6px',
+                                  }}
+                                >
                                   <PhoneInput
                                     value={currentPhone}
-                                    onChange={(newPhone, valid) => handleUpdatePhone(newPhone, valid)}
+                                    onChange={(newPhone, valid) =>
+                                      handleUpdatePhone(newPhone, valid)
+                                    }
                                   />
                                 </div>
-                                {currentPhone && !phoneIsValid(currentPhone) && (
-                                  <p className="field-error" style={{ margin: '4px 0 0 0', fontSize: '13px' }}>
-                                    กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง (เบอร์ไทยไม่ต้องใส่ 0 นำหน้า หรือเลือกประเทศสำหรับเบอร์ต่างประเทศ)
-                                  </p>
-                                )}
+                                {currentPhone &&
+                                  !phoneIsValid(currentPhone) && (
+                                    <p
+                                      className="field-error"
+                                      style={{
+                                        margin: '4px 0 0 0',
+                                        fontSize: '13px',
+                                      }}
+                                    >
+                                      กรุณากรอกเบอร์โทรศัพท์ให้ถูกต้อง
+                                      (เบอร์ไทยไม่ต้องใส่ 0 นำหน้า
+                                      หรือเลือกประเทศสำหรับเบอร์ต่างประเทศ)
+                                    </p>
+                                  )}
                               </div>
                               <Summary session={activeSession} />
-                              <div className="actions" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px', marginTop: '16px' }}>
+                              <div
+                                className="actions"
+                                style={{
+                                  display: 'flex',
+                                  justifyContent: 'flex-end',
+                                  alignItems: 'center',
+                                  gap: '12px',
+                                  marginTop: '16px',
+                                }}
+                              >
                                 <Button
                                   variant="secondary"
                                   onClick={() => setForm('normal')}
                                 >
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                    }}
+                                  >
                                     <ArrowLeft size={16} /> กลับไปแก้ไข
                                   </span>
                                 </Button>
@@ -1370,11 +1914,19 @@ export function StaffWorkspace({
                                   onClick={handleConfirm}
                                   disabled={
                                     !phoneIsValid(currentPhone) ||
-                                    activeSession.selection.items.some((i) => isOutOfStock(i.product)) ||
+                                    activeSession.selection.items.some((i) =>
+                                      isOutOfStock(i.product),
+                                    ) ||
                                     busy
                                   }
                                 >
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                  <span
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '6px',
+                                    }}
+                                  >
                                     <Check size={16} /> ยืนยันการสั่งซื้อ
                                   </span>
                                 </Button>
@@ -1386,14 +1938,21 @@ export function StaffWorkspace({
                               onChange={handleUpdateSelection}
                               onReview={() => setForm('review')}
                             />
-                          ))}
+                          ))
+                        )}
 
                         {['STOCK_REQUESTED', 'SEARCHING', 'FOUND'].includes(
                           activeSession.state,
                         ) && (
                           <>
                             <Notice>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
                                 <Package size={16} />
                                 คำขออยู่ในกระบวนการของฝ่าย Stock
                               </span>
@@ -1406,10 +1965,19 @@ export function StaffWorkspace({
                             <div style={{ marginTop: '16px' }}>
                               <Button
                                 variant="secondary"
-                                onClick={() => setChangingItemSession(activeSession)}
+                                onClick={() =>
+                                  setChangingItemSession(activeSession)
+                                }
                               >
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                  <RefreshCw size={15} /> เปลี่ยนสินค้า (รุ่น/สี/ความจุ)
+                                <span
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                  }}
+                                >
+                                  <RefreshCw size={15} /> เปลี่ยนสินค้า
+                                  (รุ่น/สี/ความจุ)
                                 </span>
                               </Button>
                             </div>
@@ -1424,7 +1992,13 @@ export function StaffWorkspace({
                         ].includes(activeSession.state) && (
                           <>
                             <Notice>
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                              <span
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                }}
+                              >
                                 <CreditCard size={16} />
                                 {activeSession.state === 'BILL_OPENED'
                                   ? `เปิดบิลใน U POS แล้ว${activeSession.posBillNo ? ` (บิล ${activeSession.posBillNo})` : ''} รอชำระเงิน`
@@ -1432,13 +2006,18 @@ export function StaffWorkspace({
                               </span>
                             </Notice>
                             <p className="muted">
-                              แคชเชียร์ทำรายการใน U POS ระบบอัปเดตสถานะให้เอง ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ Stock"
+                              แคชเชียร์ทำรายการใน U POS ระบบอัปเดตสถานะให้เอง
+                              ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ
+                              Stock"
                             </p>
                             <Summary session={activeSession} />
                             {activeSession.state !== 'BILL_OPENED' && (
                               // D105: the cashier works in U POS and tells the staff; the staff sends the order back
                               <div style={{ marginTop: '16px' }}>
-                                <Button variant="secondary" onClick={() => setForm('return')}>
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => setForm('return')}
+                                >
                                   ส่งกลับ Stock (หยิบผิด)
                                 </Button>
                               </div>
@@ -1446,17 +2025,23 @@ export function StaffWorkspace({
                           </>
                         )}
 
-                        {!finished &&
-                          form !== 'review' && (
-                            <div className="cancel-action" style={{ marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #e2ebe6' }}>
-                              <Button
-                                variant="danger"
-                                onClick={() => setForm('cancel')}
-                              >
-                                ยกเลิกคำขอบริการ
-                              </Button>
-                            </div>
-                          )}
+                        {!finished && form !== 'review' && (
+                          <div
+                            className="cancel-action"
+                            style={{
+                              marginTop: '1.5rem',
+                              paddingTop: '1rem',
+                              borderTop: '1px solid #e2ebe6',
+                            }}
+                          >
+                            <Button
+                              variant="danger"
+                              onClick={() => setForm('cancel')}
+                            >
+                              ยกเลิกคำขอบริการ
+                            </Button>
+                          </div>
+                        )}
                       </>
                     )}
                   </Panel>

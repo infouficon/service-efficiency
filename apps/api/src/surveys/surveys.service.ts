@@ -3,7 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, SurveyQuestion, SurveyTarget } from '@prisma/client';
+import {
+  Prisma,
+  SurveyQuestion,
+  SurveyResponse,
+  SurveyTarget,
+} from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import type { PublicAccount } from '../accounts/accounts.service';
 import {
@@ -21,7 +26,10 @@ export class SurveysService {
    * `all=false` returns only active questions for staff taking the survey.
    * `all=true` (Admin) returns all questions including disabled ones.
    */
-  async listQuestions(target?: SurveyTarget, all = false): Promise<SurveyQuestion[]> {
+  async listQuestions(
+    target?: SurveyTarget,
+    all = false,
+  ): Promise<SurveyQuestion[]> {
     return this.prisma.surveyQuestion.findMany({
       where: {
         ...(target ? { target } : {}),
@@ -44,17 +52,27 @@ export class SurveysService {
         title: dto.title.trim(),
         description: dto.description?.trim() || null,
         questionType: dto.questionType,
-        options: dto.options ? (dto.options.map((o) => o.trim()).filter(Boolean) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
+        options: dto.options
+          ? (dto.options
+              .map((o) => o.trim())
+              .filter(Boolean) as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
         allowOther: dto.allowOther ?? false,
-        required: dto.required ?? true,
+        required: dto.requiredNow ? true : (dto.required ?? true),
+        requiredNow: dto.requiredNow ?? false,
         active: dto.active ?? true,
         sortOrder: dto.sortOrder ?? nextOrder,
       },
     });
   }
 
-  async updateQuestion(id: string, dto: UpdateSurveyQuestionDto): Promise<SurveyQuestion> {
-    const existing = await this.prisma.surveyQuestion.findUnique({ where: { id } });
+  async updateQuestion(
+    id: string,
+    dto: UpdateSurveyQuestionDto,
+  ): Promise<SurveyQuestion> {
+    const existing = await this.prisma.surveyQuestion.findUnique({
+      where: { id },
+    });
     if (!existing) {
       throw new NotFoundException(`Survey question with ID ${id} not found`);
     }
@@ -63,13 +81,29 @@ export class SurveysService {
       where: { id },
       data: {
         ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
-        ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
-        ...(dto.questionType !== undefined ? { questionType: dto.questionType } : {}),
+        ...(dto.description !== undefined
+          ? { description: dto.description?.trim() || null }
+          : {}),
+        ...(dto.questionType !== undefined
+          ? { questionType: dto.questionType }
+          : {}),
         ...(dto.options !== undefined
-          ? { options: dto.options ? (dto.options.map((o) => o.trim()).filter(Boolean) as unknown as Prisma.InputJsonValue) : Prisma.JsonNull }
+          ? {
+              options: dto.options
+                ? (dto.options
+                    .map((o) => o.trim())
+                    .filter(Boolean) as unknown as Prisma.InputJsonValue)
+                : Prisma.JsonNull,
+            }
           : {}),
         ...(dto.allowOther !== undefined ? { allowOther: dto.allowOther } : {}),
         ...(dto.required !== undefined ? { required: dto.required } : {}),
+        ...(dto.requiredNow !== undefined
+          ? {
+              requiredNow: dto.requiredNow,
+              ...(dto.requiredNow ? { required: true } : {}),
+            }
+          : {}),
         ...(dto.active !== undefined ? { active: dto.active } : {}),
         ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
       },
@@ -77,15 +111,22 @@ export class SurveysService {
   }
 
   async deleteQuestion(id: string): Promise<SurveyQuestion> {
-    const existing = await this.prisma.surveyQuestion.findUnique({ where: { id } });
+    const existing = await this.prisma.surveyQuestion.findUnique({
+      where: { id },
+    });
     if (!existing) {
       throw new NotFoundException(`Survey question with ID ${id} not found`);
     }
     return this.prisma.surveyQuestion.delete({ where: { id } });
   }
 
-  async moveQuestion(id: string, direction: 'UP' | 'DOWN'): Promise<SurveyQuestion[]> {
-    const current = await this.prisma.surveyQuestion.findUnique({ where: { id } });
+  async moveQuestion(
+    id: string,
+    direction: 'UP' | 'DOWN',
+  ): Promise<SurveyQuestion[]> {
+    const current = await this.prisma.surveyQuestion.findUnique({
+      where: { id },
+    });
     if (!current) {
       throw new NotFoundException(`Survey question with ID ${id} not found`);
     }
@@ -118,7 +159,10 @@ export class SurveysService {
     return this.listQuestions(current.target, true);
   }
 
-  async reorderQuestions(target: SurveyTarget, orderedIds: string[]): Promise<SurveyQuestion[]> {
+  async reorderQuestions(
+    target: SurveyTarget,
+    orderedIds: string[],
+  ): Promise<SurveyQuestion[]> {
     await this.prisma.$transaction(
       orderedIds.map((id, index) =>
         this.prisma.surveyQuestion.updateMany({
@@ -144,15 +188,35 @@ export class SurveysService {
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
-      const response = await tx.surveyResponse.create({
-        data: {
-          sessionId: session.id,
-          target: dto.target,
-          actorStaffId: user.staffId,
-          answers: dto.answers as unknown as Prisma.InputJsonValue,
-          createdAt: now,
-        },
+      // D144: Check if an existing response already exists for this session & target (e.g. from a partial save)
+      const existing = await tx.surveyResponse.findFirst({
+        where: { sessionId: session.id, target: dto.target },
       });
+
+      let response: SurveyResponse;
+      if (existing) {
+        response = await tx.surveyResponse.update({
+          where: { id: existing.id },
+          data: {
+            actorStaffId: user.staffId,
+            completed: dto.completed ?? true,
+            answers: dto.answers as unknown as Prisma.InputJsonValue,
+            updatedAt: now,
+          },
+        });
+      } else {
+        response = await tx.surveyResponse.create({
+          data: {
+            sessionId: session.id,
+            target: dto.target,
+            actorStaffId: user.staffId,
+            completed: dto.completed ?? true,
+            answers: dto.answers as unknown as Prisma.InputJsonValue,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
 
       await tx.sessionEvent.create({
         data: {
@@ -163,6 +227,7 @@ export class SurveysService {
           metadata: {
             target: dto.target,
             surveyResponseId: response.id,
+            completed: response.completed,
             answersCount: dto.answers.length,
           },
         },
@@ -172,7 +237,11 @@ export class SurveysService {
     });
   }
 
-  async listResponses(query: { target?: SurveyTarget; sessionId?: string; limit?: number }) {
+  async listResponses(query: {
+    target?: SurveyTarget;
+    sessionId?: string;
+    limit?: number;
+  }) {
     return this.prisma.surveyResponse.findMany({
       where: {
         ...(query.target ? { target: query.target } : {}),
@@ -185,7 +254,9 @@ export class SurveysService {
             reference: true,
             phone: true,
             branch: { select: { code: true, name: true } },
-            staff: { select: { staffId: true, firstName: true, lastName: true } },
+            staff: {
+              select: { staffId: true, firstName: true, lastName: true },
+            },
           },
         },
       },
@@ -233,7 +304,11 @@ export class SurveysService {
 
     for (const r of responses) {
       const answers = Array.isArray(r.answers)
-        ? (r.answers as Array<{ questionTitle?: string; questionType?: string; answer?: unknown }>)
+        ? (r.answers as Array<{
+            questionTitle?: string;
+            questionType?: string;
+            answer?: unknown;
+          }>)
         : [];
 
       for (const a of answers) {
@@ -246,7 +321,9 @@ export class SurveysService {
             escapeCsv(r.id),
             escapeCsv(r.session?.reference ?? ''),
             escapeCsv(r.session?.branch?.name ?? ''),
-            escapeCsv(`${r.session?.staff?.firstName ?? ''} ${r.session?.staff?.lastName ?? ''}`.trim()),
+            escapeCsv(
+              `${r.session?.staff?.firstName ?? ''} ${r.session?.staff?.lastName ?? ''}`.trim(),
+            ),
             escapeCsv(r.target),
             escapeCsv(a.questionTitle ?? ''),
             escapeCsv(a.questionType ?? ''),

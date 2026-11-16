@@ -175,7 +175,8 @@ export function App({
 
               if (local && !local.confirmed && !local.outcome) {
                 merged.phone = local.phone || serverS.phone;
-                merged.currentAppleDevices = local.currentAppleDevices ?? serverS.currentAppleDevices;
+                merged.currentAppleDevices =
+                  local.currentAppleDevices ?? serverS.currentAppleDevices;
                 merged.selection =
                   local.selection &&
                   (local.selection.items.length > 0 ||
@@ -230,17 +231,22 @@ export function App({
       ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
   ).length;
 
-  // D141: Count of pending customer surveys for today in this branch
+  // D141 & D144: Count of pending customer surveys for today in this branch
   const pendingSurveysCount = useMemo(() => {
     return branchSessions.filter((s) => {
       if (!isToday(s.timestamps.customer_walk_in_at)) return false;
       const isCancelled =
-        s.outcome === 'CUSTOMER_CANCELLED' || Boolean(s.timestamps.cancelled_at);
+        s.outcome === 'CUSTOMER_CANCELLED' ||
+        Boolean(s.timestamps.cancelled_at);
       const isBought =
-        s.confirmed || Boolean(s.timestamps.product_selection_confirmed_at) || s.state === 'COMPLETED';
+        s.confirmed ||
+        Boolean(s.timestamps.product_selection_confirmed_at) ||
+        s.state === 'COMPLETED';
       if (!isCancelled && !isBought) return false;
-      const hasSurvey = s.surveyResponses && s.surveyResponses.length > 0;
-      return !hasSurvey;
+      const target = isCancelled ? 'NOT_BUY' : 'BUY';
+      const existing = s.surveyResponses?.find((sr) => sr.target === target);
+      const isCompleted = existing && existing.completed !== false;
+      return !isCompleted;
     }).length;
   }, [branchSessions]);
 
@@ -272,7 +278,10 @@ export function App({
 
   // D78: alert sound when an item change notice arrives for stock
   const itemChangeNotices = useMemo(
-    () => (canAccessStock ? branchSessions.filter((s) => Boolean(itemChangeNotice(s))) : []),
+    () =>
+      canAccessStock
+        ? branchSessions.filter((s) => Boolean(itemChangeNotice(s)))
+        : [],
     [canAccessStock, branchSessions],
   );
   const seenItemChanges = useRef(0);
@@ -563,7 +572,8 @@ export function App({
                           setIsMobileMenuOpen(false);
                         }}
                       >
-                        <MessageSquare size={14} /> <span>เข้าสู่ระบบด้วย OTP</span>
+                        <MessageSquare size={14} />{' '}
+                        <span>เข้าสู่ระบบด้วย OTP</span>
                       </button>
 
                       <button
@@ -640,7 +650,11 @@ export function App({
             </button>
             {canAccessStaff && canAccessStock && (
               // a phone switches between the floor and the stock room in one tap (every ERP account has both, D106)
-              <div className="mobile-view-switch only-mobile" role="tablist" aria-label="สลับหน้า">
+              <div
+                className="mobile-view-switch only-mobile"
+                role="tablist"
+                aria-label="สลับหน้า"
+              >
                 <button
                   type="button"
                   role="tab"
@@ -658,7 +672,9 @@ export function App({
                   onClick={() => handleSelectView('stock')}
                 >
                   <Package size={15} /> คลัง
-                  {stockPendingCount > 0 && <span className="nav-counter">{stockPendingCount}</span>}
+                  {stockPendingCount > 0 && (
+                    <span className="nav-counter">{stockPendingCount}</span>
+                  )}
                 </button>
               </div>
             )}
@@ -716,7 +732,10 @@ export function App({
                   รายการที่คลังรายงานสินค้าไม่พบ / สินค้าหมดสต็อก
                   เพื่อตรวจสอบสินค้าสูญหายหรือวางผิดที่:
                 </div>
-                <div className="manager-alert-items" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                <div
+                  className="manager-alert-items"
+                  style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}
+                >
                   {managerAlertSessions.map((s) => {
                     const missingText = getSessionMissingDescription(s);
                     const note = s.stockPendingReview?.stockNote;
@@ -825,10 +844,15 @@ export function App({
           <div className="stock-cancel-banner" role="alert">
             <span>
               <AlertTriangle size={18} />{' '}
-              <strong>มี {stockNotices.length} คิวที่ถูกยกเลิก — Stock ต้องดำเนินการ:</strong>{' '}
+              <strong>
+                มี {stockNotices.length} คิวที่ถูกยกเลิก — Stock ต้องดำเนินการ:
+              </strong>{' '}
               {stockNotices
                 .slice(0, 6)
-                .map((s) => `คิว ${s.queue}${goodsToReturn(s) ? ' (คืนสินค้าเข้าชั้น)' : ' (หยุดค้นหา)'}`)
+                .map(
+                  (s) =>
+                    `คิว ${s.queue}${goodsToReturn(s) ? ' (คืนสินค้าเข้าชั้น)' : ' (หยุดค้นหา)'}`,
+                )
                 .join(', ')}
               {stockNotices.length > 6 ? ' …' : ''}
             </span>
@@ -873,7 +897,11 @@ export function App({
           )}
 
           {view === 'logs' && (
-            <SessionLogsWorkspace user={user} sessions={sessions} onUpdateSession={handleUpdateSession} />
+            <SessionLogsWorkspace
+              user={user}
+              sessions={sessions}
+              onUpdateSession={handleUpdateSession}
+            />
           )}
 
           {view === 'admin' && canAccessAdmin && (

@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, ClipboardCheck, FileQuestion } from 'lucide-react';
 import { Button, Modal, Notice } from '../../components/ui';
-import { fetchSurveyQuestionsApi, submitSurveyResponseApi } from '../../services/sessionApi';
+import {
+  fetchSurveyQuestionsApi,
+  submitSurveyResponseApi,
+} from '../../services/sessionApi';
 import type {
   MockSession,
   SurveyAnswer,
@@ -35,19 +38,57 @@ export function SessionSurveyModal({
         if (active) {
           setQuestions(list);
           const initial: Record<string, string | string[]> = {};
+          const initialOthers: Record<string, string> = {};
+
+          const existingResponse = session.surveyResponses?.find(
+            (r) => r.target === target,
+          );
+          const existingMap = new Map<string, string | string[]>();
+          if (existingResponse?.answers) {
+            for (const a of existingResponse.answers) {
+              existingMap.set(a.questionId, a.answer);
+            }
+          }
+
           for (const q of list) {
+            const saved = existingMap.get(q.id);
             if (q.questionType === 'MULTIPLE_CHOICE') {
-              initial[q.id] = [];
+              if (Array.isArray(saved)) {
+                const uiArr: string[] = [];
+                for (const item of saved) {
+                  if (item.startsWith('อื่น ๆ: ')) {
+                    uiArr.push('OTHER');
+                    initialOthers[q.id] = item.slice(8);
+                  } else {
+                    uiArr.push(item);
+                  }
+                }
+                initial[q.id] = uiArr;
+              } else {
+                initial[q.id] = [];
+              }
+            } else if (q.questionType === 'SINGLE_CHOICE') {
+              if (typeof saved === 'string' && saved.startsWith('อื่น ๆ: ')) {
+                initial[q.id] = 'OTHER';
+                initialOthers[q.id] = saved.slice(8);
+              } else if (typeof saved === 'string') {
+                initial[q.id] = saved;
+              } else {
+                initial[q.id] = '';
+              }
             } else {
-              initial[q.id] = '';
+              initial[q.id] = typeof saved === 'string' ? saved : '';
             }
           }
           setAnswers(initial);
+          setOtherTexts(initialOthers);
         }
       })
       .catch((err: unknown) => {
         if (active) {
-          setError(err instanceof Error ? err.message : 'โหลดแบบสำรวจไม่สำเร็จ');
+          setError(
+            err instanceof Error ? err.message : 'โหลดแบบสำรวจไม่สำเร็จ',
+          );
         }
       })
       .finally(() => {
@@ -57,13 +98,13 @@ export function SessionSurveyModal({
     return () => {
       active = false;
     };
-  }, [target]);
+  }, [target, session]);
 
   const isQuestionAnswered = (q: SurveyQuestion): boolean => {
     const val = answers[q.id];
     if (q.questionType === 'MULTIPLE_CHOICE') {
       if (!Array.isArray(val) || val.length === 0) return false;
-      if (val.includes('OTHER') && !(otherTexts[q.id]?.trim())) return false;
+      if (val.includes('OTHER') && !otherTexts[q.id]?.trim()) return false;
       return true;
     }
     if (val === 'OTHER') {
@@ -72,7 +113,13 @@ export function SessionSurveyModal({
     return typeof val === 'string' && val.trim().length > 0;
   };
 
-  const allAnswered = questions.every((q) => !q.required || isQuestionAnswered(q));
+  const allAnswered = questions.every(
+    (q) => !q.required || isQuestionAnswered(q),
+  );
+  const requiredNowQuestions = questions.filter((q) => q.requiredNow);
+  const allRequiredNowAnswered = requiredNowQuestions.every((q) =>
+    isQuestionAnswered(q),
+  );
 
   const handleToggleMultipleChoice = (qId: string, opt: string) => {
     const current = (answers[qId] as string[]) || [];
@@ -88,6 +135,66 @@ export function SessionSurveyModal({
 
   const handleTextChange = (qId: string, text: string) => {
     setAnswers((prev) => ({ ...prev, [qId]: text }));
+  };
+
+  const handlePostpone = async () => {
+    if (!session.id) {
+      onComplete();
+      return;
+    }
+
+    if (!allRequiredNowAnswered) {
+      setError(
+        'กรุณาตอบคำถามที่จำเป็นต้องตอบทันที (⚡) ให้ครบก่อนกดไว้ทำทีหลัง',
+      );
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    try {
+      const answeredQuestions = questions.filter((q) => isQuestionAnswered(q));
+      if (answeredQuestions.length > 0) {
+        const formattedAnswers: SurveyAnswer[] = answeredQuestions.map((q) => {
+          let finalAnswer: string | string[];
+          const raw = answers[q.id];
+          if (q.questionType === 'MULTIPLE_CHOICE') {
+            const list = (raw as string[]) || [];
+            finalAnswer = list.map((item) =>
+              item === 'OTHER'
+                ? `อื่น ๆ: ${(otherTexts[q.id] || '').trim()}`
+                : item,
+            );
+          } else {
+            finalAnswer =
+              raw === 'OTHER'
+                ? `อื่น ๆ: ${(otherTexts[q.id] || '').trim()}`
+                : (raw as string) || '';
+          }
+          return {
+            questionId: q.id,
+            questionTitle: q.title,
+            questionType: q.questionType,
+            answer: finalAnswer,
+          };
+        });
+
+        const res = await submitSurveyResponseApi({
+          sessionId: session.id,
+          target,
+          answers: formattedAnswers,
+          completed: false,
+        });
+
+        onComplete(res);
+      } else {
+        onComplete();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'บันทึกคำตอบไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -110,13 +217,15 @@ export function SessionSurveyModal({
         if (q.questionType === 'MULTIPLE_CHOICE') {
           const list = (raw as string[]) || [];
           finalAnswer = list.map((item) =>
-            item === 'OTHER' ? `อื่น ๆ: ${(otherTexts[q.id] || '').trim()}` : item,
+            item === 'OTHER'
+              ? `อื่น ๆ: ${(otherTexts[q.id] || '').trim()}`
+              : item,
           );
         } else {
           finalAnswer =
             raw === 'OTHER'
               ? `อื่น ๆ: ${(otherTexts[q.id] || '').trim()}`
-              : ((raw as string) || '');
+              : (raw as string) || '';
         }
         return {
           questionId: q.id,
@@ -130,6 +239,7 @@ export function SessionSurveyModal({
         sessionId: session.id,
         target,
         answers: formattedAnswers,
+        completed: true,
       });
 
       onComplete(res);
@@ -140,18 +250,17 @@ export function SessionSurveyModal({
     }
   };
 
-  const titleText =
-    target === 'BUY'
-      ? 'แบบสำรวจความคิดเห็นของลูกค้า (กรณีสั่งซื้อ)'
-      : 'แบบสำรวจความคิดเห็นของลูกค้า (กรณีไม่ซื้อ / ยกเลิกคำขอ)';
-
+  const titleText = 'แบบสำรวจความคิดเห็นของลูกค้า';
   return (
     <Modal title={titleText} onClose={() => onComplete()}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {error && <Notice error>{error}</Notice>}
 
         {loading ? (
-          <p className="muted" style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+          <p
+            className="muted"
+            style={{ textAlign: 'center', padding: '1.5rem 0' }}
+          >
             กำลังโหลดแบบสำรวจ...
           </p>
         ) : questions.length === 0 ? (
@@ -164,20 +273,56 @@ export function SessionSurveyModal({
               border: '1px solid #e2e8f0',
             }}
           >
-            <FileQuestion size={40} color="#94a3b8" style={{ marginBottom: '8px' }} />
-            <h4 style={{ margin: '0 0 6px', color: '#1e293b' }}>ยังไม่มีคำถามแบบสำรวจ</h4>
-            <p className="muted" style={{ margin: '0 0 16px', fontSize: '13px' }}>
-              ยังไม่มีคำถามที่เปิดใช้งานสำหรับ{target === 'BUY' ? 'กรณีซื้อ' : 'กรณีไม่ซื้อ'}ในระบบ
+            <FileQuestion
+              size={40}
+              color="#94a3b8"
+              style={{ marginBottom: '8px' }}
+            />
+            <h4 style={{ margin: '0 0 6px', color: '#1e293b' }}>
+              ยังไม่มีคำถามแบบสำรวจ
+            </h4>
+            <p
+              className="muted"
+              style={{ margin: '0 0 16px', fontSize: '13px' }}
+            >
+              ยังไม่มีคำถามที่เปิดใช้งานสำหรับ
+              {target === 'BUY' ? 'กรณีซื้อ' : 'กรณีไม่ซื้อ'}ในระบบ
             </p>
             <Button onClick={() => onComplete()}>ดำเนินการต่อ</Button>
           </div>
         ) : (
           <>
-            <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
-              พนักงานสอบถามความคิดเห็นจากลูกค้าและบันทึกคำตอบลงในแบบสำรวจ (จำเป็นต้องตอบทุกข้อ)
-            </p>
+            <div
+              style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}
+            >
+              <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
+                พนักงานสอบถามความคิดเห็นจากลูกค้าและบันทึกคำตอบลงในแบบสำรวจ
+              </p>
+              {questions.some((q) => q.requiredNow) && (
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: '12px',
+                    color: '#b45309',
+                    fontWeight: 600,
+                  }}
+                >
+                  ⚡ ข้อที่มีเครื่องหมาย &quot;ตอบทันที&quot;
+                  บังคับต้องตอบก่อนกด &quot;ไว้ทำทีหลัง&quot;
+                </p>
+              )}
+            </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '60vh', overflowY: 'auto', paddingRight: '4px' }}>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '16px',
+                maxHeight: '60vh',
+                overflowY: 'auto',
+                paddingRight: '4px',
+              }}
+            >
               {questions.map((q, idx) => {
                 const answered = isQuestionAnswered(q);
                 return (
@@ -191,23 +336,81 @@ export function SessionSurveyModal({
                       transition: 'all 0.2s ease',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px', marginBottom: '6px' }}>
-                      <strong style={{ fontSize: '14.5px', color: '#0f172a' }}>
-                        {idx + 1}. {q.title}
-                        {q.required && <span style={{ color: '#dc2626', marginLeft: '4px' }}>*</span>}
-                      </strong>
-                      {answered && <CheckCircle2 size={16} color="#0d9488" style={{ flexShrink: 0, marginTop: '2px' }} />}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        gap: '8px',
+                        marginBottom: '6px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          flexWrap: 'wrap',
+                          gap: '6px',
+                        }}
+                      >
+                        <strong
+                          style={{ fontSize: '14.5px', color: '#0f172a' }}
+                        >
+                          {idx + 1}. {q.title}
+                          {q.required && (
+                            <span
+                              style={{ color: '#dc2626', marginLeft: '4px' }}
+                            >
+                              *
+                            </span>
+                          )}
+                        </strong>
+                        {q.requiredNow && (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              background: '#fef3c7',
+                              color: '#b45309',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 700,
+                            }}
+                          >
+                            ⚡ ตอบทันที
+                          </span>
+                        )}
+                      </div>
+                      {answered && (
+                        <CheckCircle2
+                          size={16}
+                          color="#0d9488"
+                          style={{ flexShrink: 0, marginTop: '2px' }}
+                        />
+                      )}
                     </div>
 
                     {q.description && (
-                      <p style={{ margin: '0 0 10px', fontSize: '12.5px', color: '#64748b' }}>
+                      <p
+                        style={{
+                          margin: '0 0 10px',
+                          fontSize: '12.5px',
+                          color: '#64748b',
+                        }}
+                      >
                         {q.description}
                       </p>
                     )}
 
                     {/* Single choice */}
                     {q.questionType === 'SINGLE_CHOICE' && q.options && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                          marginTop: '8px',
+                        }}
+                      >
                         {q.options.map((opt) => {
                           const isSelected = answers[q.id] === opt;
                           return (
@@ -219,7 +422,9 @@ export function SessionSurveyModal({
                                 textAlign: 'left',
                                 padding: '9px 12px',
                                 borderRadius: '8px',
-                                border: isSelected ? '1.5px solid #0abab5' : '1px solid #cbd5e1',
+                                border: isSelected
+                                  ? '1.5px solid #0abab5'
+                                  : '1px solid #cbd5e1',
                                 background: isSelected ? '#ccfbf1' : '#ffffff',
                                 color: isSelected ? '#0f766e' : '#1e293b',
                                 fontWeight: isSelected ? 600 : 500,
@@ -258,7 +463,13 @@ export function SessionSurveyModal({
                         })}
 
                         {q.allowOther && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
                             <button
                               type="button"
                               onClick={() => handleSingleChoice(q.id, 'OTHER')}
@@ -266,10 +477,20 @@ export function SessionSurveyModal({
                                 textAlign: 'left',
                                 padding: '9px 12px',
                                 borderRadius: '8px',
-                                border: answers[q.id] === 'OTHER' ? '1.5px solid #0abab5' : '1px solid #cbd5e1',
-                                background: answers[q.id] === 'OTHER' ? '#ccfbf1' : '#ffffff',
-                                color: answers[q.id] === 'OTHER' ? '#0f766e' : '#1e293b',
-                                fontWeight: answers[q.id] === 'OTHER' ? 600 : 500,
+                                border:
+                                  answers[q.id] === 'OTHER'
+                                    ? '1.5px solid #0abab5'
+                                    : '1px solid #cbd5e1',
+                                background:
+                                  answers[q.id] === 'OTHER'
+                                    ? '#ccfbf1'
+                                    : '#ffffff',
+                                color:
+                                  answers[q.id] === 'OTHER'
+                                    ? '#0f766e'
+                                    : '#1e293b',
+                                fontWeight:
+                                  answers[q.id] === 'OTHER' ? 600 : 500,
                                 fontSize: '13.5px',
                                 cursor: 'pointer',
                                 display: 'flex',
@@ -306,7 +527,12 @@ export function SessionSurveyModal({
                                 type="text"
                                 placeholder="โปรดระบุรายละเอียด..."
                                 value={otherTexts[q.id] || ''}
-                                onChange={(e) => setOtherTexts({ ...otherTexts, [q.id]: e.target.value })}
+                                onChange={(e) =>
+                                  setOtherTexts({
+                                    ...otherTexts,
+                                    [q.id]: e.target.value,
+                                  })
+                                }
                                 style={{
                                   padding: '8px 12px',
                                   borderRadius: '6px',
@@ -326,7 +552,14 @@ export function SessionSurveyModal({
 
                     {/* Multiple choice */}
                     {q.questionType === 'MULTIPLE_CHOICE' && q.options && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '6px',
+                          marginTop: '8px',
+                        }}
+                      >
                         {q.options.map((opt) => {
                           const isSelected = (
                             (answers[q.id] as string[]) || []
@@ -335,12 +568,16 @@ export function SessionSurveyModal({
                             <button
                               key={opt}
                               type="button"
-                              onClick={() => handleToggleMultipleChoice(q.id, opt)}
+                              onClick={() =>
+                                handleToggleMultipleChoice(q.id, opt)
+                              }
                               style={{
                                 textAlign: 'left',
                                 padding: '9px 12px',
                                 borderRadius: '8px',
-                                border: isSelected ? '1.5px solid #0abab5' : '1px solid #cbd5e1',
+                                border: isSelected
+                                  ? '1.5px solid #0abab5'
+                                  : '1px solid #cbd5e1',
                                 background: isSelected ? '#ccfbf1' : '#ffffff',
                                 color: isSelected ? '#0f766e' : '#1e293b',
                                 fontWeight: isSelected ? 600 : 500,
@@ -357,7 +594,9 @@ export function SessionSurveyModal({
                                   height: '14px',
                                   borderRadius: '3px',
                                   border: `2px solid ${isSelected ? '#0abab5' : '#94a3b8'}`,
-                                  background: isSelected ? '#0abab5' : '#ffffff',
+                                  background: isSelected
+                                    ? '#0abab5'
+                                    : '#ffffff',
                                   display: 'inline-flex',
                                   alignItems: 'center',
                                   justifyContent: 'center',
@@ -382,24 +621,42 @@ export function SessionSurveyModal({
                         })}
 
                         {q.allowOther && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <div
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '6px',
+                            }}
+                          >
                             <button
                               type="button"
-                              onClick={() => handleToggleMultipleChoice(q.id, 'OTHER')}
+                              onClick={() =>
+                                handleToggleMultipleChoice(q.id, 'OTHER')
+                              }
                               style={{
                                 textAlign: 'left',
                                 padding: '9px 12px',
                                 borderRadius: '8px',
-                                border: ((answers[q.id] as string[]) || []).includes('OTHER')
+                                border: (
+                                  (answers[q.id] as string[]) || []
+                                ).includes('OTHER')
                                   ? '1.5px solid #0abab5'
                                   : '1px solid #cbd5e1',
-                                background: ((answers[q.id] as string[]) || []).includes('OTHER')
+                                background: (
+                                  (answers[q.id] as string[]) || []
+                                ).includes('OTHER')
                                   ? '#ccfbf1'
                                   : '#ffffff',
-                                color: ((answers[q.id] as string[]) || []).includes('OTHER')
+                                color: (
+                                  (answers[q.id] as string[]) || []
+                                ).includes('OTHER')
                                   ? '#0f766e'
                                   : '#1e293b',
-                                fontWeight: ((answers[q.id] as string[]) || []).includes('OTHER') ? 600 : 500,
+                                fontWeight: (
+                                  (answers[q.id] as string[]) || []
+                                ).includes('OTHER')
+                                  ? 600
+                                  : 500,
                                 fontSize: '13.5px',
                                 cursor: 'pointer',
                                 display: 'flex',
@@ -413,11 +670,15 @@ export function SessionSurveyModal({
                                   height: '14px',
                                   borderRadius: '3px',
                                   border: `2px solid ${
-                                    ((answers[q.id] as string[]) || []).includes('OTHER')
+                                    (
+                                      (answers[q.id] as string[]) || []
+                                    ).includes('OTHER')
                                       ? '#0abab5'
                                       : '#94a3b8'
                                   }`,
-                                  background: ((answers[q.id] as string[]) || []).includes('OTHER')
+                                  background: (
+                                    (answers[q.id] as string[]) || []
+                                  ).includes('OTHER')
                                     ? '#0abab5'
                                     : '#ffffff',
                                   display: 'inline-flex',
@@ -425,7 +686,9 @@ export function SessionSurveyModal({
                                   justifyContent: 'center',
                                 }}
                               >
-                                {((answers[q.id] as string[]) || []).includes('OTHER') && (
+                                {((answers[q.id] as string[]) || []).includes(
+                                  'OTHER',
+                                ) && (
                                   <span
                                     style={{
                                       color: '#ffffff',
@@ -440,12 +703,19 @@ export function SessionSurveyModal({
                               </span>
                               <span>อื่น ๆ (โปรดระบุ)</span>
                             </button>
-                            {((answers[q.id] as string[]) || []).includes('OTHER') && (
+                            {((answers[q.id] as string[]) || []).includes(
+                              'OTHER',
+                            ) && (
                               <input
                                 type="text"
                                 placeholder="โปรดระบุรายละเอียด..."
                                 value={otherTexts[q.id] || ''}
-                                onChange={(e) => setOtherTexts({ ...otherTexts, [q.id]: e.target.value })}
+                                onChange={(e) =>
+                                  setOtherTexts({
+                                    ...otherTexts,
+                                    [q.id]: e.target.value,
+                                  })
+                                }
                                 style={{
                                   padding: '8px 12px',
                                   borderRadius: '6px',
@@ -487,10 +757,18 @@ export function SessionSurveyModal({
               })}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '14px', gap: '8px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginTop: '14px',
+                gap: '8px',
+              }}
+            >
               <Button
                 variant="secondary"
-                onClick={() => onComplete()}
+                onClick={handlePostpone}
                 disabled={busy}
               >
                 ไว้ทำทีหลัง
@@ -500,7 +778,13 @@ export function SessionSurveyModal({
                 onClick={handleSubmit}
                 disabled={!allAnswered || busy}
               >
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
                   <ClipboardCheck size={16} />
                   {busy ? 'กำลังบันทึก...' : 'บันทึก'}
                 </span>

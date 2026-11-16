@@ -611,6 +611,7 @@ model SurveyQuestion {
   options      Json?              // string[] for choices
   allowOther   Boolean            @default(false)
   required     Boolean            @default(true)
+  requiredNow  Boolean            @default(false)
   active       Boolean            @default(true)
   sortOrder    Int                @default(0)
   createdAt    DateTime           @default(now()) @db.DateTime(3)
@@ -626,8 +627,10 @@ model SurveyResponse {
   session      CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   target       SurveyTarget
   actorStaffId String          @db.VarChar(64)
+  completed    Boolean         @default(true)
   answers      Json            // Array of { questionId, questionTitle, questionType, answer: string | string[] }
   createdAt    DateTime        @default(now()) @db.DateTime(3)
+  updatedAt    DateTime        @default(now()) @updatedAt @db.DateTime(3)
 
   @@index([sessionId])
   @@index([target, createdAt])

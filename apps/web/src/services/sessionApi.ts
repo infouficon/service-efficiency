@@ -90,7 +90,11 @@ export interface ApiSession {
   ontop?: { name: string }[];
   points?: { name: string }[];
   burnPoints?: { name: string }[];
-  payments?: { method: string; cardType?: string | null; installmentMonths?: number | null }[];
+  payments?: {
+    method: string;
+    cardType?: string | null;
+    installmentMonths?: number | null;
+  }[];
   stockReview?: {
     missingItems?: string[];
     missingItemIds?: string[];
@@ -124,8 +128,10 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
   if (s.demoStartAt) timestamps.demo_start_at = s.demoStartAt;
   if (s.demoEndAt) timestamps.demo_end_at = s.demoEndAt;
   if (s.decisionAt) timestamps.decision_at = s.decisionAt;
-  if (s.productSelectionStartAt) timestamps.product_selection_start_at = s.productSelectionStartAt;
-  if (s.productSelectionConfirmedAt) timestamps.product_selection_confirmed_at = s.productSelectionConfirmedAt;
+  if (s.productSelectionStartAt)
+    timestamps.product_selection_start_at = s.productSelectionStartAt;
+  if (s.productSelectionConfirmedAt)
+    timestamps.product_selection_confirmed_at = s.productSelectionConfirmedAt;
   if (s.stockStartedAt) timestamps.stock_started_at = s.stockStartedAt;
   if (s.stockFoundAt) timestamps.stock_found_at = s.stockFoundAt;
   if (s.cashierReceivedAt) timestamps.cashier_received_at = s.cashierReceivedAt;
@@ -137,7 +143,9 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     id: s.id,
     reference: s.reference,
     queue:
-      s.queueNo != null ? formatQueue(s.queueLetter, s.queueNo) : (s.phone || s.reference),
+      s.queueNo != null
+        ? formatQueue(s.queueLetter, s.queueNo)
+        : s.phone || s.reference,
     queueNo: s.queueNo,
     queueLetter: s.queueLetter,
     customerTypeId: s.customerTypeId || undefined,
@@ -210,16 +218,21 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     events: s.events,
     surveyResponses: s.surveyResponses,
     currentAppleDevices: (() => {
-      const createdEvt = (s.events ?? []).find((e) => e.eventType === 'SESSION_CREATED');
+      const createdEvt = (s.events ?? []).find(
+        (e) => e.eventType === 'SESSION_CREATED',
+      );
       const meta = createdEvt?.metadata as Record<string, unknown> | undefined;
-      return Array.isArray(meta?.currentAppleDevices) && meta.currentAppleDevices.length > 0
+      return Array.isArray(meta?.currentAppleDevices) &&
+        meta.currentAppleDevices.length > 0
         ? (meta.currentAppleDevices as string[])
         : undefined;
     })(),
   };
 }
 
-export async function fetchSessionsApi(branchId?: string): Promise<MockSession[]> {
+export async function fetchSessionsApi(
+  branchId?: string,
+): Promise<MockSession[]> {
   const query = branchId ? `?branchId=${encodeURIComponent(branchId)}` : '';
   const data = await api<ApiSession[]>(`/sessions${query}`);
   return data.map(mapApiSessionToMockSession);
@@ -260,12 +273,20 @@ export function fetchSettingsApi(): Promise<AppSettings> {
   return api<AppSettings>('/settings');
 }
 
-export function saveStockUnlimitedApi(stockUnlimited: boolean): Promise<AppSettings> {
+export function saveStockUnlimitedApi(
+  stockUnlimited: boolean,
+): Promise<AppSettings> {
   return api<AppSettings>('/settings', 'PUT', { stockUnlimited });
 }
 
 /** D130: ADMIN only. 400 when the chosen FileMaker (FMP_* / FMP_UAT_*) is not set on the server. */
-export function saveFmpPushModeApi(mode: FmpPushMode): Promise<{ mode: FmpPushMode; updatedAt: string | null; updatedBy: string | null }> {
+export function saveFmpPushModeApi(
+  mode: FmpPushMode,
+): Promise<{
+  mode: FmpPushMode;
+  updatedAt: string | null;
+  updatedBy: string | null;
+}> {
   return api('/admin/fmp/mode', 'PUT', { mode });
 }
 
@@ -274,21 +295,49 @@ export function fetchPaymentMethodsApi(all = false): Promise<PaymentMethod[]> {
   return api<PaymentMethod[]>(`/payment-methods${all ? '?all=true' : ''}`);
 }
 
-export function createPaymentMethodApi(name: string, fmpType?: string): Promise<PaymentMethod> {
-  return api<PaymentMethod>('/payment-methods', 'POST', fmpType ? { name, fmpType } : { name });
+export function createPaymentMethodApi(
+  name: string,
+  fmpType?: string,
+): Promise<PaymentMethod> {
+  return api<PaymentMethod>(
+    '/payment-methods',
+    'POST',
+    fmpType ? { name, fmpType } : { name },
+  );
 }
 
 /** D89: files a payment method under an FMP payment type (`null` clears it). */
-export function setPaymentMethodFmpTypeApi(id: string, fmpType: string | null): Promise<PaymentMethod> {
-  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/fmp-type`, 'PUT', { fmpType });
+export function setPaymentMethodFmpTypeApi(
+  id: string,
+  fmpType: string | null,
+): Promise<PaymentMethod> {
+  return api<PaymentMethod>(
+    `/payment-methods/${encodeURIComponent(id)}/fmp-type`,
+    'PUT',
+    { fmpType },
+  );
 }
 
-export function setPaymentMethodActiveApi(id: string, active: boolean): Promise<PaymentMethod> {
-  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}`, 'PUT', { active });
+export function setPaymentMethodActiveApi(
+  id: string,
+  active: boolean,
+): Promise<PaymentMethod> {
+  return api<PaymentMethod>(
+    `/payment-methods/${encodeURIComponent(id)}`,
+    'PUT',
+    { active },
+  );
 }
 
-export function movePaymentMethodApi(id: string, direction: 'up' | 'down'): Promise<PaymentMethod> {
-  return api<PaymentMethod>(`/payment-methods/${encodeURIComponent(id)}/move`, 'POST', { direction });
+export function movePaymentMethodApi(
+  id: string,
+  direction: 'up' | 'down',
+): Promise<PaymentMethod> {
+  return api<PaymentMethod>(
+    `/payment-methods/${encodeURIComponent(id)}/move`,
+    'POST',
+    { direction },
+  );
 }
 
 /** Product categories in display order (D72); `all` (ADMIN) includes the switched-off ones with their product counts. */
@@ -296,7 +345,10 @@ export function fetchCategoriesApi(all = false): Promise<Category[]> {
   return api<Category[]>(`/categories${all ? '?all=true' : ''}`);
 }
 
-export function createCategoryApi(name: string, isAccessory: boolean): Promise<Category> {
+export function createCategoryApi(
+  name: string,
+  isAccessory: boolean,
+): Promise<Category> {
   return api<Category>('/categories', 'POST', { name, isAccessory });
 }
 
@@ -307,11 +359,18 @@ export function saveCategoryApi(
   return api<Category>(`/categories/${encodeURIComponent(id)}`, 'PUT', patch);
 }
 
-export function moveCategoryApi(id: string, direction: 'up' | 'down'): Promise<Category> {
-  return api<Category>(`/categories/${encodeURIComponent(id)}/move`, 'POST', { direction });
+export function moveCategoryApi(
+  id: string,
+  direction: 'up' | 'down',
+): Promise<Category> {
+  return api<Category>(`/categories/${encodeURIComponent(id)}/move`, 'POST', {
+    direction,
+  });
 }
 
-export function reorderPaymentMethodsApi(ids: string[]): Promise<PaymentMethod[]> {
+export function reorderPaymentMethodsApi(
+  ids: string[],
+): Promise<PaymentMethod[]> {
   return api<PaymentMethod[]>('/payment-methods/reorder', 'PUT', { ids });
 }
 
@@ -343,7 +402,9 @@ export function updatePaymentCardOptionApi(
   );
 }
 
-export function deletePaymentCardOptionApi(cardId: string): Promise<PaymentCardOption> {
+export function deletePaymentCardOptionApi(
+  cardId: string,
+): Promise<PaymentCardOption> {
   return api<PaymentCardOption>(
     `/payment-methods/cards/${encodeURIComponent(cardId)}`,
     'DELETE',
@@ -380,15 +441,19 @@ export function saveCustomerTypeApi(
   existingId?: string,
 ): Promise<CustomerType> {
   return existingId
-    ? api<CustomerType>(`/customer-types/${encodeURIComponent(existingId)}`, 'PUT', {
-        name: type.name,
-        description: type.description ?? null,
-        active: type.active,
-        paymentMethods: type.paymentMethods,
-        ontop: type.ontop,
-        points: type.points,
-        burnPoints: type.burnPoints,
-      })
+    ? api<CustomerType>(
+        `/customer-types/${encodeURIComponent(existingId)}`,
+        'PUT',
+        {
+          name: type.name,
+          description: type.description ?? null,
+          active: type.active,
+          paymentMethods: type.paymentMethods,
+          ontop: type.ontop,
+          points: type.points,
+          burnPoints: type.burnPoints,
+        },
+      )
     : api<CustomerType>('/customer-types', 'POST', {
         letter: type.letter || undefined,
         name: type.name,
@@ -401,28 +466,57 @@ export function saveCustomerTypeApi(
 }
 
 /** `send` takes the serial numbers STOCK already scanned one by one (D101); the server refuses it until they are complete (D111). */
-export async function advanceStepApi(id: string, action: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/step`, 'POST', { action });
+export async function advanceStepApi(
+  id: string,
+  action: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/step`,
+    'POST',
+    { action },
+  );
   return mapApiSessionToMockSession(data);
 }
 
 /** D101: one serial number STOCK just scanned at the shelf, saved at once with the server time. */
-export async function addSerialApi(id: string, itemId: string, sn: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/serials`, 'POST', { itemId, sn });
+export async function addSerialApi(
+  id: string,
+  itemId: string,
+  sn: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/serials`,
+    'POST',
+    { itemId, sn },
+  );
   return mapApiSessionToMockSession(data);
 }
 
 /** D101: takes back a wrong scan so the right unit can be scanned. */
-export async function removeSerialApi(id: string, serialId: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/serials/${encodeURIComponent(serialId)}`, 'DELETE');
+export async function removeSerialApi(
+  id: string,
+  serialId: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/serials/${encodeURIComponent(serialId)}`,
+    'DELETE',
+  );
   return mapApiSessionToMockSession(data);
 }
 
-export async function recordNotBuyApi(id: string, reason: string, otherReason?: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/decision/not-buy`, 'POST', {
-    reason,
-    otherReason,
-  });
+export async function recordNotBuyApi(
+  id: string,
+  reason: string,
+  otherReason?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/decision/not-buy`,
+    'POST',
+    {
+      reason,
+      otherReason,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -432,10 +526,12 @@ export async function updateSelectionApi(
   phone: string,
   currentAppleDevices?: string[],
 ): Promise<MockSession> {
-  const accessoriesList = Object.entries(selection.accessories).map(([accessoryName, qty]) => ({
-    accessoryName,
-    quantity: parseInt(qty, 10) || 1,
-  }));
+  const accessoriesList = Object.entries(selection.accessories).map(
+    ([accessoryName, qty]) => ({
+      accessoryName,
+      quantity: parseInt(qty, 10) || 1,
+    }),
+  );
 
   const payload: Record<string, unknown> = {
     phone: phone && phone.trim() ? phone.trim() : undefined,
@@ -446,7 +542,10 @@ export async function updateSelectionApi(
     payments: selection.payments,
     paymentDetails: selection.paymentDetails,
     vatRefund: Boolean(selection.vatRefund),
-    taxInvoice: isTaxInvoiceReceipt(selection.receiptType, Boolean(selection.taxInvoice)),
+    taxInvoice: isTaxInvoiceReceipt(
+      selection.receiptType,
+      Boolean(selection.taxInvoice),
+    ),
     receiptType: selection.receiptType ?? undefined,
     currentAppleDevices,
     // F3: the main products as a whole list (SKU id + quantity)
@@ -456,12 +555,19 @@ export async function updateSelectionApi(
     })),
   };
 
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/selection`, 'PUT', payload);
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/selection`,
+    'PUT',
+    payload,
+  );
   return mapApiSessionToMockSession(data);
 }
 
 export async function confirmPurchaseApi(id: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/confirm`, 'POST');
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/confirm`,
+    'POST',
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -473,21 +579,33 @@ export async function recordOutOfStockApi(
   action: 'cancel' | 'partial' = 'cancel',
   note?: string,
 ): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/out-of-stock`, 'POST', {
-    reason,
-    otherReason,
-    outOfStockItems,
-    action,
-    note,
-  });
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/out-of-stock`,
+    'POST',
+    {
+      reason,
+      otherReason,
+      outOfStockItems,
+      action,
+      note,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
-export async function cancelSessionApi(id: string, reason: string, otherReason?: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cancel`, 'POST', {
-    reason,
-    otherReason,
-  });
+export async function cancelSessionApi(
+  id: string,
+  reason: string,
+  otherReason?: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/cancel`,
+    'POST',
+    {
+      reason,
+      otherReason,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -500,13 +618,17 @@ export async function returnToStockApi(
   wrongItemIds?: string[],
   wrongItemDetails?: Record<string, { reason: string; note?: string }>,
 ): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/cashier/reject`, 'POST', {
-    reason,
-    otherReason,
-    wrongItems,
-    wrongItemIds,
-    wrongItemDetails,
-  });
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/cashier/reject`,
+    'POST',
+    {
+      reason,
+      otherReason,
+      wrongItems,
+      wrongItemIds,
+      wrongItemDetails,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -518,24 +640,36 @@ export async function changeSessionItemApi(
   reason: string,
   note?: string,
 ): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/change-item`, 'POST', {
-    oldItemId,
-    newSkuId,
-    reason,
-    note,
-  });
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/change-item`,
+    'POST',
+    {
+      oldItemId,
+      newSkuId,
+      reason,
+      note,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
 /** F12: stock confirms it has seen a cancel (and brought the goods back). */
-export async function acknowledgeStockCancelApi(id: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/acknowledge-cancel`, 'POST');
+export async function acknowledgeStockCancelApi(
+  id: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/stock/acknowledge-cancel`,
+    'POST',
+  );
   return mapApiSessionToMockSession(data);
 }
 
 /** F11: buy again after a "change" cancel: a new session with the old data and the old queue number. */
 export async function rebuyApi(id: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/rebuy`, 'POST');
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/rebuy`,
+    'POST',
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -546,12 +680,16 @@ export async function reportStockMissingApi(
   stockNote?: string,
   missingItemIds?: string[],
 ): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/stock/report-missing`, 'POST', {
-    missingItems,
-    foundItems,
-    stockNote,
-    missingItemIds,
-  });
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/stock/report-missing`,
+    'POST',
+    {
+      missingItems,
+      foundItems,
+      stockNote,
+      missingItemIds,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -561,11 +699,15 @@ export async function resolveStockReviewApi(
   reason?: string,
   otherReason?: string,
 ): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/staff/resolve-stock-review`, 'POST', {
-    action,
-    reason,
-    otherReason,
-  });
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/staff/resolve-stock-review`,
+    'POST',
+    {
+      action,
+      reason,
+      otherReason,
+    },
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -573,8 +715,13 @@ export async function fetchProductsApi(): Promise<Record<string, unknown>[]> {
   return api<Record<string, unknown>[]>('/products');
 }
 
-export async function acknowledgeManagerAlertApi(id: string): Promise<MockSession> {
-  const data = await api<ApiSession>(`/sessions/${encodeURIComponent(id)}/manager/acknowledge-alert`, 'POST');
+export async function acknowledgeManagerAlertApi(
+  id: string,
+): Promise<MockSession> {
+  const data = await api<ApiSession>(
+    `/sessions/${encodeURIComponent(id)}/manager/acknowledge-alert`,
+    'POST',
+  );
   return mapApiSessionToMockSession(data);
 }
 
@@ -595,7 +742,9 @@ export interface AuditLogItem {
 }
 
 export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
-  return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
+  return api<AuditLogItem[]>(
+    `/admin/audit-logs?limit=${encodeURIComponent(limit)}`,
+  );
 }
 
 /** D104: one scanned serial against FileMaker live (only with `SERIAL_CHECK=fmp`; off by default since D111). */
@@ -606,13 +755,17 @@ export type SerialCheck =
       source: 'fmp';
       asOf: string | null;
       sn: string;
-      verdict: 'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
+      verdict:
+        'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
       branchCode?: string | null;
       branchName?: string | null;
       stockStatus?: string;
     };
 
-export async function serialCheckApi(sn: string, part?: string): Promise<SerialCheck> {
+export async function serialCheckApi(
+  sn: string,
+  part?: string,
+): Promise<SerialCheck> {
   const query = new URLSearchParams(part ? { sn, part } : { sn });
   return api<SerialCheck>(`/stock/serial-check?${query}`);
 }
@@ -630,7 +783,11 @@ export async function fetchSurveyQuestionsApi(
 }
 
 export async function createSurveyQuestionApi(
-  data: Partial<SurveyQuestion> & { target: SurveyTarget; title: string; questionType: string },
+  data: Partial<SurveyQuestion> & {
+    target: SurveyTarget;
+    title: string;
+    questionType: string;
+  },
 ): Promise<SurveyQuestion> {
   return api<SurveyQuestion>('/surveys/questions', 'POST', data);
 }
@@ -639,18 +796,31 @@ export async function updateSurveyQuestionApi(
   id: string,
   data: Partial<SurveyQuestion>,
 ): Promise<SurveyQuestion> {
-  return api<SurveyQuestion>(`/surveys/questions/${encodeURIComponent(id)}`, 'PUT', data);
+  return api<SurveyQuestion>(
+    `/surveys/questions/${encodeURIComponent(id)}`,
+    'PUT',
+    data,
+  );
 }
 
-export async function deleteSurveyQuestionApi(id: string): Promise<SurveyQuestion> {
-  return api<SurveyQuestion>(`/surveys/questions/${encodeURIComponent(id)}`, 'DELETE');
+export async function deleteSurveyQuestionApi(
+  id: string,
+): Promise<SurveyQuestion> {
+  return api<SurveyQuestion>(
+    `/surveys/questions/${encodeURIComponent(id)}`,
+    'DELETE',
+  );
 }
 
 export async function moveSurveyQuestionApi(
   id: string,
   direction: 'UP' | 'DOWN',
 ): Promise<SurveyQuestion[]> {
-  return api<SurveyQuestion[]>(`/surveys/questions/${encodeURIComponent(id)}/move`, 'POST', { direction });
+  return api<SurveyQuestion[]>(
+    `/surveys/questions/${encodeURIComponent(id)}/move`,
+    'POST',
+    { direction },
+  );
 }
 
 export async function reorderSurveyQuestionsApi(
@@ -666,6 +836,7 @@ export async function reorderSurveyQuestionsApi(
 export async function submitSurveyResponseApi(data: {
   sessionId: string;
   target: SurveyTarget;
+  completed?: boolean;
   answers: SurveyAnswer[];
 }): Promise<SurveyResponseItem> {
   return api<SurveyResponseItem>('/surveys/responses', 'POST', data);
@@ -683,4 +854,3 @@ export async function fetchSurveyResponsesApi(query: {
   const qs = params.toString() ? `?${params.toString()}` : '';
   return api<SurveyResponseItem[]>(`/surveys/responses${qs}`);
 }
-

@@ -148,6 +148,86 @@ test('surveys: configurable questions for BUY and NOT_BUY, response collection, 
       // 4. Clean up question
       await deleteQuestion(notBuyQ.data.id, 'admin');
     });
+
+    await t.test('requiredNow question and partial response completion (D144)', async () => {
+      // 1. Create a requiredNow question and an optional question
+      const reqNowQ = await createQuestion({
+        target: 'BUY',
+        title: `${prefix} คำถามจำเป็นต้องตอบทันที`,
+        questionType: 'TEXT',
+        requiredNow: true,
+      });
+      assert.equal(reqNowQ.status, 201);
+      assert.equal(reqNowQ.data.requiredNow, true);
+      assert.equal(reqNowQ.data.required, true);
+
+      const optQ = await createQuestion({
+        target: 'BUY',
+        title: `${prefix} คำถามไว้ตอบทีหลังได้`,
+        questionType: 'TEXT',
+        required: false,
+        requiredNow: false,
+      });
+      assert.equal(optQ.status, 201);
+      assert.equal(optQ.data.requiredNow, false);
+
+      // 2. Create session
+      const sessRes = await request(
+        '/sessions',
+        'POST',
+        { branchId: branches[0].id, phone: '0899999999' },
+        cookies.staff,
+      );
+      assert.equal(sessRes.status, 201);
+      const session = sessRes.data;
+
+      // 3. Submit partial response (completed: false)
+      const partialRes = await submitResponse({
+        sessionId: session.id,
+        target: 'BUY',
+        answers: [
+          {
+            questionId: reqNowQ.data.id,
+            questionTitle: reqNowQ.data.title,
+            questionType: reqNowQ.data.questionType,
+            answer: 'คำตอบด่วน',
+          },
+        ],
+        completed: false,
+      });
+      assert.equal(partialRes.status, 201);
+      assert.equal(partialRes.data.completed, false);
+      assert.equal(partialRes.data.answers.length, 1);
+
+      // 4. Submit completed response (completed: true, upsert existing)
+      const completeRes = await submitResponse({
+        sessionId: session.id,
+        target: 'BUY',
+        answers: [
+          {
+            questionId: reqNowQ.data.id,
+            questionTitle: reqNowQ.data.title,
+            questionType: reqNowQ.data.questionType,
+            answer: 'คำตอบด่วน',
+          },
+          {
+            questionId: optQ.data.id,
+            questionTitle: optQ.data.title,
+            questionType: optQ.data.questionType,
+            answer: 'คำตอบทีหลัง',
+          },
+        ],
+        completed: true,
+      });
+      assert.equal(completeRes.status, 201);
+      assert.equal(completeRes.data.completed, true);
+      assert.equal(completeRes.data.answers.length, 2);
+      assert.equal(completeRes.data.id, partialRes.data.id);
+
+      // Clean up
+      await deleteQuestion(reqNowQ.data.id, 'admin');
+      await deleteQuestion(optQ.data.id, 'admin');
+    });
   } finally {
     await cleanup(ctx, world);
   }

@@ -37,7 +37,7 @@ import {
 } from '../session/workflow';
 import { formatDisplayPhone } from '../../utils/phone';
 import type { MockSession, MockUser, Timestamp } from '../../types/session';
-import { advanceStepApi } from '../../services/sessionApi';
+import { advanceStepApi, fetchSurveyQuestionsApi } from '../../services/sessionApi';
 
 interface SessionLogsWorkspaceProps {
   user: MockUser;
@@ -337,6 +337,24 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
             .map(([item, qty]) => `${item} (x${qty})`)
             .join('; '),
       },
+      {
+        key: 'serials',
+        label: 'Serial / IMEI สินค้าหลัก',
+        getValue: (s) =>
+          (s.selection?.items ?? [])
+            .flatMap((i) => (i.serials ?? []).map((sn) => sn.sn))
+            .join('; '),
+      },
+      {
+        key: 'stockMissingItems',
+        label: 'รายการสินค้าที่หาไม่พบ (Stock Missing)',
+        getValue: (s) => s.stockPendingReview?.missingItems?.join('; ') || '',
+      },
+      {
+        key: 'stockNote',
+        label: 'หมายเหตุฝ่ายคลัง (Stock Note)',
+        getValue: (s) => s.stockPendingReview?.stockNote || '',
+      },
     ],
   },
   {
@@ -364,6 +382,24 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
           (s.selection?.payments || [])
             .map((p) => formatPaymentLabel(p, s.selection?.paymentDetails))
             .join('; '),
+      },
+      {
+        key: 'paymentCardType',
+        label: 'ธนาคาร / บัตรเครดิต',
+        getValue: (s) =>
+          (s.selection?.paymentDetails || [])
+            .map((d) => d.cardType)
+            .filter(Boolean)
+            .join('; ') || '',
+      },
+      {
+        key: 'paymentInstallmentMonths',
+        label: 'จำนวนเดือนที่ผ่อน (0% CC)',
+        getValue: (s) =>
+          (s.selection?.paymentDetails || [])
+            .map((d) => (d.installmentMonths ? `${d.installmentMonths} เดือน` : null))
+            .filter(Boolean)
+            .join('; ') || '',
       },
       {
         key: 'taxInvoice',
@@ -569,7 +605,82 @@ function ExportModal({
   initialEndDate: string;
   initialBranch: string;
 }) {
-  const [selectedColumns, setSelectedColumns] = useState<string[]>(ALL_COLUMN_KEYS);
+  const [configuredTitles, setConfiguredTitles] = useState<string[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      fetchSurveyQuestionsApi('BUY', true),
+      fetchSurveyQuestionsApi('NOT_BUY', true),
+    ])
+      .then(([buyQs, notBuyQs]) => {
+        const titles = [...buyQs, ...notBuyQs]
+          .map((q) => q.title.trim())
+          .filter(Boolean);
+        setConfiguredTitles(Array.from(new Set(titles)));
+      })
+      .catch(() => {});
+  }, []);
+
+  const dynamicCategories = useMemo<ExportCategory[]>(() => {
+    const titlesSet = new Set<string>();
+    for (const t of configuredTitles) {
+      titlesSet.add(t);
+    }
+    for (const s of sessions) {
+      for (const sr of s.surveyResponses ?? []) {
+        for (const a of sr.answers ?? []) {
+          if (a.questionTitle?.trim()) {
+            titlesSet.add(a.questionTitle.trim());
+          }
+        }
+      }
+    }
+    const distinctTitles = Array.from(titlesSet);
+
+    if (distinctTitles.length === 0) {
+      return EXPORT_CATEGORIES;
+    }
+
+    const surveyQuestionColumns: ExportColumn[] = distinctTitles.map((title) => ({
+      key: `survey_q_${encodeURIComponent(title)}`,
+      label: `[Survey] ${title}`,
+      getValue: (s: MockSession) => {
+        for (const sr of s.surveyResponses ?? []) {
+          const matched = (sr.answers ?? []).find(
+            (a) => a.questionTitle?.trim() === title,
+          );
+          if (matched && matched.answer !== undefined && matched.answer !== null) {
+            return Array.isArray(matched.answer)
+              ? matched.answer.join(', ')
+              : String(matched.answer);
+          }
+        }
+        return '';
+      },
+    }));
+
+    return [
+      ...EXPORT_CATEGORIES,
+      {
+        category: '7. ข้อมูลแบบสำรวจ (Survey แยกตามคำถาม)',
+        columns: surveyQuestionColumns,
+      },
+    ];
+  }, [sessions, configuredTitles]);
+
+  const allColumnKeys = useMemo(
+    () => dynamicCategories.flatMap((cat) => cat.columns.map((col) => col.key)),
+    [dynamicCategories],
+  );
+
+  const [selectedColumns, setSelectedColumns] = useState<string[]>(() =>
+    dynamicCategories.flatMap((cat) => cat.columns.map((col) => col.key)),
+  );
+
+  useEffect(() => {
+    setSelectedColumns((prev) => Array.from(new Set([...prev, ...allColumnKeys])));
+  }, [allColumnKeys]);
+
   const [startDate, setStartDate] = useState(initialStartDate);
   const [endDate, setEndDate] = useState(initialEndDate);
   const [selectedBranches, setSelectedBranches] = useState<string[]>(() => {
@@ -585,7 +696,7 @@ function ExportModal({
     );
   };
 
-  const handleSelectAllColumns = () => setSelectedColumns(ALL_COLUMN_KEYS);
+  const handleSelectAllColumns = () => setSelectedColumns(allColumnKeys);
   const handleClearAllColumns = () => setSelectedColumns([]);
 
   const toggleBranch = (code: string) => {
@@ -640,7 +751,7 @@ function ExportModal({
 
     // Prepare active column objects
     const allColsMap = new Map<string, ExportColumn>();
-    EXPORT_CATEGORIES.forEach((cat) => {
+    dynamicCategories.forEach((cat) => {
       cat.columns.forEach((col) => allColsMap.set(col.key, col));
     });
     const activeCols = selectedColumns
@@ -823,7 +934,7 @@ function ExportModal({
 
         {/* Categories of columns */}
         <div style={{ maxHeight: '300px', overflowY: 'auto', paddingRight: '4px' }}>
-          {EXPORT_CATEGORIES.map((cat) => (
+          {dynamicCategories.map((cat) => (
             <div key={cat.category} className="export-category-block">
               <div className="export-category-header">{cat.category}</div>
               <div className="export-columns-grid">

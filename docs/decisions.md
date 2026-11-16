@@ -744,7 +744,7 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
    - Expanded `ProductCategory` enum to `['iPhone', 'iPad', 'Mac', 'Watch', 'Accessories']`.
    - Migration `202610090002_add_accessories_category` applied to MySQL `Product` table.
 2. **Initial Seed & Iconography**:
-   - Standard accessory products (e.g. *Apple 20W USB-C Power Adapter*, *AirPods 4*, *MagSafe Cases*) seeded with multi-branch stock.
+   - Standard accessory products (e.g. _Apple 20W USB-C Power Adapter_, _AirPods 4_, _MagSafe Cases_) seeded with multi-branch stock.
    - Frontend UI uses `Headphones` icon for the `Accessories` category in filters, table badges, and selection views.
 
 ## D47 — Confirmed Today-Only Operational Scope for Stock & Cashier (2026-10-09)
@@ -792,7 +792,6 @@ The user confirmed Q1–Q11 and instructed implementation. This section supersed
    - `product_selection_confirmed_at` serves as the authoritative server timestamp representing both selection confirmation and stock request initiation.
    - Logs table and CSV export display `Product Selection Confirmed At` without duplicate columns.
 
-
 ## D52 — Confirmed ERP stock source and availability rule (2026-10-12)
 
 Owner answers to the questions in `docs/agents/erp-integration.md` §2.
@@ -819,7 +818,7 @@ Owner answers to G-12 questions 1 to 3 (see `docs/agents/erp-integration.md` §3
 6. **Login id.** `staffId` = the ERP `staff_id` (the ERP `user name` equals it for all 65 people who have one, so typing either works; the 24 people without `user name` log in with `staff_id`). A row whose `user name` differs from `staff_id` is reported, not aliased.
 7. **Password owner.** The ERP, always. Synced accounts have no forced password change, and SES change-password and reset-password are refused for them (the daily sync would overwrite them).
 8. **Roles.** The owner will give the role mapping later. Until then the sync grants only STAFF/STOCK/CASHIER from `position` (one table in the code, easy to change) and never grants or removes ADMIN/MANAGER.
-OPEN: leavers and closed branches (proposal in `erp-integration.md` §3.4), how failures are reported, the exact role table (owner, later).
+   OPEN: leavers and closed branches (proposal in `erp-integration.md` §3.4), how failures are reported, the exact role table (owner, later).
 
 ## D55 — Products and stock are read from the warroom database (2026-10-12)
 
@@ -830,7 +829,7 @@ Owner instruction: "products come from warroom" and the read-only connection of 
 3. **Availability (D52 formula, defaults chosen).** available = ERP `ready` − sessions that reached FOUND (24 h window anchored to the oldest snapshot in play) without an outcome and not completed before the snapshot; 0 when a D41 missing/out-of-stock report is newer than the snapshot and younger than 6 hours. D41's other rules stay for rows without ERP data.
 4. **Locks in mode `on`.** Manual stock edits are refused for rows with ERP data (ADMIN may still switch `active`); names, codes, colour, storage and category of `erpManaged` products/models/SKUs are read-only.
 5. **Scope.** All categories found in `stock_mv`, only parts that some SES branch stocks, branches matched by `Branch.code`. Category text that the rules do not recognise is skipped and reported, never guessed.
-OPEN: the final category rules (after the first dry run), a dedicated read-only database role for SES, and whether the 12.5 h overnight gap needs an extra warroom slot.
+   OPEN: the final category rules (after the first dry run), a dedicated read-only database role for SES, and whether the 12.5 h overnight gap needs an extra warroom slot.
 
 ## D56 — A walk-in starts at the customer's phone number (2026-10-13)
 
@@ -1100,6 +1099,7 @@ Owner, after seeing the dropdown picker (D74) with real warroom data: "ทำไ
 3. **Batteries are a category.** A part whose sub-category (or sub-sub-category) starts with "Battery" goes to the category `Battery`, not iPhone or Accessories (unless the warroom category is another brand's). The category is added switched off, like every new warroom category (D72): staff see it once ADMIN opens it.
 4. **Existing ERP products are re-filed by the sync.** An ERP-made SKU filed under another category / product / model than today's rules give (the old per-capacity models, batteries under iPhone) is moved to the right ones on the next run (`moved` in the run summary; a dry run counts it); the ERP-made models and products left empty are removed. Hand-made records are never touched.
 5. **"Delete only what is not from the ERP".** Admin → ซิงก์ ERP → "นับสินค้าที่ไม่ได้มาจาก ERP" (`POST /admin/warroom-sync/reset-catalog?scope=non-erp`): counts first, then the typed confirmation. It removes SKUs (with branch stock) that are not `erpManaged`, the hand-made models/products left empty by that, and every queue session that used any of them (a session cannot keep a product that is gone). ERP-made products, customers and the other queues stay. Irreversible: back up first.
+
 ## D79 — Staff and Cashier Item Change with Stock Notification (2026-10-14)
 
 Owner instruction via `/grill-me`: "Cashier และ Staff สามารถ เปลี่ยนรุ่น สี ความจุ ได้ ระหว่างการทำงาน และมีการแจ้งเตือนไปที่ Stock".
@@ -1275,7 +1275,7 @@ KoB (FileMaker team) finished the script `ses` (called by the Data API with the 
 1. **Capture.** Step `send` (STOCK) takes `serials: [{itemId, sn: [...]}]`: for **every main product exactly `quantity` serial numbers**, each printable ASCII without spaces (1–64), none twice in the order (any case). Trimmed (a scanner's line break), kept in the order scanned (`SessionItemSerial`, additive migration `202610310002`). Missing, wrong count, an unknown item, a bad character or a duplicate → 400 and the goods stay at stock; nothing is saved. An order with no main product (accessories only) has nothing to scan. The stock page shows one box per unit under the product, a scanner's Enter moves to the next box, the send button wakes up when all are valid; the cashier's order summary shows them.
 2. **One unit, one order.** A serial that is in another order that is **still open** (not cancelled, not completed) is refused (409, names that order's queue). Once that order is cancelled or sold the serial is free again (returns and resales are real). Two scans at the very same moment can both pass; FileMaker's script refuses the second bill (`SN_ALREADY_SOLD_OR_HELD`). When the cashier **sends the order back to stock** (F13) the serials are cleared (the units went back to the shelf); STOCK scans again at the next send.
 3. **Message.** `items[]` is now `{partNo, upc, name, quantity, sn[]}` for **both** doors (the U POS door and the FileMaker message share `orderView`; `upc` is the warroom barcode, null when unknown). The FileMaker message also carries what the script checks first: `version: 1` (it refuses any other), `test: false`, `createdAt` = the moment the message was made, **Thai local time with its offset** (`2026-11-02T14:40:12+07:00`; the script reads the digits as written). Orders sent before this change have no serials (a resend of one gives `sn: []`, which the script refuses).
-4. **Why SES does not pick the serial itself from ERP / warroom.** Warroom keeps one row per serial (`mart.stock_current`: `product_sn`, status, branch, part number, UPC; documented in `erp-integration.md`, not checked against the live database for this decision) but is loaded 5 times a day (up to 12.5 h old), and SES cannot know *which* unit is on the shelf in the customer's hands. A serial chosen by the system could be one already sold, or another physical unit than the one handed over: a bill with the wrong serial makes the stock wrong. The ERP *is* FileMaker (warroom copies it), and the script already checks every serial live against it: in stock, `ready`, this branch, the same part number, has a price, not sold or held. So the people scan, FileMaker verifies. Not built, possible later: SES warns (not blocks) when a scanned serial is not `ready` for that branch in warroom.
+4. **Why SES does not pick the serial itself from ERP / warroom.** Warroom keeps one row per serial (`mart.stock_current`: `product_sn`, status, branch, part number, UPC; documented in `erp-integration.md`, not checked against the live database for this decision) but is loaded 5 times a day (up to 12.5 h old), and SES cannot know _which_ unit is on the shelf in the customer's hands. A serial chosen by the system could be one already sold, or another physical unit than the one handed over: a bill with the wrong serial makes the stock wrong. The ERP _is_ FileMaker (warroom copies it), and the script already checks every serial live against it: in stock, `ready`, this branch, the same part number, has a price, not sold or held. So the people scan, FileMaker verifies. Not built, possible later: SES warns (not blocks) when a scanned serial is not `ready` for that branch in warroom.
 5. **Notes for the FileMaker team** (from reading the script; they are theirs to settle, written in `fmp-outbound.md`): the script refuses any order with accessories (`ACCESSORIES_NOT_SUPPORTED`; most SES orders have some); it maps `payments` by English words (Cash, Credit Card, Installment…), while SES sends its own method names — `paymentTypes` (D89) is the field meant for this; the customer must already exist in FileMaker by phone (`WRONG_PHONE`); `state` must be `SENT_TO_CASHIER` (a resend after the cashier moved on is refused); it finds its record by `ses_id` and needs exactly one (a "send again" makes a second record with the same reference → `NOT_FOUND`); `staffId` is read as a number.
 6. **Not decided.** If the barcode on an Apple box adds a prefix to the serial (Apple's serial barcode often starts with `S`), the stock team must scan so that FileMaker's serial is what SES holds; SES stores what it is given. A damaged unit the cashier removes afterwards (D75) is not told to FileMaker.
 
@@ -1284,7 +1284,7 @@ KoB (FileMaker team) finished the script `ses` (called by the Data API with the 
 Owner, asking whether warroom could supply the serial numbers the FileMaker script needs (D92): "ลองดูเองก่อนเลย" — look at a sample and compare it with FileMaker. Warroom's Postgres is reachable only from inside the Coolify network (its host name is internal), so a person's machine cannot query it; SES's API already can (`WARROOM_DATABASE_URL`, read-only role).
 
 1. **What.** `GET /api/admin/warroom-sync/serials?branch=<branch code>&part=<part number>[&take=10]` (ADMIN only; also in `/api/docs`, a GET can be tried there or typed in the address bar while signed in). It reads `mart.stock_current` (the per-serial view, documented in `erp-integration.md`) in the same way as the sync: `BEGIN READ ONLY`, 20 s timeout, parameterised; at most **20 rows** (default 10), a **fixed list of columns** (`product_sn, status, status_sub, stock_type, branch_code, branch_name, product_model, product_upc, product_name, qty, transfer_date, age_in_branch`; never a price, cost or supplier), the part compared without regard to case. The answer has the view's **column list** (so a different name shows up as such), the columns that are missing, `snapshotAt` and `ageMinutes` (from `mart.stock_mv`), the count by status and the first rows ordered by status then serial. No free SQL; nothing in a workflow uses it.
-2. **Why only a lookup.** D92 item 4 stands: SES does not pick serials from warroom (up to 12.5 h old, cannot know which unit is handed over). This is to compare formats (case, an `S` prefix on Apple's serial barcode), statuses and age with FileMaker before deciding on a *warning* when a scanned serial is not `ready` for that branch in warroom.
+2. **Why only a lookup.** D92 item 4 stands: SES does not pick serials from warroom (up to 12.5 h old, cannot know which unit is handed over). This is to compare formats (case, an `S` prefix on Apple's serial barcode), statuses and age with FileMaker before deciding on a _warning_ when a scanned serial is not `ready` for that branch in warroom.
 3. **First answer from the live view (owner, 2026-11-02).** `mart.stock_current` has 25 columns: `stock_type, snapshot_at, no_inv, product_sn, product_upc, product_name, product_model, product_cat, product_subcat, product_subsubcat, qty, cost_before_vat, price_sell, age_in_stock, age_in_branch, status, status_sub, branch_code, branch_name, po_id, supplier_name, zone, transfer_id, transfer_date, branch_from_id`; `snapshotAt` 08:17Z (15:17 Bangkok, the 15:15 slot) was 167 minutes old at the time; branch `IS-TM` with part `MK2H4ZP/A` matched **no** serial (total 0). The first version guessed `date_transfer` (the real name is `transfer_date`). Since then an empty answer also returns `hints`: how many serials the branch code holds at all, the branches that hold that part, and the branches whose code or name looks like the one typed.
 4. **Second answer (owner, 2026-11-02):** `hints` came back empty: the branch code `IS-TM` holds **no** serial in `mart.stock_current`, no branch code or name there looks like it, and the part `MK2H4ZP/A` is in no branch. So either those two (the branch SES and FileMaker call `IS-TM`, and the part of the test order) are not in the per-serial view, or it spells them differently. To see which, `?list=branches` (every branch code with its count in `stock_current` **and** its quantity in `stock_mv`, the view the SES stock sync reads) and `?list=parts&branch=<code>` (the same for the parts of one branch) were added: counts only, ≤ 60 rows. The owner also considered reading FileMaker's OData instead; **not recommended per scan or per order** (the ERP is the shops' own server and fragile, `erp-integration.md`; SES must not call it per user action), and unnecessary because the `ses` script already checks every serial live inside FileMaker. A one-off narrow OData read for a comparison needs the owner's say-so and a health check first.
 5. **Not decided.** That warning (not built); keeping or removing this route afterwards.
@@ -1342,7 +1342,6 @@ Until now what FileMaker did with an order (delivered or not, the `ses` script's
 1. **What.** `GET /sessions` and `GET /sessions/:id` carry `fmp`: the order's latest message to FileMaker (`status` pending / sending / sent / failed, `attempts`, the delivery `error`) and FileMaker's answer (`ackStatus` success / error / reported, `ackMessage`), or `null` when nothing was sent. Never the message body (it carries the customer's phone).
 2. **Where.** One line "FileMaker:" in the order summary (staff, stock, cashier) and, on the cashier's order, a banner above the steps; red when FileMaker refused or the delivery failed. A serial-number refusal (`SN_…`) says what to do: send the order back to stock to scan again (the next send updates the same FileMaker record and runs the script again, D95).
 
-
 ## D101 — Every step's time is the real one: STOCK scans at the shelf, FOUND records itself, the POS closes the sale (2026-11-04)
 
 Owner, on the readiness review (fewest taps and fewest mistakes for staff, stock and cashier): "stock_found_at จะเท่ากับเวลาที่ส่ง เอาตามความจริงที่ควรเก็บ ไม่ใช่แล้วทำให้เวลาคลาดเคลื่อน". Removing the "found" tap by recording FOUND when STOCK presses "send" would have made `stock_found_at` the hand-over time. Instead every time comes from the moment the thing really happened, and no time is ever made up.
@@ -1392,7 +1391,7 @@ The shops' team, on the cashier screen: "Cashier เอาออกทั้ง�
 2. **Cashier accounts.** CASHIER is a retired role: never shown (`publicAccount`), never given (staff form, ERP extras, spreadsheet import: 400 / row error; an old account read back keeps it), and not enough to sign in: password and OTP sign-in refuse a cashier-only account ("บัญชีนี้ไม่ได้ใช้ SES แล้ว (แคชเชียร์ทำงานใน U POS)", after a correct password only), no OTP SMS is sent to one, and a signed-in session of one ends at its next request. The ERP import maps a cashier position to no role (listed as unmapped; existing accounts are kept, never deactivated for it, D54). An account with CASHIER and another role keeps the other.
 3. **Wrong pick.** STAFF sends the order back to stock (`POST /sessions/:id/cashier/reject`, path kept) with the wrong items and reasons, from the staff screen while the order waits for the till; same effects as F13 (units back to the shelf, serials cleared, SEARCHING).
 4. **Payments.** A migration adds the method "ใบมัดจำ" (FileMaker type "ใช้มัดจำ"), or switches on and types an existing "ใบมัดจำ" / "ใช้มัดจำ"; the FileMaker types list loses "Trade In" (an On top item) and "Partner Mall"; methods typed with them become untyped and methods named after them are switched off (ADMIN can switch them back on).
-   *Fix, same day:* on prod "ใช้มัดจำ" already existed (made 2026-10-30), yet the migration also inserted "ใบมัดจำ" at the top of the list (an `INSERT … SELECT MAX()` always yields one row, so its NOT EXISTS guard did nothing). Migration `202611050003_one_deposit_method` keeps one: "ใบมัดจำ" takes the older method's place and "ใช้มัดจำ" is switched off (ADMIN can switch it back on).
+   _Fix, same day:_ on prod "ใช้มัดจำ" already existed (made 2026-10-30), yet the migration also inserted "ใบมัดจำ" at the top of the list (an `INSERT … SELECT MAX()` always yields one row, so its NOT EXISTS guard did nothing). Migration `202611050003_one_deposit_method` keeps one: "ใบมัดจำ" takes the older method's place and "ใช้มัดจำ" is switched off (ADMIN can switch it back on).
 5. **Also (owner's OK):** when the customer accepts what stock found (ACCEPT_PARTIAL, D73), `stock_found_at` is the time stock reported the rest missing, not the staff's decision (real times, D101); the rebuy test now expects the old session's letter and type (the type is matched again at confirm, D69).
 
 ## D106 — Every shop-floor account from the ERP is STAFF + STOCK (2026-11-05)
@@ -1402,7 +1401,6 @@ Owner: "user ใน ses erp ที่ login ses ต้องเปลี่ย�
 1. **Rule.** The ERP import maps `sale`, `store manager`, `cashier` and `stock` positions to **STAFF + STOCK** (`POSITION_ROLE_RULES`). Other positions (technician, housekeeper, …) still get no account. (Superseded by D114: they get STAFF + STOCK too.) CASHIER is never given; an old CASHIER role on an ERP account is dropped at the next run. ADMIN / MANAGER stay hand-managed (D54).
 2. **Now, without waiting for the import.** Migration `202611050002_erp_accounts_staff_stock`: every account with an ERP id gets STAFF and STOCK and loses CASHIER; the extra people picked by hand (D87) are reset to STAFF + STOCK once (ADMIN can change them again). Hand-made accounts are untouched.
 3. **Effect.** Cashier-position staff can sign in to SES again (as STAFF + STOCK; the till stays in U POS); everyone on the floor sees both the staff and the stock screens.
-
 
 ## D107 — Pickers made for a phone: models as a list, choices as chips, payments with an FMP type first (2026-11-06)
 
@@ -1483,7 +1481,6 @@ Owner instruction via `/grill-me`: "แก้ไขการแสดงคิ�
 3. **Queue Lookup & Search:**
    - Session lookup / POS filter accepts both padded (e.g. `001`) and unpadded digits (e.g. `1`), matching against `order.queue`.
 
-
 ## D111 — Scan every unit, then send: no "found" stage, no send without serials; FileMaker is the one serial check (2026-11-09)
 
 Owner, WorkTrack SES-7 "ระบบส่ง SN บังคับกรอก + ส่งเช็ค FMP": "แก้หน้า stock เวลาส่งให้ส่ง SN ไปเลยแล้วเช็ค FMP ขาเดียว"; asked to choose, he took
@@ -1557,7 +1554,7 @@ runs the staff's clock-in menu (UFHR) and sends UFPOS's own login code.
    - only when UFHR is not set up, or does not answer (error, 10 s without a complete answer), is the ERP import's copy used: the import
      reads `line_user_id` into `Staff.lineUserId` (only a real userId, `U` + 32 lower-case hex; a new valid value replaces it, an empty
      ERP field clears it). All 45 copies answered LINE's profile check.
-   UFHR only lets in callers it holds a key for (`ufservice`, `tradein`), so SES needs its own key added there (UFHR's team).
+     UFHR only lets in callers it holds a key for (`ufservice`, `tradein`), so SES needs its own key added there (UFHR's team).
 3. **Who can ask.** Reachable = an SMS phone (SMS on), or a stored LINE userId, or (UFHR on) an ERP staff id. The answer is still always
    `{ ok: true }`; limits, 5 minutes, 5 tries, the daily cap and the 12-hour session are D85's and count LINE codes too.
 4. **Recorded.** `LoginOtp.channel` = `line` / `sms`; `smsStatus` / `smsError` hold the result of either. A LINE miss followed by a
@@ -1681,7 +1678,7 @@ LINE). Read on 2026-11-10: UFHR has a LINE for **122 of SES's 159** ERP accounts
 The FileMaker team asked how to report which serials they found, and said a bill number exists only at payment.
 
 1. **`snCheck`.** The `ses` script v3.3 (and `ses_fail` v3 on a failure) adds `snCheck` to its answer: per serial `{sn, partNo, found,
-   written, code, model, upc, status, branch, name, price}`, from the row it already reads (no extra query). SES keeps it, cleaned
+written, code, model, upc, status, branch, name, price}`, from the row it already reads (no extra query). SES keeps it, cleaned
    (`parseSnCheck`: serial required, texts cut, a skipped serial always has a code, at most 100), in `FmpOutbox.snCheck` (JSON). Admin →
    ส่งไป FileMaker shows a tag per serial (✓ on the bill / ✗ with the reason, branch or model); `price` is stored but not shown (D58).
 2. **"SN ไม่ได้ลงบิล".** When the latest message got a success answer but some serials were not put on the held bill, "ออเดอร์ที่ต้องดู"
@@ -1730,7 +1727,7 @@ Cashiers previously had to ask every customer at the till whether they needed a 
 1. **Input (UI).** In product selection (`SelectionEditor`), immediately following the payment methods, an optional section "เอกสารภาษี / Tax Documents" allows staff to toggle two independent flags:
    - **ต้องการใบกำกับภาษี (Tax Invoice):** for Thai residents / registered companies requiring a full tax invoice.
    - **ต้องการ VAT Refund:** for foreign tourists requesting the PP10 VAT refund form.
-   Both default to `false` (neither required).
+     Both default to `false` (neither required).
 2. **Persistence.** `vatRefund` and `taxInvoice` boolean columns on `CustomerSession` (migration `202611100003_vat_refund_tax_invoice`). A re-bought session copies both flags from the previous session.
 3. **Outbound (`orderView`).** `orderView` includes `vatRefund: boolean` and `taxInvoice: boolean`. Both the U POS door and the FileMaker outbound message carry these flags so the cashier / POS can prepare the document before or at billing.
 4. **Visibility.** Prominently displayed on the order summary (`Summary.tsx`) with badges (`ใบกำกับภาษี`, `VAT Refund`) and in the staff queue cards and logs.
@@ -1759,7 +1756,6 @@ new one.
    FileMaker is not touched (`BILL_IN_USE`, shown in "ออเดอร์ที่ต้องดู").
 5. FileMaker adds two fields: `ses::ses_rev` (number), `pos_front_sale_tmp::ses_note` (text), and shows `ses_id`, `ses_queue`,
    `ses_note` on the held-bill screen. Open: whether FileMaker deletes or re-statuses a cancelled held bill (`$RELEASE_MODE`).
-
 
 ## D124 — A serial made only of digits must be a real IMEI: 15 digits with a valid check digit (2026-11-10)
 
@@ -1962,6 +1958,7 @@ Owner instruction via `/grill-me`: "ปรับ design ส่วน เลื�
 ## D133 — Explicit Colour Selection, Out-of-Stock Interest Tracking, Session Creation at Step 1, and Stepper Pill Layout (2026-11-13)
 
 Owner instruction via `/grill-me`:
+
 1. "ขึ้นสีให้กดก่อน ถึงจะเหลือ ต่อให้จะเหลือสีเดียวก็ตาม ต่อให้สินค้าหมดก็ต้องกดได้ แต่มีแจ้งว่าสินค้าหมด เพื่อเก็บไว้เป็นประวัติว่ามีลูกค้าสนใจ"
 2. "ด้านบนแสดงส่วน stap แบบในภาพทุก step"
 3. "Session เริ่มตั้งแต่กด ถัดไป จาก step 1 โดยใช้เลข SES-YYYYMMDD-00001 เรียงไปเรื่อยๆ ก่อนมีเบอร์โทร หรือ เลขคิว"
@@ -1970,6 +1967,7 @@ Owner instruction via `/grill-me`:
 6. "สินค้าที่แสดงทั้ง 8 หมวดมหู่ให้แสดงแถวละ 4 ถ้าเป็น mobile แสดงเป็น 3 กรอบมนมีระยะหว่างระหว่างแต่ละอัน เท่ากันและขนาดกรอบเท่ากัน ข้อความ ไม่มีสินค้า เป็นอีกบรรทัด"
 
 Decisions:
+
 1. **Explicit Colour Selection Required (No Auto-Pick for Single Colour):**
    - In both Step 1 ("ลูกค้าสนใจอะไร") and Step 3 ("เลือกสินค้า"), choosing a model or storage never auto-settles the colour chip even if only one colour exists (`settleChoice(..., false)`).
    - Staff must explicitly click the colour chip so they are clearly aware of the remaining colour and its stock status.
@@ -2000,6 +1998,7 @@ Decisions:
 Owner instruction via `/grill-me`: "เพิ่ม step 2 เป็น 'ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง' แล้วขยับ กรอกเบอร์ลูกค้าเป็นต้นไป ไปที่ step 3 ไปเรื่อยๆ เลือกเป็นหมวดหมู่ก็พอไม่บังคับให้กรอกรายละเอียด"
 
 Decisions:
+
 1. **7-Stage Workflow Order (`stages`):**
    - 1. ลูกค้าสนใจอะไร
    - 2. สินค้า Apple ที่ใช้ (Stepper pill label: "สินค้า Apple ที่ใช้", page title: "ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง")
@@ -2026,11 +2025,13 @@ Decisions:
 ## D135 — Swapped Steps (Phone First, Apple Devices Second), Customer History Pre-fill, Not-Sure Option, and Mobile Stepper Bar (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 1. ส่วนของ step หากเป็นการแสดงใน mobile ให้แสดงรูปแบบ แบบในภาพ (ชื่อขั้นตอน + "ขั้นตอน X/7" + segmented bars)
 2. step ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง? เพิ่มปุ่ม ไม่แน่ใจ / ไม่ได้ถาม ข้างๆ ยังไม่เคยใช้สินค้า Apple
 3. สลับ step 2 กับ 3 ให้กรอกเบอร์ก่อน ค่อยถามถึง สินค้า Apple ที่ใช้ เพื่อให้สามารถดึงข้อมูลในระบบมาได้ ถ้ามีเบอร์นั่นมีในระบบ ให้ดึงข้อมูล สินค้า Apple ที่ใช้ มา แสดงเลย และสามารถแก้ไขเลือกเพิ่มหรือเอาออกได้
 
 Decisions:
+
 1. **7-Stage Workflow Order (`stages`):**
    - 1. ลูกค้าสนใจอะไร
    - 2. กรอกเบอร์โทร (Phone input)
@@ -2055,10 +2056,12 @@ Decisions:
 ## D136 — Restored Step Order (Step 2 Apple Devices, Step 3 Phone) & Isolated Phone Draft Typing (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 1. สลับให้ สินค้า Apple ที่ใช้ เป็น step 2 และ กรอกเบอร์ เป็น step 3 เหมือนเดิม
 2. ทำไมกรอกเบอร์พิมพ์ได้แค่เลขเดียวและไป step ต่อไปเลย
 
 Decisions:
+
 1. **7-Stage Workflow Order (`stages`):**
    - 1. ลูกค้าสนใจอะไร
    - 2. สินค้า Apple ที่ใช้ (Survey Apple devices)
@@ -2077,9 +2080,11 @@ Decisions:
 ## D137 — Mobile Chosen Product Name 2-Line Truncation & Out-of-Stock Badge (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 - หน้า สินค้าหลักที่เลือก ใน mobile ชื่อสินค้าหลักถ้าเกิน 2 บรรทัด จะเป็น ...
 
 Decisions:
+
 1. **Product Title 2-Line Clamp with Ellipsis (`-webkit-line-clamp: 2`):**
    - In `SelectionEditor.tsx`, the inline `display: inline-flex` on `<strong>` previously overrode CSS `-webkit-line-clamp: 2`, causing long product names to wrap into 4+ lines without truncation.
    - Fixed by isolating product title into `.chosen-item-title` with `display: -webkit-box`, `-webkit-line-clamp: 2`, `-webkit-box-orient: vertical`, `overflow: hidden`, `text-overflow: ellipsis`, and `title={itemName(item)}` for full name tooltip.
@@ -2091,9 +2096,11 @@ Decisions:
 ## D138 — Mobile Chosen Product Card: Top-Right 'X' & Compact Stepper (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 - ในจอ mobile ย้ายปุ่ม X ไว้มุมบนขวา ได้ไหม เพื่อให้ชื่อสินค้ามีพื้นที่แสดงมากขุ้น พร้อมลดขนาด .qty-stepper ลงหน้า
 
 Decisions:
+
 1. **Move Delete Button (`✕`) to Top-Right Corner on Mobile:**
    - Changed `.chosen-item` to `position: relative`.
    - On screens `<=640px`, `.chosen-item-remove` is positioned absolute at `top: 2px; right: 6px;` with `width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 13px;`.
@@ -2106,9 +2113,11 @@ Decisions:
 ## D139 — Mobile Full-Width Buttons for "+ เพิ่มสินค้าหลัก" and "None / ล้างรายการ" (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 - หากเป็น mobile ให้ปุ่ม เพิ่มสินค้าหลัก None / ล้างรายการ ยาวเต็มจอ
 
 Decisions:
+
 1. **Full-Width Buttons on Mobile (`.mobile-full-btn`):**
    - Applied `.mobile-full-btn` to the "+ เพิ่มสินค้าหลัก" button under chosen products and "None / ล้างรายการ" button under accessories in `SelectionEditor.tsx`.
    - Under `@media (max-width: 640px)`, `.mobile-full-btn` expands to `width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important;`.
@@ -2117,9 +2126,11 @@ Decisions:
 ## D140 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 - เมื่อกด ไม่ซื้อ จะเข้าสู่การทำ survey โดยตั้งค่าคำถามในหน้า จัดการแบบสำรวจ ภายใต้ จัดการระบบ แยกเป็นกรณี ซื้อ ไม่ซื้อ
 
 Decisions:
+
 1. **Survey Trigger Points:**
    - **NOT_BUY case:** When staff clicks "ยกเลิกคำขอบริการ", selects the cancel reason, and confirms cancellation, the session presents the NOT_BUY survey modal. Staff asks the customer and records all answers before concluding the session.
    - **BUY case:** After confirming purchase in Step 5 ("ตรวจสอบยืนยัน") and dispatching to Stock, the BUY survey modal is presented. Staff completes the survey while Stock is picking goods.
@@ -2138,12 +2149,14 @@ Decisions:
 ## D141 — Survey "Other" Option, Postpone Button, Staff Survey Workspace & Nav-Counter (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 - เพิ่มให้มีตัวเลือก อื่น ๆ ได้ด้วย ที่ถ้าเลือกจะต้องกรอกเพิ่ม
 - เพิ่ม ปุ่ม ไว้ทำทีหลัง เพื่อกลับมาทำ survey ทีหลัง
 - เพิ่ม sidebar tab survey พร้อมแสดง nav-counter ว่ามี survey ค้างอยู่กี่อัน
 - survey เป็นหน้าที่ของ role staff
 
 Decisions:
+
 1. **Configurable "Other (please specify)" Option (`allowOther`):**
    - Added `allowOther Boolean @default(false)` to `SurveyQuestion` model and migration `202611160002_survey_question_allow_other`.
    - In `SurveyManagementPanel`, admins can toggle "เพิ่มตัวเลือก 'อื่น ๆ (โปรดระบุ)'" for `SINGLE_CHOICE` and `MULTIPLE_CHOICE` questions.
@@ -2163,11 +2176,13 @@ Decisions:
 ## D142 — Drag-and-Drop Question Reordering and Segmented Control Mode Toggles (2026-11-16)
 
 Owner instruction via `/grill-me`:
+
 - หน้า จัดการแบบสำรวจ ไม่ต้องมีปุ่ม ขึ้น ลง ให้สามารถลากเพื่อสลับข้อได้
 - แบบสำรวจ: กรณีซื้อ (BUY) แบบสำรวจ: กรณีไม่ซื้อ (NOT_BUY) ให้ปุ่มเป็นแบบ toggle เพื่อโหมด
 - แบบสำรวจลูกค้า (Customer Surveys) ให้ปุ่มเป็นแบบ toggle ปุ่มโหมด
 
 Decisions:
+
 1. **Drag-and-Drop Survey Question Reordering:**
    - Removed UP/DOWN buttons in `SurveyManagementPanel.tsx`.
    - Added a grip handle icon (`GripVertical`) on the left of each question card. Hovering/clicking the handle enables `draggable={true}`.
@@ -2177,10 +2192,49 @@ Decisions:
    - In `SurveyManagementPanel`: Target switch (BUY vs NOT_BUY) is converted to a modern iOS/web segmented control with `#f1f5f9` container and floating white active pill with shadow.
    - In `SurveyWorkspace`: Mode switch (Pending vs Completed) is similarly converted to the modern segmented control style with count badges.
 
+## D143 — Comprehensive Customer Session Logs Export Columns (2026-11-16)
 
+Owner instruction via `/grill-me`:
 
+- Export ข้อมูล Customer Session Logs เพิ่ม data ให้ครบถ้วน
 
+Decisions:
 
+1. **Added Product & Stock Columns (Category 2):**
+   - `serials`: Serial Numbers and IMEIs of main product units scanned by stock (`item.serials.map(s => s.sn)`).
+   - `stockMissingItems`: Items reported missing/out-of-stock on shelves by stock room (`stockPendingReview.missingItems`).
+   - `stockNote`: Notes or explanations recorded by stock room (`stockPendingReview.stockNote`).
+2. **Added Payment Detail Columns (Category 3):**
+   - `paymentCardType`: Bank / Card Issuer for card payments (`paymentDetails.cardType`).
+   - `paymentInstallmentMonths`: Installment term in months for 0% Credit Card payments (`paymentDetails.installmentMonths`).
+3. **Dedicated Survey Columns by Question (Category 7):**
+   - Dynamically scans all distinct question titles from configured survey questions and historical responses across sessions.
+   - Creates dedicated columns titled `[Survey] <Question Title>`.
+   - Each row populates the specific answer provided by that customer for that question, cleanly formatting single choice and multi-choice arrays (`join(', ')`).
+   - Retains the summary `surveyAnswers` column in Category 2 for consolidated overview.
 
+## D144 — Survey "Required Now" Pre-Postpone Validation and Partial State Persistence (2026-11-16)
 
+Owner instruction via `/grill-me`:
 
+- แบบสำรวจ ไว้ทำทีหลัง แต่สามารถตั้งค่าได้ว่า คำถามไหนจำเป็นต้องตอบตอนนี้เลย ก่อนกด ไว้ทำทีหลัง แล้วบันทึกคำตอบนั้นเก็บไว้
+
+Decisions:
+
+1. **Schema & Configuration (`SurveyQuestion.requiredNow`):**
+   - Added `requiredNow Boolean @default(false)` to `SurveyQuestion`.
+   - Admin can designate any question as `requiredNow: true` ("⚡ จำเป็นต้องตอบทันที ก่อนกดไว้ทำทีหลัง").
+   - Marking a question as `requiredNow` automatically sets `required: true`.
+   - Displayed with an amber badge `⚡ ตอบทันที` in `SurveyManagementPanel`.
+2. **Partial Response Persistence (`SurveyResponse.completed`):**
+   - Added `completed Boolean @default(true)` and `updatedAt DateTime` to `SurveyResponse`.
+   - When staff clicks "ไว้ทำทีหลัง" in `SessionSurveyModal`:
+     - System validates that all questions marked `requiredNow: true` have been answered.
+     - If any `requiredNow` question is unanswered, blocks postponement and displays: "กรุณาตอบคำถามที่จำเป็นต้องตอบทันที (⚡) ให้ครบก่อนกดไว้ทำทีหลัง".
+     - Once valid, saves the answered questions with `completed: false`, closing the modal and freeing staff to proceed with subsequent customers.
+   - When staff returns via the Survey Workspace ("ค้างทำ"):
+     - Modal pre-fills all previously saved answers.
+     - Staff completes the remaining questions and clicks "บันทึก", which upserts the record with `completed: true`.
+3. **Workspace & Sidebar Indicators:**
+   - In `App.tsx`, `pendingSurveysCount` includes sessions with no response or with `completed === false`.
+   - In `SurveyWorkspace.tsx`, pending sessions with saved answers show a badge `ตอบบางส่วนแล้ว` and action button `ทำแบบสำรวจต่อ`.

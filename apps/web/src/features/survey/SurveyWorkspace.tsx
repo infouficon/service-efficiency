@@ -58,44 +58,61 @@ export function SurveyWorkspace({
   onUpdateSession,
 }: SurveyWorkspaceProps) {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<'pending' | 'completed'>('pending');
+  const [activeTab, setActiveTab] = useState<'pending' | 'completed'>(
+    'pending',
+  );
   const [search, setSearch] = useState('');
   const [surveyModal, setSurveyModal] = useState<{
     session: MockSession;
     target: SurveyTarget;
   } | null>(null);
-  const [viewingResponseSession, setViewingResponseSession] = useState<MockSession | null>(null);
+  const [viewingResponseSession, setViewingResponseSession] =
+    useState<MockSession | null>(null);
 
   // Eligible branch sessions for today that reached survey point
   const eligibleSessions = useMemo(() => {
     return sessions.filter((s) => {
       const matchesBranch =
-        user.roles.includes('ADMIN') || s.branchCode === (user.branchCode ?? '');
+        user.roles.includes('ADMIN') ||
+        s.branchCode === (user.branchCode ?? '');
       if (!matchesBranch || !isTodaySession(s)) return false;
 
       const isCancelled =
-        s.outcome === 'CUSTOMER_CANCELLED' || Boolean(s.timestamps.cancelled_at);
+        s.outcome === 'CUSTOMER_CANCELLED' ||
+        Boolean(s.timestamps.cancelled_at);
       const isBought =
-        s.confirmed || Boolean(s.timestamps.product_selection_confirmed_at) || s.state === 'COMPLETED';
+        s.confirmed ||
+        Boolean(s.timestamps.product_selection_confirmed_at) ||
+        s.state === 'COMPLETED';
 
       return isCancelled || isBought;
     });
   }, [sessions, user]);
 
   const { pendingList, completedList } = useMemo(() => {
-    const pending: { session: MockSession; target: SurveyTarget }[] = [];
-    const completed: { session: MockSession; target: SurveyTarget }[] = [];
+    const pending: {
+      session: MockSession;
+      target: SurveyTarget;
+      isPartial?: boolean;
+    }[] = [];
+    const completed: {
+      session: MockSession;
+      target: SurveyTarget;
+      isPartial?: boolean;
+    }[] = [];
 
     for (const s of eligibleSessions) {
       const isCancelled =
-        s.outcome === 'CUSTOMER_CANCELLED' || Boolean(s.timestamps.cancelled_at);
+        s.outcome === 'CUSTOMER_CANCELLED' ||
+        Boolean(s.timestamps.cancelled_at);
       const target: SurveyTarget = isCancelled ? 'NOT_BUY' : 'BUY';
-      const hasSurvey = s.surveyResponses && s.surveyResponses.length > 0;
+      const existing = s.surveyResponses?.find((r) => r.target === target);
 
-      if (hasSurvey) {
+      if (existing && existing.completed !== false) {
         completed.push({ session: s, target });
       } else {
-        pending.push({ session: s, target });
+        const isPartial = existing?.completed === false;
+        pending.push({ session: s, target, isPartial });
       }
     }
 
@@ -123,13 +140,19 @@ export function SurveyWorkspace({
 
   const handleSurveyComplete = (response?: SurveyResponseItem) => {
     if (response && surveyModal?.session) {
-      const existing = surveyModal.session.surveyResponses ?? [];
+      const existing = (surveyModal.session.surveyResponses ?? []).filter(
+        (r) => r.target !== response.target,
+      );
       const updatedS: MockSession = {
         ...surveyModal.session,
         surveyResponses: [...existing, response],
       };
       onUpdateSession(updatedS);
-      toast.success('บันทึกผลการทำแบบสำรวจสำเร็จ');
+      toast.success(
+        response.completed === false
+          ? 'บันทึกคำตอบเบื้องต้นแล้ว (ค้างทำแบบสำรวจต่อในภายหลัง)'
+          : 'บันทึกผลการทำแบบสำรวจสำเร็จ',
+      );
     }
     setSurveyModal(null);
   };
@@ -138,7 +161,10 @@ export function SurveyWorkspace({
     if (!isoString) return '-';
     try {
       const d = new Date(isoString);
-      return d.toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' });
+      return d.toLocaleTimeString('th-TH', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
     } catch {
       return '-';
     }
@@ -173,7 +199,8 @@ export function SurveyWorkspace({
             แบบสำรวจลูกค้า (Customer Surveys)
           </h2>
           <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
-            รายการแบบสำรวจความคิดเห็นของลูกค้าประจำวันสำหรับพนักงาน (สาขา {user.branch})
+            รายการแบบสำรวจความคิดเห็นของลูกค้าประจำวันสำหรับพนักงาน (สาขา{' '}
+            {user.branch})
           </p>
         </div>
       </div>
@@ -229,11 +256,12 @@ export function SurveyWorkspace({
                 transition: 'all 0.15s ease',
               }}
             >
-              <span>ค้างทำ (Pending)</span>
+              <span>ค้างทำ</span>
               {pendingList.length > 0 && (
                 <span
                   style={{
-                    backgroundColor: activeTab === 'pending' ? '#fee2e2' : '#e2e8f0',
+                    backgroundColor:
+                      activeTab === 'pending' ? '#fee2e2' : '#e2e8f0',
                     color: activeTab === 'pending' ? '#dc2626' : '#64748b',
                     padding: '2px 7px',
                     borderRadius: '9999px',
@@ -255,7 +283,8 @@ export function SurveyWorkspace({
                 padding: '7px 16px',
                 borderRadius: '8px',
                 border: 'none',
-                background: activeTab === 'completed' ? '#ffffff' : 'transparent',
+                background:
+                  activeTab === 'completed' ? '#ffffff' : 'transparent',
                 color: activeTab === 'completed' ? '#0f172a' : '#64748b',
                 fontWeight: activeTab === 'completed' ? 700 : 500,
                 fontSize: '13.5px',
@@ -270,7 +299,7 @@ export function SurveyWorkspace({
                 transition: 'all 0.15s ease',
               }}
             >
-              <span>ทำแล้ว (Completed)</span>
+              <span>ทำแล้ว</span>
             </button>
           </div>
 
@@ -279,7 +308,12 @@ export function SurveyWorkspace({
             <Search
               size={15}
               color="#94a3b8"
-              style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
+              style={{
+                position: 'absolute',
+                left: '10px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+              }}
             />
             <input
               type="text"
@@ -300,10 +334,22 @@ export function SurveyWorkspace({
 
         {/* List Table / Cards */}
         {filteredItems.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#64748b' }}>
-            <FileCheck2 size={44} color="#cbd5e1" style={{ marginBottom: '10px' }} />
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '3rem 1rem',
+              color: '#64748b',
+            }}
+          >
+            <FileCheck2
+              size={44}
+              color="#cbd5e1"
+              style={{ marginBottom: '10px' }}
+            />
             <h4 style={{ margin: '0 0 6px', color: '#334155' }}>
-              {activeTab === 'pending' ? 'ไม่มีแบบสำรวจที่ค้างทำ' : 'ยังไม่มีแบบสำรวจที่ทำแล้ว'}
+              {activeTab === 'pending'
+                ? 'ไม่มีแบบสำรวจที่ค้างทำ'
+                : 'ยังไม่มีแบบสำรวจที่ทำแล้ว'}
             </h4>
             <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
               {activeTab === 'pending'
@@ -312,10 +358,14 @@ export function SurveyWorkspace({
             </p>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredItems.map(({ session, target }) => {
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
+          >
+            {filteredItems.map(({ session, target, isPartial }) => {
               const isBuy = target === 'BUY';
-              const timeStr = formatTime(session.timestamps.customer_walk_in_at);
+              const timeStr = formatTime(
+                session.timestamps.customer_walk_in_at,
+              );
 
               return (
                 <div
@@ -334,7 +384,14 @@ export function SurveyWorkspace({
                   }}
                 >
                   {/* Left: Queue, Phone, Target */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '14px',
+                      flexWrap: 'wrap',
+                    }}
+                  >
                     <div
                       style={{
                         padding: '4px 10px',
@@ -350,8 +407,20 @@ export function SurveyWorkspace({
                       {session.queue || session.reference.slice(-4)}
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                        }}
+                      >
                         <span
                           style={{
                             display: 'inline-flex',
@@ -378,10 +447,39 @@ export function SurveyWorkspace({
                         >
                           {isBuy ? 'ซื้อสินค้า' : 'ไม่ซื้อ / ยกเลิก'}
                         </span>
+
+                        {isPartial && (
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontWeight: 600,
+                              background: '#fef3c7',
+                              color: '#b45309',
+                            }}
+                          >
+                            ตอบบางส่วนแล้ว
+                          </span>
+                        )}
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '12px', color: '#64748b' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '12px',
+                          fontSize: '12px',
+                          color: '#64748b',
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                          }}
+                        >
                           <Clock size={12} /> {timeStr} น.
                         </span>
                         <span>ผู้รับผิดชอบ: {session.staffId}</span>
@@ -396,9 +494,15 @@ export function SurveyWorkspace({
                         variant="primary"
                         onClick={() => setSurveyModal({ session, target })}
                       >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
                           <ClipboardList size={15} />
-                          ทำแบบสำรวจ
+                          {isPartial ? 'ทำแบบสำรวจต่อ' : 'ทำแบบสำรวจ'}
                         </span>
                       </Button>
                     ) : (
@@ -406,7 +510,13 @@ export function SurveyWorkspace({
                         variant="secondary"
                         onClick={() => setViewingResponseSession(session)}
                       >
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
                           <Eye size={15} />
                           ดูผลสำรวจ
                         </span>
@@ -435,39 +545,95 @@ export function SurveyWorkspace({
           title={`ผลการทำแบบสำรวจ - คิว ${viewingResponseSession.queue || viewingResponseSession.reference}`}
           onClose={() => setViewingResponseSession(null)}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ fontSize: '13px', color: '#64748b', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px' }}>
-              <div>เบอร์โทร: <strong>{viewingResponseSession.phone || '-'}</strong></div>
-              <div>เวลาที่บันทึก: <strong>{viewingResponseSession.surveyResponses?.[0]?.createdAt ? new Date(viewingResponseSession.surveyResponses[0].createdAt).toLocaleString('th-TH') : '-'}</strong></div>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
+          >
+            <div
+              style={{
+                fontSize: '13px',
+                color: '#64748b',
+                borderBottom: '1px solid #e2e8f0',
+                paddingBottom: '8px',
+              }}
+            >
+              <div>
+                เบอร์โทร: <strong>{viewingResponseSession.phone || '-'}</strong>
+              </div>
+              <div>
+                เวลาที่บันทึก:{' '}
+                <strong>
+                  {viewingResponseSession.surveyResponses?.[0]?.createdAt
+                    ? new Date(
+                        viewingResponseSession.surveyResponses[0].createdAt,
+                      ).toLocaleString('th-TH')
+                    : '-'}
+                </strong>
+              </div>
             </div>
 
-            {viewingResponseSession.surveyResponses && viewingResponseSession.surveyResponses.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '60vh', overflowY: 'auto' }}>
-                {viewingResponseSession.surveyResponses[0].answers.map((ans, idx) => (
-                  <div
-                    key={idx}
-                    style={{
-                      background: '#f8fafc',
-                      borderRadius: '8px',
-                      padding: '10px 12px',
-                      border: '1px solid #e2e8f0',
-                    }}
-                  >
-                    <div style={{ fontSize: '13.5px', fontWeight: 600, color: '#0f172a', marginBottom: '4px' }}>
-                      {idx + 1}. {ans.questionTitle}
+            {viewingResponseSession.surveyResponses &&
+            viewingResponseSession.surveyResponses.length > 0 ? (
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '12px',
+                  maxHeight: '60vh',
+                  overflowY: 'auto',
+                }}
+              >
+                {viewingResponseSession.surveyResponses[0].answers.map(
+                  (ans, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        background: '#f8fafc',
+                        borderRadius: '8px',
+                        padding: '10px 12px',
+                        border: '1px solid #e2e8f0',
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '13.5px',
+                          fontWeight: 600,
+                          color: '#0f172a',
+                          marginBottom: '4px',
+                        }}
+                      >
+                        {idx + 1}. {ans.questionTitle}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: '13px',
+                          color: '#0f766e',
+                          fontWeight: 500,
+                        }}
+                      >
+                        {Array.isArray(ans.answer)
+                          ? ans.answer.join(', ')
+                          : ans.answer}
+                      </div>
                     </div>
-                    <div style={{ fontSize: '13px', color: '#0f766e', fontWeight: 500 }}>
-                      {Array.isArray(ans.answer) ? ans.answer.join(', ') : ans.answer}
-                    </div>
-                  </div>
-                ))}
+                  ),
+                )}
               </div>
             ) : (
-              <p className="muted" style={{ textAlign: 'center' }}>ไม่มีข้อมูลแบบสำรวจ</p>
+              <p className="muted" style={{ textAlign: 'center' }}>
+                ไม่มีข้อมูลแบบสำรวจ
+              </p>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
-              <Button onClick={() => setViewingResponseSession(null)}>ปิด</Button>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                marginTop: '10px',
+              }}
+            >
+              <Button onClick={() => setViewingResponseSession(null)}>
+                ปิด
+              </Button>
             </div>
           </div>
         </Modal>

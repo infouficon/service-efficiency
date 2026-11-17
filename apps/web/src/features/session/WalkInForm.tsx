@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ArrowRight,
   Trash2,
@@ -44,6 +44,8 @@ export function WalkInForm({
   const [pickerRun, setPickerRun] = useState(0);
   const [loadError, setLoadError] = useState('');
   const [duplicateWarning, setDuplicateWarning] = useState('');
+  const categorySectionRef = useRef<HTMLDivElement>(null);
+  const skuPickerSectionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +93,14 @@ export function WalkInForm({
     setCategory(cat);
     setDuplicateWarning('');
     setPickerRun((n) => n + 1);
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setTimeout(() => {
+        skuPickerSectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 50);
+    }
   };
 
   /**
@@ -117,6 +127,15 @@ export function WalkInForm({
     // Reset picker back to the 8 category tiles
     setCategory('');
     setPickerRun((n) => n + 1);
+
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setTimeout(() => {
+        categorySectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 50);
+    }
   };
 
   const handleRemoveItem = (skuId: string) => {
@@ -428,9 +447,11 @@ export function WalkInForm({
 
             {/* 8 Categories grid: 4 columns on desktop/tablet, 3 on mobile */}
             <div
+              ref={categorySectionRef}
               className="wizard-tiles picker-category-tiles"
               role="group"
               aria-label="ประเภทอุปกรณ์"
+              style={{ scrollMarginTop: '16px' }}
             >
               {categoryTiles.map((cat) => {
                 const active = category === cat;
@@ -456,7 +477,10 @@ export function WalkInForm({
               })}
             </div>
 
-            <div style={{ marginTop: '16px' }}>
+            <div
+              ref={skuPickerSectionRef}
+              style={{ marginTop: '16px', scrollMarginTop: '16px' }}
+            >
               {category ? (
                 <SkuPicker
                   key={`${category}:${pickerRun}`}

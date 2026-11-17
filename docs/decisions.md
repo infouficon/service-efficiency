@@ -2557,4 +2557,35 @@ Decisions:
      - **"บันทึก"**: Enforces that all survey questions are answered completely before finalizing.
    - If `onClose` is ever invoked programmatically, it routes through `handlePostpone()` when questions exist, preventing any bypass.
 
+## D158 — Mobile Product Picker Auto-Scroll Sequence: Category to Models & Reset to Categories (2026-11-17)
+
+Owner instruction via `/grill-me`:
+
+- ใน mobile ตอนกดเลือกหมวดหมู่สินค้า ให้เลื่อนจอไปที่ส่วนถัดไปเองอัตโนมัติ แต่หลังจากเลือก รุ่น ไม่ต้องเลื่อนแล้ว จนเลือกเสร็จ ให้เลื่อนกลับขึ้นไปที่ หมวดหมู่ เพื่อให้เลือกสินค้าถัดไปได้
+
+Decisions:
+
+1. **Auto-Scroll to Models on Category Selection (`WalkInForm.tsx` & `SelectionEditor.tsx`):**
+   - On mobile viewports (`window.innerWidth <= 768`), when staff clicks a category tile (e.g. iPhone, iPad, Mac), the view automatically and smoothly scrolls down to the SKU picker / model list (`skuPickerSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })`).
+2. **Prevent Viewport Jumping During Model & Spec Selection (`SkuPicker.tsx`):**
+   - On mobile screens, disabled the automated `scrollIntoView` calls inside `pickModel`, `handleMemoryChange`, and `handleStorageChange`.
+   - The selected model card expands smoothly in-place without jarring screen jumps, keeping the user's focus on the chips directly underneath.
+3. **Smooth Scroll Back to Categories Upon Selection Completion (`WalkInForm.tsx` & `SelectionEditor.tsx`):**
+   - When an item selection is completed (staff picks the final spec and the item is added to the order/interested list), the view automatically and smoothly scrolls back up to the Category tiles section (`categorySectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })`), enabling staff to immediately choose the next product category without manual scrolling.
+
+## D159 — Lock Screen Position During Model & Spec Selection (`SkuPicker.tsx`) (2026-11-17)
+
+Owner instruction via `/grill-me`:
+
+- หลังจากเลือกรุ่นแล้ว ไม่ต้องเลื่อน เพื่อให้หน้าจอยังแสดงรุ่นความจุสี ครบ
+
+Decisions:
+
+1. **Complete Removal of Sub-Option Auto-Scroll (`SkuPicker.tsx`):**
+   - Removed all automated `scrollIntoView` calls inside `pickModel`, `handleMemoryChange`, and `handleStorageChange` across all devices.
+   - When staff selects a model, the card expands in-place calmly without jumping or pushing the model name/price off screen.
+   - The user's screen remains stable, displaying the Model, Capacity, and Color chips together in a single clear view ("แสดงรุ่น ความจุ สี ครบ") until the user completes the selection by tapping a color.
+
+
+
 

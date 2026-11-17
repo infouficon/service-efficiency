@@ -243,6 +243,7 @@ export function SelectionEditor({
     () => modelChoices(catalog, category),
     [catalog, category],
   );
+  const categorySectionRef = useRef<HTMLDivElement>(null);
   const skuPickerSectionRef = useRef<HTMLDivElement>(null);
   const chosenSectionRef = useRef<HTMLFieldSetElement>(null);
   const monthsSectionRef = useRef<HTMLDivElement>(null);
@@ -256,12 +257,14 @@ export function SelectionEditor({
   const handleCategoryChange = (cat: string) => {
     setCategory(cat);
     setPicked(null);
-    setTimeout(() => {
-      skuPickerSectionRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
-    }, 50);
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setTimeout(() => {
+        skuPickerSectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 50);
+    }
   };
 
   const handleAddPicked = (pickedObj: Picked) => {
@@ -275,12 +278,21 @@ export function SelectionEditor({
     });
     handleResetForm();
     setOpen(false);
-    setTimeout(() => {
-      chosenSectionRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
-    }, 50);
+    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+      setTimeout(() => {
+        (categorySectionRef.current || chosenSectionRef.current)?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      }, 50);
+    } else {
+      setTimeout(() => {
+        chosenSectionRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }, 50);
+    }
   };
 
   const handleAddItem = () => {
@@ -664,9 +676,11 @@ export function SelectionEditor({
             <>
               {/* 1. Device category: one icon tile each (D78). A category without products is shown but cannot be picked. */}
               <div
+                ref={categorySectionRef}
                 className="wizard-tiles picker-category-tiles"
                 role="group"
                 aria-label="ประเภทอุปกรณ์"
+                style={{ scrollMarginTop: '16px' }}
               >
                 {categoryTiles.map((cat) => {
                   const count = catalog.filter(
@@ -690,7 +704,7 @@ export function SelectionEditor({
                   );
                 })}
               </div>
-              <div ref={skuPickerSectionRef}>
+              <div ref={skuPickerSectionRef} style={{ scrollMarginTop: '16px' }}>
                 {category ? (
                   <SkuPicker
                     key={`${category}:${pickerRun}`}

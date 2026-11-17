@@ -128,55 +128,14 @@ export function SkuPicker({
     setModelKey(choice.key);
     setQuery('');
     settle(choice, '', '', false);
-
-    const choiceMemories = distinct(choice.model.skus.map((s) => s.memory));
-    const choiceStorages = distinct(choice.model.skus.map((s) => s.storage));
-
-    setTimeout(() => {
-      if (choiceMemories.length > 0) {
-        memoryRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      } else if (choiceStorages.length > 0) {
-        storageRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      } else {
-        colourRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      }
-    }, 50);
   };
 
   const handleMemoryChange = (mem: string) => {
     settle(chosen, mem, '');
-    setTimeout(() => {
-      if (storages.length > 0) {
-        storageRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      } else {
-        colourRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      }
-    }, 50);
   };
 
   const handleStorageChange = (st: string) => {
     settle(chosen, memory, st, false);
-    setTimeout(() => {
-      colourRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-      });
-    }, 50);
   };
 
   const pickColour = (id: string) => {

@@ -24,6 +24,8 @@ RUN npm run build --workspace=@service-efficiency/web
 # -----------------------------------------------------------------------------
 FROM nginx:alpine AS runner
 
+RUN apk add --no-cache curl
+
 ENV API_URL=http://api:3001
 
 COPY apps/web/nginx.conf.template /etc/nginx/templates/default.conf.template
@@ -32,6 +34,6 @@ COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1/healthz || exit 1
+  CMD curl -f -s http://127.0.0.1/healthz || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]

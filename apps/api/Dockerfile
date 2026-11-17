@@ -5,7 +5,7 @@
 # -----------------------------------------------------------------------------
 FROM node:22-alpine AS base
 
-RUN apk add --no-cache openssl ca-certificates dumb-init
+RUN apk add --no-cache openssl ca-certificates dumb-init curl
 WORKDIR /app
 
 # -----------------------------------------------------------------------------
@@ -57,7 +57,7 @@ USER node
 EXPOSE 3001
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:${PORT}/health || exit 1
+  CMD curl -f -s http://127.0.0.1:${PORT}/health || exit 1
 
 ENTRYPOINT ["dumb-init", "--", "docker-entrypoint.sh"]
 CMD ["node", "apps/api/dist/main.js"]

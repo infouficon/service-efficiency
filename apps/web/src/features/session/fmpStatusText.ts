@@ -20,6 +20,23 @@ export function fmpStatusText(
   return line && fmp.target === 'UAT' ? { ...line, text: `[UAT ทดสอบ] ${line.text}` } : line;
 }
 
+/**
+ * D131: the short red tag a queue card shows instead of its state when the order's FileMaker side needs a person (the same orders as
+ * Admin's "ออเดอร์ที่ต้องดู" problems: the latest message failed or FileMaker answered with an error). Null otherwise. The full line
+ * and what to do stay in the order's summary (`fmpStatusText`). A held bill cancelled in FileMaker is not an SES cancel (D121): the
+ * order is still open and can be sent again, so the tag never just says "ยกเลิก".
+ */
+export function fmpAlert(fmp: FmpStatus | null | undefined): string | null {
+  if (!fmp || fmpStatusText(fmp)?.tone !== 'bad') return null;
+  const code = /^[A-Z_]+/.exec(fmp.ackMessage ?? '')?.[0];
+  if (fmp.ackStatus === 'error' && code === 'CANCELLED')
+    return /^CANCELLED \(ชำระแล้ว/.test(fmp.ackMessage ?? '') ? 'FMP ยกเลิกบิลที่ชำระแล้ว' : 'FMP ยกเลิกบิลพัก';
+  if (fmp.ackStatus === 'error' && (code === 'BILL_CONFIRMED' || code === 'BILL_IN_USE' || code === 'RELEASE_FAILED'))
+    return 'FMP เอาร่างบิลออกไม่ได้';
+  if (fmp.ackStatus === 'error') return 'FMP ไม่รับ';
+  return 'ส่ง FMP ไม่สำเร็จ';
+}
+
 function statusLine(fmp: FmpStatus): { tone: 'ok' | 'warn' | 'wait' | 'bad'; text: string; hint?: string } | null {
   // D123 / D129: answers to "take the held draft out" (sent back to STOCK, cancelled, or a new round from STOCK)
   const release = releaseText(fmp);

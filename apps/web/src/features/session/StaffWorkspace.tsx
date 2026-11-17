@@ -26,6 +26,7 @@ import {
 import type { MockSession, MockUser, Selection } from '../../types/session';
 import { SelectionEditor } from './SelectionEditor';
 import { Summary } from './Summary';
+import { fmpAlert, fmpStatusText } from './fmpStatusText';
 import { ReasonForm } from './ReasonForm';
 import { ReturnToStockForm } from './ReturnToStockForm';
 import { WalkInForm } from './WalkInForm';
@@ -496,10 +497,13 @@ export function StaffWorkspace({
             <h3 style={{ margin: 0 }}>Session หน้าร้าน ({branchSessions.length})</h3>
           </div>
           <div className="queue-card-list">
-            {branchSessions.map((s) => (
+            {branchSessions.map((s) => {
+              // D131: an order FileMaker refused / cancelled the held bill of stands out in the list, not only in its summary
+              const fmpTag = s.stockPendingReview ? null : fmpAlert(s.fmp);
+              return (
               <div
                 key={s.reference}
-                className={`queue-card ${activeSessionRef === s.reference ? 'selected' : ''}`}
+                className={`queue-card ${activeSessionRef === s.reference ? 'selected' : ''} ${fmpTag ? 'fmp-alert' : ''}`}
                 onClick={() => {
                   setActiveSessionRef(s.reference);
                   setForm('normal');
@@ -520,6 +524,11 @@ export function StaffWorkspace({
                     >
                       <AlertTriangle size={12} strokeWidth={1.75} />
                       <span>สินค้าไม่ครบ</span>
+                    </span>
+                  ) : fmpTag ? (
+                    <span className="status-tag status-fmp-alert" title={fmpStatusText(s.fmp)?.text}>
+                      <AlertTriangle size={12} strokeWidth={1.75} />
+                      <span>{fmpTag}</span>
                     </span>
                   ) : (
                     <span
@@ -574,7 +583,8 @@ export function StaffWorkspace({
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

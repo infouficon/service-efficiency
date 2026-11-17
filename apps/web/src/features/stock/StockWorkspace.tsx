@@ -16,6 +16,7 @@ import {
 import { Button, Notice, Panel } from '../../components/ui';
 import { FmpPushBanner } from '../admin/FmpPanel';
 import { Summary } from '../session/Summary';
+import { fmpAlert, fmpStatusText } from '../session/fmpStatusText';
 import { SerialScan } from './SerialScan';
 import { ReasonForm } from '../session/ReasonForm';
 import { cancelReasons } from '../../constants/options';
@@ -446,10 +447,14 @@ export function StockWorkspace({
                   <p>ไม่มีรายการคำขอในสถานะนี้</p>
                 </div>
               ) : (
-                filteredQueue.map((s) => (
+                filteredQueue.map((s) => {
+                  // D131: the FileMaker tag only takes the place of the plain state tag (an item change, a send-back or a
+                  // missing item says more to STOCK); the card is tinted only when the tag shows
+                  const fmpTag = itemChangeNotice(s) || cashierRejectNotice(s) || s.stockPendingReview ? null : fmpAlert(s.fmp);
+                  return (
                   <div
                     key={s.reference}
-                    className={`queue-card ${selectedSession?.reference === s.reference ? 'selected' : ''}`}
+                    className={`queue-card ${selectedSession?.reference === s.reference ? 'selected' : ''} ${fmpTag ? 'fmp-alert' : ''}`}
                     onClick={() => handleSelectCard(s.reference)}
                   >
                     <div className="card-top">
@@ -483,6 +488,11 @@ export function StockWorkspace({
                           }}
                         >
                           รอลูกค้าตัดสินใจ
+                        </span>
+                      ) : fmpTag ? (
+                        <span className="status-tag status-fmp-alert" title={fmpStatusText(s.fmp)?.text}>
+                          <AlertTriangle size={12} strokeWidth={1.75} />
+                          <span>{fmpTag}</span>
                         </span>
                       ) : (
                         <span
@@ -529,7 +539,8 @@ export function StockWorkspace({
                       </div>
                     )}
                   </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

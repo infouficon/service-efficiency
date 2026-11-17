@@ -71,3 +71,9 @@ One QR per branch at the bottom of the receipt for the customer to register. Whi
 ## OQ-16 — Should staff pick accessory SKUs, not only the fixed accessory list? (D72)
 
 With D72 the warroom accessory categories ("Apple Accy", 577 SKUs) become real SKUs with branch stock, but the staff picker still offers accessories only as the fixed list (`Apple Pencil`, `Case`, …) with a quantity (D48): an accessory SKU is visible and countable in the back office, not selectable on a customer session. Does the business want per-SKU accessory selling (reserve and decrement stock per accessory), and which accessory categories?
+
+## OQ-17 — "ปิดการขาย (แทน U POS)" on an order whose held bill FileMaker cancelled (D121, D131)
+
+When the cashier cancels the held bill in FileMaker, the order in SES stays `SENT_TO_CASHIER` (D121) and ADMIN still sees the button
+"ปิดการขาย (แทน U POS)". Pressing it records a sale for a bill that no longer exists in U POS. Should the button be hidden while the
+latest FileMaker answer is `CANCELLED (บิลพัก)`, ask for confirmation with a warning, or stay as it is (ADMIN knows best)?

@@ -217,6 +217,11 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       : undefined,
     events: s.events,
     surveyResponses: s.surveyResponses,
+    recommendationsReviewed: Boolean(
+      (s as unknown as Record<string, unknown>).recommendationsReviewed,
+    ),
+    recommendationRecords: (s as unknown as Record<string, unknown>)
+      .recommendationRecords as MockSession['recommendationRecords'],
     currentAppleDevices: (() => {
       const createdEvt = (s.events ?? []).find(
         (e) => e.eventType === 'SESSION_CREATED',

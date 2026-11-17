@@ -145,7 +145,7 @@ export function SessionSurveyModal({
 
     if (!allRequiredNowAnswered) {
       setError(
-        'กรุณาตอบคำถามที่จำเป็นต้องตอบทันที (⚡) ให้ครบก่อนกดไว้ทำทีหลัง',
+        'กรุณาตอบคำถามที่จำเป็นต้อง "ตอบทันที" ให้ครบก่อนกดไว้ทำทีหลัง',
       );
       return;
     }
@@ -251,8 +251,50 @@ export function SessionSurveyModal({
   };
 
   const titleText = 'แบบสำรวจความคิดเห็นของลูกค้า';
+  const modalFooter =
+    !loading && questions.length > 0 ? (
+      <div className="survey-modal-footer">
+        <Button
+          variant="secondary"
+          onClick={handlePostpone}
+          disabled={busy}
+        >
+          ไว้ทำทีหลัง
+        </Button>
+        <Button
+          variant="primary"
+          onClick={handleSubmit}
+          disabled={!allAnswered || busy}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <ClipboardCheck size={16} />
+            {busy ? 'กำลังบันทึก...' : 'บันทึก'}
+          </span>
+        </Button>
+      </div>
+    ) : undefined;
+
   return (
-    <Modal title={titleText} onClose={() => onComplete()}>
+    <Modal
+      title={titleText}
+      onClose={() => {
+        if (questions.length === 0) {
+          onComplete();
+        } else {
+          void handlePostpone();
+        }
+      }}
+      closeOnBackdropClick={false}
+      showCloseButton={false}
+      closeOnEscape={false}
+      footer={modalFooter}
+    >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {error && <Notice error>{error}</Notice>}
 
@@ -318,9 +360,6 @@ export function SessionSurveyModal({
                 display: 'flex',
                 flexDirection: 'column',
                 gap: '16px',
-                maxHeight: '60vh',
-                overflowY: 'auto',
-                paddingRight: '4px',
               }}
             >
               {questions.map((q, idx) => {
@@ -755,40 +794,6 @@ export function SessionSurveyModal({
                   </div>
                 );
               })}
-            </div>
-
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: '14px',
-                gap: '8px',
-              }}
-            >
-              <Button
-                variant="secondary"
-                onClick={handlePostpone}
-                disabled={busy}
-              >
-                ไว้ทำทีหลัง
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleSubmit}
-                disabled={!allAnswered || busy}
-              >
-                <span
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <ClipboardCheck size={16} />
-                  {busy ? 'กำลังบันทึก...' : 'บันทึก'}
-                </span>
-              </Button>
             </div>
           </>
         )}

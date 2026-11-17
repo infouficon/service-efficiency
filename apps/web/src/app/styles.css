@@ -1935,8 +1935,51 @@ footer {
     border-radius: 20px 20px 0 0 !important;
     max-height: 88vh !important;
     max-height: 88dvh !important;
-    padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px)) 16px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding: 0 !important;
     animation: slideUpBottom 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+  }
+
+  .modal-header {
+    flex-shrink: 0 !important;
+    padding: 16px 16px 12px !important;
+    margin: 0 !important;
+    border-bottom: 1px solid var(--border-light) !important;
+  }
+
+  .modal-body {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    padding: 14px 16px !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .modal-body:last-child {
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .modal-footer {
+    flex-shrink: 0 !important;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)) 16px !important;
+    border-top: 1px solid var(--border-light) !important;
+    background: var(--bg-surface) !important;
+  }
+
+  .survey-modal-footer {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    width: 100% !important;
+    gap: 10px !important;
+  }
+
+  .survey-modal-footer > button {
+    flex: 1 1 0% !important;
+    min-height: 44px !important;
+    justify-content: center !important;
   }
 
   /* SUMMARY LAYOUT */
@@ -3358,11 +3401,14 @@ input[aria-invalid='true'] {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  padding: 24px;
+  padding: 0;
   max-width: 520px;
   width: 100%;
   max-height: 90vh;
-  overflow-y: auto;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-lg);
   animation: modalScaleIn 0.15s var(--ease-out);
 }
@@ -3373,8 +3419,9 @@ input[aria-invalid='true'] {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 12px;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 18px 24px 14px;
   border-bottom: 1px solid var(--border-light);
 }
 .modal-header h2 {
@@ -3390,6 +3437,9 @@ input[aria-invalid='true'] {
   color: var(--text-muted);
   padding: 8px;
   border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   transition:
     background-color 150ms var(--ease-out),
@@ -3400,7 +3450,32 @@ input[aria-invalid='true'] {
   color: var(--text-primary);
 }
 .modal-body {
-  margin-top: 8px;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px 24px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-body:last-child {
+  padding-bottom: 24px;
+}
+.modal-footer {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-surface);
+}
+
+.survey-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
 }
 
 /* CARD SELECTION MODAL FOOTER */

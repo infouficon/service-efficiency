@@ -2230,7 +2230,7 @@ Decisions:
    - Added `completed Boolean @default(true)` and `updatedAt DateTime` to `SurveyResponse`.
    - When staff clicks "ไว้ทำทีหลัง" in `SessionSurveyModal`:
      - System validates that all questions marked `requiredNow: true` have been answered.
-     - If any `requiredNow` question is unanswered, blocks postponement and displays: "กรุณาตอบคำถามที่จำเป็นต้องตอบทันที (⚡) ให้ครบก่อนกดไว้ทำทีหลัง".
+     - If any `requiredNow` question is unanswered, blocks postponement and displays: "กรุณาตอบคำถามที่จำเป็นต้อง "ตอบทันที" ให้ครบก่อนกดไว้ทำทีหลัง".
      - Once valid, saves the answered questions with `completed: false`, closing the modal and freeing staff to proceed with subsequent customers.
    - When staff returns via the Survey Workspace ("ค้างทำ"):
      - Modal pre-fills all previously saved answers.
@@ -2493,3 +2493,68 @@ Decisions:
    - In desktop viewports:
      - Left: Button "ดูตัวเลือกอื่น ▾".
      - Right: All 4 status buttons neatly grouped in a single horizontal row.
+
+## D155 — Preserve Recommendations Reviewed State Across Periodic Background Polling (2026-11-17)
+
+Owner inquiry via `/grill-me`:
+
+- ทำไมพอไปถึง step กรอกเบอร์ แล้วแปปนึงก็ย้อนกลับมา step ก่อนหน้าเอง
+
+Root Cause:
+
+1. `App.tsx` runs background session polling (`fetchSessionsApi`) every 4,000 ms to sync live sessions with the server.
+2. When merging server session updates into active local state (`merged` session in `App.tsx`), `local.phone`, `local.currentAppleDevices`, and `local.selection` were preserved, but `local.recommendationsReviewed` and `local.recommendationRecords` were not merged.
+3. Because the backend API currently has not persisted `recommendationsReviewed`, each 4-second poll reset `activeSession.recommendationsReviewed` back to `undefined`.
+4. Since `activeSession.phone` was not yet committed to DB, `hasCompletedRecommendations` reverted from `true` to `false`, causing the stepper and view to snap backwards from Step 4 (กรอกเบอร์โทร) to Step 3 (แนะนำสินค้า).
+
+Decisions:
+
+1. **Merge Recommendations State in `App.tsx` Polling:**
+   - Preserves `local.recommendationsReviewed` and `local.recommendationRecords` during background polling merge so periodic server polls never overwrite the user's completed recommendation step.
+2. **Local Workspace Draft Protection (`StaffWorkspace.tsx`):**
+   - Added `recommendationsReviewedDrafts: Record<string, boolean>` in `StaffWorkspace` (analogous to `phoneDrafts`).
+   - `hasCompletedRecommendations` checks `recommendationsReviewedDrafts[reference]` first, making the UI resilient against any external polling or state updates.
+3. **Session API Mapping (`sessionApi.ts`):**
+   - Mapped `recommendationsReviewed` and `recommendationRecords` in `mapApiSessionToMockSession` so that whenever the backend API introduces native recommendation persistence, the frontend automatically consumes it.
+
+## D156 — Pinned Modal Header & Footer with Scrollable Content for Mobile Bottom Sheet (2026-11-17)
+
+Owner instruction via `/grill-me`:
+
+- fix หัว กับ ท้าย(ปุ่ม) ไว้ให้พอดีตอนนี้ไปหัวก็ท้ายจะโดนบังนิดหน่อย (Customer Survey modal)
+
+Decisions:
+
+1. **Modal Header/Footer Pinning Architecture (`Modal` in `ui.tsx` & `styles.css`):**
+   - Refactored `.modal-box` to a flexbox column layout (`display: flex; flex-direction: column; overflow: hidden; max-height: 90dvh;`).
+   - `.modal-header` is pinned at the top (`flex-shrink: 0; border-bottom: 1px solid var(--border-light);`).
+   - `.modal-footer` is pinned at the bottom (`flex-shrink: 0; border-top: 1px solid var(--border-light); background: var(--bg-surface);`).
+   - `.modal-body` handles the internal scroll smoothly (`flex: 1 1 auto; overflow-y: auto; min-height: 0; -webkit-overflow-scrolling: touch;`).
+2. **Mobile Bottom Sheet Safe Area Compliance (`styles.css`):**
+   - On mobile viewports (`max-width: 640px`), `.modal-box` uses `max-height: 88dvh` with `border-radius: 20px 20px 0 0`.
+   - `.modal-footer` accounts for device safe-area insets (`padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)) 16px`).
+   - Eliminates nested scrollbars and clipping of action buttons ("ไว้ทำทีหลัง" and "บันทึก").
+3. **Session Survey Modal Layout (`SessionSurveyModal.tsx`):**
+   - Extracted bottom action buttons into `Modal`'s `footer` prop (`survey-modal-footer`).
+   - Removed nested `maxHeight: '60vh'` and inner `overflowY: 'auto'` container, allowing all survey questions to scroll natively inside `.modal-body`.
+   - On mobile screens, footer buttons expand to 50%/50% width with 44px min-height for optimal touch accessibility.
+
+## D157 — Enforce Survey Completion Gate: Lock Backdrop Dismiss & Hide Close Button (2026-11-17)
+
+Owner instruction via `/grill-me`:
+
+- แบบสำรวจถ้ากด พื้นหลังนอก form สามารถปิดได้โดยที่ไม่ต้องตอบข้อที่จำเป็นต้อง "ตอบทันที" ให้ครบก่อนกดไว้ทำทีหลัง ได้ แก้ตรงจุดนี้
+
+Decisions:
+
+1. **Modal Dismiss Configuration (`Modal` in `ui.tsx`):**
+   - Added `closeOnBackdropClick`, `showCloseButton`, and `closeOnEscape` props to the reusable `Modal` component (all defaulting to `true` to ensure backward compatibility across all existing modals).
+2. **Strict Survey Workflow Guard (`SessionSurveyModal.tsx`):**
+   - Set `closeOnBackdropClick={false}`, `showCloseButton={false}`, and `closeOnEscape={false}` on `SessionSurveyModal`.
+   - Clicking outside the modal, pressing the Escape key, or tapping a close button is prevented.
+   - Staff must explicitly choose either:
+     - **"ไว้ทำทีหลัง"**: Enforces that all questions marked as "ตอบทันที" (⚡ / `requiredNow`) are answered before dismissing/postponing.
+     - **"บันทึก"**: Enforces that all survey questions are answered completely before finalizing.
+   - If `onClose` is ever invoked programmatically, it routes through `handlePostpone()` when questions exist, preventing any bypass.
+
+

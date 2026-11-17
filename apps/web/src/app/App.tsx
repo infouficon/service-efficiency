@@ -177,6 +177,10 @@ export function App({
                 merged.phone = local.phone || serverS.phone;
                 merged.currentAppleDevices =
                   local.currentAppleDevices ?? serverS.currentAppleDevices;
+                merged.recommendationsReviewed =
+                  local.recommendationsReviewed ?? serverS.recommendationsReviewed;
+                merged.recommendationRecords =
+                  local.recommendationRecords ?? serverS.recommendationRecords;
                 merged.selection =
                   local.selection &&
                   (local.selection.items.length > 0 ||

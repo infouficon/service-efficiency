@@ -203,7 +203,7 @@ export function WalkInForm({
               ยังไม่มีสินค้าในรายการ
             </div>
             <div style={{ fontSize: '0.85rem', marginTop: '4px' }}>
-              เลือกหมวดหมู่และสเปกสินค้าที่ลูกค้าสนใจด้านล่าง (เลือกได้ 1–3 รายการ)
+              เลือกสินค้าที่ลูกค้าสนใจ (สูงสุด 3 รายการ)
             </div>
           </div>
         ) : (
@@ -400,7 +400,7 @@ export function WalkInForm({
                   : `เลือกสินค้าที่ ${selectedItems.length + 1} เพิ่มเติม (ไม่บังคับ)`}
               </span>
               <span style={{ fontSize: '0.82rem', color: '#64748b' }}>
-                เลือกได้สูงสุดอีก {3 - selectedItems.length} รายการ
+                เลือกได้อีก {3 - selectedItems.length} รายการ
               </span>
             </div>
 
@@ -467,8 +467,8 @@ export function WalkInForm({
                 />
               ) : (
                 <p className="muted picker-hint" style={{ marginTop: '16px' }}>
-                  เลือกหมวดสินค้า เพื่อเลือกรุ่นที่ลูกค้าสนใจ
-                  (สามารถเลือกได้สูงสุด 3 รายการ)
+                  เลือกหมวดสินค้าที่ลูกค้าสนใจ
+                  (สูงสุด 3 รายการ)
                 </p>
               )}
             </div>

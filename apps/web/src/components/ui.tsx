@@ -8,15 +8,23 @@ export function Modal({
   onClose,
   children,
   maxWidth,
+  footer,
+  closeOnBackdropClick = true,
+  showCloseButton = true,
+  closeOnEscape = true,
 }: {
   title: ReactNode;
   isOpen?: boolean;
   onClose: () => void;
   children: ReactNode;
   maxWidth?: string;
+  footer?: ReactNode;
+  closeOnBackdropClick?: boolean;
+  showCloseButton?: boolean;
+  closeOnEscape?: boolean;
 }) {
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !closeOnEscape) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
@@ -24,7 +32,7 @@ export function Modal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, closeOnEscape, onClose]);
 
   if (!isOpen) return null;
 
@@ -32,7 +40,7 @@ export function Modal({
     <div
       className="modal-backdrop"
       onClick={(e) => {
-        if (e.target === e.currentTarget) {
+        if (closeOnBackdropClick && e.target === e.currentTarget) {
           onClose();
         }
       }}
@@ -45,16 +53,19 @@ export function Modal({
           <h2 id="modal-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             {title}
           </h2>
-          <button
-            type="button"
-            className="modal-close-btn"
-            onClick={onClose}
-            aria-label="ปิด"
-          >
-            <X size={18} />
-          </button>
+          {showCloseButton && (
+            <button
+              type="button"
+              className="modal-close-btn"
+              onClick={onClose}
+              aria-label="ปิด"
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
         <div className="modal-body">{children}</div>
+        {footer && <div className="modal-footer">{footer}</div>}
       </div>
     </div>
   );

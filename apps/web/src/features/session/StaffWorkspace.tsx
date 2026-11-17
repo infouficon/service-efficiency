@@ -139,6 +139,8 @@ export function StaffWorkspace({
   const [hasAutoLoadedHistory, setHasAutoLoadedHistory] = useState(false);
   const [historyNotice, setHistoryNotice] = useState<string>('');
   const [historySearching, setHistorySearching] = useState(false);
+  const [recommendationsReviewedDrafts, setRecommendationsReviewedDrafts] =
+    useState<Record<string, boolean>>({});
   const [form, setForm] = useState<FormView>('normal');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -214,6 +216,7 @@ export function StaffWorkspace({
   );
 
   const hasCompletedRecommendations = Boolean(
+    recommendationsReviewedDrafts[activeSession?.reference ?? ''] ||
     activeSession?.recommendationsReviewed ||
     (activeSession?.phone && activeSession.phone.trim() !== ''),
   );
@@ -304,6 +307,10 @@ export function StaffWorkspace({
       newS.currentAppleDevices = undefined;
       setSelectedAppleDevices([]);
       setHasAutoLoadedHistory(false);
+      setRecommendationsReviewedDrafts((prev) => ({
+        ...prev,
+        [newS.reference]: false,
+      }));
       if (pickedItems.length > 0) {
         newS.selection = {
           ...newS.selection,
@@ -374,7 +381,7 @@ export function StaffWorkspace({
         if (foundDevices && foundDevices.length > 0) {
           setSelectedAppleDevices(foundDevices);
           setHistoryNotice(
-            `✨ พบข้อมูลประวัติลูกค้า: ${foundDevices.join(', ')}`,
+            `พบข้อมูลประวัติลูกค้า: ${foundDevices.join(', ')}`,
           );
         } else {
           setHistoryNotice('ไม่พบประวัติอุปกรณ์เดิมสำหรับเบอร์นี้');
@@ -392,7 +399,7 @@ export function StaffWorkspace({
         ) {
           setSelectedAppleDevices(localMatch.currentAppleDevices);
           setHistoryNotice(
-            `✨ พบข้อมูลประวัติลูกค้า: ${localMatch.currentAppleDevices.join(', ')}`,
+            `พบข้อมูลประวัติลูกค้า: ${localMatch.currentAppleDevices.join(', ')}`,
           );
         } else {
           setHistoryNotice('ไม่พบประวัติอุปกรณ์เดิมสำหรับเบอร์นี้');
@@ -462,6 +469,11 @@ export function StaffWorkspace({
         accessories: mergedAccessories,
       };
 
+      setRecommendationsReviewedDrafts((prev) => ({
+        ...prev,
+        [activeSession.reference]: true,
+      }));
+
       if (activeSession.id) {
         const updated = await updateSelectionApi(
           activeSession.id,
@@ -502,6 +514,11 @@ export function StaffWorkspace({
     setBusy(true);
     setError('');
     try {
+      setRecommendationsReviewedDrafts((prev) => ({
+        ...prev,
+        [activeSession.reference]: true,
+      }));
+
       if (activeSession.id) {
         const updated = await updateSelectionApi(
           activeSession.id,
@@ -536,6 +553,7 @@ export function StaffWorkspace({
           phoneToSave,
         );
       }
+
       if (activeSession.id) {
         const updated = await advanceStepApi(activeSession.id, action);
         onUpdateSession(updated);
@@ -593,6 +611,7 @@ export function StaffWorkspace({
     setError('');
     try {
       let updated: MockSession;
+
       if (activeSession.id) {
         updated = await confirmPurchaseApi(activeSession.id);
         onUpdateSession(updated);
@@ -634,6 +653,7 @@ export function StaffWorkspace({
     setError('');
     try {
       let updated: MockSession;
+
       if (activeSession.id) {
         updated = await cancelSessionApi(activeSession.id, reason, text);
       } else {

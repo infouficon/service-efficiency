@@ -67,3 +67,31 @@ test('D130: an order sent to the test FileMaker is labelled UAT; production orde
   assert.equal(fmpStatusText({ ...base, target: 'PRODUCTION' }).text, fmpStatusText(base).text);
   assert.doesNotMatch(fmpStatusText({ ...base, target: 'PRODUCTION' }).text, /UAT/);
 });
+
+test('D140: a queue card gets a short red tag only when the FileMaker side needs a person', async () => {
+  const { fmpAlert } = await import('../src/features/session/fmpStatusText.ts');
+  assert.equal(fmpAlert(null), null);
+  assert.equal(fmpAlert(base), null); // sent, no answer yet
+  assert.equal(fmpAlert({ ...base, ackStatus: 'success', ackMessage: 'CREATED saleID S-1 (1 รายการ)' }), null);
+  assert.equal(fmpAlert({ ...base, ackStatus: 'success', ackMessage: 'RELEASED saleID 99 (2 รายการ)' }), null);
+  assert.equal(fmpAlert({ status: 'skipped', target: 'NONE', attempts: 0, error: 'ADMIN ปิดการส่ง', ackStatus: null, ackMessage: null, at: base.at }), null);
+  // a held bill cancelled in FileMaker is not an SES cancel (D121): never just "ยกเลิก"
+  assert.equal(fmpAlert({ ...base, target: 'UAT', ackStatus: 'error', ackMessage: 'CANCELLED (บิลพัก): ยกเลิกบิลพักใน FMP' }), 'FMP ยกเลิกบิลพัก');
+  assert.equal(fmpAlert({ ...base, ackStatus: 'error', ackMessage: 'CANCELLED (ชำระแล้ว บิล 6611-0042): ลูกค้าคืนเครื่อง' }), 'FMP ยกเลิกบิลที่ชำระแล้ว');
+  assert.equal(fmpAlert({ ...base, ackStatus: 'error', ackMessage: 'BILL_CONFIRMED saleID 99: ไม่พบร่างบิลแล้ว' }), 'FMP เอาร่างบิลออกไม่ได้');
+  assert.equal(fmpAlert({ ...base, ackStatus: 'error', ackMessage: 'SN_NOT_FOUND: SN F9X not found in stock' }), 'FMP ไม่รับ');
+  assert.equal(fmpAlert({ ...base, status: 'failed', error: 'FileMaker ปฏิเสธ (HTTP 500)' }), 'ส่ง FMP ไม่สำเร็จ');
+
+  // the API's rule decides (`attention`, the same as Admin's "ออเดอร์ที่ต้องดู"): a message stuck in the queue, a bill opened without some serials
+  assert.equal(fmpAlert({ ...base, status: 'pending', attempts: 0, attention: 'stuck' }), 'ส่ง FMP ค้าง');
+  assert.equal(fmpAlert({ ...base, status: 'pending', attempts: 0, attention: null }), null); // just queued
+  assert.equal(fmpAlert({ ...base, ackStatus: 'success', ackMessage: 'CREATED_SN_LATER saleID S-1', attention: 'sn-skipped' }), 'บิล FMP ขาด SN');
+  assert.equal(fmpAlert({ ...base, ackStatus: 'error', ackMessage: 'CANCELLED (บิลพัก): ยกเลิกบิลพักใน FMP', attention: 'ack-error' }), 'FMP ยกเลิกบิลพัก');
+  assert.equal(fmpAlert({ ...base, ackStatus: 'error', ackMessage: 'SN_NOT_FOUND', attention: null }), null); // the API says no: the card follows it
+  // a failed delivery wins over an answer that came on the callback door: red, and the summary says the delivery failed
+  const failedWithReport = { ...base, status: 'failed', error: 'FileMaker ไม่ตอบภายใน 60 วินาที', ackStatus: 'reported', ackMessage: 'หมายเหตุจากร้าน' };
+  assert.equal(fmpAlert(failedWithReport), 'ส่ง FMP ไม่สำเร็จ');
+  assert.equal(fmpAlert({ ...failedWithReport, attention: 'failed' }), 'ส่ง FMP ไม่สำเร็จ');
+  assert.equal(fmpStatusText(failedWithReport).tone, 'bad');
+  assert.match(fmpStatusText(failedWithReport).text, /^ส่งไป FileMaker ไม่สำเร็จ/);
+});

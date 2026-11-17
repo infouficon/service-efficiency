@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
 import { isValidPhone, normalizePhone } from '../common/phone.util';
 import { loadPaymentTypes, orderView } from './order-view';
-import { FmpService } from '../fmp/fmp.service';
+import { fmpAttentionKind, FmpService } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
@@ -390,7 +390,7 @@ export class SessionsService {
       ? await this.prisma.fmpOutbox.findMany({
           where: { sessionId: { in: ids } },
           orderBy: { createdAt: 'desc' },
-          select: { sessionId: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, ackReceivedAt: true, sentAt: true, createdAt: true, target: true },
+          select: { sessionId: true, status: true, attempts: true, lastError: true, ackStatus: true, ackMessage: true, ackReceivedAt: true, sentAt: true, createdAt: true, target: true, snCheck: true },
         })
       : [];
     const latest = new Map<string, (typeof rows)[number]>();
@@ -407,6 +407,7 @@ export class SessionsService {
               error: r.status === 'sent' ? null : r.lastError,
               ackStatus: r.ackStatus, // success | error | reported | null (no answer yet)
               ackMessage: r.ackMessage,
+              attention: fmpAttentionKind(r), // D140: failed | stuck | ack-error | sn-skipped | null, the same rule as Admin's "ออเดอร์ที่ต้องดู"
               at: (r.ackReceivedAt ?? r.sentAt ?? r.createdAt).toISOString(),
             }
           : null,

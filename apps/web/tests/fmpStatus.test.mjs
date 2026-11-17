@@ -68,7 +68,7 @@ test('D130: an order sent to the test FileMaker is labelled UAT; production orde
   assert.doesNotMatch(fmpStatusText({ ...base, target: 'PRODUCTION' }).text, /UAT/);
 });
 
-test('D131: a queue card gets a short red tag only when the FileMaker side needs a person', async () => {
+test('D140: a queue card gets a short red tag only when the FileMaker side needs a person', async () => {
   const { fmpAlert } = await import('../src/features/session/fmpStatusText.ts');
   assert.equal(fmpAlert(null), null);
   assert.equal(fmpAlert(base), null); // sent, no answer yet

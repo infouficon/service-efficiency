@@ -2441,7 +2441,7 @@ input[aria-invalid='true'] {
   background: var(--primary-subtle);
   box-shadow: inset 3px 0 0 var(--primary);
 }
-/* D131: FileMaker refused the order / cancelled its held bill. Selected keeps the red tint and takes the selection's border. */
+/* D140: FileMaker refused the order / cancelled its held bill. Selected keeps the red tint and takes the selection's border. */
 .queue-card.fmp-alert {
   background: var(--bg-danger);
   border-color: #fca5a5;

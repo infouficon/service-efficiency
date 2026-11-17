@@ -21,7 +21,7 @@ export function fmpStatusText(
 }
 
 /**
- * D131: the short red tag a queue card shows instead of its state when the order's FileMaker side needs a person (the same orders as
+ * D140: the short red tag a queue card shows instead of its state when the order's FileMaker side needs a person (the same orders as
  * Admin's "ออเดอร์ที่ต้องดู" problems: the latest message failed or FileMaker answered with an error). Null otherwise. The full line
  * and what to do stay in the order's summary (`fmpStatusText`). A held bill cancelled in FileMaker is not an SES cancel (D121): the
  * order is still open and can be sent again, so the tag never just says "ยกเลิก".

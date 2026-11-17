@@ -1922,7 +1922,9 @@ draft. Answers chosen by the owner the same day:
    callback / POS keys (its reports then change the test orders on the one SES, which has no UAT of its own).
 
 
-## D131 — A queue card shows when the order's FileMaker side needs a person (2026-11-17)
+## D140 — A queue card shows when the order's FileMaker side needs a person (2026-11-17)
+
+(D131–D139 are taken by the walk-in work on `develop`, not on `main` yet.)
 
 Owner, after cancelling the held bill of queue 008 in FileMaker (UAT): the Staff list still showed the card with the green
 `SENT_TO_CASHIER` tag, so nothing told it apart from the orders going fine ("น่าจะต้องให้มีอะไรบ่งบอกบ้างไหม เช่น กรอบสีแดง หรือ

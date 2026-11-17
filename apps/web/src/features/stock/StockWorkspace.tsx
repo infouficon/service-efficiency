@@ -448,7 +448,7 @@ export function StockWorkspace({
                 </div>
               ) : (
                 filteredQueue.map((s) => {
-                  // D131: the FileMaker tag only takes the place of the plain state tag (an item change, a send-back or a
+                  // D140: the FileMaker tag only takes the place of the plain state tag (an item change, a send-back or a
                   // missing item says more to STOCK); the card is tinted only when the tag shows
                   const fmpTag = itemChangeNotice(s) || cashierRejectNotice(s) || s.stockPendingReview ? null : fmpAlert(s.fmp);
                   return (

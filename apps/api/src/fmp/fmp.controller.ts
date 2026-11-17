@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   CanActivate,
+  ConflictException,
   Controller,
   ExecutionContext,
   ForbiddenException,
@@ -17,14 +18,13 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { IsIn, IsString, MaxLength, MinLength } from 'class-validator';
 import type { Request, Response } from 'express';
 import { OriginGuard } from '../accounts/accounts.controller';
 import { AccountsService } from '../accounts/accounts.service';
 import { FMP_PUSH_MODES, type FmpPushMode } from '../settings/settings.service';
-import { FmpService } from './fmp.service';
+import { FmpService, keySource, type FmpTarget } from './fmp.service';
 
 export class FmpResendDto {
   @IsString() @MinLength(1) @MaxLength(32) reference!: string;
@@ -130,6 +130,8 @@ export class FmpController {
     const out = await this.fmp.resend(dto.reference.trim(), `ADMIN ${user.staffId}`);
     if ('error' in out) {
       if (out.error === 'not-configured') throw new BadRequestException('ยังไม่ได้ตั้งค่าการส่งไป FileMaker (FMP_*)');
+      if (out.error === 'never-sent')
+        throw new ConflictException('ออเดอร์นี้ยังไม่เคยส่งไป FileMaker และตอนนี้ไม่ได้อยู่ที่แคชเชียร์ จึงไม่มีร่างบิลให้เอาออก (D141)');
       throw new NotFoundException('ไม่พบออเดอร์นี้');
     }
     return out;
@@ -138,7 +140,8 @@ export class FmpController {
 
 /**
  * The key FileMaker sends as `Authorization: Bearer <key>` (D90), set in the API's environment as `FMP_CALLBACK_KEY` (32
- * characters at least). Without a key the door does not exist: 404 with the reason. Compared in constant time.
+ * characters at least). Without a key the door does not exist: 404 with the reason. Compared in constant time. D141: the test
+ * FileMaker may use its own key, `FMP_UAT_CALLBACK_KEY`; the guard notes which FileMaker is calling (`request.fmpSource`).
  */
 @Injectable()
 export class FmpCallbackGuard implements CanActivate {
@@ -148,10 +151,13 @@ export class FmpCallbackGuard implements CanActivate {
     http.getResponse<Response>().setHeader('Cache-Control', 'no-store');
     const key = this.fmp.callbackKey();
     if (!key) throw new NotFoundException('FileMaker callback is off: FMP_CALLBACK_KEY is not set (or is shorter than 32 characters) on the SES server');
-    const header = http.getRequest<Request>().headers.authorization ?? '';
+    const request = http.getRequest<Request & { fmpSource?: FmpTarget | null }>();
+    const header = request.headers.authorization ?? '';
     const given = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    const digest = (value: string) => createHash('sha256').update(value).digest();
-    if (!timingSafeEqual(digest(given), digest(key))) throw new UnauthorizedException();
+    // D141: the test FileMaker may have its own key (`FMP_UAT_CALLBACK_KEY`); then SES knows which FileMaker is reporting
+    const source = keySource(given, key, this.fmp.callbackUatKey());
+    if (source === undefined) throw new UnauthorizedException();
+    request.fmpSource = source;
     return true;
   }
 }
@@ -185,7 +191,7 @@ export class FmpCallbackController {
   @ApiResponse({ status: 400, description: 'neither outboxId nor reference, or they belong to different messages' })
   @Post('callback')
   @HttpCode(200)
-  callback(@Body() body: Record<string, unknown> | undefined) {
-    return this.fmp.receiveCallback(body && typeof body === 'object' && !Array.isArray(body) ? body : {});
+  callback(@Req() req: Request & { fmpSource?: FmpTarget | null }, @Body() body: Record<string, unknown> | undefined) {
+    return this.fmp.receiveCallback(body && typeof body === 'object' && !Array.isArray(body) ? body : {}, req.fmpSource ?? null);
   }
 }

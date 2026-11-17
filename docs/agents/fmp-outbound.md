@@ -91,8 +91,10 @@ it never creates a second record (D96).
 | Token dropped mid-round | logs in again once |
 | Script error from FileMaker | recorded, the message counts as sent (the record exists) |
 | Two containers | a message is claimed before it is sent, so one sends it |
-| ADMIN switch `off` (D130) | nothing is sent; a new message is kept as `skipped` (`target NONE`) with the reason and never sent later; messages queued before wait and go when switched back on |
-| ADMIN switch `uat` (D130) | new messages go to `FMP_UAT_*` with `test: true`; a send-back / cancel still goes to the server that has the order's held bill; record ids are only reused within one target |
+| ADMIN switch `off` (D130, D141) | nothing is sent (asked before every message); a new order is kept as `skipped` (`target NONE`) with the reason and never sent later; messages queued before wait and go when switched back on, and so does a send-back / cancel of an order a FileMaker already has |
+| The order left the cashier before its message went (D141) | the waiting "open a bill" is kept as `superseded` and never sent; the send-back / cancel goes |
+| ADMIN switch `uat` (D130, D141) | new messages go to `FMP_UAT_*` with `test: true`; a send-back / cancel goes to every server that may hold a bill of the order (the one used last always, an earlier one while the last thing it got was a bill to open); record ids are only reused within one target |
+| An answer was lost (time-out) (D96, D141) | before creating, SES looks the order up by its reference whenever an earlier try of any of its messages may have reached FileMaker: one record per order |
 
 ## Notes from reading the `ses` script (2026-11-02), for the FileMaker team
 

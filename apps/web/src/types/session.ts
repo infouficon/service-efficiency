@@ -262,7 +262,7 @@ export type AppView =
 /** D100: what the shop sees of FileMaker for one order. */
 export interface FmpStatus {
   /** delivery of SES's message: pending / sending / sent / failed; skipped = held back by ADMIN's switch (D130) */
-  status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'superseded';
   /** D130: which FileMaker it went to: PRODUCTION, UAT, or NONE (skipped) */
   target?: 'PRODUCTION' | 'UAT' | 'NONE';
   attempts: number;

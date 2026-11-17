@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
 import { isValidPhone, normalizePhone } from '../common/phone.util';
 import { loadPaymentTypes, orderView } from './order-view';
-import { fmpAttentionKind, FmpService } from '../fmp/fmp.service';
+import { fmpAttentionKind, FmpService, type FmpTarget } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
@@ -563,13 +563,21 @@ export class SessionsService {
    * the cashier moves on to BILL_OPENED (milestone = the real time, the cashier does not press anything in SES). When the
    * cashier pressed first, SES's own milestone stays and the U POS bill is added beside it. The same report again changes
    * nothing; another bill number for the same order is a conflict.
+   *
+   * D141: `source` is the FileMaker that reports, when SES can tell (it used its own key). A bill of the test FileMaker never
+   * closes an order that is in the real one (ADMIN switched and sent it again), and the other way round: 409, nothing recorded.
    */
-  async recordPosBill(dto: { reference: string; billNo: string; openedAt: string; completedAt?: string }) {
+  async recordPosBill(dto: { reference: string; billNo: string; openedAt: string; completedAt?: string }, source: FmpTarget | null = null) {
     const session = await this.prisma.customerSession.findUnique({
       where: { reference: dto.reference },
       include: sessionInclude,
     });
     if (!session) throw new NotFoundException('Unknown order');
+    if (source) {
+      const target = await this.fmp.currentTarget(session.id);
+      if (target && target !== source)
+        throw new ConflictException(`This order is in the ${target === 'UAT' ? 'test' : 'real'} FileMaker; the bill comes from the ${source === 'UAT' ? 'test' : 'real'} one`);
+    }
     if (session.outcome) throw new ConflictException('The order has ended');
     const summary = (s: { reference: string; state: string; posBillNo: string | null; posBillOpenedAt: Date | null; billOpenedAt: Date | null }) => ({
       reference: s.reference,
@@ -967,6 +975,13 @@ export class SessionsService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      // D141 (H-01): the same lock `confirmPurchase` takes, under the condition checked above: an edit and a confirm of the same
+      // order go one after the other, so an order is never confirmed with a selection nobody checked, nor edited once confirmed
+      await this.claim(
+        tx,
+        session.id,
+        Prisma.sql`confirmed = false AND outcome IS NULL AND (state = 'PRODUCT_SELECTION' OR (state = 'DECISION' AND decisionAt IS NOT NULL))`,
+      );
       let customerId = session.customerId;
       if (normalizedPhone) {
         const customer = await tx.customer.upsert({
@@ -1166,14 +1181,13 @@ export class SessionsService {
     });
   }
 
-  async confirmPurchase(user: PublicAccount, id: string) {
-    this.checkRole(user, 'STAFF');
-    const session = await this.getById(user, id);
-
-    if (session.confirmed || session.state !== 'PRODUCT_SELECTION' || session.outcome) {
-      throw new BadRequestException('Session is already confirmed or cannot be confirmed');
-    }
-
+  /** What an order needs before STAFF can confirm it (asked before the lock for a quick answer, and again under it: D141). */
+  private async assertConfirmable(session: {
+    phone: string | null;
+    receiptType: string | null;
+    items: unknown[];
+    payments: { method: string; cardType: string | null; installmentMonths: number | null }[];
+  }) {
     if (!session.phone || !isValidPhone(session.phone)) {
       throw new BadRequestException('Valid customer phone number is required to confirm purchase');
     }
@@ -1187,15 +1201,31 @@ export class SessionsService {
     }
 
     await this.assertCardDetails(session.payments);
+  }
+
+  async confirmPurchase(user: PublicAccount, id: string) {
+    this.checkRole(user, 'STAFF');
+    const session = await this.getById(user, id);
+
+    if (session.confirmed || session.state !== 'PRODUCT_SELECTION' || session.outcome) {
+      throw new BadRequestException('Session is already confirmed or cannot be confirmed');
+    }
+
+    await this.assertConfirmable(session);
 
     const now = new Date();
 
     return this.prisma.$transaction(async (tx) => {
       await this.claim(tx, session.id, Prisma.sql`state = 'PRODUCT_SELECTION' AND outcome IS NULL AND confirmed = false`); // H-01
+      // D141: the checks above read the order before the lock. An edit saved in between (D129: a card payment with no card type
+      // or months) must not ride through, so the order is read again under the lock (`updateSelection` takes the same lock) and
+      // checked again; what is confirmed is what was checked.
+      const locked = await tx.customerSession.findUniqueOrThrow({ where: { id: session.id }, include: sessionInclude });
+      await this.assertConfirmable(locked);
       // D70: allocate queue number if not already allocated (e.g. rebuy keeps old queue)
-      let customerTypeId = session.customerTypeId;
-      let queueLetter = session.queueLetter;
-      let queueNo = session.queueNo;
+      let customerTypeId = locked.customerTypeId;
+      let queueLetter = locked.queueLetter;
+      let queueNo = locked.queueNo;
 
       if (queueNo === null) {
         const types = await tx.customerType.findMany({
@@ -1203,10 +1233,10 @@ export class SessionsService {
           orderBy: { letter: 'asc' },
         });
 
-        const paymentNames = session.payments.map((p) => p.method);
-        const ontopNames = session.ontop.map((o) => o.name);
-        const pointNames = session.points.map((p) => p.name);
-        const burnPointNames = session.burnPoints.map((b) => b.name);
+        const paymentNames = locked.payments.map((p) => p.method);
+        const ontopNames = locked.ontop.map((o) => o.name);
+        const pointNames = locked.points.map((p) => p.name);
+        const burnPointNames = locked.burnPoints.map((b) => b.name);
 
         const matchesType = (t: {
           paymentMethods: unknown;
@@ -1243,7 +1273,7 @@ export class SessionsService {
 
         const queue = await this.queue.allocate(
           tx,
-          session.branchId,
+          locked.branchId,
           matchedType.id,
           now,
         );
@@ -1255,7 +1285,7 @@ export class SessionsService {
       const queueStr = formatQueue(queueLetter, queueNo ?? 0);
 
       return tx.customerSession.update({
-        where: { id: session.id },
+        where: { id: locked.id },
         data: {
           confirmed: true,
           state: 'STOCK_REQUESTED',

@@ -9,11 +9,11 @@ import {
   NotFoundException,
   Post,
   Query,
+  Req,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createHash, timingSafeEqual } from 'node:crypto';
 import {
   ApiBearerAuth,
   ApiCreatedResponse,
@@ -24,12 +24,17 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
+import { keySource, type FmpTarget } from '../fmp/fmp.service';
 import { SessionsService } from '../sessions/sessions.service';
 import { PosBillDto } from './dto';
 
 /**
  * The key U POS sends as `Authorization: Bearer <key>` (D60), set in the API's environment as `POS_API_KEY`. Without a key
  * (or with a short one) the integration does not exist: the routes answer 404. The key is compared in constant time.
+ *
+ * D141: the test FileMaker (ADMIN's switch on UAT, D130) may have its own key, `POS_UAT_API_KEY`. Then SES knows which FileMaker
+ * reports a bill (`request.fmpSource`) and refuses a bill of the test FileMaker for an order that is in the real one, and the
+ * other way round. Without it both share `POS_API_KEY` and SES cannot tell them apart.
  */
 @Injectable()
 export class PosKeyGuard implements CanActivate {
@@ -43,12 +48,12 @@ export class PosKeyGuard implements CanActivate {
       throw new NotFoundException(
         'POS integration is off: POS_API_KEY is not set (or is shorter than 32 characters) on the SES server',
       );
-    const header = http.getRequest<Request>().headers.authorization ?? '';
+    const request = http.getRequest<Request & { fmpSource?: FmpTarget | null }>();
+    const header = request.headers.authorization ?? '';
     const given = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
-    const digest = (value: string) =>
-      createHash('sha256').update(value).digest();
-    if (!timingSafeEqual(digest(given), digest(key)))
-      throw new UnauthorizedException();
+    const source = keySource(given, key, (this.config.get<string>('POS_UAT_API_KEY') ?? '').trim());
+    if (source === undefined) throw new UnauthorizedException();
+    request.fmpSource = source;
     return true;
   }
 }
@@ -127,9 +132,9 @@ export class PosController {
   })
   @ApiResponse({ status: 400, description: 'bad body, or openedAt out of range (more than 5 min ahead, before the walk-in, older than a year)' })
   @ApiResponse({ status: 404, description: 'unknown reference' })
-  @ApiResponse({ status: 409, description: 'order cancelled/ended or not at the cashier yet, or another billNo was already reported' })
+  @ApiResponse({ status: 409, description: 'order cancelled/ended or not at the cashier yet, another billNo was already reported, or the bill comes from the other FileMaker (test / real) than the one the order was sent to' })
   @Post('bills')
-  bill(@Body() dto: PosBillDto) {
-    return this.sessions.recordPosBill(dto);
+  bill(@Req() req: Request & { fmpSource?: FmpTarget | null }, @Body() dto: PosBillDto) {
+    return this.sessions.recordPosBill(dto, req.fmpSource ?? null);
   }
 }

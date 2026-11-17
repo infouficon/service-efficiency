@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, type OnApplicationBootstrap, type OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { loadPaymentTypes, orderView, type OrderViewSource } from '../sessions/order-view';
 import { SettingsService, type FmpPushMode } from '../settings/settings.service';
@@ -200,6 +200,16 @@ export function scriptIsBusy(result: string | null): boolean {
   }
 }
 
+/** D141: did the `ses` script itself refuse this message (`ok: false` in its answer)? */
+function scriptRefused(result: string | null): boolean {
+  if (!result) return false;
+  try {
+    return (JSON.parse(result) as { ok?: unknown } | null)?.ok === false;
+  } catch {
+    return false;
+  }
+}
+
 /** One serial number as the `ses` script v3.3 checked it (D119). */
 export interface SnCheck {
   sn: string;
@@ -264,6 +274,21 @@ export function parseSnCheck(result: string | null): SnCheck[] | null {
   return out.length ? out : null;
 }
 
+
+/**
+ * D141: which FileMaker sent a request, by the bearer key it used. `key` is the door's key; `uatKey` is the test FileMaker's own
+ * key (32 characters at least, and not the same as `key`), when one is set. Returns `undefined` for a wrong key; `null` when the
+ * key is right but the two FileMakers share it (no UAT key set), so SES cannot tell which one is calling; otherwise the FileMaker.
+ * Compared in constant time.
+ */
+export function keySource(given: string, key: string, uatKey: string): FmpTarget | null | undefined {
+  const digest = (value: string) => createHash('sha256').update(value).digest();
+  const same = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
+  const separate = uatKey.length >= 32 && !same(uatKey, key);
+  if (same(given, key)) return separate ? 'PRODUCTION' : null;
+  if (separate && same(given, uatKey)) return 'UAT';
+  return undefined;
+}
 
 /** D116 / D140: why an order's latest FileMaker message needs a person. */
 export type FmpAttentionKind = 'failed' | 'stuck' | 'ack-error' | 'sn-skipped';
@@ -433,9 +458,9 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
    * accessories are not bill lines for FileMaker (the shop adds them in FileMaker by hand), so `accessories` is always empty and
    * they are listed, for information only, under `accessoriesForCashier`.
    */
-  async enqueue(db: Outbox, session: FmpSession, event: string): Promise<string | null> {
+  async enqueue(db: Outbox, session: FmpSession, event: string, releaseFor?: FmpTarget, createdAt?: Date): Promise<string | null> {
     if (!this.configured()) return null;
-    const route = await this.route(db, session.id, event);
+    const route = await this.route(db, releaseFor);
     if (!route) return null;
     const id = randomUUID();
     const paymentTypes = await loadPaymentTypes(db);
@@ -476,7 +501,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       return id;
     }
     await db.fmpOutbox.create({
-      data: { id, sessionId: session.id, reference: session.reference, event, payload, target: route.target },
+      data: { id, sessionId: session.id, reference: session.reference, event, payload, target: route.target, ...(createdAt ? { createdAt } : {}) },
     });
     await this.record(
       {
@@ -494,22 +519,18 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   /**
-   * D130: where one message goes, by ADMIN's switch (`Setting` fmpPushMode). A message that takes a held bill away (sent back to
-   * stock, cancelled) goes to the FileMaker that has the bill: the target of the order's last message that was not held back,
-   * whatever the switch says now, so a test never leaves a real held bill behind. `off` holds every message back. Null = nothing
-   * to queue (production chosen but `FMP_*` not set: the same as before the switch existed).
+   * D130: where one message goes, by ADMIN's switch (`Setting` fmpPushMode). `off` holds a new order back. Null = nothing to queue
+   * (production chosen but `FMP_*` not set: the same as before the switch existed).
+   *
+   * D141: a message that takes a held bill away (sent back to stock, cancelled) is told its FileMaker (`releaseFor`, see
+   * `billTargets`) and is never held back: the bill is already there, so dropping the message would leave it behind. While the
+   * switch is off it waits in the queue (the worker sends nothing) and goes when ADMIN switches back on; if that FileMaker's
+   * settings are gone it fails in the open, where ADMIN sees it and can send it again.
    */
-  private async route(db: Outbox, sessionId: string, event: string): Promise<{ target: FmpTarget; skip: string | null } | null> {
+  private async route(db: Outbox, releaseFor?: FmpTarget): Promise<{ target: FmpTarget; skip: string | null } | null> {
+    if (releaseFor) return { target: releaseFor, skip: null };
     const mode: FmpPushMode = await this.settings.fmpPushMode(db);
-    let target: FmpTarget = mode === 'uat' ? 'UAT' : 'PRODUCTION';
-    if (RELEASE_EVENTS.includes(event)) {
-      const last = await db.fmpOutbox.findFirst({
-        where: { sessionId, status: { not: 'skipped' } },
-        orderBy: { createdAt: 'desc' },
-        select: { target: true },
-      });
-      if (last?.target === 'UAT' || last?.target === 'PRODUCTION') target = last.target;
-    }
+    const target: FmpTarget = mode === 'uat' ? 'UAT' : 'PRODUCTION';
     if (mode === 'off') return { target, skip: 'ADMIN ปิดการส่งเข้า U POS (FileMaker) อยู่' };
     if (!this.configured(target)) {
       if (target === 'PRODUCTION' && mode === 'production') return null;
@@ -519,15 +540,54 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   /**
+   * D141: the FileMakers that must be told when this order leaves the cashier, oldest first (so the order's latest message is the
+   * one for the FileMaker it went to last). A FileMaker counts when a message of the order reached it or still can (queued,
+   * sending, sent, failed, or tried at least once): the one used last always, an earlier one (the order was sent to the test
+   * FileMaker and then to the real one, or the other way round) only while the last thing it got was a bill to open. Messages
+   * ADMIN's switch held back reached nobody. Empty = no FileMaker has this order.
+   */
+  private async billTargets(db: Outbox, sessionId: string): Promise<FmpTarget[]> {
+    const rows = await db.fmpOutbox.findMany({
+      where: {
+        sessionId,
+        target: { in: ['PRODUCTION', 'UAT'] },
+        OR: [{ status: { in: ['pending', 'sending', 'sent', 'failed'] } }, { attempts: { gt: 0 } }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { target: true, event: true },
+    });
+    const last = new Map<FmpTarget, string>();
+    for (const row of rows) {
+      const target = row.target as FmpTarget;
+      last.delete(target);
+      last.set(target, row.event);
+    }
+    const targets = [...last.keys()];
+    return targets.filter((target, index) => index === targets.length - 1 || !RELEASE_EVENTS.includes(last.get(target)!));
+  }
+
+  /** D141: the FileMaker this order's bill is in now (where its last message went), or null when no FileMaker has the order. */
+  async currentTarget(sessionId: string): Promise<FmpTarget | null> {
+    return (await this.billTargets(this.prisma, sessionId)).at(-1) ?? null;
+  }
+
+  /**
    * D123: an order FileMaker already got leaves the cashier (sent back to stock, or cancelled): FileMaker is told, so its `ses`
    * script (v3.4) takes the held bill away and frees the serials (and, for a cancel, refuses the order from then on). Nothing is
-   * queued for an order SES never sent to FileMaker. Inside the caller's transaction, like `enqueue`.
+   * queued for an order SES never sent to FileMaker. Inside the caller's transaction, like `enqueue`. D141: every FileMaker that
+   * may hold a bill of the order is told (`billTargets`), not only the one the latest message went to.
    */
   async release(db: Outbox, session: FmpSession, event: FmpReleaseEvent): Promise<string | null> {
     if (!this.configured()) return null;
-    // D130: a message the switch held back never reached FileMaker, so it left no held bill to take away
-    const sent = await db.fmpOutbox.count({ where: { sessionId: session.id, status: { not: 'skipped' } } });
-    return sent ? this.enqueue(db, session, event) : null;
+    return this.enqueueReleases(db, session, event, await this.billTargets(db, session.id));
+  }
+
+  /** One release per FileMaker, a millisecond apart so "the order's latest message" is the one for the FileMaker listed last. */
+  private async enqueueReleases(db: Outbox, session: FmpSession, event: string, targets: FmpTarget[]): Promise<string | null> {
+    const now = Date.now();
+    let id: string | null = null;
+    for (const [index, target] of targets.entries()) id = await this.enqueue(db, session, event, target, new Date(now + index));
+    return id;
   }
 
   // ---------------------------------------------------------------------------
@@ -558,12 +618,15 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       const tokens = new Map<FmpTarget, { cfg: FmpConfig; token: string }>();
       try {
         for (const row of due) {
+          // D141: ADMIN may switch the push off while a round is going: asked before every message, so nothing more leaves SES
+          if ((await this.settings.fmpPushMode()) === 'off') break;
           const claimed = await this.prisma.fmpOutbox.updateMany({
             where: { id: row.id, status: 'pending' },
             data: { status: 'sending', lockedAt: new Date(), attempts: { increment: 1 } },
           });
           if (claimed.count !== 1) continue; // another container took it
           try {
+            if (await this.superseded(row, batchId)) continue;
             const target: FmpTarget = row.target === 'UAT' ? 'UAT' : 'PRODUCTION';
             const cfg = this.cfg(target);
             if (!cfg) throw new Error(`ยังไม่ได้ตั้งค่า FileMaker ${target === 'UAT' ? 'UAT (FMP_UAT_*)' : 'จริง (FMP_*)'}`);
@@ -608,6 +671,25 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       this.running = false;
     }
     return result;
+  }
+
+  /**
+   * D141: a message that opens a bill is not sent once the order has left the cashier after it was queued (a later message takes
+   * the bill away: sent back to stock, or cancelled). Sent late (it waited for a retry, or ADMIN's switch was off) it would open a
+   * held bill for an order that is not at the cashier any more, and nothing would take that bill away. Kept as `superseded`.
+   */
+  private async superseded(row: { id: string; sessionId: string; reference: string; event: string; attempts: number; createdAt: Date }, batchId: string): Promise<boolean> {
+    if (RELEASE_EVENTS.includes(row.event)) return false;
+    const later = await this.prisma.fmpOutbox.findFirst({
+      where: { sessionId: row.sessionId, event: { in: [...RELEASE_EVENTS] }, createdAt: { gt: row.createdAt } },
+      select: { id: true },
+    });
+    if (!later) return false;
+    const why = 'ออเดอร์ถูกส่งกลับ STOCK / ยกเลิกหลังข้อความนี้เข้าคิว: ไม่ส่งข้อความเปิดบิลเก่า';
+    // the claim counted a try that never happened: `attempts` stays "times this message may have reached FileMaker"
+    await this.prisma.fmpOutbox.update({ where: { id: row.id }, data: { status: 'superseded', lockedAt: null, attempts: row.attempts, lastError: why } });
+    await this.record({ direction: 'SES', kind: 'superseded', ok: true, batchId, outboxId: row.id, reference: row.reference, summary: `ไม่ได้ส่งไป FileMaker (${row.event}): ${why}` });
+    return true;
   }
 
   private async fail(row: { id: string; reference: string }, attempts: number, error: unknown, batchId: string) {
@@ -719,7 +801,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
   private async deliver(
     cfg: FmpConfig,
     token: string,
-    row: { id: string; reference: string; event: string; payload: string; attempts: number },
+    row: { id: string; reference: string; event: string; payload: string; attempts: number; lastError: string | null },
     batchId: string,
   ) {
     // D130: a record id belongs to one FileMaker: never update a production record on the UAT server or the other way round
@@ -728,11 +810,19 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       orderBy: [{ sentAt: 'desc' }, { createdAt: 'desc' }],
       select: { fmpRecordId: true },
     });
-    // D96: an earlier try of THIS message may have reached FileMaker without SES learning the record id (a timeout while the script
-    // ran): look the order up by its reference before creating, so a retry never makes a second record of the same order
-    const target = earlier?.fmpRecordId ?? (row.attempts > 0 ? await this.findRecord(cfg, token, row, batchId) : null);
+    // D96 / D141: an earlier try may have reached FileMaker without SES learning the record id (a timeout while the script ran):
+    // of THIS message (it is a retry, or ADMIN sent a failed one again), or of another message of the order (the bill was opened
+    // but the answer was lost, and this is the message that takes the bill away). Then the order is looked up by its reference
+    // before creating, so FileMaker never gets a second record of the same order (its script would work on the empty new one).
+    const triedBefore = row.attempts > 0 || row.lastError !== null;
+    const othersTried = earlier
+      ? 0
+      : await this.prisma.fmpOutbox.count({ where: { reference: row.reference, id: { not: row.id }, target: cfg.target, attempts: { gt: 0 } } });
+    const target = earlier?.fmpRecordId ?? (triedBefore || othersTried > 0 ? await this.findRecord(cfg, token, row, batchId) : null);
+    // only this message's own earlier try can have made the record: FileMaker answering "already done" is then this message's success
+    const ownRetry = !earlier && triedBefore && othersTried === 0;
     if (target) {
-      const out = await this.writeRecord(cfg, token, row, batchId, target);
+      const out = await this.writeRecord(cfg, token, row, batchId, target, ownRetry);
       if (out !== 'missing') return out;
       await this.record({ direction: 'SES', kind: 'record-gone', ok: false, batchId, outboxId: row.id, reference: row.reference, summary: `FileMaker ไม่มี record ${target} แล้ว: สร้างใหม่` });
     }
@@ -766,6 +856,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     row: { id: string; reference: string; event: string; payload: string },
     batchId: string,
     recordId: string | null,
+    ownRetry = false,
   ) {
     const body: Record<string, unknown> = { fieldData: { [cfg.field]: row.payload } };
     if (cfg.script) {
@@ -784,7 +875,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       throw new Error(`FileMaker ปฏิเสธ (HTTP ${res.status} ${res.code} ${res.message})`.trim());
     const scriptError = res.response.scriptError === undefined ? '0' : String(res.response.scriptError);
     const scriptResult = cfg.script ? String(res.response.scriptResult ?? '') : null;
-    const verdict = scriptResult ? scriptVerdict(scriptResult, recordId !== null) : null;
+    const verdict = scriptResult ? scriptVerdict(scriptResult, recordId !== null && !ownRetry) : null;
     if (verdict && scriptResult)
       await this.record({
         direction: 'IN',
@@ -862,7 +953,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       // D130: ADMIN's switch, and the test FileMaker it can point at
       mode,
       uat: { configured: uat !== null, host: uat ? new URL(uat.base).host : null, database: uat?.database ?? null },
-      counts: { pending: count('pending'), sending: count('sending'), sent: count('sent'), failed: count('failed'), skipped: count('skipped') },
+      counts: { pending: count('pending'), sending: count('sending'), sent: count('sent'), failed: count('failed'), skipped: count('skipped'), superseded: count('superseded') },
       rows,
     };
   }
@@ -1022,8 +1113,16 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     });
     if (!session) return { error: 'not-found' as const };
     const event = session.outcome ? 'CANCELLED' : AT_STOCK.includes(session.state) ? 'RETURNED_TO_STOCK' : 'RESEND';
+    if (event === 'RESEND') {
+      await this.record({ direction: 'SES', kind: 'resend', ok: true, reference, summary: `${by} สั่งส่งออเดอร์นี้ซ้ำ (${event})` });
+      return { id: await this.enqueue(this.prisma, session, event) };
+    }
+    // D141: "take the held bill away" only makes sense for a FileMaker that has the order. Told before the order was ever sent,
+    // FileMaker would note the round as returned and then refuse the first real send of the same round as stale.
+    const targets = await this.billTargets(this.prisma, session.id);
+    if (!targets.length) return { error: 'never-sent' as const };
     await this.record({ direction: 'SES', kind: 'resend', ok: true, reference, summary: `${by} สั่งส่งออเดอร์นี้ซ้ำ (${event})` });
-    return { id: await this.enqueue(this.prisma, session, event) };
+    return { id: await this.enqueueReleases(this.prisma, session, event, targets) };
   }
 
   // ---------------------------------------------------------------------------
@@ -1034,14 +1133,24 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const key = (this.config.get<string>('FMP_CALLBACK_KEY') ?? '').trim();
     return key.length >= 32 ? key : null;
   }
+  /** D141: the test FileMaker's own key for the callback door (`FMP_UAT_CALLBACK_KEY`); '' when unset: then both share `FMP_CALLBACK_KEY`. */
+  callbackUatKey(): string {
+    return (this.config.get<string>('FMP_UAT_CALLBACK_KEY') ?? '').trim();
+  }
 
   /**
    * FileMaker reports what it did with a message ("done", "failed"). The message is found by `outboxId` (what SES sent in the
    * record) or, failing that, `reference` (its latest message). Tolerant on purpose: only the id is required; the status, a
    * message and a time are read when present, and the whole body (phones masked) is kept in the log, so what FileMaker really
    * sends is visible. Never changes the order; it only records. Every call is logged, whatever the outcome.
+   *
+   * D141: `source` is the FileMaker that is calling when SES can tell (it used its own key, see `keySource`). A report then only
+   * lands on a message that went to that FileMaker: by `reference` the latest such message is taken, and an `outboxId` of the other
+   * FileMaker is refused (409), so the test FileMaker never writes on an order that is in the real one. And a report that names
+   * only the order (`reference`), not the message, never replaces the error the `ses` script answered for that message with a
+   * non-error: an old "done" arriving late must not hide "the held bill could not be taken away".
    */
-  async receiveCallback(body: Record<string, unknown>) {
+  async receiveCallback(body: Record<string, unknown>, source: FmpTarget | null = null) {
     const started = Date.now();
     const outboxId = pickText(body, ['outboxId'], 36);
     const reference = pickText(body, ['reference'], 32);
@@ -1061,29 +1170,36 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
         outboxId: ids.outboxId ?? null,
         reference: ids.reference ?? null,
       });
-    const refuse = async (httpStatus: 400 | 404, message: string) => {
+    const refuse = async (httpStatus: 400 | 404 | 409, message: string) => {
       await finish(httpStatus, message, { error: message }, { outboxId, reference });
-      throw httpStatus === 400 ? new BadRequestException(message) : new NotFoundException(message);
+      throw httpStatus === 400 ? new BadRequestException(message) : httpStatus === 409 ? new ConflictException(message) : new NotFoundException(message);
     };
 
     if (!outboxId && !reference) return refuse(400, 'ต้องส่ง outboxId หรือ reference');
     const row = outboxId
       ? await this.prisma.fmpOutbox.findUnique({ where: { id: outboxId } })
-      : await this.prisma.fmpOutbox.findFirst({ where: { reference: reference! }, orderBy: { createdAt: 'desc' } });
-    if (!row) return refuse(404, outboxId ? 'ไม่พบ outboxId นี้' : 'ไม่พบ reference นี้');
+      : await this.prisma.fmpOutbox.findFirst({ where: { reference: reference!, ...(source ? { target: source } : {}) }, orderBy: { createdAt: 'desc' } });
+    if (!row) return refuse(404, outboxId ? 'ไม่พบ outboxId นี้' : source ? `ไม่พบ reference นี้ในข้อความที่ส่งไป FileMaker ${source === 'UAT' ? 'UAT' : 'จริง'}` : 'ไม่พบ reference นี้');
     if (reference && row.reference !== reference) return refuse(400, 'outboxId กับ reference ไม่ตรงกัน');
+    if (source && (row.target === 'PRODUCTION' || row.target === 'UAT') && row.target !== source)
+      return refuse(409, `ข้อความนี้ส่งไป FileMaker ${row.target === 'UAT' ? 'UAT' : 'จริง'} แต่รายงานมาจาก FileMaker ${source === 'UAT' ? 'UAT' : 'จริง'}`);
 
     const ackStatus = ackStatusOf(body);
     const message = pickText(body, ['message', 'msg', 'detail', 'note']);
     const timeText = pickText(body, ['time', 'occurredAt', 'at', 'timestamp', 'datetime', 'completedAt', 'doneAt'], 40);
     const ackAt = timeText ? parseFmpTime(timeText) : null;
-    await this.prisma.fmpOutbox.update({
-      where: { id: row.id },
-      data: { ackStatus, ackMessage: message, ackAt, ackTimeText: timeText, ackReceivedAt: new Date() },
-    });
+    // D141: named by the order only, it may be about an earlier message: it is logged, but does not replace the error the `ses`
+    // script itself answered for the latest one (reports on the callback door still replace each other: the latest wins, D90)
+    const logOnly = !outboxId && ackStatus !== 'error' && row.ackStatus === 'error' && scriptRefused(row.scriptResult);
+    if (!logOnly)
+      await this.prisma.fmpOutbox.update({
+        where: { id: row.id },
+        data: { ackStatus, ackMessage: message, ackAt, ackTimeText: timeText, ackReceivedAt: new Date() },
+      });
     const answer = { ok: true, outboxId: row.id, reference: row.reference, status: ackStatus, time: ackAt?.toISOString() ?? null, timeReceived: timeText !== null };
     const timeNote = !timeText ? ' · ไม่ได้ส่งเวลา' : ackAt ? '' : ` · อ่านเวลา "${timeText}" ไม่ได้`;
-    await finish(200, `FileMaker รายงาน ${ackStatus}${message ? `: ${message}` : ''}${timeNote}`, answer, { outboxId: row.id, reference: row.reference });
+    const kept = logOnly ? ' · เก็บใน log เท่านั้น (ข้อความล่าสุดของออเดอร์มี error อยู่ และรายงานนี้ไม่ได้ระบุ outboxId)' : '';
+    await finish(200, `FileMaker รายงาน ${ackStatus}${message ? `: ${message}` : ''}${timeNote}${kept}`, answer, { outboxId: row.id, reference: row.reference });
     return answer;
   }
 

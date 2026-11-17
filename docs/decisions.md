@@ -1947,3 +1947,44 @@ Owner, after cancelling the held bill of queue 008 in FileMaker (UAT): the Staff
    cashier send-back or a missing item keeps its own tag, and then the card is not tinted). The list's `fmp` gains `attention`.
 5. **Not decided**: the "ปิดการขาย (แทน U POS)" button still shows on an order whose held bill FileMaker cancelled. Whether to hide it or
    warn first is open (`docs/open-questions.md`).
+
+## D141 — A FileMaker message stays with its round and its FileMaker; a release is never lost (2026-11-17)
+
+Owner asked for a second review (Codex) of the FileMaker work (D123 send-back / cancel, D129, D130 the switch) and then "fix it all".
+None of this is the everyday path: each needs a time-out or two things happening at once. What changed:
+
+1. **`off` is asked before every message.** The worker read ADMIN's switch once per round (up to 20 messages); switched off mid-round,
+   the rest still went. Now nothing more leaves SES after the switch.
+2. **An old "open a bill" is not sent once the order left the cashier.** A message that waited (a retry, or the switch was off) while the
+   order was sent back to stock or cancelled is kept as `superseded` and never sent; before, it opened a held bill for an order that was
+   no longer at the cashier, and nothing took that bill away.
+3. **A release (send-back / cancel) goes to every FileMaker that may hold the order's bill, and is never dropped.** It used to follow
+   the order's latest message only: an order sent to the test FileMaker and then to the real one (or the other way round) left a held
+   bill behind. And it was skipped for good while the switch was off or the target's settings were missing. Now: the FileMaker used
+   last is always told; an earlier one while the last thing it got was a bill to open. While the switch is off the release waits in
+   the queue and goes when ADMIN switches back on (this narrows D130 "off = held back, never sent later" to new orders: a bill that
+   already exists must still be taken away); with the target's settings missing it fails in the open, where ADMIN can send it again.
+4. **One record per order, also after a lost answer.** If FileMaker opened the bill but the answer was lost (time-out), the next
+   message of the order (the release) made a second, empty record and the script answered "nothing to release". SES now looks the
+   order up by its reference before creating whenever an earlier try of any of its messages may have reached FileMaker (also after
+   ADMIN's "ส่งซ้ำ" of a failed message, which reset the count D96 relied on).
+5. **"Already done" on the retry of the same message is its success**, not an error telling the cashier to cancel the held bill. It
+   stays an error when a later message (ADMIN's resend with other serials) finds the bill of an earlier one.
+6. **ADMIN's resend cannot "take the bill away" of an order no FileMaker ever got** (409). Before, FileMaker noted round 1 as
+   returned and then refused STOCK's first real send of round 1 as stale.
+7. **A report that names only the order never hides the script's own error.** On the callback door, a report with `reference` and
+   no `outboxId` that is not itself an error is logged but does not replace the error the `ses` script answered for the order's
+   latest message (an old "done" arriving late used to clear "the held bill could not be taken away" from the order and from
+   "ออเดอร์ที่ต้องดู"). Reports on the callback door still replace each other, the latest wins (D90).
+8. **The test FileMaker can have its own keys**: `POS_UAT_API_KEY` and `FMP_UAT_CALLBACK_KEY` (optional, 32 characters at least).
+   When set, SES knows which FileMaker calls: a bill reported by the test FileMaker is refused (409) for an order that is in the real
+   one and the other way round, and a callback only lands on a message that went to the calling FileMaker. Unset = both share the one
+   key and SES cannot tell them apart, as before. **Not set on production yet** (owner's step: the keys go into Coolify and into the
+   UAT file's `ses_report_bill` / `ses_report_cancel`).
+9. **An edit and a confirm of the same order go one after the other.** `updateSelection` takes the row lock `confirmPurchase` takes,
+   and the confirm checks the order again under it, so D129's card check cannot be passed with a selection saved a moment later.
+10. **The stock screen's banner follows the switch**: asked again every minute (it was read once when the screen opened).
+
+Known and left open: a bill report (`/integrations/pos/bills`) carries the order's reference but not the round, so a report of an
+earlier round's bill that arrives after a new round was sent is taken for the current round. SES cannot tell from what FileMaker
+sends today (a bill confirmed in round 1 may rightly be the one paid in round 2), see `docs/agents/hazards.md` H-41.

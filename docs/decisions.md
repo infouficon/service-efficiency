@@ -1930,16 +1930,20 @@ Owner, after cancelling the held bill of queue 008 in FileMaker (UAT): the Staff
 `SENT_TO_CASHIER` tag, so nothing told it apart from the orders going fine ("น่าจะต้องให้มีอะไรบ่งบอกบ้างไหม เช่น กรอบสีแดง หรือ
 พื้นหลังสีแดงอ่อน"). Chosen the same day (option B of three mock-ups):
 
-1. **Which orders**: the same as the problems in Admin's "ออเดอร์ที่ต้องดู" (SES-10 / D116): the order's latest FileMaker message failed,
-   or FileMaker answered with an error (refused a serial, cancelled the held bill, could not take the draft out). In code: the tone of
-   `fmpStatusText` is `bad` (`fmpAlert`, `apps/web/src/features/session/fmpStatusText.ts`). A later good message clears it.
+1. **Which orders**: exactly the problems in Admin's "ออเดอร์ที่ต้องดู" (SES-10 / D116), by one rule in the API
+   (`fmpAttentionKind`, `apps/api/src/fmp/fmp.service.ts`; each order's `fmp.attention`): the order's latest FileMaker message failed,
+   is still waiting to go after 10 minutes, FileMaker answered with an error (refused a serial, cancelled the held bill, could not take
+   the draft out), or the bill opened without some serials (the cashier scans them in). A failed delivery wins over any answer on the
+   row. A later good message clears it. (First cut read the tone of `fmpStatusText` in the browser and missed the stuck and
+   missing-serial orders, and a failed delivery that had a callback report; found in review the same day.)
 2. **How**: the card gets a light red background and red border, and a short red tag with a warning icon replaces the state tag
-   (`FMP ยกเลิกบิลพัก`, `FMP ยกเลิกบิลที่ชำระแล้ว`, `FMP เอาร่างบิลออกไม่ได้`, `FMP ไม่รับ`, `ส่ง FMP ไม่สำเร็จ`); hovering the tag shows the
+   (`FMP ยกเลิกบิลพัก`, `FMP ยกเลิกบิลที่ชำระแล้ว`, `FMP เอาร่างบิลออกไม่ได้`, `FMP ไม่รับ`, `ส่ง FMP ไม่สำเร็จ`, `ส่ง FMP ค้าง`,
+   `บิล FMP ขาด SN`); hovering the tag shows the
    full line. A selected card keeps the red background and takes the selection's border. The full message and what to do stay in the
    order's summary.
 3. **Wording**: a held bill cancelled in FileMaker is not an SES cancel (D121): the order is still open and can be sent again, so the tag
    says "FMP ยกเลิกบิลพัก", never just "ยกเลิก". Staff then resends (ADMIN) or cancels the order in SES.
 4. **Where**: the Staff session list, and the Stock queue where the tag only takes the place of the plain state tag (an item change, a
-   cashier send-back or a missing item keeps its own tag, and then the card is not tinted). No API change: the list already carries `fmp`.
+   cashier send-back or a missing item keeps its own tag, and then the card is not tinted). The list's `fmp` gains `attention`.
 5. **Not decided**: the "ปิดการขาย (แทน U POS)" button still shows on an order whose held bill FileMaker cancelled. Whether to hide it or
    warn first is open (`docs/open-questions.md`).

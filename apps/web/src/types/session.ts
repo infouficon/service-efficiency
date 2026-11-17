@@ -270,6 +270,8 @@ export interface FmpStatus {
   /** FileMaker's answer (the `ses` script or a callback): success / error / reported; null = no answer yet */
   ackStatus: 'success' | 'error' | 'reported' | null;
   ackMessage: string | null;
+  /** D140: why this needs a person, by the API's one rule (the same as Admin's "ออเดอร์ที่ต้องดู"); null = it does not */
+  attention?: 'failed' | 'stuck' | 'ack-error' | 'sn-skipped' | null;
   at: string;
 }
 

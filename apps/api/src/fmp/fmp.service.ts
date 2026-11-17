@@ -264,6 +264,29 @@ export function parseSnCheck(result: string | null): SnCheck[] | null {
   return out.length ? out : null;
 }
 
+
+/** D116 / D140: why an order's latest FileMaker message needs a person. */
+export type FmpAttentionKind = 'failed' | 'stuck' | 'ack-error' | 'sn-skipped';
+export const FMP_STUCK_MINUTES = 10;
+
+/**
+ * D116 / D140: the one rule for "this order's FileMaker side needs a person", from the order's LATEST message: delivery failed;
+ * still waiting to go after `stuckMinutes`; FileMaker answered with an error; or the bill opened without some serials (the cashier
+ * scans them in). Admin's "ออเดอร์ที่ต้องดู" and the red queue cards both ask this, so they never disagree. A failed delivery wins
+ * over any answer on the row (an answer there came on the callback door, not from this delivery).
+ */
+export function fmpAttentionKind(
+  row: { status: string; ackStatus: string | null; snCheck: unknown; createdAt: Date },
+  now = Date.now(),
+  stuckMinutes = FMP_STUCK_MINUTES,
+): FmpAttentionKind | null {
+  if (row.status === 'failed') return 'failed';
+  if ((row.status === 'pending' || row.status === 'sending') && now - row.createdAt.getTime() >= stuckMinutes * 60_000) return 'stuck';
+  if (row.ackStatus === 'error') return 'ack-error';
+  if (row.ackStatus === 'success' && ((row.snCheck as SnCheck[] | null) ?? []).some((c) => !c.written)) return 'sn-skipped';
+  return null;
+}
+
 /** What FileMaker says it did: `status` "success" / "error" (or a boolean). Anything else is kept as `reported`. */
 export function ackStatusOf(body: Record<string, unknown>): 'success' | 'error' | 'reported' {
   for (const key of ['status', 'result', 'state', 'success', 'ok']) {
@@ -869,7 +892,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       Math.min(max, Math.max(min, Number.isFinite(value) ? (value as number) : fallback));
     const openMinutes = clamp(options.openMinutes, 30, 5, 24 * 60);
     const payMinutes = clamp(options.payMinutes, 240, 30, 7 * 24 * 60);
-    const stuckMinutes = clamp(options.stuckMinutes, 10, 2, 24 * 60);
+    const stuckMinutes = clamp(options.stuckMinutes, FMP_STUCK_MINUTES, 2, 24 * 60);
     const now = Date.now();
     const since = new Date(now - 14 * 24 * 3600_000);
 
@@ -938,16 +961,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
         const age = Math.floor((now - row.createdAt.getTime()) / 60_000);
         // D119: the bill opened but some serials were not put on it (wrong branch, not in stock, ...): the cashier scans them
         const skipped = ((row.snCheck as SnCheck[] | null) ?? []).filter((c) => !c.written);
-        const kind =
-          row.status === 'failed'
-            ? ('failed' as const)
-            : (row.status === 'pending' || row.status === 'sending') && age >= stuckMinutes
-              ? ('stuck' as const)
-              : row.ackStatus === 'error'
-                ? ('ack-error' as const)
-                : row.ackStatus === 'success' && skipped.length
-                  ? ('sn-skipped' as const)
-                  : null;
+        const kind = fmpAttentionKind(row, now, stuckMinutes);
         return kind
           ? {
               outboxId: row.id,

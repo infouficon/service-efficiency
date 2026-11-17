@@ -21,23 +21,30 @@ export function fmpStatusText(
 }
 
 /**
- * D140: the short red tag a queue card shows instead of its state when the order's FileMaker side needs a person (the same orders as
- * Admin's "ออเดอร์ที่ต้องดู" problems: the latest message failed or FileMaker answered with an error). Null otherwise. The full line
- * and what to do stay in the order's summary (`fmpStatusText`). A held bill cancelled in FileMaker is not an SES cancel (D121): the
- * order is still open and can be sent again, so the tag never just says "ยกเลิก".
+ * D140: the short red tag a queue card shows instead of its state when the order's FileMaker side needs a person: exactly the orders
+ * in Admin's "ออเดอร์ที่ต้องดู" problems, because the API decides (`fmp.attention`, one rule for both): the latest message failed,
+ * is stuck in the queue, FileMaker answered with an error, or the bill opened without some serials. Null otherwise. The full line and
+ * what to do stay in the order's summary (`fmpStatusText`). A held bill cancelled in FileMaker is not an SES cancel (D121): the order
+ * is still open and can be sent again, so the tag never just says "ยกเลิก".
  */
 export function fmpAlert(fmp: FmpStatus | null | undefined): string | null {
-  if (!fmp || fmpStatusText(fmp)?.tone !== 'bad') return null;
-  const code = /^[A-Z_]+/.exec(fmp.ackMessage ?? '')?.[0];
-  if (fmp.ackStatus === 'error' && code === 'CANCELLED')
-    return /^CANCELLED \(ชำระแล้ว/.test(fmp.ackMessage ?? '') ? 'FMP ยกเลิกบิลที่ชำระแล้ว' : 'FMP ยกเลิกบิลพัก';
-  if (fmp.ackStatus === 'error' && (code === 'BILL_CONFIRMED' || code === 'BILL_IN_USE' || code === 'RELEASE_FAILED'))
-    return 'FMP เอาร่างบิลออกไม่ได้';
-  if (fmp.ackStatus === 'error') return 'FMP ไม่รับ';
-  return 'ส่ง FMP ไม่สำเร็จ';
+  if (!fmp) return null;
+  // an API that does not send `attention` yet (mid-deploy): what the card can tell by itself
+  const kind = fmp.attention !== undefined ? fmp.attention : fmp.status === 'failed' ? 'failed' : fmp.ackStatus === 'error' ? 'ack-error' : null;
+  if (!kind) return null;
+  if (kind === 'failed') return 'ส่ง FMP ไม่สำเร็จ';
+  if (kind === 'stuck') return 'ส่ง FMP ค้าง';
+  if (kind === 'sn-skipped') return 'บิล FMP ขาด SN';
+  const message = fmp.ackMessage ?? '';
+  const code = /^[A-Z_]+/.exec(message)?.[0];
+  if (code === 'CANCELLED') return /^CANCELLED \(ชำระแล้ว/.test(message) ? 'FMP ยกเลิกบิลที่ชำระแล้ว' : 'FMP ยกเลิกบิลพัก';
+  if (code === 'BILL_CONFIRMED' || code === 'BILL_IN_USE' || code === 'RELEASE_FAILED') return 'FMP เอาร่างบิลออกไม่ได้';
+  return 'FMP ไม่รับ';
 }
 
 function statusLine(fmp: FmpStatus): { tone: 'ok' | 'warn' | 'wait' | 'bad'; text: string; hint?: string } | null {
+  // a failed delivery wins over any answer on the row (that answer came on the callback door, not from this delivery): Admin reads it the same way
+  if (fmp.status === 'failed') return { tone: 'bad', text: `ส่งไป FileMaker ไม่สำเร็จ: ${fmp.error ?? '-'}`, hint: 'ADMIN กด "ส่งซ้ำ" ได้ที่ Admin → ส่งไป FileMaker' };
   // D123 / D129: answers to "take the held draft out" (sent back to STOCK, cancelled, or a new round from STOCK)
   const release = releaseText(fmp);
   if (release) return release;
@@ -71,7 +78,6 @@ function statusLine(fmp: FmpStatus): { tone: 'ok' | 'warn' | 'wait' | 'bad'; tex
     };
   if (fmp.ackStatus === 'success') return { tone: 'ok', text: `FileMaker รับแล้ว: ${fmp.ackMessage ?? 'สำเร็จ'}` };
   if (fmp.ackStatus === 'reported') return { tone: 'wait', text: `FileMaker แจ้ง: ${fmp.ackMessage ?? '-'}` };
-  if (fmp.status === 'failed') return { tone: 'bad', text: `ส่งไป FileMaker ไม่สำเร็จ: ${fmp.error ?? '-'}`, hint: 'ADMIN กด "ส่งซ้ำ" ได้ที่ Admin → ส่งไป FileMaker' };
   if (fmp.status === 'sent') return { tone: 'wait', text: 'ส่งถึง FileMaker แล้ว (ยังไม่มีผลตอบกลับ)' };
   if (fmp.attempts > 0 && fmp.error) return { tone: 'wait', text: `กำลังลองส่งไป FileMaker ใหม่ (ครั้งที่ ${fmp.attempts}): ${fmp.error}` };
   return { tone: 'wait', text: 'กำลังส่งไป FileMaker…' };

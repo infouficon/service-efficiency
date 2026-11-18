@@ -2590,6 +2590,18 @@ input[aria-invalid='true'] {
   background: var(--primary-subtle);
   box-shadow: inset 3px 0 0 var(--primary);
 }
+/* D140: FileMaker refused the order / cancelled its held bill. Selected keeps the red tint and takes the selection's border. */
+.queue-card.fmp-alert {
+  background: var(--bg-danger);
+  border-color: #fca5a5;
+}
+.queue-card.fmp-alert:hover {
+  border-color: var(--color-danger);
+}
+.queue-card.fmp-alert.selected {
+  background: var(--bg-danger);
+  border-color: var(--primary);
+}
 .card-top {
   display: flex;
   justify-content: space-between;
@@ -2634,6 +2646,12 @@ input[aria-invalid='true'] {
   background: var(--bg-info);
   color: var(--color-info);
   border: 1px solid var(--border-info);
+}
+.status-tag.status-fmp-alert {
+  background: #fff;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  white-space: nowrap;
 }
 .status-tag.status-outcome,
 .status-tag.status-cancelled,

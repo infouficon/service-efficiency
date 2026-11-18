@@ -42,6 +42,27 @@ test('each order carries its FileMaker side for the shop: delivery and FileMaker
     await db.fmpOutbox.create({ data: { ...base, id: randomUUID(), event: 'RESEND', status: 'failed', attempts: 8, lastError: 'FileMaker ไม่ตอบภายใน 60 วินาที' } });
     v = await one();
     assert.deepEqual([v.fmp.status, v.fmp.attempts, v.fmp.error], ['failed', 8, 'FileMaker ไม่ตอบภายใน 60 วินาที']);
+    assert.equal(v.fmp.attention, 'failed');
+
+    // D140: `attention` is Admin's rule ("ออเดอร์ที่ต้องดู"), so a queue card and Admin never disagree
+    const latest = async (data) => {
+      await db.fmpOutbox.deleteMany({ where: { sessionId: id } });
+      await db.fmpOutbox.create({ data: { ...base, id: randomUUID(), ...data } });
+      return (await inList('stock')).fmp.attention;
+    };
+    const ago = (minutes) => new Date(Date.now() - minutes * 60_000);
+    assert.equal(await latest({ status: 'pending', createdAt: ago(3) }), null, 'just queued');
+    assert.equal(await latest({ status: 'pending', createdAt: ago(20) }), 'stuck');
+    assert.equal(await latest({ status: 'sent', sentAt: ago(1), ackStatus: 'success', ackMessage: 'CREATED saleID 9' }), null);
+    assert.equal(await latest({ status: 'sent', sentAt: ago(1), ackStatus: 'error', ackMessage: 'CANCELLED (บิลพัก): ยกเลิกบิลพักใน FMP' }), 'ack-error');
+    assert.equal(
+      await latest({ status: 'sent', sentAt: ago(1), ackStatus: 'success', ackMessage: 'CREATED_SN_LATER saleID 9', snCheck: [{ sn: 'A', code: 'OK', written: true }, { sn: 'B', code: 'SN_WRONG_BRANCH', written: false }] }),
+      'sn-skipped',
+    );
+    // a delivery that failed after an answer came on the callback door is still a failure (Admin lists it as failed)
+    assert.equal(await latest({ status: 'failed', attempts: 8, lastError: 'timeout', ackStatus: 'reported', ackMessage: 'หมายเหตุ' }), 'failed');
+    const admin = (await app('/admin/fmp/attention', 'GET', undefined, 'admin')).data.problems.find((x) => x.reference === reference);
+    assert.equal(admin?.kind, 'failed');
     await db.fmpOutbox.deleteMany({ where: { sessionId: id } });
   } finally {
     await cleanup(ctx, world);

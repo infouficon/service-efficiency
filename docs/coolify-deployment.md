@@ -98,6 +98,7 @@
 | `FMP_CALLBACK_KEY` | กุญแจที่ FileMaker ใช้เรียก `POST /api/integrations/fmp/callback` เพื่อรายงานผลกลับ (D90) · อย่างน้อย 32 ตัวอักษร เช่น `openssl rand -hex 32` · ตั้งเป็น **Sensitive** · ส่งให้ทีม FMP ทางช่องทางที่ปลอดภัย ห้ามใส่ใน git/แชต · ไม่ตั้ง = ประตูปิด (404) |
 | `FMP_WORKER_INTERVAL_SECONDS` | ความถี่ของตัวส่ง (ค่าเริ่มต้น 10; 0 = ปิดตัวส่งอัตโนมัติ) |
 | `FMP_UAT_HOST`, `FMP_UAT_DATABASE`, `FMP_UAT_USER`, `FMP_UAT_PASSWORD` | (D130) FileMaker **ทดสอบ** สำหรับโหมด "UAT" ของสวิตช์ใน Admin → ส่งไป FileMaker · ไม่ตั้ง = เลือกโหมด UAT ไม่ได้ · `FMP_UAT_LAYOUT` / `FMP_UAT_FIELD` / `FMP_UAT_SCRIPT` ไม่ตั้ง = ใช้ค่าเดียวกับของจริง · ตั้ง `FMP_UAT_PASSWORD` เป็น **Sensitive** |
+| `FMP_UAT_CALLBACK_KEY` | (D141, ไม่บังคับ) กุญแจของ FileMaker **ทดสอบ** สำหรับ `POST /api/integrations/fmp/callback` · อย่างน้อย 32 ตัวอักษร และต้องไม่ซ้ำกับ `FMP_CALLBACK_KEY` · ตั้งแล้ว SES รู้ว่า FileMaker ตัวไหนรายงาน: รายงานจากไฟล์ทดสอบจะลงเฉพาะข้อความที่ส่งไปไฟล์ทดสอบ · ไม่ตั้ง = ใช้กุญแจเดียวกับของจริง (SES แยกไม่ออก) · **Sensitive** |
 
 ตั้ง 4 ตัวแรกครบ + Restart = เริ่มส่ง (ออเดอร์ที่ถึงแคชเชียร์หลังจากนั้น) ไม่ตั้ง = ไม่ส่งและไม่เก็บอะไร ดูผลที่ Admin → "ส่งไป FileMaker" รูปแบบข้อมูลและกติกา: `docs/agents/fmp-outbound.md`
 
@@ -121,6 +122,7 @@
 | ตัวแปร | ความหมาย |
 | --- | --- |
 | `POS_API_KEY` | คีย์ที่ U POS ส่งเป็น `Authorization: Bearer <คีย์>` เมื่อเรียก `/api/integrations/pos/*` ต้องยาวอย่างน้อย 32 ตัวอักษร (สุ่มเอง เช่น `openssl rand -hex 32`) ตั้งเป็น **Sensitive** ใน Coolify ของ api และตั้งค่าเดียวกันฝั่ง U POS (ต้องหมุนพร้อมกันทั้งสองฝั่ง) **ห้ามใส่ใน git/แชต** |
+| `POS_UAT_API_KEY` | (D141, ไม่บังคับ) คีย์ของ FileMaker **ทดสอบ** (โหมด UAT, D130) สำหรับ `/api/integrations/pos/*` · อย่างน้อย 32 ตัวอักษร และต้องไม่ซ้ำกับ `POS_API_KEY` · ตั้งแล้ว บิลที่ไฟล์ทดสอบรายงานจะไม่ปิดออเดอร์ที่อยู่ในของจริง (ตอบ 409) และกลับกัน · ไม่ตั้ง = ใช้คีย์เดียวกับของจริง (SES แยกไม่ออก) · **Sensitive** · ใส่คีย์นี้ในสคริปต์ `ses_report_bill` ของไฟล์ทดสอบ |
 
 ไม่ตั้ง (หรือสั้นกว่า 32 ตัว) = ปิดการเชื่อม: เส้นทางเหล่านั้นตอบ 404 รายละเอียดสัญญาและข้อความขอให้ทีม U POS ทำฝั่งตัวเอง: `docs/agents/pos-integration.md`
 

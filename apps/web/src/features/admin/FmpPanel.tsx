@@ -104,7 +104,7 @@ interface FmpStatus {
   /** D130: ADMIN's switch and the test FileMaker it can point at */
   mode: { mode: FmpPushMode; updatedAt: string | null; updatedBy: string | null };
   uat: { configured: boolean; host: string | null; database: string | null };
-  counts: { pending: number; sending: number; sent: number; failed: number; skipped: number };
+  counts: { pending: number; sending: number; sent: number; failed: number; skipped: number; superseded?: number };
   rows: FmpRow[];
 }
 
@@ -136,6 +136,8 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   sent: { label: 'ส่งแล้ว', cls: 'status-found' },
   failed: { label: 'ล้มเหลว (ต้องส่งซ้ำเอง)', cls: 'status-outcome' },
   skipped: { label: 'ไม่ได้ส่ง (ปิดการส่งอยู่)', cls: 'status-outcome' },
+  // D141: the order went back to stock / was cancelled before this message to open its bill could go
+  superseded: { label: 'ไม่ส่ง (ออเดอร์ออกจากแคชเชียร์ก่อน)', cls: 'status-outcome' },
 };
 const ACK: Record<string, { label: string; cls: string }> = {
   success: { label: 'สำเร็จ', cls: 'status-found' },
@@ -158,6 +160,7 @@ const KIND: Record<string, string> = {
   'will-retry': 'ไม่สำเร็จ จะลองใหม่',
   'gave-up': 'ไม่สำเร็จ เลิกส่ง',
   skipped: 'ไม่ได้ส่ง (สวิตช์)',
+  superseded: 'ไม่ส่งข้อความเปิดบิลเก่า',
   mode: 'ADMIN เปลี่ยนการส่ง',
 };
 const EVENT: Record<string, string> = {
@@ -677,13 +680,19 @@ export function FmpPushBanner() {
   const [mode, setMode] = useState<FmpPushMode | null>(null);
   useEffect(() => {
     let active = true;
-    fetchSettingsApi()
-      .then((settings) => {
-        if (active) setMode(settings.fmpPushMode ?? 'production');
-      })
-      .catch(() => undefined); // the banner is a reminder only: no settings, no banner
+    const load = () =>
+      fetchSettingsApi()
+        .then((settings) => {
+          if (active) setMode(settings.fmpPushMode ?? 'production');
+        })
+        .catch(() => undefined); // the banner is a reminder only: no settings, no banner
+    void load();
+    // D141: ADMIN can switch while this screen stays open all day: asked again every minute, so the banner never tells the
+    // cashier to key bills in by hand after the push is back on (or stays silent after it went off)
+    const timer = setInterval(() => void load(), 60_000);
     return () => {
       active = false;
+      clearInterval(timer);
     };
   }, []);
   if (!mode || mode === 'production') return null;

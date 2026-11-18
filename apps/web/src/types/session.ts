@@ -310,7 +310,7 @@ export type AppView =
 /** D100: what the shop sees of FileMaker for one order. */
 export interface FmpStatus {
   /** delivery of SES's message: pending / sending / sent / failed; skipped = held back by ADMIN's switch (D130) */
-  status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped' | 'superseded';
   /** D130: which FileMaker it went to: PRODUCTION, UAT, or NONE (skipped) */
   target?: 'PRODUCTION' | 'UAT' | 'NONE';
   attempts: number;
@@ -318,5 +318,7 @@ export interface FmpStatus {
   /** FileMaker's answer (the `ses` script or a callback): success / error / reported; null = no answer yet */
   ackStatus: 'success' | 'error' | 'reported' | null;
   ackMessage: string | null;
+  /** D140: why this needs a person, by the API's one rule (the same as Admin's "ออเดอร์ที่ต้องดู"); null = it does not */
+  attention?: 'failed' | 'stuck' | 'ack-error' | 'sn-skipped' | null;
   at: string;
 }

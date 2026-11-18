@@ -2031,3 +2031,24 @@ Owner instruction via `/grill-me`:
    - Initial templates are seeded into MySQL via migration `202611180001_category_and_sku_attributes`.
    - Categories without attributes configured simply show all SKUs directly in `SkuPicker` without forcing intermediate attribute steps.
    - The "คืนค่ามาตรฐาน" (Reset to default) button in `CategoriesPanel.tsx` is removed; all changes are managed directly by ADMIN.
+
+## D144 — Apple Store-Style Product Configurator Layout in Web Tone (2026-11-18)
+
+Owner instruction via `/grill-me`: "ต้องการการแสดงผลตอนเลือกรายละเอียดต่างๆแบบในภาพ แต่ให้ยังคงเป็นโทนสีของ web". Amends D74, D78, D142, and D143.
+
+1. **Configurator Container Card (`.spec-config-box`).**
+   - In `SkuPicker.tsx`, choosing a product model transitions the picker into a clean configurator card styled with rounded corners (`16px`), brand teal border (`1.5px solid #0abab5`), and card shadow.
+   - Container header displays the chosen model name with a "เปลี่ยนรุ่น" button to allow staff to return to the model list at any time.
+2. **Specification Step Headers.**
+   - Each specification section displays `[Label]` alongside the selected value (e.g. `ตัวเรือน - อะลูมิเนียม`, `สี - Jet Black`, `ขนาดตัวเรือน - 42mm`, `การเชื่อมต่อ - GPS`).
+3. **Adaptive Option Cards with Real-Time Stock Subtitle.**
+   - Text specification attributes render as interactive cards (`.spec-option-card`).
+   - Cards display the attribute value prominently, paired with real-time stock availability subtitle ("พร้อมขาย", "เหลือ X ชิ้น", "สินค้าหมด", "มีจำหน่าย").
+   - Layout automatically adapts: 2 columns for <= 2 short choices (e.g. sizes, connectivity), and 1 column full-width for >= 3 choices or longer descriptive text (e.g. case materials).
+   - Selected card is highlighted with `2px solid #0abab5` and light teal tint (`var(--primary-subtle)`).
+4. **Circular Color Swatches with Active Ring.**
+   - Color steps render as circular swatches (`.spec-swatch-circle`) using hex codes mapped from `ProductColor` (`/colors/map`).
+   - Active selection displays a double ring outline in web brand teal (`.spec-swatch-ring`).
+   - Hover and touch tooltips display color name and stock availability.
+5. **Resolved SKU Footer.**
+   - When all specification steps are completed and resolve to a single SKU, a summary footer inside the card shows the resolved SKU code and a stock status tag.

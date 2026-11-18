@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { distinct } from './workflow';
 import {
@@ -10,6 +10,7 @@ import {
   type Picked,
 } from './catalog';
 import type { Category, CategoryAttributeSpec } from '../../types/session';
+import { api } from '../../services/api';
 
 function stockText(s: CatalogSku): string {
   if (isUnlimited(s)) return 'มีจำหน่าย';
@@ -18,23 +19,32 @@ function stockText(s: CatalogSku): string {
   return 'พร้อมขาย';
 }
 
-function colourLabel(s: CatalogSku): string {
-  if (s.color && s.name) {
-    if (s.name.toLowerCase().includes(s.color.toLowerCase())) return s.color;
-    return `${s.name} (${s.color})`;
-  }
-  return s.color || s.name || 'มาตรฐาน';
+function getOptionStockText(skusForOption: CatalogSku[]): { text: string; outOfStock: boolean } {
+  if (skusForOption.length === 0) return { text: '', outOfStock: true };
+  if (skusForOption.every(isOutOfStock)) return { text: 'สินค้าหมด', outOfStock: true };
+  if (skusForOption.some(isUnlimited)) return { text: 'มีจำหน่าย', outOfStock: false };
+
+  const totalStock = skusForOption.reduce(
+    (sum, s) => sum + (typeof s.stock === 'number' ? s.stock : 0),
+    0,
+  );
+  if (totalStock > 0) return { text: `เหลือ ${totalStock} ชิ้น`, outOfStock: false };
+  return { text: 'พร้อมขาย', outOfStock: false };
 }
+
+const isColorSpec = (spec: CategoryAttributeSpec) =>
+  spec.key.toLowerCase() === 'color' || spec.label.trim() === 'สี';
+
+const isTwoColumns = (options: string[]) =>
+  options.length <= 2 && options.every((opt) => opt.length <= 16);
 
 /** "wi-fi", "WiFi" and "wifi" are the same to someone typing on a phone. */
 const searchable = (text: string) => text.toLowerCase().replaceAll('-', '');
 
 /**
- * Pick one SKU of a category (D78, D79, D142):
- * Models as a list of buttons, then step-by-step specification chips defined by the Category template
- * (e.g. for iPad: Connectivity [Wi-Fi / Cellular] -> Storage -> Color; for Mac: RAM -> Storage -> Color;
- * for Watch: Case Size -> Connectivity -> Color).
- * A step with a single choice is automatically taken for the user.
+ * Pick one SKU of a category (D78, D79, D142, D144):
+ * Clean Apple Store-style configurator layout in the system's teal theme.
+ * Displays Model header, then step-by-step option cards and circular color swatches.
  */
 export function SkuPicker({
   models,
@@ -53,15 +63,27 @@ export function SkuPicker({
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [skuId, setSkuId] = useState('');
   const [query, setQuery] = useState('');
+  const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
-  const stepRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const colourRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
+
+  // Load color palette mapping for color swatches
+  useEffect(() => {
+    let active = true;
+    api<Record<string, string>>('/colors/map')
+      .then((m) => {
+        if (active && m) setColorMap(m);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const chosen = models.find((m) => m.key === modelKey) ?? null;
   const modelSkus = useMemo(() => chosen?.model.skus ?? [], [chosen]);
 
-  // Resolve category specifications template (D142)
+  // Resolve category specifications template (D142, D144)
   const categoryName = chosen?.product.category ?? '';
   const resolvedSpecs = useMemo<CategoryAttributeSpec[]>(() => {
     if (!chosen) return [];
@@ -72,7 +94,7 @@ export function SkuPicker({
       )?.attributes;
       if (fromCat && fromCat.length > 0) return fromCat;
     }
-    // Dynamic fallback when no template: check if memory or storage exist in SKUs
+    // Dynamic fallback when no template: check if memory or storage or color exist in SKUs
     const fallback: CategoryAttributeSpec[] = [];
     if (modelSkus.some((s) => s.memory)) {
       fallback.push({ key: 'memory', label: 'RAM', required: true });
@@ -80,26 +102,32 @@ export function SkuPicker({
     if (modelSkus.some((s) => s.storage)) {
       fallback.push({ key: 'storage', label: 'ความจุ', required: true });
     }
-    fallback.push({ key: 'color', label: 'สี', required: true });
+    if (modelSkus.some((s) => s.color)) {
+      fallback.push({ key: 'color', label: 'สี', required: true });
+    }
     return fallback;
   }, [chosen, categorySpecs, categories, categoryName, modelSkus]);
 
-  // Non-color filter steps
-  const filterSpecs = useMemo(
-    () => resolvedSpecs.filter((s) => s.key !== 'color'),
-    [resolvedSpecs],
-  );
+  // Ensure color is present in specs if SKUs have colors
+  const allSpecs = useMemo<CategoryAttributeSpec[]>(() => {
+    const list = [...resolvedSpecs];
+    if (modelSkus.some((s) => s.color) && !list.some(isColorSpec)) {
+      list.push({ key: 'color', label: 'สี', required: true });
+    }
+    return list;
+  }, [resolvedSpecs, modelSkus]);
 
   // Compute available choices and candidate SKUs for each step
-  const { steps, finalSkus } = useMemo(() => {
+  const { steps, remainingSkus } = useMemo(() => {
     let candidates = modelSkus;
     const computedSteps: {
       spec: CategoryAttributeSpec;
       options: string[];
       selectedValue: string;
+      candidatesForStep: CatalogSku[];
     }[] = [];
 
-    for (const spec of filterSpecs) {
+    for (const spec of allSpecs) {
       const available = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)));
       if (available.length > 0) {
         const val = selectedValues[spec.key] ?? '';
@@ -107,6 +135,7 @@ export function SkuPicker({
           spec,
           options: available,
           selectedValue: val,
+          candidatesForStep: candidates,
         });
         if (val) {
           candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === val);
@@ -114,16 +143,8 @@ export function SkuPicker({
       }
     }
 
-    return { steps: computedSteps, finalSkus: candidates };
-  }, [modelSkus, filterSpecs, selectedValues]);
-
-  // Colour SKUs display labels
-  const colourLabels = useMemo(() => {
-    const labels = finalSkus.map(colourLabel);
-    return finalSkus.map((s, i) =>
-      labels.filter((l) => l === labels[i]).length > 1 ? `${labels[i]} · ${s.sku}` : labels[i],
-    );
-  }, [finalSkus]);
+    return { steps: computedSteps, remainingSkus: candidates };
+  }, [modelSkus, allSpecs, selectedValues]);
 
   // Model search tokens
   const tokens = searchable(query).split(/\s+/).filter(Boolean);
@@ -170,12 +191,15 @@ export function SkuPicker({
       )?.attributes;
       currentSpecs = fromCat && fromCat.length > 0 ? fromCat : [];
     }
-    const curFilterSpecs = currentSpecs.filter((s) => s.key !== 'color');
-    const { nextValues, remainingSkus } = resolveAutoChoices(choice.model.skus, curFilterSpecs, {});
+    if (choice.model.skus.some((s) => s.color) && !currentSpecs.some(isColorSpec)) {
+      currentSpecs = [...currentSpecs, { key: 'color', label: 'สี', required: true }];
+    }
+
+    const { nextValues, remainingSkus: nextRemaining } = resolveAutoChoices(choice.model.skus, currentSpecs, {});
     setSelectedValues(nextValues);
 
-    if (remainingSkus.length === 1) {
-      const single = remainingSkus[0];
+    if (nextRemaining.length === 1) {
+      const single = nextRemaining[0];
       setSkuId(single.id);
       const pickedObj = { product: choice.product, model: choice.model, sku: single };
       onPick(pickedObj);
@@ -186,15 +210,11 @@ export function SkuPicker({
       setSkuId('');
       onPick(null);
     }
-
-    setTimeout(() => {
-      colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
   };
 
   const handleStepChange = (specKey: string, value: string) => {
     const initial: Record<string, string> = {};
-    for (const s of filterSpecs) {
+    for (const s of allSpecs) {
       if (s.key === specKey) {
         initial[s.key] = value;
         break;
@@ -204,11 +224,11 @@ export function SkuPicker({
       }
     }
 
-    const { nextValues, remainingSkus } = resolveAutoChoices(modelSkus, filterSpecs, initial);
+    const { nextValues, remainingSkus: nextRemaining } = resolveAutoChoices(modelSkus, allSpecs, initial);
     setSelectedValues(nextValues);
 
-    if (remainingSkus.length === 1 && chosen) {
-      const single = remainingSkus[0];
+    if (nextRemaining.length === 1 && chosen) {
+      const single = nextRemaining[0];
       setSkuId(single.id);
       const pickedObj = { product: chosen.product, model: chosen.model, sku: single };
       onPick(pickedObj);
@@ -219,36 +239,61 @@ export function SkuPicker({
       setSkuId('');
       onPick(null);
     }
-
-    setTimeout(() => {
-      colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }, 50);
   };
 
-  const pickColour = (id: string) => {
-    const sku = modelSkus.find((s) => s.id === id);
-    if (!chosen || !sku || isOutOfStock(sku)) return;
-    setSkuId(id);
-    const pickedObj = { product: chosen.product, model: chosen.model, sku };
-    onPick(pickedObj);
-    onComplete?.(pickedObj);
-  };
-
-  // Determine whether all non-color steps have been satisfied
-  const allPriorStepsSatisfied = steps.every((st) => !!st.selectedValue);
+  const singleResolvedSku = remainingSkus.length === 1 && skuId === remainingSkus[0].id ? remainingSkus[0] : null;
 
   return (
     <div className="sku-picker" ref={rootRef}>
-      <div className="picker-field">
-        <span className="picker-label" id={labelId}>
-          รุ่น <span className="required">*</span>
-        </span>
-        {chosen ? (
-          <div className="picked-model">
-            <span>
-              <strong>{chosen.model.name}</strong>
-              {chosen.sub && <small>{chosen.sub}</small>}
-            </span>
+      {/* 1. MODEL SELECTION VIEW (when no model selected yet) */}
+      {!chosen ? (
+        <div className="picker-field">
+          <span className="picker-label" id={labelId}>
+            เลือกรุ่นสินค้า <span className="required">*</span>
+          </span>
+          {models.length === 0 ? (
+            <p className="muted">ไม่มีรุ่นสินค้าในหมวดนี้</p>
+          ) : (
+            <>
+              {models.length > 8 && (
+                <label className="model-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="ค้นหารุ่น เช่น 13 m4"
+                    aria-label="ค้นหารุ่น"
+                    enterKeyHint="search"
+                  />
+                  {query && (
+                    <button type="button" aria-label="ล้างคำค้น" onClick={() => setQuery('')}>
+                      <X size={14} />
+                    </button>
+                  )}
+                </label>
+              )}
+              <div className="model-list" role="group" aria-labelledby={labelId}>
+                {shown.map((m) => (
+                  <button type="button" key={m.key} className="model-option" onClick={() => pickModel(m)}>
+                    <strong>{m.model.name}</strong>
+                    {m.sub && <small>{m.sub}</small>}
+                  </button>
+                ))}
+                {shown.length === 0 && <p className="muted">ไม่พบรุ่นที่ค้นหา</p>}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        /* 2. APPLE-STORE STYLE CONFIGURATOR CARD (D144) */
+        <div className="spec-config-box">
+          {/* Header: Model Name & Change Button */}
+          <div className="spec-config-header">
+            <div>
+              <h3 className="spec-config-title">{chosen.model.name}</h3>
+              {chosen.sub && <p className="muted" style={{ margin: 0, fontSize: '0.8rem' }}>{chosen.sub}</p>}
+            </div>
             <button
               type="button"
               className="picked-model-change"
@@ -259,91 +304,157 @@ export function SkuPicker({
                 onPick(null);
               }}
             >
-              เปลี่ยน
+              เปลี่ยนรุ่น
             </button>
           </div>
-        ) : models.length === 0 ? (
-          <p className="muted">ไม่มีรุ่นสินค้าในหมวดนี้</p>
-        ) : (
-          <>
-            {models.length > 8 && (
-              <label className="model-search">
-                <Search size={16} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="ค้นหารุ่น เช่น 13 m4"
-                  aria-label="ค้นหารุ่น"
-                  enterKeyHint="search"
-                />
-                {query && (
-                  <button type="button" aria-label="ล้างคำค้น" onClick={() => setQuery('')}>
-                    <X size={14} />
-                  </button>
+
+          {/* Dynamic Specification Steps */}
+          {steps.map((st, idx) => {
+            const prevStepsDone = steps.slice(0, idx).every((prev) => !!prev.selectedValue);
+            if (!prevStepsDone) return null;
+
+            const isColor = isColorSpec(st.spec);
+            const cols2 = isTwoColumns(st.options);
+
+            return (
+              <div key={st.spec.key} className="spec-config-section">
+                {/* Section Title: e.g. "ตัวเรือน - อะลูมิเนียม" or "สี - Jet Black" */}
+                <div className="spec-config-section-label">
+                  <span>{st.spec.label}</span>
+                  {st.selectedValue && (
+                    <span className="spec-config-selected-val"> - {st.selectedValue}</span>
+                  )}
+                </div>
+
+                {/* Option Content: Circular Color Swatches or Option Cards */}
+                {isColor ? (
+                  <div className="spec-swatch-row">
+                    {st.options.map((opt) => {
+                      const matchingSkus = st.candidatesForStep.filter(
+                        (s) => getSkuAttribute(s, st.spec.key) === opt,
+                      );
+                      const stockInfo = getOptionStockText(matchingSkus);
+                      const hex = colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
+                      const isSelected = st.selectedValue === opt;
+
+                      return (
+                        <button
+                          type="button"
+                          key={opt}
+                          disabled={stockInfo.outOfStock}
+                          className={`spec-swatch-btn ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleStepChange(st.spec.key, opt)}
+                          title={`${opt} · ${stockInfo.text}`}
+                        >
+                          {isSelected && <span className="spec-swatch-ring" />}
+                          <span
+                            className="spec-swatch-circle"
+                            style={{
+                              backgroundColor: hex,
+                              opacity: stockInfo.outOfStock ? 0.35 : 1,
+                            }}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className={`spec-card-grid ${cols2 ? 'cols-2' : 'cols-1'}`}>
+                    {st.options.map((opt) => {
+                      const matchingSkus = st.candidatesForStep.filter(
+                        (s) => getSkuAttribute(s, st.spec.key) === opt,
+                      );
+                      const stockInfo = getOptionStockText(matchingSkus);
+                      const isSelected = st.selectedValue === opt;
+
+                      return (
+                        <button
+                          type="button"
+                          key={opt}
+                          disabled={stockInfo.outOfStock}
+                          className={`spec-option-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleStepChange(st.spec.key, opt)}
+                        >
+                          <span className="spec-option-title">{opt}</span>
+                          <span className={`spec-option-sub ${stockInfo.outOfStock ? 'out-of-stock' : ''}`}>
+                            {stockInfo.text}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              </label>
-            )}
-            <div className="model-list" role="group" aria-labelledby={labelId}>
-              {shown.map((m) => (
-                <button type="button" key={m.key} className="model-option" onClick={() => pickModel(m)}>
-                  <strong>{m.model.name}</strong>
-                  {m.sub && <small>{m.sub}</small>}
-                </button>
-              ))}
-              {shown.length === 0 && <p className="muted">ไม่พบรุ่นที่ค้นหา</p>}
+              </div>
+            );
+          })}
+
+          {/* Fallback SKU choice if multiple SKUs remain after all steps */}
+          {steps.every((s) => !!s.selectedValue) && remainingSkus.length > 1 && (
+            <div className="spec-config-section">
+              <div className="spec-config-section-label">
+                <span>รายการสินค้า</span>
+                {skuId && (
+                  <span className="spec-config-selected-val">
+                    {' '}
+                    - {modelSkus.find((s) => s.id === skuId)?.name}
+                  </span>
+                )}
+              </div>
+              <div className="spec-card-grid cols-1">
+                {remainingSkus.map((s) => (
+                  <button
+                    type="button"
+                    key={s.id}
+                    disabled={isOutOfStock(s)}
+                    className={`spec-option-card ${s.id === skuId ? 'selected' : ''}`}
+                    onClick={() => {
+                      setSkuId(s.id);
+                      const pickedObj = { product: chosen.product, model: chosen.model, sku: s };
+                      onPick(pickedObj);
+                      if (!isOutOfStock(s)) onComplete?.(pickedObj);
+                    }}
+                  >
+                    <span className="spec-option-title">{s.name} ({s.sku})</span>
+                    <span className={`spec-option-sub ${isOutOfStock(s) ? 'out-of-stock' : ''}`}>
+                      {stockText(s)}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </>
-        )}
-      </div>
+          )}
 
-      {/* Dynamic Specification Steps (D142) */}
-      {chosen &&
-        steps.map((st, idx) => {
-          // Render this step only if previous steps have been selected
-          const prevStepsDone = steps.slice(0, idx).every((prev) => !!prev.selectedValue);
-          if (!prevStepsDone) return null;
-
-          return (
+          {/* Footer: Resolved SKU Summary */}
+          {singleResolvedSku && (
             <div
-              key={st.spec.key}
-              ref={(el) => {
-                stepRefs.current[st.spec.key] = el;
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 20px',
+                background: 'var(--primary-subtle, #f0fdfa)',
+                borderTop: '1px solid var(--border-color, #e5e7eb)',
               }}
             >
-              <Chips
-                label={st.spec.label}
-                required={st.spec.required}
-                options={st.options.map((opt) => ({ value: opt, label: opt }))}
-                value={st.selectedValue}
-                onChange={(val) => handleStepChange(st.spec.key, val)}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>รหัส SKU:</span>
+                <code style={{ fontSize: '0.9rem', fontWeight: 600 }}>{singleResolvedSku.sku}</code>
+              </div>
+              <span
+                className={`status-tag ${isOutOfStock(singleResolvedSku) ? 'status-danger' : 'status-success'}`}
+                style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '6px' }}
+              >
+                {stockText(singleResolvedSku)}
+              </span>
             </div>
-          );
-        })}
-
-      {/* Final Step: Colour / SKU selection with stock availability */}
-      {chosen && allPriorStepsSatisfied && finalSkus.length > 0 && (
-        <div ref={colourRef}>
-          <Chips
-            label="สี"
-            required
-            options={finalSkus.map((s, i) => ({
-              value: s.id,
-              label: colourLabels[i],
-              sub: stockText(s),
-              disabled: isOutOfStock(s),
-            }))}
-            value={skuId}
-            onChange={pickColour}
-          />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-/** One choice out of a few, as buttons big enough for a thumb (a native dropdown is tiny on a phone). */
+/** Legacy chip button group for backward compatibility where imported */
 export function Chips({
   label,
   required = false,

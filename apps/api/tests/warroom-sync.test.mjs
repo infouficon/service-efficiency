@@ -157,6 +157,16 @@ test('Mac attributes: warroom\'s capacity is the RAM, so the storage is read fro
   assert.equal(wr.colorOf('16GB/512GB - Silver'), 'Silver');
   assert.equal(wr.colorOf('Space Black'), 'Space Black');
   assert.equal(wr.colorOf('Deep Blue'), 'Deep Blue');
+  assert.equal(wr.colorOf('- Space Black'), 'Space Black', 'strips leading dash');
+  assert.equal(wr.colorOf('1TB Space Black'), 'Space Black', 'strips capacity without dash');
+  assert.equal(wr.colorOf('Space Black with nano-texture glass'), 'Space Black', 'strips nano-texture glass');
+  assert.equal(wr.colorOf('- Space Black with nano-texture glass'), 'Space Black', 'strips dash and nano-texture glass');
+  assert.equal(wr.colorOf('- '), null, 'dash only becomes null');
+  assert.deepEqual(wr.parseColorField('1TB - Space Black with nano-texture glass'), {
+    color: 'Space Black',
+    storage: '1TB',
+    display: 'Nano-texture Glass',
+  });
   assert.equal(wr.colorOf('1TB'), '1TB', 'never empty');
   assert.equal(wr.colorOf(null), null);
   assert.notEqual(wr.fingerprint(10, 5), wr.fingerprint(11, 5));
@@ -209,7 +219,7 @@ test('catalog: Mac variants share one model, with RAM and capacity of their own;
 });
 
 test('iPad specifications: connectivity parsed (Wi-Fi vs Cellular), model name stripped, single merged model (D142)', () => {
-  assert.equal(wr.CATALOG_RULES_VERSION, 7);
+  assert.equal(wr.CATALOG_RULES_VERSION, 8);
   assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi 256GB'), 'Wi-Fi');
   assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi + Cellular 256GB'), 'Wi-Fi + Cellular');
   assert.equal(wr.connectivityOf('iPad Pro 13 WiFi 1TB'), 'Wi-Fi');

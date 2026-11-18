@@ -2052,3 +2052,27 @@ Owner instruction via `/grill-me`: "ต้องการการแสดง�
    - Hover and touch tooltips display color name and stock availability.
 5. **Resolved SKU Footer.**
    - When all specification steps are completed and resolve to a single SKU, a summary footer inside the card shows the resolved SKU code and a stock status tag.
+
+## D145 — Robust Warroom ERP Color Parsing & Attribute Separation (2026-11-18)
+
+Owner instruction via `/grill-me`: "ทำไมสีบางอันติด - มาด้วย บางอันติดความจุมาด้วย 1TB บางอันติด with nano-texture glass". Amends D78, D80, D142, and D143.
+
+1. **Root Cause Analysis.**
+   - In Warroom ERP (`mart.stock_mv`), product colors frequently contain raw unnormalized strings:
+     - Leading punctuation (e.g. `"- Space Black"`, `"- "`, `": Silver"`).
+     - Storage capacities embedded in the color string without delimiters (e.g. `"1TB Space Black"`).
+     - Display glass variations appended to color strings (e.g. `"Space Black with nano-texture glass"`).
+   - The previous regex in `colorOf` only matched capacity followed by explicit separators (`/^(?:\d+GB|TB ... )+[-–·:]\s*/i`), failing on leading dashes alone, capacity without dashes, and display glass options.
+2. **Nano-texture Glass Specification Separation (`display`).**
+   - The `nano-texture glass` / `with nano-texture glass` designation represents a physical glass finish, not a color.
+   - `parseColorField` extracts nano-texture and returns `display: 'Nano-texture Glass'`, leaving the `color` attribute clean (e.g. `'Space Black'`).
+   - In `buildCatalog`, when any SKU in a product model has `display: 'Nano-texture Glass'`, peer SKUs without explicit glass specifications are automatically assigned `display: 'Standard Glass'` so staff can pick between standard and nano-texture glass in the configurator.
+3. **Punctuation and Storage Stripping.**
+   - Leading/trailing punctuation (`-`, `–`, `·`, `:`, `/`, spaces) is completely stripped.
+   - Any embedded storage tokens (`1TB`, `512GB`, `16GB/512GB`) are removed from the color string.
+   - If the SKU does not already have a storage attribute, the extracted capacity is used as a fallback for `attrs.storage`.
+   - If the cleaned string is empty or contains only punctuation (e.g. `"-"`), the color becomes `null`.
+4. **Database Cleanup and Catalog Rules Version 8.**
+   - `CATALOG_RULES_VERSION` is incremented to 8 to trigger re-sync and catalog re-indexing.
+   - Prisma SQL migration `202611180003_clean_product_colors/migration.sql` immediately cleans existing rows in `ProductSku` (`color`, `attributes`) and purges dirty/invalid color names from `ProductColor`.
+

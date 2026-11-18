@@ -48,6 +48,8 @@ export interface SkuItem {
   storage?: string | null;
   /** RAM of a Mac (D79) */
   memory?: string | null;
+  /** D142: category specification key-values */
+  attributes?: Record<string, string> | null;
   /** barcode from warroom (D72), next to the part number in `sku` */
   upc?: string | null;
   active: boolean;
@@ -74,6 +76,19 @@ export interface ProductItem {
   active: boolean;
   erpManaged?: boolean;
   models: ModelItem[];
+}
+
+/** Format SKU specifications for display (D142) */
+function formatSkuSpecs(sku: {
+  memory?: string | null;
+  storage?: string | null;
+  color?: string | null;
+  attributes?: Record<string, string> | null;
+}): string {
+  if (sku.attributes && Object.keys(sku.attributes).length > 0) {
+    return Object.values(sku.attributes).filter(Boolean).join(' · ');
+  }
+  return [sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ');
 }
 
 /** Does this branch row carry ERP numbers? */
@@ -225,6 +240,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     name: string;
     color: string;
     storage: string;
+    memory: string;
+    attributes: Record<string, string>;
     active: boolean;
   }>({
     open: false,
@@ -232,6 +249,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     name: '',
     color: '',
     storage: '',
+    memory: '',
+    attributes: {},
     active: true,
   });
 
@@ -498,29 +517,25 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
     e.preventDefault();
     setBusy(true);
     try {
+      const payload = {
+        sku: skuModal.sku,
+        name: skuModal.name,
+        color: skuModal.attributes.color || skuModal.color || undefined,
+        storage: skuModal.attributes.storage || skuModal.storage || undefined,
+        memory: skuModal.attributes.memory || skuModal.memory || undefined,
+        attributes: Object.keys(skuModal.attributes).length > 0 ? skuModal.attributes : undefined,
+      };
       if (skuModal.editingId) {
         await api(`/products/skus/${skuModal.editingId}`, 'PUT', {
-          ...(skuLocked
-            ? {}
-            : {
-                sku: skuModal.sku,
-                name: skuModal.name,
-                color: skuModal.color || undefined,
-                storage: skuModal.storage || undefined,
-              }),
+          ...(skuLocked ? {} : payload),
           active: skuModal.active,
         });
         toast.success('อัปเดต SKU เรียบร้อย');
       } else if (skuModal.modelId) {
-        await api(`/products/models/${skuModal.modelId}/skus`, 'POST', {
-          sku: skuModal.sku,
-          name: skuModal.name,
-          color: skuModal.color || undefined,
-          storage: skuModal.storage || undefined,
-        });
+        await api(`/products/models/${skuModal.modelId}/skus`, 'POST', payload);
         toast.success('เพิ่ม SKU ใหม่เรียบร้อย');
       }
-      setSkuModal({ open: false, sku: '', name: '', color: '', storage: '', active: true });
+      setSkuModal({ open: false, sku: '', name: '', color: '', storage: '', memory: '', attributes: {}, active: true });
       await loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึก SKU ไม่สำเร็จ');
@@ -902,7 +917,7 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                             {product.name} · {model.name}
                           </div>
                           <div className="fine muted">
-                            {sku.name} {[sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ')}
+                            {sku.name} {formatSkuSpecs(sku) && `(${formatSkuSpecs(sku)})`}
                           </div>
                         </td>
                         <td>
@@ -1282,6 +1297,8 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                                 name: '',
                                 color: '',
                                 storage: '',
+                                memory: '',
+                                attributes: {},
                                 active: true,
                               })
                             }
@@ -1297,16 +1314,38 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                             <span
                               key={s.id}
                               style={{
-                                display: 'inline-block',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
                                 marginRight: '6px',
                                 marginBottom: '4px',
                                 padding: '2px 6px',
                                 background: '#fff',
                                 borderRadius: '4px',
                                 border: '1px solid #cbd5e1',
+                                cursor: 'pointer',
+                              }}
+                              title="คลิกเพื่อแก้ไข SKU"
+                              onClick={() => {
+                                const initialAttrs = { ...(s.attributes ?? {}) };
+                                if (s.color && !initialAttrs.color) initialAttrs.color = s.color;
+                                if (s.storage && !initialAttrs.storage) initialAttrs.storage = s.storage;
+                                if (s.memory && !initialAttrs.memory) initialAttrs.memory = s.memory;
+                                setSkuModal({
+                                  open: true,
+                                  modelId: model.id,
+                                  editingId: s.id,
+                                  sku: s.sku,
+                                  name: s.name,
+                                  color: s.color || '',
+                                  storage: s.storage || '',
+                                  memory: s.memory || '',
+                                  attributes: initialAttrs,
+                                  active: s.active,
+                                });
                               }}
                             >
-                              {s.sku} ({s.name})
+                              {s.sku} ({s.name}) {formatSkuSpecs(s) ? `· ${formatSkuSpecs(s)}` : ''}
                               {s.erpManaged && <ErpBadge />}
                             </span>
                           ))}
@@ -1420,30 +1459,125 @@ export function ProductWorkspace({ user, subView, onSubViewChange }: ProductWork
                 }
               />
             </label>
-            <div className="form-grid-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-              <label>
-                ความจุ (Storage)
-                <input
-                  disabled={skuLocked}
-                  placeholder="เช่น 128GB, 256GB"
-                  value={skuModal.storage}
-                  onChange={(e) =>
-                    setSkuModal({ ...skuModal, storage: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                สี (Color)
-                <input
-                  disabled={skuLocked}
-                  placeholder="เช่น Natural Titanium"
-                  value={skuModal.color}
-                  onChange={(e) =>
-                    setSkuModal({ ...skuModal, color: e.target.value })
-                  }
-                />
-              </label>
-            </div>
+            {(() => {
+              const currentProduct = products.find((p) =>
+                p.models.some((m) => m.id === skuModal.modelId),
+              );
+              const currentCategory = currentProduct
+                ? categories.find(
+                    (c) => c.name.toLowerCase() === currentProduct.category.toLowerCase(),
+                  )
+                : null;
+              const categorySpecs =
+                currentCategory?.attributes && currentCategory.attributes.length > 0
+                  ? currentCategory.attributes
+                  : [];
+
+              if (categorySpecs.length > 0) {
+                return (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: categorySpecs.length > 1 ? '1fr 1fr' : '1fr',
+                      gap: '1rem',
+                      marginTop: '0.5rem',
+                      marginBottom: '0.5rem',
+                    }}
+                  >
+                    {categorySpecs.map((spec) => {
+                      const val =
+                        skuModal.attributes[spec.key] ??
+                        (spec.key === 'color'
+                          ? skuModal.color
+                          : spec.key === 'storage'
+                            ? skuModal.storage
+                            : spec.key === 'memory'
+                              ? skuModal.memory
+                              : '');
+                      const suggestedValues = currentProduct
+                        ? Array.from(
+                            new Set(
+                              currentProduct.models.flatMap((m) =>
+                                m.skus.map((s) => {
+                                  if (
+                                    s.attributes &&
+                                    typeof s.attributes[spec.key] === 'string' &&
+                                    s.attributes[spec.key].trim()
+                                  ) {
+                                    return s.attributes[spec.key].trim();
+                                  }
+                                  if (spec.key === 'color') return s.color?.trim() || '';
+                                  if (spec.key === 'storage') return s.storage?.trim() || '';
+                                  if (spec.key === 'memory') return s.memory?.trim() || '';
+                                  return '';
+                                }),
+                              ).filter(Boolean),
+                            ),
+                          )
+                        : [];
+                      return (
+                        <label key={spec.key}>
+                          {spec.label} {spec.required && <span className="required">*</span>}
+                          <input
+                            list={`datalist-sku-${spec.key}`}
+                            disabled={skuLocked}
+                            required={spec.required}
+                            placeholder={`ระบุหรือเลือก${spec.label}`}
+                            value={val}
+                            onChange={(e) =>
+                              setSkuModal({
+                                ...skuModal,
+                                attributes: { ...skuModal.attributes, [spec.key]: e.target.value },
+                                ...(spec.key === 'color' ? { color: e.target.value } : {}),
+                                ...(spec.key === 'storage' ? { storage: e.target.value } : {}),
+                                ...(spec.key === 'memory' ? { memory: e.target.value } : {}),
+                              })
+                            }
+                          />
+                          {suggestedValues.length > 0 && (
+                            <datalist id={`datalist-sku-${spec.key}`}>
+                              {suggestedValues.map((opt) => (
+                                <option key={opt} value={opt} />
+                              ))}
+                            </datalist>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  className="form-grid-2col"
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}
+                >
+                  <label>
+                    ความจุ (Storage)
+                    <input
+                      disabled={skuLocked}
+                      placeholder="เช่น 128GB, 256GB"
+                      value={skuModal.storage}
+                      onChange={(e) =>
+                        setSkuModal({ ...skuModal, storage: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    สี (Color)
+                    <input
+                      disabled={skuLocked}
+                      placeholder="เช่น Natural Titanium"
+                      value={skuModal.color}
+                      onChange={(e) =>
+                        setSkuModal({ ...skuModal, color: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              );
+            })()}
             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
               <input
                 type="checkbox"

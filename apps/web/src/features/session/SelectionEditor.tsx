@@ -619,6 +619,7 @@ export function SelectionEditor({
                   <SkuPicker
                     key={`${category}:${pickerRun}`}
                     models={models}
+                    categories={categoryList ?? undefined}
                     onPick={setPicked}
                     onComplete={handleAddPicked}
                   />
@@ -638,9 +639,11 @@ export function SelectionEditor({
                       <div className="picker-sku-title">
                         <strong>{picked.model.name}</strong>
                         <span className="picker-sku-specs">
-                          {[picked.sku.memory, picked.sku.storage, picked.sku.color]
-                            .filter(Boolean)
-                            .join(' · ')}
+                          {picked.sku.attributes && Object.keys(picked.sku.attributes).length > 0
+                            ? Object.values(picked.sku.attributes).filter(Boolean).join(' · ')
+                            : [picked.sku.memory, picked.sku.storage, picked.sku.color]
+                                .filter(Boolean)
+                                .join(' · ')}
                         </span>
                       </div>
                       <div className="picker-sku-meta">

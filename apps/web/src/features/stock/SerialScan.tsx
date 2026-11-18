@@ -136,7 +136,13 @@ export function SerialScan({
     const sn = raw.trim().toUpperCase();
     if (!sn) return;
     // D124/D125: an IMEI that is not 15 digits with a valid check digit, or the wrong kind of number for this product
-    const kind = serialKindOf(item.product.category, item.product.product, item.product.modelName, item.product.model);
+    const kind = serialKindOf(
+      item.product.category,
+      item.product.product,
+      item.product.modelName,
+      item.product.model,
+      item.product.attributes ? JSON.stringify(item.product.attributes) : '',
+    );
     const problem = serialProblem(sn, kind)
       ? serialProblem(sn, kind)
       : session.selection.items.some((one) => one.serials?.some((serial) => serial.sn === sn)) ||
@@ -318,6 +324,7 @@ export function SerialScan({
           item.product.modelName,
           item.product.model,
           item.product.sku,
+          item.product.attributes ? JSON.stringify(item.product.attributes) : '',
         );
         const isImei = kind === 'imei';
         const codeLabel = isImei ? 'IMEI' : 'Serial Number';

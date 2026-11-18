@@ -9,6 +9,7 @@ import {
   Database,
   LogOut,
   Layers,
+  Palette,
   Menu,
   X,
   AlertTriangle,
@@ -516,6 +517,17 @@ export function App({
                         }}
                       >
                         <Layers size={14} /> <span>หมวดหมู่สินค้า</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`nav-subitem ${adminSubView === 'colors' ? 'nav-subitem-active' : ''}`}
+                        onClick={() => {
+                          setAdminSubView('colors');
+                          setIsMobileMenuOpen(false);
+                        }}
+                      >
+                        <Palette size={14} /> <span>จัดการสีสินค้า</span>
                       </button>
 
                       <button

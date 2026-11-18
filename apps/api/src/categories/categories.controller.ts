@@ -42,7 +42,7 @@ export class CategoriesController {
   @Post()
   async create(@Req() req: Request, @Body() dto: CategoryCreateDto) {
     await this.admin(req);
-    return this.categories.create(dto.name, dto.isAccessory);
+    return this.categories.create(dto.name, dto.isAccessory, dto.attributes);
   }
 
   @Put(':id')

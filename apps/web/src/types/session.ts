@@ -61,6 +61,8 @@ export interface ProductSKU {
   name: string;
   color?: string;
   storage?: string;
+  memory?: string;
+  attributes?: Record<string, string>;
 }
 
 export interface Product {
@@ -77,6 +79,10 @@ export interface Product {
   /** ISO time of the warroom snapshot behind an `erp` stock number. */
   erpAsOf?: string | null;
   branchActive?: boolean;
+  color?: string;
+  storage?: string;
+  memory?: string;
+  attributes?: Record<string, string>;
 }
 
 /** D127: card options (banks/issuers and installment months) for payment methods */
@@ -101,6 +107,13 @@ export interface PaymentMethod {
   cardOptions?: PaymentCardOption[];
 }
 
+export interface CategoryAttributeSpec {
+  key: string;
+  label: string;
+  options?: string[];
+  required?: boolean;
+}
+
 /** A product category (D72), kept by ADMIN and added by the warroom sync. The name is what products store. */
 export interface Category {
   id: string;
@@ -111,6 +124,8 @@ export interface Category {
   isAccessory: boolean;
   /** created by the warroom sync */
   erpManaged: boolean;
+  /** D142: specification templates for this category */
+  attributes?: CategoryAttributeSpec[];
   /** back office list only */
   productCount?: number;
 }

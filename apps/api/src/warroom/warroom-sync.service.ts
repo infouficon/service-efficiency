@@ -89,6 +89,8 @@ export interface CatalogItem {
   /** RAM parsed from the names ("Ram 16" -> "16GB"), D79 */
   memory: string | null;
   upc: string | null;
+  /** D142: dynamic specifications parsed from names */
+  attributes?: Record<string, string> | null;
 }
 /** How a warroom category text is handled (D72): which SES category it goes to, and whether SES has it switched on. */
 export interface CategoryTally {
@@ -264,17 +266,74 @@ export function colorOf(color: string | null): string | null {
 }
 
 /**
- * A model name as staff should see it (D79): without the capacity (D78), without the memory ("Ram 16"), and without a
- * trailing keyboard-layout marker ("Eng", which stays in the SKU name), so one model carries all its RAM / capacity /
- * colour variants. Screen size and chip stay in the name ("MacBook Air M5 13.6").
+ * D142: Connectivity parsed from names: "Wi-Fi + Cellular", "Wi-Fi", "GPS + Cellular", "GPS"
  */
-export function modelNameOf(name: string | null, capacity: string | null): string | null {
+export function connectivityOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (/\bwi-?fi\s*\+\s*cell(?:ular)?\b/i.test(text) || /\bcellular\b/i.test(text)) {
+      return 'Wi-Fi + Cellular';
+    }
+    if (/\bgps\s*\+\s*cell(?:ular)?\b/i.test(text)) {
+      return 'GPS + Cellular';
+    }
+  }
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (/\bwi-?fi\b/i.test(text) || /\bwifi\b/i.test(text)) {
+      return 'Wi-Fi';
+    }
+    if (/\bgps\b/i.test(text)) {
+      return 'GPS';
+    }
+  }
+  return null;
+}
+
+/**
+ * D142: Case size parsed from names (e.g. "46mm", "42mm")
+ */
+export function caseSizeOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const m = (t ?? '').match(/\b(38|40|41|42|44|45|46|49)\s*mm\b/i);
+    if (m) return `${m[1]}mm`;
+  }
+  return null;
+}
+
+/**
+ * A model name as staff should see it (D79, D142): without the capacity (D78), without the memory ("Ram 16"), without a
+ * trailing keyboard-layout marker ("Eng", which stays in the SKU name), and without connectivity markers (Wi-Fi, Cellular,
+ * GPS) which are now distinct attributes, so one model carries all its variant SKUs cleanly.
+ */
+export function modelNameOf(
+  name: string | null,
+  capacity: string | null,
+  category?: string | null,
+): string | null {
   const base = withoutCapacity(name, capacity);
   if (!base) return base;
-  const cleaned = base
+  let cleaned = base
     .replace(/\s*\bram\s*\d+\s*(?:gb)?\b\s*/gi, ' ')
     .replace(/\s*\b\d+\s*gb\s*ram\b\s*/gi, ' ')
-    .replace(/\s+(?:eng|english)\s*$/i, '')
+    .replace(/\s+(?:eng|english)\s*$/i, '');
+
+  const cat = (category ?? '').toLowerCase();
+  if (cat.includes('ipad') || (!category && /ipad/i.test(base))) {
+    cleaned = cleaned
+      .replace(/\s*\bwi-?fi\s*\+\s*cell(?:ular)?\b\s*/gi, ' ')
+      .replace(/\s*\bwi-?fi\b\s*/gi, ' ')
+      .replace(/\s*\bwifi\b\s*/gi, ' ')
+      .replace(/\s*\bcellular\b\s*/gi, ' ');
+  }
+  if (cat.includes('watch') || (!category && /watch/i.test(base))) {
+    cleaned = cleaned
+      .replace(/\s*\bgps\s*\+\s*cell(?:ular)?\b\s*/gi, ' ')
+      .replace(/\s*\bgps\b\s*/gi, ' ');
+  }
+
+  cleaned = cleaned
+    .replace(/\(\s*\)/g, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/[\s\-·/]+$/, '')
     .trim();
@@ -425,23 +484,56 @@ export function buildCatalog(rows: WarroomRow[]): {
     const skuName = shortName(name, partNo).slice(0, 191);
     // D112: AirPods, Apple TV, HomePod and AirTag leave the accessories for a main-product category of their own
     const line = rule.name === 'Accessories' ? deviceLineOf(subcat, subsubcat, skuName) : null;
+    const finalCategory = line?.category ?? rule.name;
+    const finalProductName = line ? clean(line.productName, 191) ?? productName : productName;
+    const finalModelName =
+      (line
+        ? clean(line.modelName, 191)
+        : clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
+
+    const colorClean = clean(
+      colorOf(first(rs, (r) => r.color)),
+      64,
+    );
+    const storageClean = clean(capacity, 64);
+
+    // D142: specifications per category
+    const attrs: Record<string, string> = {};
+    const connectivity = connectivityOf(...nameTexts);
+    const caseSize = caseSizeOf(...nameTexts);
+
+    if (finalCategory === 'iPad') {
+      if (connectivity) attrs.connectivity = connectivity;
+      if (storageClean) attrs.storage = storageClean;
+      if (colorClean) attrs.color = colorClean;
+    } else if (finalCategory === 'Watch') {
+      if (caseSize) attrs.caseSize = caseSize;
+      if (connectivity) attrs.connectivity = connectivity;
+      if (colorClean) attrs.color = colorClean;
+    } else if (finalCategory === 'Mac') {
+      if (memory) attrs.memory = memory;
+      if (storageClean) attrs.storage = storageClean;
+      if (colorClean) attrs.color = colorClean;
+    } else {
+      if (storageClean) attrs.storage = storageClean;
+      if (colorClean) attrs.color = colorClean;
+    }
+
     items.push({
       partNo,
-      category: line?.category ?? rule.name,
+      category: finalCategory,
       isAccessory: line ? false : rule.isAccessory,
       upc: clean(
         first(rs, (r) => r.upc),
         64,
       ),
-      productName: line ? clean(line.productName, 191) ?? productName : productName,
-      modelName: (line ? clean(line.modelName, 191) : clean(modelNameOf(subsubcat, capacity), 191)) ?? productName,
+      productName: finalProductName,
+      modelName: finalModelName,
       memory,
       skuName,
-      color: clean(
-        colorOf(first(rs, (r) => r.color)),
-        64,
-      ),
-      storage: clean(capacity, 64),
+      color: colorClean,
+      storage: storageClean,
+      attributes: Object.keys(attrs).length > 0 ? attrs : null,
     });
   }
   // names that differ only in case are one product / model (D79)
@@ -584,7 +676,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 6;
+export const CATALOG_RULES_VERSION = 7;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still
@@ -882,6 +974,7 @@ export class WarroomSyncService
         storage: true,
         memory: true,
         upc: true,
+        attributes: true,
         model: {
           select: {
             name: true,
@@ -1029,6 +1122,7 @@ export class WarroomSyncService
           (s.color ?? null) !== i.color ||
           (s.storage ?? null) !== i.storage ||
           (s.memory ?? null) !== i.memory ||
+          JSON.stringify(s.attributes ?? null) !== JSON.stringify(i.attributes ?? null) ||
           (i.upc !== null && (s.upc ?? null) !== i.upc))
       );
     });
@@ -1224,6 +1318,7 @@ export class WarroomSyncService
             storage: item.storage,
             memory: item.memory,
             upc: item.upc,
+            attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,
             active: true,
             erpManaged: true,
           },
@@ -1250,6 +1345,7 @@ export class WarroomSyncService
           color: item.color,
           storage: item.storage,
           memory: item.memory,
+          attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,
           ...(item.upc !== null ? { upc: item.upc } : {}),
         },
       });
@@ -1292,7 +1388,15 @@ export class WarroomSyncService
       }
       await this.prisma.productSku.update({
         where: { id: sku.id },
-        data: { modelId: mid },
+        data: {
+          modelId: mid,
+          name: item.skuName,
+          color: item.color,
+          storage: item.storage,
+          memory: item.memory,
+          attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,
+          ...(item.upc !== null ? { upc: item.upc } : {}),
+        },
       });
       moved += 1;
     }

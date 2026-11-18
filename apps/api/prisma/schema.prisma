@@ -324,7 +324,22 @@ model Category {
   isAccessory Boolean @default(false)
   // created by the warroom sync (not by hand or the migration)
   erpManaged Boolean  @default(false)
+  // D142: category specification template: array of { key: string, label: string, required?: boolean }
+  attributes Json?
   createdAt  DateTime @default(now()) @db.DateTime(3)
+}
+
+/**
+ * D143: ProductColor stores color code mappings (hexCode) for product colors.
+ * Color names are collected from ProductSku.color (ERP or manual).
+ * Admin can set or update hexCode for each color name, which persists across ERP syncs.
+ */
+model ProductColor {
+  id        String   @id @default(uuid()) @db.VarChar(36)
+  name      String   @unique @db.VarChar(64)
+  hexCode   String   @db.VarChar(16)
+  createdAt DateTime @default(now()) @db.DateTime(3)
+  updatedAt DateTime @updatedAt @db.DateTime(3)
 }
 
 model Product {
@@ -369,6 +384,8 @@ model ProductSku {
   memory    String?           @db.VarChar(32)
   // barcode (warroom product_upc) next to the part number kept in `sku` (D72)
   upc       String?           @db.VarChar(64)
+  // D142: product specification key-value attributes (e.g. { connectivity: "Wi-Fi", storage: "256GB", color: "Space Gray" })
+  attributes Json?
   active    Boolean           @default(true)
   erpManaged Boolean          @default(false)
   sessions  CustomerSession[]

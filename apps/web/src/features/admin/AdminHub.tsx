@@ -25,6 +25,7 @@ import { CustomerTypesPanel } from './CustomerTypesPanel';
 import { StockUnlimitedPanel } from './StockUnlimitedPanel';
 import { PaymentMethodsPanel } from './PaymentMethodsPanel';
 import { CategoriesPanel } from './CategoriesPanel';
+import { ColorsPanel } from './ColorsPanel';
 import { OtpPanel } from './OtpPanel';
 import { AttentionPanel } from './AttentionPanel';
 import { FmpPanel } from './FmpPanel';
@@ -40,6 +41,7 @@ export type AdminSubView =
   | 'queue'
   | 'payments'
   | 'categories'
+  | 'colors'
   | 'otp'
   | 'fmp';
 /** Roles the ERP import owns on an ERP-managed account; ADMIN/MANAGER stay hand-managed (D54). */
@@ -202,7 +204,9 @@ export function AdminHub({
                     ? 'ช่องทางชำระเงิน (Payment Methods)'
                     : subTab === 'categories'
                       ? 'หมวดหมู่สินค้า (Categories)'
-                      : subTab === 'otp'
+                      : subTab === 'colors'
+                        ? 'จัดการสีสินค้า (Color Palette)'
+                        : subTab === 'otp'
                         ? 'เข้าสู่ระบบด้วย OTP (LINE)'
                         : subTab === 'fmp'
                           ? 'ส่งออเดอร์ไป FileMaker (FMP)'
@@ -228,6 +232,8 @@ export function AdminHub({
         <PaymentMethodsPanel />
       ) : admin && subTab === 'categories' ? (
         <CategoriesPanel />
+      ) : admin && subTab === 'colors' ? (
+        <ColorsPanel />
       ) : admin && subTab === 'otp' ? (
         <OtpPanel />
       ) : admin && subTab === 'fmp' ? (

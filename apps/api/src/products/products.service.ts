@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { RESERVATION_HOURS, warroomMode } from '../warroom/warroom-sync.service';
@@ -233,6 +234,8 @@ export class ProductsService implements OnModuleInit {
                 color: s.color,
                 storage: s.storage,
                 memory: s.memory,
+                /** D142: category specification key-values */
+                attributes: s.attributes,
                 /** D109: the newest UPC of a model puts it higher in the staff's model list */
                 upc: s.upc,
                 active: s.active,
@@ -521,7 +524,22 @@ export class ProductsService implements OnModuleInit {
     });
   }
 
-  async createSku(modelId: string, data: { sku: string; name: string; color?: string; storage?: string }) {
+  async createSku(
+    modelId: string,
+    data: {
+      sku: string;
+      name: string;
+      color?: string;
+      storage?: string;
+      memory?: string;
+      attributes?: Record<string, string>;
+    },
+  ) {
+    const attrs = data.attributes ? { ...data.attributes } : {};
+    if (data.color && !attrs.color) attrs.color = data.color;
+    if (data.storage && !attrs.storage) attrs.storage = data.storage;
+    if (data.memory && !attrs.memory) attrs.memory = data.memory;
+
     const sku = await this.prisma.productSku.create({
       data: {
         modelId,
@@ -529,6 +547,11 @@ export class ProductsService implements OnModuleInit {
         name: data.name,
         color: data.color || null,
         storage: data.storage || null,
+        memory: data.memory || null,
+        attributes:
+          Object.keys(attrs).length > 0
+            ? (attrs as Prisma.InputJsonValue)
+            : Prisma.JsonNull,
         active: true,
       },
     });
@@ -550,11 +573,30 @@ export class ProductsService implements OnModuleInit {
     return sku;
   }
 
-  async updateSku(skuId: string, data: { sku?: string; name?: string; color?: string; storage?: string; active?: boolean }) {
+  async updateSku(
+    skuId: string,
+    data: {
+      sku?: string;
+      name?: string;
+      color?: string;
+      storage?: string;
+      memory?: string;
+      attributes?: Record<string, string>;
+      active?: boolean;
+    },
+  ) {
     if (this.erpOn()) {
       const cur = await this.prisma.productSku.findUnique({
         where: { id: skuId },
-        select: { erpManaged: true, sku: true, name: true, color: true, storage: true },
+        select: {
+          erpManaged: true,
+          sku: true,
+          name: true,
+          color: true,
+          storage: true,
+          memory: true,
+          attributes: true,
+        },
       });
       const differs = (next: string | undefined, now: string | null) =>
         next !== undefined && (next || null) !== (now || null);
@@ -563,14 +605,29 @@ export class ProductsService implements OnModuleInit {
         (differs(data.sku, cur.sku) ||
           differs(data.name, cur.name) ||
           differs(data.color, cur.color) ||
-          differs(data.storage, cur.storage))
+          differs(data.storage, cur.storage) ||
+          differs(data.memory, cur.memory))
       )
         throw this.erpLocked();
     }
     return this.prisma.$transaction(async (tx) => {
+      const updateData: Prisma.ProductSkuUpdateInput = {
+        ...(data.sku !== undefined ? { sku: data.sku } : {}),
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.color !== undefined ? { color: data.color || null } : {}),
+        ...(data.storage !== undefined ? { storage: data.storage || null } : {}),
+        ...(data.memory !== undefined ? { memory: data.memory || null } : {}),
+        ...(data.active !== undefined ? { active: data.active } : {}),
+      };
+      if (data.attributes !== undefined) {
+        updateData.attributes =
+          data.attributes && Object.keys(data.attributes).length > 0
+            ? (data.attributes as Prisma.InputJsonValue)
+            : Prisma.JsonNull;
+      }
       const updated = await tx.productSku.update({
         where: { id: skuId },
-        data,
+        data: updateData,
       });
 
       if (data.active === false) {

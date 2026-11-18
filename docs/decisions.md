@@ -1988,3 +1988,46 @@ None of this is the everyday path: each needs a time-out or two things happening
 Known and left open: a bill report (`/integrations/pos/bills`) carries the order's reference but not the round, so a report of an
 earlier round's bill that arrives after a new round was sent is taken for the current round. SES cannot tell from what FileMaker
 sends today (a bill confirmed in round 1 may rightly be the one paid in round 2), see `docs/agents/hazards.md` H-41.
+
+## D142 — Category Specification Templates and Dynamic SKU Attributes (2026-11-18)
+
+Owner instruction via `/grill-me`: "เพิ่มการจัดการรายละเอียดสินค้าแต่ละประเภท ตอนนี้รายละเอียดดูจาก iPhone เป็นหลักทำให้พอเป็นกับสินค้าประเภทอื่นไมค่อยเหมาะสมเกิดเป็นรุ่นสินค้าที่เยอะเกินไป เช่น iPad จริงๆต้องมีแยกเป็น Wi-Fi และ Wi-Fi + Cellular แต่พอไม่มีทำให้ไป hardcode ที่สินค้าแต่ละตัว". Amends D72, D78, D79, and D125.
+
+1. **Category Specification Templates.** Each Category can define an ordered list of specification templates (`Category.attributes` JSON), e.g. key, label, options, and required flag. Default templates are provided for standard Apple device lines:
+   - `iPad`: การเชื่อมต่อ (connectivity: `Wi-Fi`, `Wi-Fi + Cellular`) → ความจุ (storage) → สี (color)
+   - `iPhone`: ความจุ (storage) → สี (color)
+   - `Mac`: RAM (memory) → ความจุ (storage) → สี (color)
+   - `Watch`: ขนาดตัวเรือน (caseSize) → การเชื่อมต่อ (connectivity: `GPS`, `GPS + Cellular`) → สี (color)
+   - `Accessories`: สี (color)
+2. **SKU Attributes.** Each SKU stores its specifications in `ProductSku.attributes` (JSON), with legacy columns `color`, `storage`, and `memory` kept in sync for full backward compatibility.
+3. **ERP Warroom Sync (Catalog Rules Version 7).** `CATALOG_RULES_VERSION` is raised to 7. `warroom-sync.service.ts` parses connectivity (`connectivityOf`: Wi-Fi, Wi-Fi + Cellular, GPS, GPS + Cellular) and case size (`caseSizeOf`), and strips them from iPad and Watch model names (`modelNameOf`). Redundant model rows from ERP (e.g. "iPad Air 11 M3 Wi-Fi" vs "iPad Air 11 M3 Wi-Fi + Cellular") merge into a single clean model (e.g. "iPad Air 11 M3"), re-filing existing SKUs and pruning orphaned empty models.
+4. **Staff SkuPicker.** In `SkuPicker.tsx`, selection steps are rendered dynamically as Chips matching the Category's specification template. Any step with a single available choice is automatically taken. Final step shows available SKU options (colors) with stock status.
+5. **Back Office Management.** `CategoriesPanel.tsx` includes a "สเปก" (Specs) modal where ADMIN can customize or reorder specifications per category, add new attributes, or restore default Apple templates. `ProductWorkspace.tsx` dynamically renders input and select fields matching the Category template when creating or editing SKUs.
+6. **Serial and IMEI Validation (D125).** `serialKindOf` inspects `sku.attributes` (including `connectivity`) alongside model and SKU names, ensuring Cellular iPads and Watches are verified as IMEIs and Wi-Fi models as Serials even when the model name does not state Cellular.
+
+## D143 — Central Color Palette Management & Free-Form SKU Attribute Values (2026-11-18)
+
+Owner instruction via `/grill-me`:
+1. "ส่วนของสเปกที่เป็นสี เมื่อดึงค่าจาก ERP มาแล้ว ให้สามารถกำหนด code สีของค่านั้นได้ เพื่อให้เมื่อนำไปใช้งานในการแสดงผลจะได้สีตามที่ต้องการ และเมื่อมการซิ้งก์ ERP ใหม่ ต้องไม่ทับหายไป"
+2. "ค่าของตัวเลือกในสเปก ของรายการคุณลักษณะภายในแต่ละอันไม่เหมือนกัน ไม่ต้องมีการกำหนดในส่วนนี้ ให้ไปจัดการในสินค้าแต่ละตัว"
+
+1. **Central Color Palette (`ProductColor`).**
+   - Central table `ProductColor` (`id`, `name` UNIQUE, `hexCode`, `createdAt`, `updatedAt`) stores hex color codes mapped to color names.
+   - Distinct color names synced from ERP or present on manual SKUs (`ProductSku.color`) are gathered dynamically.
+   - ADMIN configures hex codes centrally in Admin Hub ("จัดการสีสินค้า (Color Palette)").
+   - Because color codes reside in `ProductColor`, subsequent ERP sync runs (which touch only `Product`, `ProductModel`, and `ProductSku`) never overwrite or clear the color configurations.
+2. **Category Specification Templates: Attributes without Hardcoded Options.**
+   - Specification templates at Category level (`Category.attributes`) define attribute keys, labels, and required flags, without rigid `options` restrictions (as each product or model variant may offer different combinations).
+   - In `CategoriesPanel.tsx`, the spec editor manages key, label, and required state.
+3. **SKU Free-Form Text Entry with Auto-Suggest Datalist.**
+   - In `ProductWorkspace.tsx`, SKU specification fields are rendered as free-form text inputs paired with HTML5 `<datalist>` populated dynamically with existing values from that product's SKUs.
+   - Allows flexibility across different models while providing fast auto-complete to prevent typos.
+4. **API and Admin UI.**
+   - `ColorsModule` provides `GET /colors` (list with SKU counts and assigned hex codes), `GET /colors/map`, `POST /colors` (upsert with hex code validation), and `DELETE /colors/:id`.
+   - Admin navigation sidebar includes a dedicated "จัดการสีสินค้า" sub-view (`ColorsPanel.tsx`) with search, filter tabs (All, Configured, Unassigned), visual color preview swatches, color picker, and quick inline saving.
+5. **Elimination of Hardcoded Category Specification Constants.**
+   - `DEFAULT_CATEGORY_SPECS` in NestJS `categories.service.ts` and `DEFAULT_SPECS` in React `catalog.ts` are completely removed.
+   - Category specification templates are read 100% from the database column `Category.attributes`.
+   - Initial templates are seeded into MySQL via migration `202611180001_category_and_sku_attributes`.
+   - Categories without attributes configured simply show all SKUs directly in `SkuPicker` without forcing intermediate attribute steps.
+   - The "คืนค่ามาตรฐาน" (Reset to default) button in `CategoriesPanel.tsx` is removed; all changes are managed directly by ADMIN.

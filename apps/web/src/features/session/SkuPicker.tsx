@@ -1,7 +1,15 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import { distinct, settleChoice } from './workflow';
-import { isOutOfStock, isUnlimited, type CatalogSku, type ModelChoice, type Picked } from './catalog';
+import { distinct } from './workflow';
+import {
+  getSkuAttribute,
+  isOutOfStock,
+  isUnlimited,
+  type CatalogSku,
+  type ModelChoice,
+  type Picked,
+} from './catalog';
+import type { Category, CategoryAttributeSpec } from '../../types/session';
 
 function stockText(s: CatalogSku): string {
   if (isUnlimited(s)) return 'มีจำหน่าย';
@@ -22,49 +30,102 @@ function colourLabel(s: CatalogSku): string {
 const searchable = (text: string) => text.toLowerCase().replaceAll('-', '');
 
 /**
- * Pick one SKU of a category (D78, D79): the models as a list of buttons (with a search box when there are many), then
- * RAM, capacity and colour as chips. A step with a single choice is taken for the user. Tells the parent the SKU once one
- * is chosen, and `null` when the choice is undone. Remount it (`key`) to start over.
+ * Pick one SKU of a category (D78, D79, D142):
+ * Models as a list of buttons, then step-by-step specification chips defined by the Category template
+ * (e.g. for iPad: Connectivity [Wi-Fi / Cellular] -> Storage -> Color; for Mac: RAM -> Storage -> Color;
+ * for Watch: Case Size -> Connectivity -> Color).
+ * A step with a single choice is automatically taken for the user.
  */
 export function SkuPicker({
   models,
+  categorySpecs,
+  categories,
   onPick,
   onComplete,
 }: {
   models: ModelChoice[];
+  categorySpecs?: CategoryAttributeSpec[];
+  categories?: Category[];
   onPick: (picked: Picked | null) => void;
   onComplete?: (picked: Picked) => void;
 }) {
   const [modelKey, setModelKey] = useState('');
-  const [memory, setMemory] = useState('');
-  const [storage, setStorage] = useState('');
+  const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [skuId, setSkuId] = useState('');
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
-  const memoryRef = useRef<HTMLDivElement>(null);
-  const storageRef = useRef<HTMLDivElement>(null);
+  const stepRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const colourRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
 
   const chosen = models.find((m) => m.key === modelKey) ?? null;
   const modelSkus = useMemo(() => chosen?.model.skus ?? [], [chosen]);
-  const memories = useMemo(() => distinct(modelSkus.map((s) => s.memory)), [modelSkus]);
-  const memorySkus = memories.length > 0
-    ? modelSkus.filter((s) => (s.memory?.trim() || '') === memory)
-    : modelSkus;
-  const storages = distinct(memorySkus.map((s) => s.storage));
-  const colourSkus =
-    (memories.length > 0 && !memory) || (storages.length > 0 && !storage)
-      ? []
-      : storages.length > 0
-        ? memorySkus.filter((s) => (s.storage?.trim() || '') === storage)
-        : memorySkus;
-  // two colours of one model can have the same label (a keyboard layout only in the part): the part number tells them apart
-  const labels = colourSkus.map(colourLabel);
-  const colourLabels = colourSkus.map((s, i) =>
-    labels.filter((l) => l === labels[i]).length > 1 ? `${labels[i]} · ${s.sku}` : labels[i],
+
+  // Resolve category specifications template (D142)
+  const categoryName = chosen?.product.category ?? '';
+  const resolvedSpecs = useMemo<CategoryAttributeSpec[]>(() => {
+    if (!chosen) return [];
+    if (categorySpecs && categorySpecs.length > 0) return categorySpecs;
+    if (categoryName) {
+      const fromCat = categories?.find(
+        (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
+      )?.attributes;
+      if (fromCat && fromCat.length > 0) return fromCat;
+    }
+    // Dynamic fallback when no template: check if memory or storage exist in SKUs
+    const fallback: CategoryAttributeSpec[] = [];
+    if (modelSkus.some((s) => s.memory)) {
+      fallback.push({ key: 'memory', label: 'RAM', required: true });
+    }
+    if (modelSkus.some((s) => s.storage)) {
+      fallback.push({ key: 'storage', label: 'ความจุ', required: true });
+    }
+    fallback.push({ key: 'color', label: 'สี', required: true });
+    return fallback;
+  }, [chosen, categorySpecs, categories, categoryName, modelSkus]);
+
+  // Non-color filter steps
+  const filterSpecs = useMemo(
+    () => resolvedSpecs.filter((s) => s.key !== 'color'),
+    [resolvedSpecs],
   );
 
+  // Compute available choices and candidate SKUs for each step
+  const { steps, finalSkus } = useMemo(() => {
+    let candidates = modelSkus;
+    const computedSteps: {
+      spec: CategoryAttributeSpec;
+      options: string[];
+      selectedValue: string;
+    }[] = [];
+
+    for (const spec of filterSpecs) {
+      const available = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)));
+      if (available.length > 0) {
+        const val = selectedValues[spec.key] ?? '';
+        computedSteps.push({
+          spec,
+          options: available,
+          selectedValue: val,
+        });
+        if (val) {
+          candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === val);
+        }
+      }
+    }
+
+    return { steps: computedSteps, finalSkus: candidates };
+  }, [modelSkus, filterSpecs, selectedValues]);
+
+  // Colour SKUs display labels
+  const colourLabels = useMemo(() => {
+    const labels = finalSkus.map(colourLabel);
+    return finalSkus.map((s, i) =>
+      labels.filter((l) => l === labels[i]).length > 1 ? `${labels[i]} · ${s.sku}` : labels[i],
+    );
+  }, [finalSkus]);
+
+  // Model search tokens
   const tokens = searchable(query).split(/\s+/).filter(Boolean);
   const shown = tokens.length === 0
     ? models
@@ -73,53 +134,92 @@ export function SkuPicker({
         return tokens.every((t) => text.includes(t));
       });
 
-  /** Keep the state and tell the parent which SKU (if any) it now stands for. */
-  const settle = (choice: ModelChoice | null, mem: string, st: string, triggerComplete = false) => {
-    const next = choice ? settleChoice(choice.model.skus, mem, st) : { memory: '', storage: '', skuId: '' };
-    setMemory(next.memory);
-    setStorage(next.storage);
-    setSkuId(next.skuId);
-    const sku = choice?.model.skus.find((s) => s.id === next.skuId);
-    const pickedObj = choice && sku ? { product: choice.product, model: choice.model, sku } : null;
-    // a single SKU taken for the user can be out of stock: the parent says so and does not let it be added
-    onPick(pickedObj);
-    if (triggerComplete && pickedObj && !isOutOfStock(pickedObj.sku) && next.skuId) {
-      onComplete?.(pickedObj);
+  /** Helper to cascade auto-select single options */
+  const resolveAutoChoices = (
+    skus: CatalogSku[],
+    currentSpecs: CategoryAttributeSpec[],
+    initialValues: Record<string, string>,
+  ): { nextValues: Record<string, string>; remainingSkus: CatalogSku[] } => {
+    const nextValues = { ...initialValues };
+    let candidates = skus;
+    for (const spec of currentSpecs) {
+      const available = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)));
+      if (available.length === 1 && !nextValues[spec.key]) {
+        nextValues[spec.key] = available[0];
+      }
+      const val = nextValues[spec.key];
+      if (val) {
+        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === val);
+      }
     }
+    return { nextValues, remainingSkus: candidates };
   };
 
   const pickModel = (choice: ModelChoice) => {
     setModelKey(choice.key);
     setQuery('');
-    settle(choice, '', '', choice.model.skus.length === 1);
 
-    const choiceMemories = distinct(choice.model.skus.map((s) => s.memory));
-    const choiceStorages = distinct(choice.model.skus.map((s) => s.storage));
+    // Pre-calculate auto choices
+    const currentCategoryName = choice.product.category;
+    let currentSpecs: CategoryAttributeSpec[] = [];
+    if (categorySpecs && categorySpecs.length > 0) {
+      currentSpecs = categorySpecs;
+    } else {
+      const fromCat = categories?.find(
+        (c) => c.name.toLowerCase() === currentCategoryName.toLowerCase(),
+      )?.attributes;
+      currentSpecs = fromCat && fromCat.length > 0 ? fromCat : [];
+    }
+    const curFilterSpecs = currentSpecs.filter((s) => s.key !== 'color');
+    const { nextValues, remainingSkus } = resolveAutoChoices(choice.model.skus, curFilterSpecs, {});
+    setSelectedValues(nextValues);
+
+    if (remainingSkus.length === 1) {
+      const single = remainingSkus[0];
+      setSkuId(single.id);
+      const pickedObj = { product: choice.product, model: choice.model, sku: single };
+      onPick(pickedObj);
+      if (!isOutOfStock(single)) {
+        onComplete?.(pickedObj);
+      }
+    } else {
+      setSkuId('');
+      onPick(null);
+    }
 
     setTimeout(() => {
-      if (choiceMemories.length > 0) {
-        memoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else if (choiceStorages.length > 0) {
-        storageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else {
-        colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
+      colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
   };
 
-  const handleMemoryChange = (mem: string) => {
-    settle(chosen, mem, '');
-    setTimeout(() => {
-      if (storages.length > 0) {
-        storageRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      } else {
-        colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  const handleStepChange = (specKey: string, value: string) => {
+    const initial: Record<string, string> = {};
+    for (const s of filterSpecs) {
+      if (s.key === specKey) {
+        initial[s.key] = value;
+        break;
       }
-    }, 50);
-  };
+      if (selectedValues[s.key]) {
+        initial[s.key] = selectedValues[s.key];
+      }
+    }
 
-  const handleStorageChange = (st: string) => {
-    settle(chosen, memory, st, true);
+    const { nextValues, remainingSkus } = resolveAutoChoices(modelSkus, filterSpecs, initial);
+    setSelectedValues(nextValues);
+
+    if (remainingSkus.length === 1 && chosen) {
+      const single = remainingSkus[0];
+      setSkuId(single.id);
+      const pickedObj = { product: chosen.product, model: chosen.model, sku: single };
+      onPick(pickedObj);
+      if (!isOutOfStock(single)) {
+        onComplete?.(pickedObj);
+      }
+    } else {
+      setSkuId('');
+      onPick(null);
+    }
+
     setTimeout(() => {
       colourRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }, 50);
@@ -133,6 +233,9 @@ export function SkuPicker({
     onPick(pickedObj);
     onComplete?.(pickedObj);
   };
+
+  // Determine whether all non-color steps have been satisfied
+  const allPriorStepsSatisfied = steps.every((st) => !!st.selectedValue);
 
   return (
     <div className="sku-picker" ref={rootRef}>
@@ -151,7 +254,9 @@ export function SkuPicker({
               className="picked-model-change"
               onClick={() => {
                 setModelKey('');
-                settle(null, '', '', false);
+                setSelectedValues({});
+                setSkuId('');
+                onPick(null);
               }}
             >
               เปลี่ยน
@@ -192,34 +297,38 @@ export function SkuPicker({
         )}
       </div>
 
-      {chosen && memories.length > 0 && (
-        <div ref={memoryRef}>
-          <Chips
-            label="RAM"
-            required
-            options={memories.map((m) => ({ value: m, label: m }))}
-            value={memory}
-            onChange={handleMemoryChange}
-          />
-        </div>
-      )}
-      {chosen && storages.length > 0 && (
-        <div ref={storageRef}>
-          <Chips
-            label="ความจุ"
-            required
-            options={storages.map((st) => ({ value: st, label: st }))}
-            value={storage}
-            onChange={handleStorageChange}
-          />
-        </div>
-      )}
-      {chosen && colourSkus.length > 0 && (
+      {/* Dynamic Specification Steps (D142) */}
+      {chosen &&
+        steps.map((st, idx) => {
+          // Render this step only if previous steps have been selected
+          const prevStepsDone = steps.slice(0, idx).every((prev) => !!prev.selectedValue);
+          if (!prevStepsDone) return null;
+
+          return (
+            <div
+              key={st.spec.key}
+              ref={(el) => {
+                stepRefs.current[st.spec.key] = el;
+              }}
+            >
+              <Chips
+                label={st.spec.label}
+                required={st.spec.required}
+                options={st.options.map((opt) => ({ value: opt, label: opt }))}
+                value={st.selectedValue}
+                onChange={(val) => handleStepChange(st.spec.key, val)}
+              />
+            </div>
+          );
+        })}
+
+      {/* Final Step: Colour / SKU selection with stock availability */}
+      {chosen && allPriorStepsSatisfied && finalSkus.length > 0 && (
         <div ref={colourRef}>
           <Chips
             label="สี"
             required
-            options={colourSkus.map((s, i) => ({
+            options={finalSkus.map((s, i) => ({
               value: s.id,
               label: colourLabels[i],
               sub: stockText(s),

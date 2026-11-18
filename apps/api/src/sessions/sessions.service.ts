@@ -1307,14 +1307,13 @@ export class SessionsService {
     return { phone: normalized, currentAppleDevices: null };
   }
 
-  async confirmPurchase(user: PublicAccount, id: string) {
-    this.checkRole(user, 'STAFF');
-    const session = await this.getById(user, id);
-
-    if (session.confirmed || session.state !== 'PRODUCT_SELECTION' || session.outcome) {
-      throw new BadRequestException('Session is already confirmed or cannot be confirmed');
-    }
-
+  /** What an order needs before STAFF can confirm it (asked before the lock for a quick answer, and again under it: D141). */
+  private async assertConfirmable(session: {
+    phone: string | null;
+    receiptType: string | null;
+    items: unknown[];
+    payments: { method: string; cardType: string | null; installmentMonths: number | null }[];
+  }) {
     if (!session.phone || !isValidPhone(session.phone)) {
       throw new BadRequestException('Valid customer phone number is required to confirm purchase');
     }

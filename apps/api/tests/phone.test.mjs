@@ -9,6 +9,7 @@ const {
 } = await import('../dist/common/phone.util.js');
 
 const { orderView } = await import('../dist/sessions/order-view.js');
+const { DISCOUNT_TYPES, CUSTOMER_SOURCES } = await import('../dist/sessions/dto.js');
 
 test('D120: Thai mobile normalization (10-digit with 0, 9-digit without 0)', () => {
   assert.equal(normalizePhone('0812345678'), '+66812345678');
@@ -134,4 +135,37 @@ test('D121 / D128: orderView carries vatRefund, receiptType, and derived taxInvo
   assert.equal(v4.vatRefund, false);
   assert.equal(v4.receiptType, null);
   assert.equal(v4.taxInvoice, true);
+});
+
+test('D146: DISCOUNT_TYPES and CUSTOMER_SOURCES DTO constants are defined and orderView keeps them SES-internal', () => {
+  assert.deepEqual(DISCOUNT_TYPES, ['GENERAL', 'ENTERPRISE', 'EDU', 'UNIDAYS', 'MED']);
+  assert.equal(CUSTOMER_SOURCES.length, 12);
+  assert.equal(CUSTOMER_SOURCES.includes('WALK_IN'), true);
+  assert.equal(CUSTOMER_SOURCES.includes('RETURNING_CUSTOMER'), true);
+
+  const view = orderView(
+    {
+      queueLetter: 'A',
+      state: 'SENT_TO_CASHIER',
+      phone: null,
+      staffId: 's',
+      productSelectionConfirmedAt: null,
+      items: [],
+      accessories: [],
+      payments: [],
+      ontop: [],
+      points: [],
+      burnPoints: [],
+      posBillNo: null,
+      reference: 'SES-D146-1',
+      queueNo: 1,
+      receiptType: 'SIMPLIFIED',
+      discountType: 'EDU',
+      customerSource: 'FACEBOOK',
+    },
+    new Map(),
+  );
+  // D146: Kept internal to SES, not sent to FMP / U POS orderView
+  assert.equal(view.discountType, undefined);
+  assert.equal(view.customerSource, undefined);
 });

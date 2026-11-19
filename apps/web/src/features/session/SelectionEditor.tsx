@@ -36,6 +36,10 @@ import type {
 import { MultiSelect, Button, Modal, Notice } from '../../components/ui';
 import {
   addItem,
+  CUSTOMER_SOURCE_OPTIONS,
+  customerSourceIsValid,
+  DISCOUNT_TYPE_OPTIONS,
+  discountTypeIsValid,
   formatPaymentLabel,
   itemName,
   itemsText,
@@ -321,12 +325,16 @@ export function SelectionEditor({
     hasPayments && paymentsAreValid(value.payments, value.paymentDetails);
   const receiptValid = receiptTypeIsValid(value.receiptType);
   const hasOutOfStockItem = value.items.some((i) => isOutOfStock(i.product));
+  const discountValid = discountTypeIsValid(value.discountType);
+  const customerSourceValid = customerSourceIsValid(value.customerSource);
   const reviewDisabled =
     value.items.length === 0 ||
     hasOutOfStockItem ||
     !quantitiesAreValid(value.accessories) ||
     !paymentsValid ||
-    !receiptValid;
+    !receiptValid ||
+    !discountValid ||
+    !customerSourceValid;
   /** `+` stops at the stock figure unless nothing is blocked by stock (D59). */
   const canRaise = (item: Selection['items'][number]) =>
     isUnlimited(item.product) ||
@@ -1237,6 +1245,50 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
+          ประเภทส่วนลด <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+        </legend>
+        <div
+          role="radiogroup"
+          aria-label="ประเภทส่วนลด"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+            gap: '8px',
+            marginTop: '6px',
+          }}
+        >
+          {DISCOUNT_TYPE_OPTIONS.map((opt) => {
+            const selected = value.discountType === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChange({ ...value, discountType: opt.value })}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '10px 14px',
+                  border: `1.5px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
+                  borderRadius: '8px',
+                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                  color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
+                  fontWeight: selected ? 600 : 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition:
+                    'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  userSelect: 'none',
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>
           เอกสารภาษีเพิ่มเติม / VAT Refund{' '}
           <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
@@ -1302,6 +1354,52 @@ export function SelectionEditor({
               </span>
             </div>
           </label>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>
+          ลูกค้ามาจากช่องทางใด <small className="legend-note">(จำเป็น · เลือก 1 ช่องทาง)</small>
+        </legend>
+        <div
+          role="radiogroup"
+          aria-label="ลูกค้ามาจากช่องทางใด"
+          className="customer-source-grid"
+        >
+          {CUSTOMER_SOURCE_OPTIONS.map((opt) => {
+            const selected = value.customerSource === opt.value;
+            return (
+              <label
+                key={opt.value}
+                className={`customer-source-card ${selected ? 'selected' : ''}`}
+              >
+                <input
+                  type="radio"
+                  name="customerSource"
+                  value={opt.value}
+                  checked={selected}
+                  onChange={() => onChange({ ...value, customerSource: opt.value })}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    margin: 0,
+                    cursor: 'pointer',
+                    accentColor: 'var(--primary)',
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: selected ? 600 : 500,
+                    color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {opt.label}
+                </span>
+              </label>
+            );
+          })}
         </div>
       </fieldset>
       {hasPayments && !paymentsValid && (

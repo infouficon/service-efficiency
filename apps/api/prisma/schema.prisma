@@ -42,6 +42,29 @@ enum ReceiptType {
   SIMPLIFIED
 }
 
+enum DiscountType {
+  GENERAL
+  ENTERPRISE
+  EDU
+  UNIDAYS
+  MED
+}
+
+enum CustomerSource {
+  WALK_IN
+  WEBSITE
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+  LINE_OA
+  GOOGLE_SEARCH
+  INFLUENCER
+  FRIEND_REFERRAL
+  EVENT_BOOTH
+  FLYER_PRINT
+  RETURNING_CUSTOMER
+}
+
 enum EventType {
   SESSION_CREATED
   DEMO_STARTED
@@ -465,6 +488,9 @@ model CustomerSession {
   vatRefund       Boolean       @default(false)
   taxInvoice      Boolean       @default(false)
   receiptType     ReceiptType?
+  // D146: discount type and customer acquisition source
+  discountType    DiscountType?
+  customerSource  CustomerSource?
   rebuyOfId      String?       @unique @db.VarChar(36)
   rebuyOf        CustomerSession? @relation("Rebuy", fields: [rebuyOfId], references: [id], onDelete: SetNull)
   rebuiltAs      CustomerSession? @relation("Rebuy")

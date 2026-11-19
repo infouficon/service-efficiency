@@ -1228,6 +1228,10 @@ export class SessionsService {
         nextReceiptType != null
           ? nextReceiptType === 'TAX_CORPORATE' || nextReceiptType === 'TAX_INDIVIDUAL'
           : (dto.taxInvoice ?? session.taxInvoice);
+      const nextDiscountType =
+        dto.discountType !== undefined ? dto.discountType : session.discountType;
+      const nextCustomerSource =
+        dto.customerSource !== undefined ? dto.customerSource : session.customerSource;
 
       // D134: update customer's current Apple devices in SESSION_CREATED metadata
       if (dto.currentAppleDevices !== undefined) {
@@ -1263,6 +1267,8 @@ export class SessionsService {
           vatRefund: dto.vatRefund ?? session.vatRefund,
           taxInvoice: nextTaxInvoice,
           receiptType: nextReceiptType,
+          discountType: nextDiscountType,
+          customerSource: nextCustomerSource,
         },
         include: sessionInclude,
       });
@@ -1312,6 +1318,8 @@ export class SessionsService {
   private async assertConfirmable(session: {
     phone: string | null;
     receiptType: string | null;
+    discountType?: string | null;
+    customerSource?: string | null;
     items: unknown[];
     payments: { method: string; cardType: string | null; installmentMonths: number | null }[];
   }) {
@@ -1325,6 +1333,14 @@ export class SessionsService {
 
     if (!session.receiptType) {
       throw new BadRequestException('Receipt type selection is required before confirmation');
+    }
+
+    if (!session.discountType) {
+      throw new BadRequestException('Discount type selection is required before confirmation');
+    }
+
+    if (!session.customerSource) {
+      throw new BadRequestException('Customer source selection is required before confirmation');
     }
 
     await this.assertCardDetails(session.payments);
@@ -1836,6 +1852,8 @@ export class SessionsService {
             vatRefund: old.vatRefund,
             taxInvoice: old.taxInvoice,
             receiptType: old.receiptType,
+            discountType: old.discountType,
+            customerSource: old.customerSource,
             items: {
               create: old.items.map((item, index) => ({
                 skuId: item.skuId,

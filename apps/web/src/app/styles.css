@@ -6009,3 +6009,42 @@ input[aria-invalid='true'] {
   pointer-events: none;
 }
 
+/* Customer source channel grid and cards (D146) */
+.customer-source-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.customer-source-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  margin-bottom: 0px;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1);
+  user-select: none;
+}
+
+.customer-source-card.selected {
+  border-color: var(--primary);
+  background: var(--primary-subtle);
+}
+
+/* Tablet / mobile screens and collapsed sidebar: padding 0 16px */
+@media (max-width: 1024px) {
+  .customer-source-card {
+    padding: 0 16px;
+  }
+}
+
+.sidebar.sidebar-collapsed ~ main .customer-source-card {
+  padding: 0 16px;
+}
+

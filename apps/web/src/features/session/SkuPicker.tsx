@@ -179,9 +179,27 @@ export function SkuPicker({
 
   const pickModel = (m: ModelChoice) => {
     setModelKey(m.key);
-    setSelectedValues({});
-    setSkuId('');
-    onPick(null);
+    // If the model has literally NO specs at all and has only 1 SKU (e.g. an accessory without specs)
+    const mSkus = m.model.skus;
+    const hasAnySpecs = allSpecs.some((spec) => {
+      const available = distinct(mSkus.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean));
+      return available.length > 0;
+    });
+
+    if (!hasAnySpecs && mSkus.length === 1) {
+      const single = mSkus[0];
+      setSkuId(single.id);
+      setSelectedValues({});
+      const pickedObj = { product: m.product, model: m.model, sku: single };
+      onPick(pickedObj);
+      if (allowOutOfStock || !isOutOfStock(single)) {
+        onComplete?.(pickedObj);
+      }
+    } else {
+      setSelectedValues({});
+      setSkuId('');
+      onPick(null);
+    }
   };
 
   const handleStepChange = (specKey: string, value: string) => {
@@ -240,7 +258,11 @@ export function SkuPicker({
   const shown = useMemo(() => {
     const q = searchable(query.trim());
     if (!q) return models;
-    return models.filter((m) => searchable(m.model.name).includes(q));
+    const tokens = q.split(/\s+/).filter(Boolean);
+    return models.filter((m) => {
+      const text = searchable(`${m.model.name} ${m.product.name}`);
+      return tokens.every((t) => text.includes(t));
+    });
   }, [models, query]);
 
   return (

@@ -1,4 +1,6 @@
 import type {
+  CustomerSource,
+  DiscountType,
   MockSession,
   Product,
   ReceiptType,
@@ -100,7 +102,9 @@ export function confirmSelection(
     !phoneIsValid(session.phone) ||
     !quantitiesAreValid(session.selection.accessories) ||
     !paymentsAreValid(session.selection.payments, session.selection.paymentDetails) ||
-    !receiptTypeIsValid(session.selection.receiptType)
+    !receiptTypeIsValid(session.selection.receiptType) ||
+    !discountTypeIsValid(session.selection.discountType) ||
+    !customerSourceIsValid(session.selection.customerSource)
   )
     return session;
   return {
@@ -365,6 +369,66 @@ export function receiptTypeBadgeLabel(
   if (receiptType === 'SIMPLIFIED') return null;
   if (taxInvoiceFallback) return 'Tax';
   return null;
+}
+
+export const DISCOUNT_TYPE_OPTIONS: { value: DiscountType; label: string }[] = [
+  { value: 'GENERAL', label: 'ลูกค้าทั่วไป' },
+  { value: 'ENTERPRISE', label: 'enterprise' },
+  { value: 'EDU', label: 'EDU' },
+  { value: 'UNIDAYS', label: 'UNIDAYS' },
+  { value: 'MED', label: 'MED' },
+];
+
+export function discountTypeIsValid(discountType?: DiscountType | null): boolean {
+  return (
+    discountType === 'GENERAL' ||
+    discountType === 'ENTERPRISE' ||
+    discountType === 'EDU' ||
+    discountType === 'UNIDAYS' ||
+    discountType === 'MED'
+  );
+}
+
+export function discountTypeLabel(discountType?: DiscountType | null): string | null {
+  const matched = DISCOUNT_TYPE_OPTIONS.find((o) => o.value === discountType);
+  return matched ? matched.label : null;
+}
+
+export const CUSTOMER_SOURCE_OPTIONS: { value: CustomerSource; label: string }[] = [
+  { value: 'WALK_IN', label: 'Walk-in' },
+  { value: 'WEBSITE', label: 'Website UFicon' },
+  { value: 'FACEBOOK', label: 'Facebook' },
+  { value: 'INSTAGRAM', label: 'Instagram' },
+  { value: 'TIKTOK', label: 'TikTok' },
+  { value: 'LINE_OA', label: 'LINE / LINE OA' },
+  { value: 'GOOGLE_SEARCH', label: 'ค้นหาใน Google' },
+  { value: 'INFLUENCER', label: 'Influencer / KOL' },
+  { value: 'FRIEND_REFERRAL', label: 'เพื่อนหรือคนรู้จักแนะนำ' },
+  { value: 'EVENT_BOOTH', label: 'งานอีเวนต์ / บูธ / ออกร้าน' },
+  { value: 'FLYER_PRINT', label: 'ใบปลิว / สื่อสิ่งพิมพ์' },
+  { value: 'RETURNING_CUSTOMER', label: 'เป็นลูกค้าเก่า / เคยใช้บริการแล้ว' },
+];
+
+export function customerSourceIsValid(source?: CustomerSource | null): boolean {
+  return (
+    source === 'WALK_IN' ||
+    source === 'WEBSITE' ||
+    source === 'FACEBOOK' ||
+    source === 'INSTAGRAM' ||
+    source === 'TIKTOK' ||
+    source === 'LINE_OA' ||
+    source === 'GOOGLE_SEARCH' ||
+    source === 'INFLUENCER' ||
+    source === 'FRIEND_REFERRAL' ||
+    source === 'EVENT_BOOTH' ||
+    source === 'FLYER_PRINT' ||
+    source === 'RETURNING_CUSTOMER'
+  );
+}
+
+export function customerSourceLabel(source?: CustomerSource | null): string | null {
+  const matched = CUSTOMER_SOURCE_OPTIONS.find((o) => o.value === source);
+  return matched ? matched.label : null;
 }
 
 export function toggleAccessory(

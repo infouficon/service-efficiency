@@ -796,7 +796,6 @@ export function StaffWorkspace({
                           <p>ผู้ยกเลิก: {activeSession.cancelledBy}</p>
                         )}
                         <Summary session={activeSession} />
-                        {canReprint && <ReceiptPrint session={activeSession} />}
                         {canRebuy(activeSession) && (
                           <div className="rebuy-box">
                             <p>
@@ -809,19 +808,26 @@ export function StaffWorkspace({
                             </Button>
                           </div>
                         )}
-                        <div style={{ marginTop: '1rem' }}>
-                          <Button
-                            onClick={() => {
-                              setActiveSessionRef(null);
-                              setForm('normal');
-                            }}
-                          >
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                              <ArrowLeft size={16} />
-                              กลับหน้าหลัก / พร้อมรับลูกค้าใหม่
-                            </span>
-                          </Button>
-                        </div>
+                        {(() => {
+                          const backHome = (
+                            <Button
+                              onClick={() => {
+                                setActiveSessionRef(null);
+                                setForm('normal');
+                              }}
+                            >
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                <ArrowLeft size={16} />
+                                กลับหน้าหลัก / พร้อมรับลูกค้าใหม่
+                              </span>
+                            </Button>
+                          );
+                          return canReprint ? (
+                            <ReceiptPrint session={activeSession}>{backHome}</ReceiptPrint>
+                          ) : (
+                            <div style={{ marginTop: '1rem' }}>{backHome}</div>
+                          );
+                        })()}
                       </>
                     ) : form === 'cancel' ? (
                       <ReasonForm
@@ -968,17 +974,23 @@ export function StaffWorkspace({
                               "คลังสินค้า" เพื่ออัปเดตสถานะได้
                             </p>
                             <Summary session={activeSession} />
-                            {canReprint && <ReceiptPrint session={activeSession} />}
-                            <div style={{ marginTop: '16px' }}>
-                              <Button
-                                variant="secondary"
-                                onClick={() => setChangingItemSession(activeSession)}
-                              >
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                  <RefreshCw size={15} /> เปลี่ยนสินค้า (รุ่น/สี/ความจุ)
-                                </span>
-                              </Button>
-                            </div>
+                            {(() => {
+                              const changeItem = (
+                                <Button
+                                  variant="secondary"
+                                  onClick={() => setChangingItemSession(activeSession)}
+                                >
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                    <RefreshCw size={15} /> เปลี่ยนสินค้า (รุ่น/สี/ความจุ)
+                                  </span>
+                                </Button>
+                              );
+                              return canReprint ? (
+                                <ReceiptPrint session={activeSession}>{changeItem}</ReceiptPrint>
+                              ) : (
+                                <div style={{ marginTop: '16px' }}>{changeItem}</div>
+                              );
+                            })()}
                           </>
                         )}
 
@@ -1001,15 +1013,17 @@ export function StaffWorkspace({
                               แคชเชียร์ทำรายการใน U POS ระบบอัปเดตสถานะให้เอง ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ Stock"
                             </p>
                             <Summary session={activeSession} />
-                            {canReprint && <ReceiptPrint session={activeSession} />}
-                            {activeSession.state !== 'BILL_OPENED' && (
+                            {(() => {
                               // D105: the cashier works in U POS and tells the staff; the staff sends the order back
-                              <div style={{ marginTop: '16px' }}>
-                                <Button variant="secondary" onClick={() => setForm('return')}>
-                                  ส่งกลับ Stock (หยิบผิด)
-                                </Button>
-                              </div>
-                            )}
+                              const sendBack =
+                                activeSession.state !== 'BILL_OPENED' ? (
+                                  <Button variant="secondary" onClick={() => setForm('return')}>
+                                    ส่งกลับ Stock (หยิบผิด)
+                                  </Button>
+                                ) : null;
+                              if (canReprint) return <ReceiptPrint session={activeSession}>{sendBack}</ReceiptPrint>;
+                              return sendBack && <div style={{ marginTop: '16px' }}>{sendBack}</div>;
+                            })()}
                           </>
                         )}
 

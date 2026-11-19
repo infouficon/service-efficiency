@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { Printer } from 'lucide-react';
 import { Button } from '../../components/ui';
@@ -126,8 +126,11 @@ export const nowText = () =>
     timeStyle: 'short',
   });
 
-/** The "พิมพ์ใบเสร็จ" button of a session (F9) and, off screen, the receipt it prints. */
-export function ReceiptPrint({ session }: { session: MockSession }) {
+/**
+ * The "พิมพ์ใบเสร็จ" button of a session (F9) and, off screen, the receipt it prints. `children` are the page's other buttons
+ * for this step: they sit in the same row as the print button instead of a row of their own.
+ */
+export function ReceiptPrint({ session, children }: { session: MockSession; children?: ReactNode }) {
   const [printedAt, setPrintedAt] = useState('');
   // the time on the paper is the time of printing, for the button and for Ctrl+P alike: it is put into the sheet just
   // before the browser takes the page
@@ -147,6 +150,7 @@ export function ReceiptPrint({ session }: { session: MockSession }) {
             พิมพ์ใบเสร็จ
           </span>
         </Button>
+        {children}
         {!session.branchRegistrationUrl && (
           <span className="fine">
             สาขานี้ยังไม่มี URL ลงทะเบียน ใบเสร็จจะไม่มี QR (ADMIN ตั้งค่าที่

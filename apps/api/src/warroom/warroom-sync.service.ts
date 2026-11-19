@@ -313,11 +313,15 @@ export function colorOf(color: string | null): string | null {
 export function connectivityOf(...texts: (string | null | undefined)[]): string | null {
   for (const t of texts) {
     const text = (t ?? '').trim();
-    if (/\bwi-?fi\s*\+\s*cell(?:ular)?\b/i.test(text) || /\bcellular\b/i.test(text)) {
-      return 'Wi-Fi + Cellular';
-    }
     if (/\bgps\s*\+\s*cell(?:ular)?\b/i.test(text)) {
       return 'GPS + Cellular';
+    }
+    if (/\bwi-?fi\s*\+\s*cell(?:ular)?\b/i.test(text)) {
+      return 'Wi-Fi + Cellular';
+    }
+    if (/\bcellular\b/i.test(text)) {
+      if (/\bgps\b/i.test(text)) return 'GPS + Cellular';
+      return 'Wi-Fi + Cellular';
     }
   }
   for (const t of texts) {
@@ -339,6 +343,218 @@ export function caseSizeOf(...texts: (string | null | undefined)[]): string | nu
   for (const t of texts) {
     const m = (t ?? '').match(/\b(38|40|41|42|44|45|46|49)\s*mm\b/i);
     if (m) return `${m[1]}mm`;
+  }
+  return null;
+}
+
+/**
+ * D148: Canonical series model name for Apple Watch (e.g. "Apple Watch Series 12", "Apple Watch Ultra 2", "Apple Watch SE")
+ */
+export function watchModelOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (!text) continue;
+    // Ultra 2
+    if (/(?:Apple\s+)?Watch\s+Ultra\s*2\b/i.test(text) || /\bUltra\s*2\b/i.test(text)) {
+      return 'Apple Watch Ultra 2';
+    }
+    // Ultra 1
+    if (/(?:Apple\s+)?Watch\s+Ultra\b/i.test(text) || /\bUltra\b/i.test(text)) {
+      return 'Apple Watch Ultra';
+    }
+    // Series 1 to 15 (e.g. Series 12, Series 11, Series 10, S12, S11, S10)
+    const seriesMatch =
+      text.match(/(?:Apple\s+)?Watch\s+(?:Series\s+|S\s*)(\d{1,2})\b/i) ||
+      text.match(/\b(?:Series\s+|S\s*)(\d{1,2})\b/i);
+    if (seriesMatch) {
+      return `Apple Watch Series ${seriesMatch[1]}`;
+    }
+    // SE (e.g. SE, SE2, SE3, SE 2nd Gen, SE (2026))
+    if (
+      /(?:Apple\s+)?Watch\s+SE\b/i.test(text) ||
+      /\bApple\s+Watch\s+SE\b/i.test(text) ||
+      /\bSE\s*\d*\b/i.test(text)
+    ) {
+      return 'Apple Watch SE';
+    }
+    // Hermès
+    if (/Herm[eè]s/i.test(text)) {
+      return 'Apple Watch Hermès';
+    }
+  }
+  return null;
+}
+
+/**
+ * D150: Canonical model name for Mac by family and screen size
+ * (e.g. "iMac 24\"", "MacBook Air 13\"", "MacBook Pro 14\"", "Mac mini", "Mac Studio")
+ */
+export function macModelOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (!text) continue;
+
+    // iMac
+    if (/\bimac\b/i.test(text)) {
+      if (/\b24\b/i.test(text)) return 'iMac 24"';
+      if (/\b27\b/i.test(text)) return 'iMac 27"';
+      if (/\b21(?:\.5)?\b/i.test(text)) return 'iMac 21.5"';
+      return 'iMac';
+    }
+
+    // Mac Studio
+    if (/\bmac\s*studio\b/i.test(text)) {
+      return 'Mac Studio';
+    }
+
+    // Mac mini
+    if (/\bmac\s*mini\b/i.test(text)) {
+      return 'Mac mini';
+    }
+
+    // Mac Pro
+    if (/\bmac\s*pro\b/i.test(text) && !/\bmacbook\b/i.test(text)) {
+      return 'Mac Pro';
+    }
+
+    // MacBook Air
+    if (/\bmacbook\s*air\b/i.test(text)) {
+      if (/\b15(?:\.3)?\b/i.test(text)) return 'MacBook Air 15"';
+      if (/\b13(?:\.[36])?\b/i.test(text)) return 'MacBook Air 13"';
+      if (/\b11(?:\.6)?\b/i.test(text)) return 'MacBook Air 11"';
+      return 'MacBook Air';
+    }
+
+    // MacBook Pro
+    if (/\bmacbook\s*pro\b/i.test(text)) {
+      if (/\b16(?:\.2)?\b/i.test(text)) return 'MacBook Pro 16"';
+      if (/\b14(?:\.2)?\b/i.test(text)) return 'MacBook Pro 14"';
+      if (/\b13(?:\.3)?\b/i.test(text)) return 'MacBook Pro 13"';
+      if (/\b15(?:\.4)?\b/i.test(text)) return 'MacBook Pro 15"';
+      return 'MacBook Pro';
+    }
+
+    // Other MacBook
+    if (/\bmacbook\b/i.test(text)) {
+      if (/\bneo\b/i.test(text)) return 'MacBook Neo';
+      if (/\b12\b/i.test(text)) return 'MacBook 12"';
+      return 'MacBook';
+    }
+  }
+  return null;
+}
+
+/**
+ * D148: Case material for Apple Watch (Aluminium, Titanium, Stainless Steel, Ceramic)
+ */
+export function caseMaterialOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (!text) continue;
+    if (/\btitanium\b/i.test(text) || /ไทเทเนียม/.test(text)) return 'Titanium';
+    if (/\bstainless\s*steel\b/i.test(text) || /สแตนเลส/.test(text)) return 'Stainless Steel';
+    if (/\bceramic\b/i.test(text) || /เซรามิก/.test(text)) return 'Ceramic';
+    if (/\balumin(?:i)?um\b/i.test(text) || /อะลูมิเนียม/.test(text)) return 'Aluminium';
+  }
+  return null;
+}
+
+/**
+ * D148: Known color names in Watch text descriptions
+ */
+export function watchColorOf(...texts: (string | null | undefined)[]): string | null {
+  const KNOWN_COLORS = [
+    { pattern: /\bspace\s*gr[ea]y\b/i, name: 'Space Grey' },
+    { pattern: /\bspace\s*black\b/i, name: 'Space Black' },
+    { pattern: /\bjet\s*black\b/i, name: 'Jet Black' },
+    { pattern: /\brose\s*gold\b/i, name: 'Rose Gold' },
+    { pattern: /\bnatural\s*titanium\b/i, name: 'Natural Titanium' },
+    { pattern: /\bblack\s*titanium\b/i, name: 'Black Titanium' },
+    { pattern: /\bslate\s*titanium\b/i, name: 'Slate Titanium' },
+    { pattern: /\bsilver\b/i, name: 'Silver' },
+    { pattern: /\bgold\b/i, name: 'Gold' },
+    { pattern: /\bmidnight\b/i, name: 'Midnight' },
+    { pattern: /\bstarlight\b/i, name: 'Starlight' },
+    { pattern: /\bnatural\b/i, name: 'Natural' },
+    { pattern: /\bslate\b/i, name: 'Slate' },
+    { pattern: /\bblack\b/i, name: 'Black' },
+  ];
+  // 1. Prefer matching before "Case" so the band color does not override the watch case color
+  for (const t of texts) {
+    if (!t) continue;
+    const beforeCase = t.split(/\bcase\b/i)[0];
+    for (const c of KNOWN_COLORS) {
+      if (c.pattern.test(beforeCase)) return c.name;
+    }
+  }
+  // 2. Fallback to full text
+  for (const t of texts) {
+    if (!t) continue;
+    for (const c of KNOWN_COLORS) {
+      if (c.pattern.test(t)) return c.name;
+    }
+  }
+  return null;
+}
+
+/**
+ * D148: Watch band extracted from SKU descriptions
+ */
+export function watchBandOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    if (!t) continue;
+    const text = t.replace(/\s*·.*$/, '').trim();
+
+    // 1. Text following "Case with" or "Case"
+    const caseMatch = text.match(/(?:Aluminium|Aluminum|Titanium|Stainless\s*Steel|Ceramic)?\s*Case\s*(?:with\s*)?([^·]+)$/i);
+    if (caseMatch && caseMatch[1]) {
+      let band = caseMatch[1].trim()
+        .replace(/^[-\s·:]+/, '')
+        .replace(/[-\s·:)]+$/, '')
+        .trim();
+      band = band.replace(/\s*\b(?:GPS\s*\+\s*Cell(?:ular)?|GPS|Cellular|Wi-?Fi)\b.*/i, '').trim();
+      band = band.replace(/\s*\b\d{2}mm\b.*/i, '').trim();
+      band = band.replace(/^[-\s·:]+/, '').replace(/[-\s·:)]+$/, '').trim();
+      if (band && band.length >= 2) {
+        return band;
+      }
+    }
+
+    // 2. Text following "with <Band>"
+    const withMatch = text.match(/\bwith\s+([^·]+)$/i);
+    if (withMatch && withMatch[1]) {
+      let band = withMatch[1].trim()
+        .replace(/^[-\s·:]+/, '')
+        .replace(/[-\s·:)]+$/, '')
+        .trim();
+      band = band.replace(/\s*\b(?:GPS\s*\+\s*Cell(?:ular)?|GPS|Cellular|Wi-?Fi)\b.*/i, '').trim();
+      band = band.replace(/\s*\b\d{2}mm\b.*/i, '').trim();
+      band = band.replace(/^[-\s·:]+/, '').replace(/[-\s·:)]+$/, '').trim();
+      if (band && band.length >= 2) {
+        return band;
+      }
+    }
+
+    // 3. Known band keywords
+    const remaining = text
+      .replace(/(?:Apple\s+)?Watch\s*(?:Series\s*\d+|S\d+|Ultra\s*\d*|SE(?:\s*\(?2(?:nd)?(?:\s*gen(?:eration)?)?\)?|\s*\(gen\s*2\))?)?/gi, ' ')
+      .replace(/\b\d{2}mm\b/gi, ' ')
+      .replace(/\b(?:GPS\s*\+\s*Cell(?:ular)?|GPS|Cellular|Wi-?Fi)\b/gi, ' ')
+      .replace(/\b(?:Aluminium|Aluminum|Titanium|Stainless\s*Steel|Ceramic)(?:\s*Case)?\b/gi, ' ')
+      .replace(/\bCase\b/gi, ' ')
+      .replace(/\bwith\b/gi, ' ')
+      .trim();
+
+    const bandKeywordMatch = remaining.match(/\b([A-Za-z0-9\s/+\-_()]*(?:Sport\s*Band|Sport\s*Loop|Solo\s*Loop|Braided\s*Solo\s*Loop|Ocean\s*Band|Alpine\s*Loop|Trail\s*Loop|Milanese\s*Loop|Link\s*Bracelet|Magnetic\s*Link|FineWoven|Leather\s*Link|SB|SL)[A-Za-z0-9\s/+\-_()]*)/i);
+    if (bandKeywordMatch && bandKeywordMatch[1]) {
+      let band = bandKeywordMatch[1].trim()
+        .replace(/^[-\s·:]+/, '')
+        .replace(/[-\s·:)]+$/, '')
+        .trim();
+      if (band && band.length >= 2) {
+        return band;
+      }
+    }
   }
   return null;
 }
@@ -369,6 +585,8 @@ export function modelNameOf(
       .replace(/\s*\bcellular\b\s*/gi, ' ');
   }
   if (cat.includes('watch') || (!category && /watch/i.test(base))) {
+    const wm = watchModelOf(base);
+    if (wm) return wm;
     cleaned = cleaned
       .replace(/\s*\bgps\s*\+\s*cell(?:ular)?\b\s*/gi, ' ')
       .replace(/\s*\bgps\b\s*/gi, ' ');
@@ -527,17 +745,28 @@ export function buildCatalog(rows: WarroomRow[]): {
     // D112: AirPods, Apple TV, HomePod and AirTag leave the accessories for a main-product category of their own
     const line = rule.name === 'Accessories' ? deviceLineOf(subcat, subsubcat, skuName) : null;
     const finalCategory = line?.category ?? rule.name;
-    const finalProductName = line ? clean(line.productName, 191) ?? productName : productName;
+    const watchSeries = finalCategory === 'Watch' ? watchModelOf(...nameTexts) : null;
+    const macSeries = finalCategory === 'Mac' ? macModelOf(...nameTexts) : null;
+    const finalProductName =
+      (line
+        ? clean(line.productName, 191)
+        : watchSeries ?? macSeries ?? productName) ?? productName;
     const finalModelName =
       (line
         ? clean(line.modelName, 191)
-        : clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
+        : watchSeries ?? macSeries ?? clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
 
     const parsedColor = parseColorField(first(rs, (r) => r.color));
-    const colorClean = clean(parsedColor.color, 64);
+    const watchColor = finalCategory === 'Watch' ? watchColorOf(...nameTexts) : null;
+    const colorClean = clean(parsedColor.color || watchColor, 64);
     const storageClean = clean(capacity || parsedColor.storage, 64);
+    const displayGlass =
+      parsedColor.display ||
+      (nameTexts.some((t) => /\bnano-?texture(?:\s+glass)?\b/i.test(t ?? ''))
+        ? 'Nano-texture Glass'
+        : null);
 
-    // D142, D145: specifications per category
+    // D142, D145, D148, D150: specifications per category
     const attrs: Record<string, string> = {};
     const connectivity = connectivityOf(...nameTexts);
     const caseSize = caseSizeOf(...nameTexts);
@@ -545,20 +774,24 @@ export function buildCatalog(rows: WarroomRow[]): {
     if (finalCategory === 'iPad') {
       if (connectivity) attrs.connectivity = connectivity;
       if (storageClean) attrs.storage = storageClean;
-      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (displayGlass) attrs.display = displayGlass;
       if (colorClean) attrs.color = colorClean;
     } else if (finalCategory === 'Watch') {
+      const caseMaterial = caseMaterialOf(...nameTexts);
+      const band = watchBandOf(skuName, ...nameTexts);
+      if (caseMaterial) attrs.caseMaterial = caseMaterial;
+      if (colorClean) attrs.color = colorClean;
       if (caseSize) attrs.caseSize = caseSize;
       if (connectivity) attrs.connectivity = connectivity;
-      if (colorClean) attrs.color = colorClean;
+      if (band) attrs.band = band;
     } else if (finalCategory === 'Mac') {
       if (memory) attrs.memory = memory;
       if (storageClean) attrs.storage = storageClean;
-      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (displayGlass) attrs.display = displayGlass;
       if (colorClean) attrs.color = colorClean;
     } else {
       if (storageClean) attrs.storage = storageClean;
-      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (displayGlass) attrs.display = displayGlass;
       if (colorClean) attrs.color = colorClean;
     }
 
@@ -731,7 +964,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 8;
+export const CATALOG_RULES_VERSION = 10;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still

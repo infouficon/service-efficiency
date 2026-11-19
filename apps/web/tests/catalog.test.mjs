@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatPrice, modelChoices } from '../src/features/session/catalog.ts';
+import { formatPrice, getMacType, MAC_TYPES, modelChoices } from '../src/features/session/catalog.ts';
 
 const model = (name, upcs, pinnedAt = null) => ({
   id: name,
@@ -105,4 +105,83 @@ test('D145: modelChoices calculates minPrice and formatPrice formats currency co
   assert.equal(formatPrice(null), null);
   assert.equal(formatPrice(0), null);
   assert.equal(formatPrice(undefined), null);
+});
+
+test('Watch modelChoices: models sharing series name are merged into a single card without subtitles (D148)', () => {
+  const watchProduct = (name, models) => ({ id: name, category: 'Watch', name, models });
+  const catalog = [
+    watchProduct('S12 Alu Cell', [
+      { id: 'm1', name: 'S12 42mm', skus: [{ id: 's1', sku: 's1', name: 'S12 42mm Cell' }] },
+    ]),
+    watchProduct('S12 Alu GPS', [
+      { id: 'm2', name: 'Apple Watch Series 12', skus: [{ id: 's2', sku: 's2', name: 'S12 42mm GPS' }] },
+    ]),
+    watchProduct('S12 Alu Ceramic', [
+      { id: 'm3', name: 'Apple Watch Series 12', skus: [{ id: 's3', sku: 's3', name: 'S12 Ceramic' }] },
+    ]),
+    watchProduct('S12 Alu Ti', [
+      { id: 'm4', name: 'Apple Watch Series 12', skus: [{ id: 's4', sku: 's4', name: 'S12 Ti' }] },
+    ]),
+    watchProduct('SE3 (2026) GPS', [
+      { id: 'm5', name: 'Apple Watch SE', skus: [{ id: 's5', sku: 's5', name: 'SE3 GPS' }] },
+    ]),
+  ];
+
+  const choices = modelChoices(catalog, 'Watch');
+  assert.equal(choices.length, 2);
+  const s12 = choices.find((c) => c.model.name === 'Apple Watch Series 12');
+  const se = choices.find((c) => c.model.name === 'Apple Watch SE');
+
+  assert.ok(s12, 'Apple Watch Series 12 card exists');
+  assert.ok(se, 'Apple Watch SE card exists');
+  assert.equal(s12.sub, undefined, 'no confusing subtitle on merged Series 12 card');
+  assert.equal(se.sub, undefined, 'no confusing subtitle on SE card');
+  assert.equal(s12.model.skus.length, 4, 'all 4 S12 variant SKUs are combined into one model');
+});
+
+test('Mac family classification: iMac, Mac Studio, Mac mini, MacBook (D149)', () => {
+  assert.deepEqual(MAC_TYPES, ['iMac', 'Mac Studio', 'Mac mini', 'MacBook']);
+
+  assert.equal(getMacType('iMac 24 M4'), 'iMac');
+  assert.equal(getMacType('iMac (24-inch, M3)'), 'iMac');
+
+  assert.equal(getMacType('Mac Studio M2 Max'), 'Mac Studio');
+  assert.equal(getMacType('Mac Studio M2 Ultra'), 'Mac Studio');
+
+  assert.equal(getMacType('Mac mini M4'), 'Mac mini');
+  assert.equal(getMacType('Mac mini M4 Pro'), 'Mac mini');
+
+  assert.equal(getMacType('MacBook Air 13 M3'), 'MacBook');
+  assert.equal(getMacType('MacBook Air 15 M3'), 'MacBook');
+  assert.equal(getMacType('MacBook Pro 14 M4'), 'MacBook');
+  assert.equal(getMacType('MacBook Pro 16 M4 Pro'), 'MacBook');
+  assert.equal(getMacType('MacBook Neo A18 Pro'), 'MacBook');
+});
+
+test('Mac modelChoices: models sharing family and size are merged into a single card without subtitles (D150)', () => {
+  const macProduct = (name, models) => ({ id: name, category: 'Mac', name, models });
+  const catalog = [
+    macProduct('iMac 24', [
+      { id: 'm1', name: 'IMAC 24 M6 512TB', skus: [{ id: 's1', sku: 's1', name: '512GB Silver' }] },
+      { id: 'm2', name: 'IMAC 24 M6 256TB', skus: [{ id: 's2', sku: 's2', name: '256GB Blue' }] },
+      { id: 'm3', name: 'iMac 24 M4 (CTO)', skus: [{ id: 's3', sku: 's3', name: '1TB Orange' }] },
+    ]),
+    macProduct('MacBook Air', [
+      { id: 'm4', name: 'Macbook Air M5 13.6', skus: [{ id: 's4', sku: 's4', name: '512GB Midnight' }] },
+      { id: 'm5', name: 'Macbook Air M5 15.3', skus: [{ id: 's5', sku: 's5', name: '512GB Starlight' }] },
+    ]),
+  ];
+
+  const choices = modelChoices(catalog, 'Mac');
+  assert.equal(choices.length, 3);
+  const imac = choices.find((c) => c.model.name === 'iMac 24"');
+  const mba13 = choices.find((c) => c.model.name === 'MacBook Air 13"');
+  const mba15 = choices.find((c) => c.model.name === 'MacBook Air 15"');
+
+  assert.ok(imac, 'iMac 24" card exists');
+  assert.ok(mba13, 'MacBook Air 13" card exists');
+  assert.ok(mba15, 'MacBook Air 15" card exists');
+
+  assert.equal(imac.sub, undefined, 'no subtitle on unified iMac 24" card');
+  assert.equal(imac.model.skus.length, 3, 'all 3 iMac SKUs merged into one model');
 });

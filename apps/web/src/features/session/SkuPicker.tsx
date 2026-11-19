@@ -3,9 +3,11 @@ import { Search, X } from 'lucide-react';
 import { distinct } from './workflow';
 import {
   formatPrice,
+  getMacType,
   getSkuAttribute,
   isOutOfStock,
   isUnlimited,
+  MAC_TYPES,
   type CatalogSku,
   type ModelChoice,
   type Picked,
@@ -66,6 +68,7 @@ export function SkuPicker({
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [skuId, setSkuId] = useState('');
   const [query, setQuery] = useState('');
+  const [selectedMacType, setSelectedMacType] = useState<string>('');
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
@@ -177,8 +180,22 @@ export function SkuPicker({
     return { steps: computedSteps, remainingSkus: candidates };
   }, [allSpecs, modelSkus, selectedValues]);
 
+  const isMac = useMemo(() => {
+    return (
+      (chosen?.product.category?.toLowerCase() === 'mac') ||
+      models.some((m) => m.product.category?.toLowerCase() === 'mac')
+    );
+  }, [chosen, models]);
+
+  const macFilteredModels = useMemo(() => {
+    if (!isMac) return models;
+    if (!selectedMacType) return [];
+    return models.filter((m) => getMacType(m.model.name) === selectedMacType);
+  }, [isMac, models, selectedMacType]);
+
   const pickModel = (m: ModelChoice) => {
     setModelKey(m.key);
+    setQuery('');
     // If the model has literally NO specs at all and has only 1 SKU (e.g. an accessory without specs)
     const mSkus = m.model.skus;
     const hasAnySpecs = allSpecs.some((spec) => {
@@ -256,28 +273,58 @@ export function SkuPicker({
 
   // Filter models by query
   const shown = useMemo(() => {
+    const base = isMac ? macFilteredModels : models;
     const q = searchable(query.trim());
-    if (!q) return models;
+    if (!q) return base;
     const tokens = q.split(/\s+/).filter(Boolean);
-    return models.filter((m) => {
+    return base.filter((m) => {
       const text = searchable(`${m.model.name} ${m.product.name}`);
       return tokens.every((t) => text.includes(t));
     });
-  }, [models, query]);
+  }, [isMac, macFilteredModels, models, query]);
 
   return (
     <div className="sku-picker" ref={rootRef}>
       {/* 1. MODEL SELECTION VIEW (when no model selected yet) */}
       {!chosen ? (
         <div className="picker-field">
+          {isMac && (
+            <div style={{ marginBottom: '14px' }}>
+              <span className="picker-label" style={{ marginBottom: '8px' }}>
+                เลือกประเภท Mac <span className="required">*</span>
+              </span>
+              <div className="mac-type-chips" role="group" aria-label="ประเภท Mac">
+                {MAC_TYPES.map((type) => {
+                  const isSelected = selectedMacType === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`mac-type-chip${isSelected ? ' selected' : ''}`}
+                      aria-pressed={isSelected}
+                      onClick={() => {
+                        setSelectedMacType(type);
+                        setQuery('');
+                      }}
+                    >
+                      <strong>{type}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <span className="picker-label" id={labelId}>
             เลือกรุ่นสินค้า <span className="required">*</span>
           </span>
           {models.length === 0 ? (
             <p className="muted">ไม่มีรุ่นสินค้าในหมวดนี้</p>
+          ) : isMac && !selectedMacType ? (
+            <p className="muted picker-hint">เลือกประเภท Mac ด้านบนก่อน</p>
           ) : (
             <>
-              {models.length > 8 && (
+              {macFilteredModels.length > 8 && (
                 <label className="model-search">
                   <Search size={16} aria-hidden="true" />
                   <input

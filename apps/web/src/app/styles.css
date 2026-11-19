@@ -6053,3 +6053,68 @@ input[aria-invalid='true'] {
 .sidebar.sidebar-collapsed ~ main .customer-source-card {
   padding: 0 16px;
 }
+
+/* D149: Mac family type selector chips */
+.mac-type-chips {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+  .mac-type-chips {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.mac-type-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #111827);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font: inherit;
+  font-size: 15px;
+  text-align: center;
+}
+
+.mac-type-chip:hover:not(:disabled) {
+  border-color: var(--primary-accent, #0abab5);
+  background: var(--primary-subtle, #f0fdfa);
+}
+
+.mac-type-chip.selected {
+  border-color: var(--primary, #0abab5);
+  background: var(--primary-subtle, #f0fdfa);
+  color: var(--primary-dark, #065f5b);
+  box-shadow: 0 0 0 1px var(--primary, #0abab5);
+  font-weight: 700;
+}
+
+.mac-type-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg-muted, #f8fafc);
+}
+
+.mac-type-count {
+  font-size: 12px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--bg-muted, #f1f5f9);
+  color: var(--text-muted, #64748b);
+  font-weight: 600;
+}
+
+.mac-type-chip.selected .mac-type-count {
+  background: rgba(10, 186, 181, 0.2);
+  color: var(--primary-dark, #065f5b);
+}

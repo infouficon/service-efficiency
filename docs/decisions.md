@@ -2330,6 +2330,49 @@ Owner instruction via `/grill-me`: "ตอนเลือกสเปกสิ�
 3. **Auto-Complete on Final Pick.**
    - Only when all applicable specification steps have been explicitly clicked and chosen down to a single resolved SKU, the item is automatically added to the order (`onComplete`) and the picker modal closes.
 
+## D148 — Apple Watch Model Normalization and 5-Attribute Specification Parsing (2026-11-19)
+
+Owner instruction via `/grill-me`: "ทำไม watch ที่ถึง sku มาถึงแยกละเอียดเลย แก้ไขให้รวมกันเช่น S12 S11 แล้วเลือกรายละเอียดข้างใน โดยมีรูปแบบ sku Watch Series 12 GPS 42mm Space Grey Aluminium Case Navy Blue SB - S/M) · 42mm · GPS". Amends D72, D78, D79, D142, and D145.
+
+1. **Root Cause of Granular Watch Models:**
+   - In Warroom ERP, `subsubcat` often contains the complete descriptive SKU string (e.g., `Watch Series 12 GPS 42mm Space Grey Aluminium Case Navy Blue SB - S/M`).
+   - Previously, only `GPS` and `GPS + Cellular` were stripped in `modelNameOf`, leaving case, band, and size in `modelName`, causing every individual band/case variant to be imported as an isolated `ProductModel`.
+2. **Canonical Series Normalization (`watchModelOf` / `normalizeWatchModelName`):**
+   - Both `finalProductName` and `finalModelName` in `warroom-sync.service.ts` are mapped to the canonical series name:
+     - `Apple Watch Series X` (e.g. Series 12, Series 11, Series 10, S12, S11, etc.)
+     - `Apple Watch Ultra` / `Apple Watch Ultra 2`
+     - `Apple Watch SE` (including SE, SE2, SE3, SE (2026))
+     - `Apple Watch Hermès`
+   - In `apps/web/src/features/session/catalog.ts`: `modelChoices` for `Watch` normalizes series names and unifies duplicate models sharing the same series into a single model card, pooling all variant SKUs together and eliminating confusing subtitles (e.g. `S12 Alu GPS`, `S12 Alu Ti`).
+3. **Five Standard Watch Specification Attributes:**
+   - Watch category attributes are standardized into 5 sequential steps (`Category.attributes` updated via migration `202611190002_merge_watch_models`):
+     1. `caseMaterial` (ตัวเรือน): Aluminium, Titanium, Stainless Steel, Ceramic
+     2. `color` (สี): Space Grey, Silver, Jet Black, Rose Gold, Natural Titanium, Black, etc. (preferring text before `Case` to avoid band color collisions)
+     3. `caseSize` (ขนาดตัวเรือน): 40mm, 41mm, 42mm, 44mm, 45mm, 46mm, 49mm
+     4. `connectivity` (การเชื่อมต่อ): GPS, GPS + Cellular
+     5. `band` (สาย): Navy Blue SB - S/M, Sport Band, Alpine Loop, Ocean Band, etc.
+4. **Sync Version Bump:**
+   - `CATALOG_RULES_VERSION` bumped from 8 to 9 in `apps/api/src/warroom/warroom-sync.service.ts` so the sync recalculates all Watch catalog models and attributes automatically.
+
+## D149 — Mac Family Classification (iMac, Mac Studio, Mac mini, MacBook) (2026-11-19)
+
+Owner instruction via `/grill-me`: "ส่วนของ Mac กดให้ให้เลือกประเภทก่อน เป็น iMac, Mac Studio, Mac mini, MacBook".
+
+1. **Mac Classification into 4 Families:**
+   - When Category "Mac" is chosen, staff must first pick one of the four Mac family types:
+     - `iMac`: matches `/\bimac\b/i`
+     - `Mac Studio`: matches `/\bmac\s*studio\b/i`
+     - `Mac mini`: matches `/\bmac\s*mini\b/i`
+     - `MacBook`: matches `/\bmacbook\b/i` (includes both MacBook Air and MacBook Pro models)
+2. **Strictly Manual Initial Selection:**
+   - Following D147, when staff click Category "Mac", no Mac family type is pre-selected by default.
+   - The UI presents 4 horizontal filter chips (`.mac-type-chips`) showing each family type and its available model count (or disabled if 0 models in stock).
+   - Staff must explicitly click one of the four family types before the model list is displayed.
+3. **Responsive UI & Re-selection:**
+   - Renders 4 columns on desktop/tablet, wrapping to 2x2 grid on mobile screens (`max-width: 640px`).
+   - Staff can freely click any of the 4 chips to switch families.
+   - When staff click "เปลี่ยนรุ่น" (Change Model) from within the configurator, the selected family type is preserved for seamless navigation between models of the same family, with the option to click another family chip.
+
 ## D160 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
 
 Owner instruction via `/grill-me`:
@@ -2792,7 +2835,6 @@ Decisions:
    - Removed all automated `scrollIntoView` calls inside `pickModel`, `handleMemoryChange`, and `handleStorageChange` across all devices.
    - When staff selects a model, the card expands in-place calmly without jumping or pushing the model name/price off screen.
    - The user's screen remains stable, displaying the Model, Capacity, and Color chips together in a single clear view ("แสดงรุ่น ความจุ สี ครบ") until the user completes the selection by tapping a color.
-
 
 
 

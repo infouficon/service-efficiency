@@ -554,7 +554,7 @@ model SessionAccessory {
   id            String          @id @default(uuid()) @db.VarChar(36)
   sessionId     String          @db.VarChar(36)
   session       CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  accessoryName String          @db.VarChar(64)
+  accessoryName String          @db.VarChar(191)
   quantity      Int             @default(1)
 
   @@index([sessionId])

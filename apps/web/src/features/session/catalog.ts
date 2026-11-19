@@ -300,3 +300,77 @@ export interface Picked {
   model: CatalogModel;
   sku: CatalogSku;
 }
+
+/**
+ * D152, D154: Extract real accessory groups (sub-categories / product names) from catalog
+ * combined with fallback options and currently selected keys.
+ * Ensures the full list of accessory groups remains available even when items are selected.
+ */
+export function extractAccessoryGroups(
+  catalog: CatalogProduct[] | null | undefined,
+  accessoryCategoryNames: Set<string>,
+  fallback: readonly string[] = [],
+  selectedKeys: readonly string[] = [],
+): string[] {
+  const namesSet = new Set<string>();
+  // 1. Always include fallback options so full list never disappears
+  for (const item of fallback) {
+    if (item && item.trim()) {
+      namesSet.add(item.trim());
+    }
+  }
+  // 2. Include catalog accessory products
+  if (catalog && catalog.length > 0) {
+    for (const p of catalog) {
+      if (accessoryCategoryNames.has(p.category)) {
+        if (p.name && p.name.trim()) {
+          namesSet.add(p.name.trim());
+        }
+      }
+    }
+  }
+  // 3. Include any selected keys
+  for (const k of selectedKeys) {
+    if (k && k.trim()) {
+      namesSet.add(k.trim());
+    }
+  }
+  return Array.from(namesSet).sort((a, b) => a.localeCompare(b, 'th'));
+}
+
+/**
+ * D153: Format specific accessory item name with SKU part number:
+ * e.g. "iPhone 13 Silicone Case with MagSafe - Marigold (MM243FE/A)"
+ */
+export function formatAccessoryItemName(model: CatalogModel, sku: CatalogSku): string {
+  const base = sku.name?.trim() || model.name?.trim() || sku.sku;
+  const partNo = sku.sku?.trim();
+  if (partNo && !base.includes(partNo)) {
+    return `${base} (${partNo})`;
+  }
+  return base;
+}
+
+/**
+ * Check whether a chosen accessory key belongs to a specific catalog product.
+ */
+export function isAccessoryFromProduct(product: CatalogProduct, accessoryKey: string): boolean {
+  const keyLower = accessoryKey.toLowerCase();
+  if (product.name && keyLower.includes(product.name.toLowerCase())) {
+    return true;
+  }
+  for (const m of product.models) {
+    if (m.name && keyLower.includes(m.name.toLowerCase())) {
+      return true;
+    }
+    for (const s of m.skus) {
+      if (s.sku && accessoryKey.includes(s.sku)) {
+        return true;
+      }
+      if (s.name && keyLower.includes(s.name.toLowerCase())) {
+        return true;
+      }
+    }
+  }
+  return false;
+}

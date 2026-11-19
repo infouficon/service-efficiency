@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { getMacType, MAC_TYPES, modelChoices } from '../src/features/session/catalog.ts';
+import {
+  extractAccessoryGroups,
+  formatAccessoryItemName,
+  getMacType,
+  isAccessoryFromProduct,
+  MAC_TYPES,
+  modelChoices,
+} from '../src/features/session/catalog.ts';
 
 const model = (name, upcs, pinnedAt = null) => ({
   id: name,
@@ -104,4 +111,72 @@ test('Mac modelChoices: models sharing family and size are merged into a single 
 
   assert.equal(imac.sub, undefined, 'no subtitle on unified iMac 24" card');
   assert.equal(imac.model.skus.length, 3, 'all 3 iMac SKUs merged into one model');
+});
+
+test('extractAccessoryGroups: extracts real groups from catalog, retains selected, and preserves all options (D152, D154)', () => {
+  const fallback = ['Apple Pencil', 'Case', 'Magic Mouse'];
+  const accCategory = new Set(['Accessories', 'Custom Accessory']);
+
+  // 1. When catalog is empty, uses fallback
+  assert.deepEqual(extractAccessoryGroups([], accCategory, fallback), ['Apple Pencil', 'Case', 'Magic Mouse']);
+  assert.deepEqual(extractAccessoryGroups(null, accCategory, fallback), ['Apple Pencil', 'Case', 'Magic Mouse']);
+
+  // 2. Extracts real sub-categories/product names from accessory categories and preserves fallback
+  const catalog = [
+    { id: '1', category: 'Accessories', name: 'Power Adapter', models: [] },
+    { id: '2', category: 'Accessories', name: 'USB-C Cable', models: [] },
+    { id: '3', category: 'Accessories', name: 'AirTag Case', models: [] },
+    { id: '4', category: 'Custom Accessory', name: 'Screen Protector', models: [] },
+    { id: '5', category: 'iPhone', name: 'iPhone 16', models: [] }, // not an accessory
+  ];
+
+  const groups = extractAccessoryGroups(catalog, accCategory, fallback);
+  assert.deepEqual(
+    groups.sort(),
+    ['AirTag Case', 'Apple Pencil', 'Case', 'Magic Mouse', 'Power Adapter', 'Screen Protector', 'USB-C Cable'].sort(),
+  );
+
+  // 3. Retains already selected accessories even if not in catalog and never drops fallback (D154)
+  const withSelected = extractAccessoryGroups([], accCategory, fallback, ['Apple Pencil']);
+  assert.deepEqual(withSelected, ['Apple Pencil', 'Case', 'Magic Mouse']);
+
+  const withCustomSelected = extractAccessoryGroups(catalog, accCategory, fallback, ['Old Custom Accessory']);
+  assert.ok(withCustomSelected.includes('Old Custom Accessory'));
+  assert.ok(withCustomSelected.includes('Power Adapter'));
+  assert.ok(withCustomSelected.includes('Apple Pencil'));
+});
+
+test('formatAccessoryItemName and isAccessoryFromProduct: format descriptive name with SKU and match product (D153)', () => {
+  const model = { id: 'm1', name: 'iPhone Case for iPhone 13', skus: [] };
+  const sku1 = {
+    id: 's1',
+    sku: 'MM243FE/A',
+    name: 'iPhone 13 Silicone Case with MagSafe - Marigold',
+  };
+  const sku2 = {
+    id: 's2',
+    sku: 'MM244FE/A',
+    name: 'Clear Case',
+  };
+
+  // 1. If sku name already contains relevant terms, format cleanly with (SKU)
+  const name1 = formatAccessoryItemName(model, sku1);
+  assert.equal(name1, 'iPhone 13 Silicone Case with MagSafe - Marigold (MM243FE/A)');
+
+  // 2. Formats with sku name and part number
+  const name2 = formatAccessoryItemName(model, sku2);
+  assert.equal(name2, 'Clear Case (MM244FE/A)');
+
+  // 3. isAccessoryFromProduct matches product name, model name, or SKU part number
+  const product = {
+    id: 'p1',
+    category: 'Accessories',
+    name: 'iPhone Case',
+    models: [model],
+  };
+  model.skus = [sku1, sku2];
+
+  assert.equal(isAccessoryFromProduct(product, name1), true);
+  assert.equal(isAccessoryFromProduct(product, name2), true);
+  assert.equal(isAccessoryFromProduct(product, 'USB-C to Lightning Cable'), false);
 });

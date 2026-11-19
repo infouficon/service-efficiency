@@ -2204,6 +2204,67 @@ Owner instruction via `/grill-me`: "step เลือกสินค้า ต�
    - **Accessories:** Pill chips showing accessory name and quantity (`× Qty`), or "ไม่มีอุปกรณ์เสริม" when empty.
    - **Footer:** Close button ("ปิด").
 
+## D152 — Dynamic Accessories Group List from Catalog & In-List Search (2026-11-19)
+
+Owner instruction via `/grill-me`: "ตอนเลือก Accessories ให้ดึงค่าจริงมาแสดง".
+
+1. **Context & Problem:**
+   - The Accessories selection section previously used a hardcoded mock list of 15 items in `constants/options.ts`, ignoring real accessory categories and products synced from ERP / Warroom.
+2. **Dynamic Real Catalog Groups:**
+   - In `apps/web/src/features/session/catalog.ts` (`extractAccessoryGroups`), accessory groups are extracted dynamically from `GET /products` catalog:
+     - Includes all product names (`p.name`, representing ERP sub-categories) whose category is `Accessories` or has `isAccessory: true` in `Category`.
+     - Automatically falls back to the default options if no accessory products are returned from the API.
+     - Preserves any currently selected accessory keys to prevent loss of state.
+3. **Search & Pinned Selected Items:**
+   - Added a search input with clear (✕) button at the top of the Accessories section.
+   - Selected accessories are always pinned at the top of the list and remain visible even when a search query is active.
+   - Unselected items matching the search query appear below selected items.
+   - Displays empty state ("ไม่พบอุปกรณ์เสริมที่ตรงกับ ...") when no matching items exist.
+4. **Compatibility:**
+   - The underlying selection model `value.accessories` retains `{ [name]: quantity }` for backward compatibility with FileMaker, POS, and database (`SessionAccessory`).
+
+## D153 — Inline Model & SKU Configurator for Accessories (2026-11-19)
+
+Owner instruction via `/grill-me`: "เมื่อกดเลือก accessories แล้วให้ยังขึ้นที่เหลือด้วย ให้ถ้ามีสเปกต่างๆก้ให้สามารถเลือกได้ด้วยเหมือนในสินค้าหลัก".
+
+1. **Inline Accordion Selection:**
+   - In Staff Workspace product selection (`SelectionEditor.tsx`), clicking an accessory product group (e.g. `iPhone Case`) expands an inline accordion under that group.
+   - All other accessory groups remain visible and accessible so staff can select multiple items across different groups without leaving the screen.
+2. **Model and SKU Specification Picking:**
+   - When an accessory product contains catalog models and SKUs (such as `iPhone Case for iPhone 13`, `iPhone Case for iPhone 14 Pro`):
+     - Displays model selection chips (when more than 1 model exists).
+     - Renders all variant SKUs under the active model with their descriptive name, color, SKU part number, and live stock indicator.
+     - Staff can click "+ เพิ่ม" to add the SKU or adjust quantity with the stepper (`−`, input, `+`).
+     - Multiple SKUs under the same or different accessory groups can be selected simultaneously.
+3. **Selected Accessories Card & Accurate Part Number Naming:**
+   - Selected accessories are pinned in a dedicated summary card at the top of the Accessories section, showing the full descriptive name and quantity stepper with a direct delete (✕) button.
+   - Accessory items are formatted with their SKU part number: `formatAccessoryItemName(model, sku)` (e.g. `iPhone 13 Silicone Case with MagSafe - Marigold (MM243FE/A)`), ensuring Stock and Cashier identify the exact part number.
+4. **Database Migration:**
+   - Migration `202611190004_widen_session_accessory_name` widens `SessionAccessory.accessoryName` from `VARCHAR(64)` to `VARCHAR(191)` to safely store full Apple accessory names and SKU codes.
+
+## D155 — Checkbox-Free & Stepper-Free Accessories List with Instant Click-to-Add (2026-11-19)
+
+Owner instruction via `/grill-me`: "ในรายการ Accessories ด้านล่างที่ให้เลือก ไม่ต้องแสดงจำนวนหรือกล่องให้ติ๊ก เพื่อให้สามารถกดเพิ่มได้อีก".
+
+1. **Context & Motivation:**
+   - Previously, accessory rows in the catalog list below showed a checkbox (`[✓]`) and quantity stepper (`[ - ] 1 [ + ]`) inline.
+   - This caused confusion for staff: items appeared "already checked", making it unclear how to pick alternative models/SKUs or add more units cleanly.
+   - Since the pinned top card ("รายการที่เลือก") already handles quantity adjustment and removal, the bottom list should function as a pure picker/catalog.
+2. **Checkbox-Free & Stepper-Free Catalog List:**
+   - Removed all checkboxes and quantity stepper controls from the bottom accessories list in `SelectionEditor.tsx`.
+   - Each group renders as a clean accordion card showing the group name, model count badge (if multiple models), selected item count badge (e.g. `เลือกแล้ว 1 ชิ้น`), and a chevron toggle.
+3. **Spec Selection & Instant Click-to-Add:**
+   - **Model Selection:** Manual selection required (strictly adheres to D147: even if a product has only 1 model, it is not auto-selected).
+   - **SKU / Spec Selection:** Renders all variant SKUs under the chosen model as interactive cards. Clicking any SKU immediately adds +1 of that specific SKU into the top selection card without needing an extra "+ เพิ่ม" button. Shows a `ในรายการ: X` badge if already selected.
+   - **Fallback Generic Items:** For items without sub-models, clicking the item button in the expanded accordion immediately adds +1 to the selection.
+4. **Separation of Concerns:**
+   - **Bottom List:** Pure browsing and spec selection; every click on a SKU adds another unit.
+   - **Top Card ("รายการที่เลือก"):** Dedicated to reviewing selected items, adjusting quantities (`+` / `−` / numeric input), and removing items (✕).
+
+
+
+
+
 
 
 

@@ -160,6 +160,22 @@ export interface PaymentDetail {
 
 export type ReceiptType = 'TAX_CORPORATE' | 'TAX_INDIVIDUAL' | 'SIMPLIFIED';
 
+export type DiscountType = 'GENERAL' | 'ENTERPRISE' | 'EDU' | 'UNIDAYS' | 'MED';
+
+export type CustomerSource =
+  | 'WALK_IN'
+  | 'WEBSITE'
+  | 'FACEBOOK'
+  | 'INSTAGRAM'
+  | 'TIKTOK'
+  | 'LINE_OA'
+  | 'GOOGLE_SEARCH'
+  | 'INFLUENCER'
+  | 'FRIEND_REFERRAL'
+  | 'EVENT_BOOTH'
+  | 'FLYER_PRINT'
+  | 'RETURNING_CUSTOMER';
+
 export interface Selection {
   /** The main products, in the order the staff added them; empty = none chosen yet. */
   items: SelectionItem[];
@@ -176,6 +192,10 @@ export interface Selection {
   taxInvoice?: boolean;
   /** D128: selected receipt type (required before confirming). */
   receiptType?: ReceiptType | null;
+  /** D146: selected discount type (required before confirming). */
+  discountType?: DiscountType | null;
+  /** D146: customer acquisition / lead source channel (required before confirming). */
+  customerSource?: CustomerSource | null;
 }
 
 export type Timestamp =
@@ -245,6 +265,9 @@ export interface MockSession {
   vatRefund?: boolean;
   taxInvoice?: boolean;
   receiptType?: ReceiptType | null;
+  /** D146: discount type and customer acquisition source */
+  discountType?: DiscountType | null;
+  customerSource?: CustomerSource | null;
   /** D100: the order's FileMaker side: the latest message SES sent and what FileMaker answered (null: nothing sent). */
   fmp?: FmpStatus | null;
   /** F12: when and by whom stock acknowledged this cancel; absent while stock still has to act. */

@@ -24,6 +24,33 @@ export const RECEIPT_TYPES = [
 
 export type ReceiptTypeValue = (typeof RECEIPT_TYPES)[number];
 
+export const DISCOUNT_TYPES = [
+  'GENERAL',
+  'ENTERPRISE',
+  'EDU',
+  'UNIDAYS',
+  'MED',
+] as const;
+
+export type DiscountTypeValue = (typeof DISCOUNT_TYPES)[number];
+
+export const CUSTOMER_SOURCES = [
+  'WALK_IN',
+  'WEBSITE',
+  'FACEBOOK',
+  'INSTAGRAM',
+  'TIKTOK',
+  'LINE_OA',
+  'GOOGLE_SEARCH',
+  'INFLUENCER',
+  'FRIEND_REFERRAL',
+  'EVENT_BOOTH',
+  'FLYER_PRINT',
+  'RETURNING_CUSTOMER',
+] as const;
+
+export type CustomerSourceValue = (typeof CUSTOMER_SOURCES)[number];
+
 export const STEP_ACTIONS = [
   'startDemo',
   'endDemo',
@@ -272,6 +299,16 @@ export class UpdateSelectionDto {
   @IsOptional()
   @IsIn(RECEIPT_TYPES)
   receiptType?: ReceiptTypeValue;
+
+  /** D146: customer discount type category. */
+  @IsOptional()
+  @IsIn(DISCOUNT_TYPES)
+  discountType?: DiscountTypeValue;
+
+  /** D146: customer acquisition / lead source channel. */
+  @IsOptional()
+  @IsIn(CUSTOMER_SOURCES)
+  customerSource?: CustomerSourceValue;
 }
 
 export class ReportStockMissingDto {

@@ -2076,3 +2076,41 @@ Owner instruction via `/grill-me`: "ทำไมสีบางอันติ�
    - `CATALOG_RULES_VERSION` is incremented to 8 to trigger re-sync and catalog re-indexing.
    - Prisma SQL migration `202611180003_clean_product_colors/migration.sql` immediately cleans existing rows in `ProductSku` (`color`, `attributes`) and purges dirty/invalid color names from `ProductColor`.
 
+## D146 — Discount Types and Customer Lead Source Acquisition Channels (2026-11-19)
+
+Owner instruction via `/grill-me`:
+1. "เพิ่มหลังประเภทใบเสร็จ ประเภทส่วนลด: ลูกค้าทั่วไป, enterprise, EDU, UNIDAYS, MED"
+2. "เพิ่มหลัง Vat refund ลูกค้ามาจากช่องทางใด: Walk-in, Website UFicon, Facebook, Instagram, TikTok, LINE / LINE OA, ค้นหาใน Google, Influencer / KOL, เพื่อนหรือคนรู้จักแนะนำ, งานอีเวนต์ / บูธ / ออกร้าน, ใบปลิว / สื่อสิ่งพิมพ์, เป็นลูกค้าเก่า / เคยใช้บริการแล้ว"
+
+1. **Mandatory Selection Without Initial Default.**
+   - Both `discountType` and `customerSource` are mandatory (required) selections before staff can confirm an order.
+   - Initial selection has no default value; staff must explicitly tap/select both options before the order review can be initiated (`reviewDisabled` on Web and `assertConfirmable` on NestJS API).
+   - Rebuy sessions (`sessions.service.ts:rebuy`) automatically copy the previous session's `discountType` and `customerSource` as initial values for cashier/staff speed, while remaining editable.
+2. **Options and Enums.**
+   - **Discount Type (`DiscountType`):**
+     - `GENERAL`: ลูกค้าทั่วไป
+     - `ENTERPRISE`: enterprise
+     - `EDU`: EDU
+     - `UNIDAYS`: UNIDAYS
+     - `MED`: MED
+   - **Customer Source Channel (`CustomerSource`):**
+     - `WALK_IN`: Walk-in
+     - `WEBSITE`: Website UFicon
+     - `FACEBOOK`: Facebook
+     - `INSTAGRAM`: Instagram
+     - `TIKTOK`: TikTok
+     - `LINE_OA`: LINE / LINE OA
+     - `GOOGLE_SEARCH`: ค้นหาใน Google
+     - `INFLUENCER`: Influencer / KOL
+     - `FRIEND_REFERRAL`: เพื่อนหรือคนรู้จักแนะนำ
+     - `EVENT_BOOTH`: งานอีเวนต์ / บูธ / ออกร้าน
+     - `FLYER_PRINT`: ใบปลิว / สื่อสิ่งพิมพ์
+     - `RETURNING_CUSTOMER`: เป็นลูกค้าเก่า / เคยใช้บริการแล้ว
+3. **Internal SES Scope.**
+   - Stored in MySQL `CustomerSession` via Prisma migration `202611190001_discount_type_and_customer_source`.
+   - Strictly retained within SES for analytics, tracking, and logs; **not sent to FileMaker POS** in `orderView` payloads.
+4. **UI Presentation.**
+   - In `SelectionEditor.tsx`, «ประเภทส่วนลด» is placed immediately following «ประเภทใบเสร็จ» as interactive single-select button cards.
+   - «ลูกค้ามาจากช่องทางใด» is placed immediately following «VAT Refund» as single-select option chips in web tone.
+   - Displayed in `Summary.tsx` (Review modal) before confirmation, in `StaffWorkspace.tsx` (Queue cards and active strip), and in `SessionLogsWorkspace.tsx` (Excel export columns).
+

@@ -1,0 +1,4 @@
+-- D146: Add discountType and customerSource to CustomerSession
+ALTER TABLE `CustomerSession`
+  ADD COLUMN `discountType` ENUM('GENERAL', 'ENTERPRISE', 'EDU', 'UNIDAYS', 'MED') NULL,
+  ADD COLUMN `customerSource` ENUM('WALK_IN', 'WEBSITE', 'FACEBOOK', 'INSTAGRAM', 'TIKTOK', 'LINE_OA', 'GOOGLE_SEARCH', 'INFLUENCER', 'FRIEND_REFERRAL', 'EVENT_BOOTH', 'FLYER_PRINT', 'RETURNING_CUSTOMER') NULL;

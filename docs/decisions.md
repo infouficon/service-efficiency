@@ -2373,6 +2373,38 @@ Owner instruction via `/grill-me`: "ส่วนของ Mac กดให้ใ
    - Staff can freely click any of the 4 chips to switch families.
    - When staff click "เปลี่ยนรุ่น" (Change Model) from within the configurator, the selected family type is preserved for seamless navigation between models of the same family, with the option to click another family chip.
 
+## D150 — Mac Canonical Model Grouping & Specification Attributes (2026-11-19)
+
+Owner instruction via `/grill-me`: "ทำไมแยกละเอียดแบบนี้ ทำให้ต้องเลือกรายละเอียดเหมือน iPhone iPad Watch".
+
+1. **Context & Problem:**
+   - Raw ERP product catalog split Mac computers by storage, RAM, and chip in product and model names (e.g. `IMAC 24 M6 512TB`, `IMAC 24 M6 256TB`, `iMac 24 M4 (CTO)`), creating cluttered, fragmented model choices.
+2. **Canonical Model Grouping (Family + Display Size):**
+   - In `apps/web/src/features/session/catalog.ts` and `apps/api/src/warroom/warroom-sync.service.ts`:
+     - Raw Mac models are mapped to canonical series: `iMac 24"`, `Mac mini`, `Mac Studio`, `MacBook Air 13"`, `MacBook Air 15"`, `MacBook Pro 14"`, `MacBook Pro 16"`, `MacBook Neo`.
+     - Duplicate models sharing the same canonical name are merged in `modelChoices`, pooling all variant SKUs together without model subtitles.
+3. **Four Standard Mac Specification Attributes:**
+   - Standardized into 4 sequential attributes (`Category.attributes` updated via migration `202611190003_mac_category_attributes`):
+     1. `memory` (RAM): e.g. 8GB, 16GB, 24GB, 32GB, 36GB, 48GB
+     2. `storage` (ความจุ): e.g. 256GB, 512GB, 1TB, 2TB
+     3. `color` (สี): e.g. Silver, Midnight, Space Black, Blue, etc.
+     4. `display` (จอภาพ): Standard Glass, Nano-texture Glass (automatically omitted when no nano-texture SKU exists).
+4. **Sync Version Bump:**
+   - `CATALOG_RULES_VERSION` bumped from 9 to 10 in `apps/api/src/warroom/warroom-sync.service.ts`.
+
+## D151 — Mobile Sticky Action Bar Cart Summary Modal (2026-11-19)
+
+Owner instruction via `/grill-me`: "step เลือกสินค้า ตรงสินค้าด้านล่าง ข้างปุ่ม ถัดไป ให้กดแล้วแสดง modal ขึ้นมาแสดงรายการสินค้าที่ศื้อและรายละเอียดต่างๆ".
+
+1. **Interaction & Trigger:**
+   - On mobile/small-screen view where `.mobile-sticky-bar` is visible, clicking anywhere on the left text area (which shows the main item name and accessories count) opens a bottom-sheet modal showing the chosen items.
+   - The area acts as an interactive button (`role="button"`, `cursor: pointer`, touch feedback via `.mobile-sticky-summary.interactive:active`) only when at least one main product is selected (`value.items.length > 0`). When no items are selected, clicking is disabled with default cursor.
+2. **Modal Content (View-Only):**
+   - **Header:** "รายการสินค้าที่เลือก" with close button.
+   - **Summary Banner:** Total main product items and unit count + total accessories count (e.g. `รวมสินค้าหลัก X รายการ (Y เครื่อง) · อุปกรณ์เสริม Z ชิ้น`).
+   - **Main Items:** List showing category icon, product name (`itemName`), SKU chip, category label, and quantity chip (`× Qty`).
+   - **Accessories:** Pill chips showing accessory name and quantity (`× Qty`), or "ไม่มีอุปกรณ์เสริม" when empty.
+   - **Footer:** Close button ("ปิด").
 ## D160 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
 
 Owner instruction via `/grill-me`:

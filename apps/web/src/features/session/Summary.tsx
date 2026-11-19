@@ -7,10 +7,19 @@ import {
   CreditCard,
   Plane,
   ReceiptText,
+  Tag,
+  Share2,
 } from 'lucide-react';
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
-import { formatPaymentLabel, isTaxInvoiceReceipt, itemName, receiptTypeLabel } from './workflow';
+import {
+  customerSourceLabel,
+  discountTypeLabel,
+  formatPaymentLabel,
+  isTaxInvoiceReceipt,
+  itemName,
+  receiptTypeLabel,
+} from './workflow';
 import { formatDisplayPhone } from '../../utils/phone';
 
 interface SummaryProps {
@@ -233,6 +242,62 @@ export function Summary({
                         VAT Refund
                       </span>
                     )}
+                  </div>
+                </div>
+              );
+            })()}
+            {(() => {
+              const discount = discountTypeLabel(s?.discountType ?? session.discountType);
+              if (!discount) return null;
+              return (
+                <div className="info-item-row">
+                  <span className="info-item-label">ประเภทส่วนลด:</span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: 'var(--primary-subtle)',
+                        color: 'var(--primary-dark, var(--text-primary))',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        border: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <Tag size={12} strokeWidth={1.6} />
+                      {discount}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+            {(() => {
+              const source = customerSourceLabel(s?.customerSource ?? session.customerSource);
+              if (!source) return null;
+              return (
+                <div className="info-item-row">
+                  <span className="info-item-label">ช่องทางที่ลูกค้ามา:</span>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <span
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: 'var(--bg-subtle)',
+                        color: 'var(--text-secondary)',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        border: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <Share2 size={12} strokeWidth={1.6} />
+                      {source}
+                    </span>
                   </div>
                 </div>
               );

@@ -26,6 +26,8 @@ import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { Summary } from '../session/Summary';
 import { ReceiptPrint } from '../session/Receipt';
 import {
+  customerSourceLabel,
+  discountTypeLabel,
   formatDuration,
   formatPaymentLabel,
   itemName,
@@ -319,6 +321,11 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
             .join('; '),
       },
       {
+        key: 'discountType',
+        label: 'ประเภทส่วนลด',
+        getValue: (s) => discountTypeLabel(s.discountType ?? s.selection?.discountType) ?? '',
+      },
+      {
         key: 'taxInvoice',
         label: 'ประเภทใบเสร็จ',
         getValue: (s) =>
@@ -331,6 +338,11 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         key: 'vatRefund',
         label: 'ขอ VAT Refund',
         getValue: (s) => ((s.vatRefund ?? s.selection?.vatRefund) ? 'ใช่' : 'ไม่ใช่'),
+      },
+      {
+        key: 'customerSource',
+        label: 'ลูกค้ามาจากช่องทางใด',
+        getValue: (s) => customerSourceLabel(s.customerSource ?? s.selection?.customerSource) ?? '',
       },
     ],
   },

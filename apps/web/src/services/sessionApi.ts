@@ -3,6 +3,8 @@ import type {
   AppSettings,
   CustomerType,
   Category,
+  CustomerSource,
+  DiscountType,
   PaymentCardOption,
   PaymentMethod,
   MockSession,
@@ -47,6 +49,8 @@ export interface ApiSession {
   vatRefund?: boolean | null;
   taxInvoice?: boolean | null;
   receiptType?: ReceiptType | null;
+  discountType?: DiscountType | null;
+  customerSource?: CustomerSource | null;
   fmp?: FmpStatus | null;
   rebuyOf?: { id: string; reference: string } | null;
   rebuiltAs?: { id: string; reference: string } | null;
@@ -155,6 +159,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
     vatRefund: Boolean(s.vatRefund),
     taxInvoice: isTaxInvoiceReceipt(s.receiptType, Boolean(s.taxInvoice)),
     receiptType: s.receiptType ?? null,
+    discountType: s.discountType ?? null,
+    customerSource: s.customerSource ?? null,
     fmp: s.fmp ?? null,
     stockAckAt: s.stockAckAt || undefined,
     stockAckBy: s.stockAckBy || undefined,
@@ -190,6 +196,8 @@ export function mapApiSessionToMockSession(s: ApiSession): MockSession {
       vatRefund: Boolean(s.vatRefund),
       taxInvoice: isTaxInvoiceReceipt(s.receiptType, Boolean(s.taxInvoice)),
       receiptType: s.receiptType ?? null,
+      discountType: s.discountType ?? null,
+      customerSource: s.customerSource ?? null,
     },
     stockPendingReview: s.stockReview
       ? {
@@ -418,6 +426,8 @@ export async function updateSelectionApi(
     vatRefund: Boolean(selection.vatRefund),
     taxInvoice: isTaxInvoiceReceipt(selection.receiptType, Boolean(selection.taxInvoice)),
     receiptType: selection.receiptType ?? undefined,
+    discountType: selection.discountType ?? undefined,
+    customerSource: selection.customerSource ?? undefined,
     // F3: the main products as a whole list (SKU id + quantity)
     items: selection.items.map((item) => ({
       skuId: item.product.id,

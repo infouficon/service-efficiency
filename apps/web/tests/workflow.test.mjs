@@ -29,6 +29,10 @@ import {
   receiptTypeLabel,
   receiptTypeBadgeLabel,
   isTaxInvoiceReceipt,
+  discountTypeIsValid,
+  discountTypeLabel,
+  customerSourceIsValid,
+  customerSourceLabel,
   serialsLeft,
   serialsComplete,
 } from '../src/features/session/workflow.ts';
@@ -48,6 +52,8 @@ const fixture = () => ({
     burnPoints: [],
     payments: [],
     receiptType: 'SIMPLIFIED',
+    discountType: 'GENERAL',
+    customerSource: 'WALK_IN',
   },
 });
 test('purchase path requires confirmation and separate cashier completion', () => {
@@ -631,6 +637,97 @@ test('D128: receiptType selection is required before confirming, supports 3 type
   assert.equal(confirmedCorporate.state, 'STOCK_REQUESTED');
   assert.equal(confirmedCorporate.selection.vatRefund, true);
   assert.equal(confirmedCorporate.selection.receiptType, 'TAX_CORPORATE');
+});
+
+test('D146: discountType and customerSource validation (both required before confirmation, single select, correct labels)', () => {
+  // Discount type validation
+  assert.equal(discountTypeIsValid(null), false);
+  assert.equal(discountTypeIsValid(undefined), false);
+  assert.equal(discountTypeIsValid('GENERAL'), true);
+  assert.equal(discountTypeIsValid('ENTERPRISE'), true);
+  assert.equal(discountTypeIsValid('EDU'), true);
+  assert.equal(discountTypeIsValid('UNIDAYS'), true);
+  assert.equal(discountTypeIsValid('MED'), true);
+  assert.equal(discountTypeIsValid('INVALID'), false);
+
+  assert.equal(discountTypeLabel('GENERAL'), 'ลูกค้าทั่วไป');
+  assert.equal(discountTypeLabel('ENTERPRISE'), 'enterprise');
+  assert.equal(discountTypeLabel('EDU'), 'EDU');
+  assert.equal(discountTypeLabel('UNIDAYS'), 'UNIDAYS');
+  assert.equal(discountTypeLabel('MED'), 'MED');
+  assert.equal(discountTypeLabel(null), null);
+
+  // Customer source validation
+  assert.equal(customerSourceIsValid(null), false);
+  assert.equal(customerSourceIsValid(undefined), false);
+  assert.equal(customerSourceIsValid('WALK_IN'), true);
+  assert.equal(customerSourceIsValid('WEBSITE'), true);
+  assert.equal(customerSourceIsValid('FACEBOOK'), true);
+  assert.equal(customerSourceIsValid('INSTAGRAM'), true);
+  assert.equal(customerSourceIsValid('TIKTOK'), true);
+  assert.equal(customerSourceIsValid('LINE_OA'), true);
+  assert.equal(customerSourceIsValid('GOOGLE_SEARCH'), true);
+  assert.equal(customerSourceIsValid('INFLUENCER'), true);
+  assert.equal(customerSourceIsValid('FRIEND_REFERRAL'), true);
+  assert.equal(customerSourceIsValid('EVENT_BOOTH'), true);
+  assert.equal(customerSourceIsValid('FLYER_PRINT'), true);
+  assert.equal(customerSourceIsValid('RETURNING_CUSTOMER'), true);
+  assert.equal(customerSourceIsValid('OTHER'), false);
+
+  assert.equal(customerSourceLabel('WALK_IN'), 'Walk-in');
+  assert.equal(customerSourceLabel('WEBSITE'), 'Website UFicon');
+  assert.equal(customerSourceLabel('FACEBOOK'), 'Facebook');
+  assert.equal(customerSourceLabel('LINE_OA'), 'LINE / LINE OA');
+  assert.equal(customerSourceLabel('RETURNING_CUSTOMER'), 'เป็นลูกค้าเก่า / เคยใช้บริการแล้ว');
+  assert.equal(customerSourceLabel(null), null);
+
+  // Missing discountType blocks confirmation
+  const missingDiscountSession = {
+    ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
+    selection: {
+      ...fixture().selection,
+      discountType: null,
+    },
+  };
+  assert.equal(
+    confirmSelection(missingDiscountSession, '10:00').state,
+    'PRODUCT_SELECTION',
+    'discountType is required before confirmation',
+  );
+
+  // Missing customerSource blocks confirmation
+  const missingSourceSession = {
+    ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
+    selection: {
+      ...fixture().selection,
+      customerSource: null,
+    },
+  };
+  assert.equal(
+    confirmSelection(missingSourceSession, '10:00').state,
+    'PRODUCT_SELECTION',
+    'customerSource is required before confirmation',
+  );
+
+  // Both present allows confirmation
+  const validSession = {
+    ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
+    selection: {
+      ...fixture().selection,
+      discountType: 'EDU',
+      customerSource: 'FACEBOOK',
+    },
+  };
+  const confirmed = confirmSelection(validSession, '10:00');
+  assert.equal(confirmed.state, 'STOCK_REQUESTED');
+  assert.equal(confirmed.selection.discountType, 'EDU');
+  assert.equal(confirmed.selection.customerSource, 'FACEBOOK');
 });
 
 test('D127: credit card payment validation (card type required for Full CC, card type and months required for 0% CC)', () => {

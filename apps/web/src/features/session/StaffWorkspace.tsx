@@ -12,6 +12,7 @@ import {
   AlertTriangle,
   Plane,
   ReceiptText,
+  Tag,
   RefreshCw,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
@@ -35,6 +36,7 @@ import { ReceiptSheet, nowText } from './Receipt';
 import {
   advance,
   confirmSelection,
+  discountTypeLabel,
   itemsText,
   phoneIsValid,
   progressIndex,
@@ -547,6 +549,25 @@ export function StaffWorkspace({
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
                     {s.queueNo != null && <span>{formatDisplayPhone(s.phone) || 'ยังไม่มีเบอร์'}</span>}
                     {(() => {
+                      const discount = discountTypeLabel(
+                        s.discountType ?? s.selection?.discountType,
+                      );
+                      return discount ? (
+                        <span
+                          style={{
+                            color: 'var(--primary-dark, var(--text-primary))',
+                            fontWeight: 500,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px',
+                          }}
+                        >
+                          <Tag size={12} strokeWidth={1.6} />
+                          {discount}
+                        </span>
+                      ) : null;
+                    })()}
+                    {(() => {
                       const badge = receiptTypeBadgeLabel(
                         s.receiptType ?? s.selection?.receiptType,
                         s.taxInvoice ?? s.selection?.taxInvoice,
@@ -661,6 +682,25 @@ export function StaffWorkspace({
                       >
                         <ReceiptText size={12} strokeWidth={1.6} />
                         {fullLabel}
+                      </span>
+                    ) : null;
+                  })()}
+                  {(() => {
+                    const discount = discountTypeLabel(
+                      activeSession.discountType ?? activeSession.selection?.discountType,
+                    );
+                    return discount ? (
+                      <span
+                        className="status-tag"
+                        style={{
+                          background: 'var(--primary-subtle)',
+                          color: 'var(--primary-dark, var(--text-primary))',
+                          border: '1px solid var(--border-color)',
+                          marginRight: '6px',
+                        }}
+                      >
+                        <Tag size={12} strokeWidth={1.6} />
+                        {discount}
                       </span>
                     ) : null;
                   })()}

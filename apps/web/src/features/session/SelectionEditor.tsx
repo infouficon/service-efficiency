@@ -29,6 +29,10 @@ import type { Category, PaymentDetail, PaymentMethod, Product, Selection } from 
 import { MultiSelect, Button, Modal, Notice } from '../../components/ui';
 import {
   addItem,
+  CUSTOMER_SOURCE_OPTIONS,
+  customerSourceIsValid,
+  DISCOUNT_TYPE_OPTIONS,
+  discountTypeIsValid,
   formatPaymentLabel,
   itemName,
   itemsText,
@@ -286,11 +290,15 @@ export function SelectionEditor({
   const stockInfo = stockInfoLine(allSkus);
   const paymentsValid = paymentsAreValid(value.payments, value.paymentDetails);
   const receiptValid = receiptTypeIsValid(value.receiptType);
+  const discountValid = discountTypeIsValid(value.discountType);
+  const customerSourceValid = customerSourceIsValid(value.customerSource);
   const reviewDisabled =
     value.items.length === 0 ||
     !quantitiesAreValid(value.accessories) ||
     !paymentsValid ||
-    !receiptValid;
+    !receiptValid ||
+    !discountValid ||
+    !customerSourceValid;
   /** `+` stops at the stock figure unless nothing is blocked by stock (D59). */
   const canRaise = (item: Selection['items'][number]) =>
     isUnlimited(item.product) ||
@@ -1081,6 +1089,50 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
+          ประเภทส่วนลด <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+        </legend>
+        <div
+          role="radiogroup"
+          aria-label="ประเภทส่วนลด"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+            gap: '8px',
+            marginTop: '6px',
+          }}
+        >
+          {DISCOUNT_TYPE_OPTIONS.map((opt) => {
+            const selected = value.discountType === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => onChange({ ...value, discountType: opt.value })}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '10px 14px',
+                  border: `1.5px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
+                  borderRadius: '8px',
+                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                  color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
+                  fontWeight: selected ? 600 : 500,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition:
+                    'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  userSelect: 'none',
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>
           เอกสารภาษีเพิ่มเติม / VAT Refund <small className="legend-note">(ไม่บังคับ)</small>
         </legend>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
@@ -1115,9 +1167,90 @@ export function SelectionEditor({
           </label>
         </div>
       </fieldset>
-      {!paymentsValid && (
+      <fieldset>
+        <legend>
+          ลูกค้ามาจากช่องทางใด <small className="legend-note">(จำเป็น · เลือก 1 ช่องทาง)</small>
+        </legend>
+        <div
+          role="radiogroup"
+          aria-label="ลูกค้ามาจากช่องทางใด"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+            gap: '8px',
+            marginTop: '6px',
+          }}
+        >
+          {CUSTOMER_SOURCE_OPTIONS.map((opt) => {
+            const selected = value.customerSource === opt.value;
+            return (
+              <label
+                key={opt.value}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  padding: '0 14px',
+                  marginBottom: '0px',
+                  border: `1.5px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
+                  borderRadius: '8px',
+                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
+                  cursor: 'pointer',
+                  transition:
+                    'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  userSelect: 'none',
+                }}
+              >
+                <input
+                  type="radio"
+                  name="customerSource"
+                  value={opt.value}
+                  checked={selected}
+                  onChange={() => onChange({ ...value, customerSource: opt.value })}
+                  style={{
+                    width: '18px',
+                    height: '18px',
+                    margin: 0,
+                    cursor: 'pointer',
+                    accentColor: 'var(--primary)',
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: selected ? 600 : 500,
+                    color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {opt.label}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
+      {value.items.length > 0 && !paymentsValid && (
         <Notice error>
           กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
+        </Notice>
+      )}
+      {value.items.length > 0 && !receiptValid && (
+        <Notice error>
+          กรุณาเลือกประเภทใบเสร็จก่อนตรวจสอบรายการ
+        </Notice>
+      )}
+      {value.items.length > 0 && !discountValid && (
+        <Notice error>
+          กรุณาเลือกประเภทส่วนลดก่อนตรวจสอบรายการ
+        </Notice>
+      )}
+      {value.items.length > 0 && !customerSourceValid && (
+        <Notice error>
+          กรุณาเลือกว่าลูกค้ามาจากช่องทางใดก่อนตรวจสอบรายการ
         </Notice>
       )}
       <div className="actions">

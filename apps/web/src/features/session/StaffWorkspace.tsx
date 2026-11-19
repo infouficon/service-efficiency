@@ -32,7 +32,7 @@ import { ReasonForm } from './ReasonForm';
 import { ReturnToStockForm } from './ReturnToStockForm';
 import { WalkInForm } from './WalkInForm';
 import { ChangeItemModal } from './ChangeItemModal';
-import { ReceiptSheet, nowText } from './Receipt';
+import { ReceiptPrint, ReceiptSheet, nowText } from './Receipt';
 import {
   advance,
   confirmSelection,
@@ -140,6 +140,10 @@ export function StaffWorkspace({
   const finished = Boolean(
     activeSession?.outcome || activeSession?.state === 'COMPLETED',
   );
+
+  // reprint (D58 receipt): a confirmed order that was not cancelled can print its receipt again from here, not only from history.
+  // Hidden while the auto print after confirming is on screen, so the page never holds two receipts.
+  const canReprint = Boolean(activeSession?.confirmed && !activeSession.outcome && !printSession);
 
   const progressContainerRef = useRef<HTMLOListElement>(null);
 
@@ -792,6 +796,7 @@ export function StaffWorkspace({
                           <p>ผู้ยกเลิก: {activeSession.cancelledBy}</p>
                         )}
                         <Summary session={activeSession} />
+                        {canReprint && <ReceiptPrint session={activeSession} />}
                         {canRebuy(activeSession) && (
                           <div className="rebuy-box">
                             <p>
@@ -963,6 +968,7 @@ export function StaffWorkspace({
                               "คลังสินค้า" เพื่ออัปเดตสถานะได้
                             </p>
                             <Summary session={activeSession} />
+                            {canReprint && <ReceiptPrint session={activeSession} />}
                             <div style={{ marginTop: '16px' }}>
                               <Button
                                 variant="secondary"
@@ -995,6 +1001,7 @@ export function StaffWorkspace({
                               แคชเชียร์ทำรายการใน U POS ระบบอัปเดตสถานะให้เอง ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ Stock"
                             </p>
                             <Summary session={activeSession} />
+                            {canReprint && <ReceiptPrint session={activeSession} />}
                             {activeSession.state !== 'BILL_OPENED' && (
                               // D105: the cashier works in U POS and tells the staff; the staff sends the order back
                               <div style={{ marginTop: '16px' }}>

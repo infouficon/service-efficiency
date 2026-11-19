@@ -77,3 +77,31 @@ test('Mac family classification: iMac, Mac Studio, Mac mini, MacBook (D149)', ()
   assert.equal(getMacType('MacBook Pro 16 M4 Pro'), 'MacBook');
   assert.equal(getMacType('MacBook Neo A18 Pro'), 'MacBook');
 });
+
+test('Mac modelChoices: models sharing family and size are merged into a single card without subtitles (D150)', () => {
+  const macProduct = (name, models) => ({ id: name, category: 'Mac', name, models });
+  const catalog = [
+    macProduct('iMac 24', [
+      { id: 'm1', name: 'IMAC 24 M6 512TB', skus: [{ id: 's1', sku: 's1', name: '512GB Silver' }] },
+      { id: 'm2', name: 'IMAC 24 M6 256TB', skus: [{ id: 's2', sku: 's2', name: '256GB Blue' }] },
+      { id: 'm3', name: 'iMac 24 M4 (CTO)', skus: [{ id: 's3', sku: 's3', name: '1TB Orange' }] },
+    ]),
+    macProduct('MacBook Air', [
+      { id: 'm4', name: 'Macbook Air M5 13.6', skus: [{ id: 's4', sku: 's4', name: '512GB Midnight' }] },
+      { id: 'm5', name: 'Macbook Air M5 15.3', skus: [{ id: 's5', sku: 's5', name: '512GB Starlight' }] },
+    ]),
+  ];
+
+  const choices = modelChoices(catalog, 'Mac');
+  assert.equal(choices.length, 3);
+  const imac = choices.find((c) => c.model.name === 'iMac 24"');
+  const mba13 = choices.find((c) => c.model.name === 'MacBook Air 13"');
+  const mba15 = choices.find((c) => c.model.name === 'MacBook Air 15"');
+
+  assert.ok(imac, 'iMac 24" card exists');
+  assert.ok(mba13, 'MacBook Air 13" card exists');
+  assert.ok(mba15, 'MacBook Air 15" card exists');
+
+  assert.equal(imac.sub, undefined, 'no subtitle on unified iMac 24" card');
+  assert.equal(imac.model.skus.length, 3, 'all 3 iMac SKUs merged into one model');
+});

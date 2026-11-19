@@ -108,6 +108,65 @@ function newestUpc(model: CatalogModel): number {
 }
 
 /**
+ * D150: Canonical model name for Mac by family and screen size
+ * (e.g. "iMac 24\"", "MacBook Air 13\"", "MacBook Pro 14\"", "Mac mini", "Mac Studio")
+ */
+export function macModelOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (!text) continue;
+
+    // iMac
+    if (/\bimac\b/i.test(text)) {
+      if (/\b24\b/i.test(text)) return 'iMac 24"';
+      if (/\b27\b/i.test(text)) return 'iMac 27"';
+      if (/\b21(?:\.5)?\b/i.test(text)) return 'iMac 21.5"';
+      return 'iMac';
+    }
+
+    // Mac Studio
+    if (/\bmac\s*studio\b/i.test(text)) {
+      return 'Mac Studio';
+    }
+
+    // Mac mini
+    if (/\bmac\s*mini\b/i.test(text)) {
+      return 'Mac mini';
+    }
+
+    // Mac Pro
+    if (/\bmac\s*pro\b/i.test(text) && !/\bmacbook\b/i.test(text)) {
+      return 'Mac Pro';
+    }
+
+    // MacBook Air
+    if (/\bmacbook\s*air\b/i.test(text)) {
+      if (/\b15(?:\.3)?\b/i.test(text)) return 'MacBook Air 15"';
+      if (/\b13(?:\.[36])?\b/i.test(text)) return 'MacBook Air 13"';
+      if (/\b11(?:\.6)?\b/i.test(text)) return 'MacBook Air 11"';
+      return 'MacBook Air';
+    }
+
+    // MacBook Pro
+    if (/\bmacbook\s*pro\b/i.test(text)) {
+      if (/\b16(?:\.2)?\b/i.test(text)) return 'MacBook Pro 16"';
+      if (/\b14(?:\.2)?\b/i.test(text)) return 'MacBook Pro 14"';
+      if (/\b13(?:\.3)?\b/i.test(text)) return 'MacBook Pro 13"';
+      if (/\b15(?:\.4)?\b/i.test(text)) return 'MacBook Pro 15"';
+      return 'MacBook Pro';
+    }
+
+    // Other MacBook
+    if (/\bmacbook\b/i.test(text)) {
+      if (/\bneo\b/i.test(text)) return 'MacBook Neo';
+      if (/\b12\b/i.test(text)) return 'MacBook 12"';
+      return 'MacBook';
+    }
+  }
+  return null;
+}
+
+/**
  * D148: Canonical series model name for Apple Watch (e.g. "Apple Watch Series 12", "Apple Watch Ultra 2", "Apple Watch SE")
  */
 export function normalizeWatchModelName(name: string): string {
@@ -156,6 +215,40 @@ export function modelChoices(catalog: CatalogProduct[] | null, category: string)
     const mergedByName = new Map<string, ModelChoice>();
     for (const choice of list) {
       const canonicalName = normalizeWatchModelName(choice.model.name);
+      const key = canonicalName.toLowerCase();
+      const existing = mergedByName.get(key);
+      if (existing) {
+        existing.model = {
+          ...existing.model,
+          name: canonicalName,
+          skus: [
+            ...existing.model.skus,
+            ...choice.model.skus.filter((s) => !existing.model.skus.some((es) => es.id === s.id)),
+          ],
+        };
+      } else {
+        mergedByName.set(key, {
+          ...choice,
+          product: {
+            ...choice.product,
+            name: canonicalName,
+          },
+          model: {
+            ...choice.model,
+            name: canonicalName,
+          },
+        });
+      }
+    }
+    list.length = 0;
+    list.push(...mergedByName.values());
+  }
+
+  // D150: For Mac, normalize model names and merge duplicate models into a single canonical model card
+  if (category.toLowerCase() === 'mac') {
+    const mergedByName = new Map<string, ModelChoice>();
+    for (const choice of list) {
+      const canonicalName = macModelOf(choice.model.name, choice.product.name) ?? choice.model.name;
       const key = canonicalName.toLowerCase();
       const existing = mergedByName.get(key);
       if (existing) {

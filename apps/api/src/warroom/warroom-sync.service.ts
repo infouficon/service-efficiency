@@ -386,6 +386,65 @@ export function watchModelOf(...texts: (string | null | undefined)[]): string | 
 }
 
 /**
+ * D150: Canonical model name for Mac by family and screen size
+ * (e.g. "iMac 24\"", "MacBook Air 13\"", "MacBook Pro 14\"", "Mac mini", "Mac Studio")
+ */
+export function macModelOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (!text) continue;
+
+    // iMac
+    if (/\bimac\b/i.test(text)) {
+      if (/\b24\b/i.test(text)) return 'iMac 24"';
+      if (/\b27\b/i.test(text)) return 'iMac 27"';
+      if (/\b21(?:\.5)?\b/i.test(text)) return 'iMac 21.5"';
+      return 'iMac';
+    }
+
+    // Mac Studio
+    if (/\bmac\s*studio\b/i.test(text)) {
+      return 'Mac Studio';
+    }
+
+    // Mac mini
+    if (/\bmac\s*mini\b/i.test(text)) {
+      return 'Mac mini';
+    }
+
+    // Mac Pro
+    if (/\bmac\s*pro\b/i.test(text) && !/\bmacbook\b/i.test(text)) {
+      return 'Mac Pro';
+    }
+
+    // MacBook Air
+    if (/\bmacbook\s*air\b/i.test(text)) {
+      if (/\b15(?:\.3)?\b/i.test(text)) return 'MacBook Air 15"';
+      if (/\b13(?:\.[36])?\b/i.test(text)) return 'MacBook Air 13"';
+      if (/\b11(?:\.6)?\b/i.test(text)) return 'MacBook Air 11"';
+      return 'MacBook Air';
+    }
+
+    // MacBook Pro
+    if (/\bmacbook\s*pro\b/i.test(text)) {
+      if (/\b16(?:\.2)?\b/i.test(text)) return 'MacBook Pro 16"';
+      if (/\b14(?:\.2)?\b/i.test(text)) return 'MacBook Pro 14"';
+      if (/\b13(?:\.3)?\b/i.test(text)) return 'MacBook Pro 13"';
+      if (/\b15(?:\.4)?\b/i.test(text)) return 'MacBook Pro 15"';
+      return 'MacBook Pro';
+    }
+
+    // Other MacBook
+    if (/\bmacbook\b/i.test(text)) {
+      if (/\bneo\b/i.test(text)) return 'MacBook Neo';
+      if (/\b12\b/i.test(text)) return 'MacBook 12"';
+      return 'MacBook';
+    }
+  }
+  return null;
+}
+
+/**
  * D148: Case material for Apple Watch (Aluminium, Titanium, Stainless Steel, Ceramic)
  */
 export function caseMaterialOf(...texts: (string | null | undefined)[]): string | null {
@@ -687,21 +746,27 @@ export function buildCatalog(rows: WarroomRow[]): {
     const line = rule.name === 'Accessories' ? deviceLineOf(subcat, subsubcat, skuName) : null;
     const finalCategory = line?.category ?? rule.name;
     const watchSeries = finalCategory === 'Watch' ? watchModelOf(...nameTexts) : null;
+    const macSeries = finalCategory === 'Mac' ? macModelOf(...nameTexts) : null;
     const finalProductName =
       (line
         ? clean(line.productName, 191)
-        : watchSeries ?? productName) ?? productName;
+        : watchSeries ?? macSeries ?? productName) ?? productName;
     const finalModelName =
       (line
         ? clean(line.modelName, 191)
-        : watchSeries ?? clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
+        : watchSeries ?? macSeries ?? clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
 
     const parsedColor = parseColorField(first(rs, (r) => r.color));
     const watchColor = finalCategory === 'Watch' ? watchColorOf(...nameTexts) : null;
     const colorClean = clean(parsedColor.color || watchColor, 64);
     const storageClean = clean(capacity || parsedColor.storage, 64);
+    const displayGlass =
+      parsedColor.display ||
+      (nameTexts.some((t) => /\bnano-?texture(?:\s+glass)?\b/i.test(t ?? ''))
+        ? 'Nano-texture Glass'
+        : null);
 
-    // D142, D145, D148: specifications per category
+    // D142, D145, D148, D150: specifications per category
     const attrs: Record<string, string> = {};
     const connectivity = connectivityOf(...nameTexts);
     const caseSize = caseSizeOf(...nameTexts);
@@ -709,7 +774,7 @@ export function buildCatalog(rows: WarroomRow[]): {
     if (finalCategory === 'iPad') {
       if (connectivity) attrs.connectivity = connectivity;
       if (storageClean) attrs.storage = storageClean;
-      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (displayGlass) attrs.display = displayGlass;
       if (colorClean) attrs.color = colorClean;
     } else if (finalCategory === 'Watch') {
       const caseMaterial = caseMaterialOf(...nameTexts);
@@ -722,11 +787,11 @@ export function buildCatalog(rows: WarroomRow[]): {
     } else if (finalCategory === 'Mac') {
       if (memory) attrs.memory = memory;
       if (storageClean) attrs.storage = storageClean;
-      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (displayGlass) attrs.display = displayGlass;
       if (colorClean) attrs.color = colorClean;
     } else {
       if (storageClean) attrs.storage = storageClean;
-      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (displayGlass) attrs.display = displayGlass;
       if (colorClean) attrs.color = colorClean;
     }
 
@@ -899,7 +964,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 9;
+export const CATALOG_RULES_VERSION = 10;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still

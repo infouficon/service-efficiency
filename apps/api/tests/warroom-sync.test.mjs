@@ -181,7 +181,7 @@ test('Mac attributes: warroom\'s capacity is the RAM, so the storage is read fro
   assert.equal(items[0].memory, '24GB');
   assert.equal(items[0].storage, '1TB');
   assert.equal(items[0].color, 'Space Black');
-  assert.equal(items[0].modelName, 'MacBook Pro M5 14.2', 'the 1TB is gone from the model name too');
+  assert.equal(items[0].modelName, 'MacBook Pro 14"', 'the 1TB is gone and model is normalized to MacBook Pro 14"');
 });
 
 test('catalog: Mac variants share one model, with RAM and capacity of their own; case spellings are one model (D79)', () => {
@@ -209,17 +209,17 @@ test('catalog: Mac variants share one model, with RAM and capacity of their own;
   ]);
   const by = (p) => items.find((i) => i.partNo === p);
   const models = new Set(items.map((i) => i.modelName));
-  assert.deepEqual([...models].sort(), ['Macbook Air M5 13.6', 'Macbook Air M5 15.3']);
+  assert.deepEqual([...models].sort(), ['MacBook Air 13"', 'MacBook Air 15"']);
   assert.equal(by('A/A').memory, '16GB');
   assert.equal(by('C/A').memory, '24GB');
   assert.equal(by('B/A').storage, '1TB');
-  assert.equal(by('D/A').modelName, 'Macbook Air M5 13.6', 'the all-caps spelling joins the mixed-case one');
+  assert.equal(by('D/A').modelName, 'MacBook Air 13"', 'the all-caps spelling joins the mixed-case one');
   assert.equal(by('D/A').memory, '16GB');
   assert.match(by('D/A').skuName, /Eng/, 'the layout marker stays in the SKU name');
 });
 
 test('iPad specifications: connectivity parsed (Wi-Fi vs Cellular), model name stripped, single merged model (D142)', () => {
-  assert.equal(wr.CATALOG_RULES_VERSION, 9);
+  assert.equal(wr.CATALOG_RULES_VERSION, 10);
   assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi 256GB'), 'Wi-Fi');
   assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi + Cellular 256GB'), 'Wi-Fi + Cellular');
   assert.equal(wr.connectivityOf('iPad Pro 13 WiFi 1TB'), 'Wi-Fi');
@@ -345,6 +345,54 @@ test('Watch specifications: canonical series model, case material, color, size, 
   assert.equal(denim.attributes?.caseSize, '46mm');
   assert.equal(denim.attributes?.connectivity, 'GPS + Cellular');
   assert.equal(denim.attributes?.band, 'Denim Sport Band - M/L');
+});
+
+test('Mac specifications: canonical model name by family and size, memory, storage, color, display extracted (D150)', () => {
+  assert.equal(wr.macModelOf('IMAC 24 M6 512TB'), 'iMac 24"');
+  assert.equal(wr.macModelOf('IMAC 24 M6 256TB'), 'iMac 24"');
+  assert.equal(wr.macModelOf('iMac 24 M4 (CTO)'), 'iMac 24"');
+  assert.equal(wr.macModelOf('Mac mini M4 Pro'), 'Mac mini');
+  assert.equal(wr.macModelOf('Mac Studio M2 Max'), 'Mac Studio');
+  assert.equal(wr.macModelOf('MacBook Pro M5 Pro 14.2 Ram 24 1TB'), 'MacBook Pro 14"');
+  assert.equal(wr.macModelOf('MacBook Pro 16 M4 Pro 24GB 512GB'), 'MacBook Pro 16"');
+
+  const row = (partNo, subsub, color) => ({
+    branchCode: 'B',
+    partNo,
+    upc: 'u',
+    productName: `Apple ${partNo} ${subsub}`,
+    cat: 'Mac',
+    subcat: 'iMac',
+    subsubcat: subsub,
+    capacity: null,
+    color,
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+  });
+
+  const { items } = wr.buildCatalog([
+    row('IMAC-512/A', 'IMAC 24 M6 512TB Ram 16', 'Silver'),
+    row('IMAC-256/A', 'IMAC 24 M6 256TB Ram 16 with nano-texture glass', 'Blue'),
+  ]);
+
+  const imac512 = items.find((i) => i.partNo === 'IMAC-512/A');
+  const imac256 = items.find((i) => i.partNo === 'IMAC-256/A');
+
+  assert.equal(imac512.modelName, 'iMac 24"');
+  assert.equal(imac256.modelName, 'iMac 24"');
+  assert.equal(imac512.productName, 'iMac 24"');
+  assert.equal(imac256.productName, 'iMac 24"');
+
+  assert.equal(imac512.attributes?.memory, '16GB');
+  assert.equal(imac512.attributes?.storage, '512TB');
+  assert.equal(imac512.attributes?.color, 'Silver');
+  assert.equal(imac512.attributes?.display, 'Standard Glass');
+
+  assert.equal(imac256.attributes?.memory, '16GB');
+  assert.equal(imac256.attributes?.storage, '256TB');
+  assert.equal(imac256.attributes?.color, 'Blue');
+  assert.equal(imac256.attributes?.display, 'Nano-texture Glass');
 });
 
 test('short name drops the "Apple <part>" prefix', () => {

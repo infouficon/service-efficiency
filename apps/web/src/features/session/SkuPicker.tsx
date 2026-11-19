@@ -276,21 +276,18 @@ export function SkuPicker({
               <div className="mac-type-chips" role="group" aria-label="ประเภท Mac">
                 {MAC_TYPES.map((type) => {
                   const isSelected = selectedMacType === type;
-                  const count = models.filter((m) => getMacType(m.model.name) === type).length;
                   return (
                     <button
                       key={type}
                       type="button"
                       className={`mac-type-chip${isSelected ? ' selected' : ''}`}
                       aria-pressed={isSelected}
-                      disabled={count === 0}
                       onClick={() => {
                         setSelectedMacType(type);
                         setQuery('');
                       }}
                     >
                       <strong>{type}</strong>
-                      {count > 0 && <span className="mac-type-count">{count}</span>}
                     </button>
                   );
                 })}

@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { CategoryIcon } from '../../components/CategoryIcon';
 import {
-  accessories,
   deviceCategories,
   fmpPaymentTypeOther,
   ontop,
@@ -262,7 +261,7 @@ export function SelectionEditor({
       extractAccessoryGroups(
         catalog,
         accessoryCategoryNames,
-        accessories,
+        [],
         Object.keys(value.accessories),
       ),
     [catalog, accessoryCategoryNames, value.accessories],
@@ -1002,7 +1001,9 @@ export function SelectionEditor({
               textAlign: 'center',
             }}
           >
-            ไม่พบอุปกรณ์เสริมที่ตรงกับ "{accessorySearch}"
+            {accessorySearch.trim()
+              ? `ไม่พบอุปกรณ์เสริมที่ตรงกับ "${accessorySearch}"`
+              : 'ไม่มีรายการอุปกรณ์เสริมในขณะนี้'}
           </p>
         ) : (
           <div
@@ -1138,11 +1139,13 @@ export function SelectionEditor({
                                 display: 'flex',
                                 flexWrap: 'wrap',
                                 gap: '6px',
+                                width: '100%',
                               }}
                             >
                               {product.models.map((m) => {
                                 const isCurrentModel =
                                   selectedModelPerGroup[groupName] === m.id;
+                                const isSingleModel = product.models.length === 1;
                                 return (
                                   <button
                                     key={m.id}
@@ -1155,7 +1158,10 @@ export function SelectionEditor({
                                       }));
                                     }}
                                     style={{
-                                      padding: '6px 12px',
+                                      flex: isSingleModel ? '1 1 100%' : 'none',
+                                      width: isSingleModel ? '100%' : 'auto',
+                                      boxSizing: 'border-box',
+                                      padding: isSingleModel ? '10px 14px' : '6px 12px',
                                       borderRadius: '6px',
                                       border: `1.5px solid ${isCurrentModel ? 'var(--primary, #0abab5)' : '#d4e0d9'}`,
                                       background: isCurrentModel
@@ -1167,6 +1173,7 @@ export function SelectionEditor({
                                       fontSize: '12.5px',
                                       fontWeight: isCurrentModel ? 600 : 400,
                                       cursor: 'pointer',
+                                      textAlign: isSingleModel ? 'center' : 'left',
                                     }}
                                   >
                                     {m.name}
@@ -1208,7 +1215,7 @@ export function SelectionEditor({
                                 >
                                   เลือกสเปก / สี / SKU (กดเพื่อเพิ่มลงรายการ):
                                 </label>
-                                <div style={{ display: 'grid', gap: '6px' }}>
+                                <div style={{ display: 'grid', gap: '6px', width: '100%' }}>
                                   {activeModel.skus.map((sku) => {
                                     const itemKey = formatAccessoryItemName(
                                       activeModel,
@@ -1217,6 +1224,7 @@ export function SelectionEditor({
                                     const inCartQty =
                                       Number(value.accessories[itemKey]) || 0;
                                     const outOfStock = isOutOfStock(sku);
+                                    const isSingleSku = activeModel.skus.length === 1;
 
                                     return (
                                       <button
@@ -1237,7 +1245,9 @@ export function SelectionEditor({
                                           display: 'flex',
                                           alignItems: 'center',
                                           justifyContent: 'space-between',
-                                          padding: '8px 12px',
+                                          width: '100%',
+                                          boxSizing: 'border-box',
+                                          padding: isSingleSku ? '10px 14px' : '8px 12px',
                                           borderRadius: '6px',
                                           border: `1.5px solid ${inCartQty > 0 ? 'var(--primary-border, #0abab5)' : '#d4e0d9'}`,
                                           background: inCartQty > 0

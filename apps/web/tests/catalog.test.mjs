@@ -144,6 +144,13 @@ test('extractAccessoryGroups: extracts real groups from catalog, retains selecte
   assert.ok(withCustomSelected.includes('Old Custom Accessory'));
   assert.ok(withCustomSelected.includes('Power Adapter'));
   assert.ok(withCustomSelected.includes('Apple Pencil'));
+
+  // 4. D156: When fallback is omitted or empty, strictly only catalog accessory items and selected keys are returned
+  const realOnly = extractAccessoryGroups(catalog, accCategory, [], ['Custom Picked Item']);
+  assert.deepEqual(
+    realOnly.sort(),
+    ['AirTag Case', 'Custom Picked Item', 'Power Adapter', 'Screen Protector', 'USB-C Cable'].sort(),
+  );
 });
 
 test('formatAccessoryItemName and isAccessoryFromProduct: format descriptive name with SKU and match product (D153)', () => {

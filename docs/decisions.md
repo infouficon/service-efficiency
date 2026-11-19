@@ -2251,9 +2251,12 @@ Owner instruction via `/grill-me`: "หากแสดงแค่ 1 ปุ่�
    - This caused duplicate or obsolete category names (such as "Software" alongside real catalog product "Software & Care") to appear in the Accessories list.
    - Removed the hardcoded fallback from `SelectionEditor.tsx`. Accessory groups are now strictly derived from real active products (`GET /products`) belonging to accessory categories (or `Category.isAccessory: true`), alongside any keys already selected in the session.
    - When no accessories match or the catalog is empty, a clean descriptive empty state is shown ("ไม่มีรายการอุปกรณ์เสริมในขณะนี้" or search empty state).
-2. **Full-Width Single Option Button (Accessories):**
-   - When an accessory product group has only 1 model (`product.models.length === 1`), the model button expands to fill 100% of the container width (`flex: 1 1 100%`, `boxSizing: border-box`, `textAlign: center`), preventing awkward empty space.
-   - Similarly, when a model contains a single SKU option (`activeModel.skus.length === 1`), the SKU button renders full-width across the container.
+2. **Responsive Model Button Sizing (Accessories):**
+   - Model buttons use `flex: 1 1 auto` (`minWidth: 0`, `boxSizing: border-box`).
+   - If an item is the only one in a row (e.g. because of long text such as "iPad Case for iPad Air 11-inch" or only 1 model in the group), it automatically stretches to fill 100% of the row width without leaving awkward empty gaps on the right.
+   - If 2 or 3 shorter model options fit on the same row, they share the row width side-by-side naturally.
+   - When selected, a checkmark (`✓`) is shown alongside the model name.
+   - SKU options continue to render full-width (100%) rows.
    - Manual selection invariant (D147) is preserved: staff still explicitly tap the button to select the model and pick the SKU.
 
 

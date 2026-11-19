@@ -1145,7 +1145,6 @@ export function SelectionEditor({
                               {product.models.map((m) => {
                                 const isCurrentModel =
                                   selectedModelPerGroup[groupName] === m.id;
-                                const isSingleModel = product.models.length === 1;
                                 return (
                                   <button
                                     key={m.id}
@@ -1158,10 +1157,10 @@ export function SelectionEditor({
                                       }));
                                     }}
                                     style={{
-                                      flex: isSingleModel ? '1 1 100%' : 'none',
-                                      width: isSingleModel ? '100%' : 'auto',
+                                      flex: '1 1 auto',
+                                      minWidth: '0',
                                       boxSizing: 'border-box',
-                                      padding: isSingleModel ? '10px 14px' : '6px 12px',
+                                      padding: '8px 12px',
                                       borderRadius: '6px',
                                       border: `1.5px solid ${isCurrentModel ? 'var(--primary, #0abab5)' : '#d4e0d9'}`,
                                       background: isCurrentModel
@@ -1173,10 +1172,25 @@ export function SelectionEditor({
                                       fontSize: '12.5px',
                                       fontWeight: isCurrentModel ? 600 : 400,
                                       cursor: 'pointer',
-                                      textAlign: isSingleModel ? 'center' : 'left',
+                                      textAlign: 'left',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      gap: '8px',
                                     }}
                                   >
-                                    {m.name}
+                                    <span>{m.name}</span>
+                                    {isCurrentModel && (
+                                      <span
+                                        style={{
+                                          fontSize: '12px',
+                                          color: 'var(--primary, #0abab5)',
+                                          fontWeight: 700,
+                                        }}
+                                      >
+                                        ✓
+                                      </span>
+                                    )}
                                   </button>
                                 );
                               })}
@@ -1327,7 +1341,7 @@ export function SelectionEditor({
                                               flexShrink: 0,
                                             }}
                                           >
-                                            เลือกแล้ว {inCartQty} ชิ้น
+                                            X {inCartQty}
                                           </span>
                                         )}
                                       </button>

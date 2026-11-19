@@ -10,6 +10,7 @@ import type {
   WorkflowState,
 } from '../../types/session';
 import { isValidPhone } from '../../utils/phone.ts';
+import { stages } from '../../constants/options.ts';
 export type StepAction =
   | 'startDemo'
   | 'endDemo'
@@ -198,9 +199,30 @@ const OUTCOME_LABELS: Record<string, string> = {
   OUT_OF_STOCK: 'สินค้าหมด',
 };
 
-/** Where an order is, in a few Thai words for a phone screen (the full state name stays on wider screens). */
-export function stateLabel(session: Pick<MockSession, 'state' | 'outcome'>): string {
+/** Where an order is, in a few Thai words (reflecting active sub-stage during walk-in, or backend workflow state). */
+export function stateLabel(
+  session: Pick<
+    MockSession,
+    | 'state'
+    | 'outcome'
+    | 'currentAppleDevices'
+    | 'recommendationsReviewed'
+    | 'phone'
+    | 'confirmed'
+    | 'selection'
+  >,
+  isReviewing = false,
+): string {
   if (session.outcome) return OUTCOME_LABELS[session.outcome] ?? session.outcome;
+
+  // During front-of-house staff stages (before stock / cashier), reflect the current active sub-stage
+  if (session.state === 'WALK_IN' || session.state === 'PRODUCT_SELECTION') {
+    const idx = progressIndex(session as MockSession, isReviewing);
+    if (idx >= 0 && idx < stages.length) {
+      return stages[idx];
+    }
+  }
+
   return STATE_LABELS[session.state] ?? session.state;
 }
 

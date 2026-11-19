@@ -2630,6 +2630,12 @@ input[aria-invalid='true'] {
   line-height: 1.2;
   letter-spacing: 0;
 }
+.status-tag.status-walk_in,
+.status-tag.status-product_selection {
+  background: var(--bg-surface);
+  color: var(--primary-dark, var(--text-primary));
+  border: 1px solid var(--border-color);
+}
 .status-tag.status-stock_requested,
 .status-tag.status-searching {
   background: var(--bg-warning);

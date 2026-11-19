@@ -958,10 +958,7 @@ export function StaffWorkspace({
                     <span
                       className={`status-tag ${s.outcome ? 'status-outcome' : `status-${s.state.toLowerCase()}`}`}
                     >
-                      <span className="only-desktop">
-                        {s.outcome ?? s.state}
-                      </span>
-                      <span className="only-mobile">{stateLabel(s)}</span>
+                      {stateLabel(s)}
                     </span>
                   )}
                 </div>
@@ -1122,7 +1119,7 @@ export function StaffWorkspace({
                     <span
                       className={`state-pill only-mobile ${finished ? 'terminal' : ''}`}
                     >
-                      {stateLabel(activeSession)}
+                      {stateLabel(activeSession, form === 'review')}
                     </span>
                   </div>
                   {/* <span className="eyebrow">
@@ -1253,7 +1250,7 @@ export function StaffWorkspace({
                   <span
                     className={`state-pill only-desktop ${finished ? 'terminal' : ''}`}
                   >
-                    {activeSession.outcome ?? stateLabel(activeSession)}
+                    {stateLabel(activeSession, form === 'review')}
                   </span>
                 </div>
               </section>

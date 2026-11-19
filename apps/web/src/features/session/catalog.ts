@@ -1,6 +1,17 @@
 /** The branch catalog as the product pickers use it (SkuPicker, D107): types, the API shape, stock rules, the model list. */
 import type { Product } from '../../types/session';
 
+/** Get the attribute value for a spec key from a SKU (D142) */
+export function getSkuAttribute(s: CatalogSku, key: string): string {
+  if (s.attributes && typeof s.attributes[key] === 'string' && s.attributes[key].trim()) {
+    return s.attributes[key].trim();
+  }
+  if (key === 'color') return s.color?.trim() || '';
+  if (key === 'storage') return s.storage?.trim() || '';
+  if (key === 'memory') return s.memory?.trim() || '';
+  return '';
+}
+
 /** A SKU as the branch product list returns it (D41, D52, D59). */
 export interface CatalogSku {
   id: string;
@@ -11,6 +22,8 @@ export interface CatalogSku {
   /** memory (RAM) of a Mac, e.g. "16GB" (D79) */
   memory?: string | null;
   price?: number | null;
+  /** D142: dynamic specifications per category */
+  attributes?: Record<string, string> | null;
   stock?: number;
   stockSource?: 'unlimited' | 'erp' | 'manual';
   erpAsOf?: string | null;

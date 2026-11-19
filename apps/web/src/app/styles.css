@@ -5818,3 +5818,194 @@ input[aria-invalid='true'] {
     min-height: 38px;
   }
 }
+
+/* Apple Store style Configurator Card (D144) */
+.spec-config-box {
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid var(--primary);
+  border-radius: 16px;
+  background: var(--bg-surface, #ffffff);
+  box-shadow: 0 4px 16px rgba(10, 186, 181, 0.08);
+  overflow: hidden;
+  margin-top: 10px;
+}
+
+.spec-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+
+.spec-config-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+  margin: 0;
+}
+
+.spec-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border-color, #f1f5f9);
+}
+
+.spec-config-section:last-child {
+  border-bottom: none;
+}
+
+.spec-config-section-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+}
+
+.spec-config-selected-val {
+  color: var(--text-primary, #111827);
+  font-weight: 700;
+}
+
+/* Grid for option cards: 1-col or 2-col */
+.spec-card-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.spec-card-grid.cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.spec-card-grid.cols-1 {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 480px) {
+  .spec-card-grid.cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Option Card */
+.spec-option-card {
+  display: flex;
+  align-items: center;
+  border: 1.5px solid var(--border-color, #e2e8f0);
+  border-radius: 12px;
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #111827);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  outline: none;
+  text-align: left;
+}
+
+/* In 1-column layout: title on left, subtitle on right */
+.spec-card-grid.cols-1 .spec-option-card {
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
+/* In 2-column layout: centered or stacked */
+.spec-card-grid.cols-2 .spec-option-card {
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 14px 12px;
+  gap: 4px;
+}
+
+.spec-option-card:hover:not(:disabled) {
+  border-color: var(--primary-accent);
+  background: var(--primary-subtle);
+}
+
+.spec-option-card.selected {
+  border: 2px solid var(--primary-accent);
+  background: var(--primary-subtle);
+}
+
+.spec-option-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: var(--bg-subtle, #f8f9fa);
+}
+
+.spec-option-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.spec-option-sub {
+  font-size: 12px;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+}
+
+.spec-option-card.selected .spec-option-sub {
+  color: var(--primary-dark, #0d3b39);
+}
+
+.spec-option-sub.out-of-stock {
+  color: var(--color-danger, #dc2626);
+}
+
+/* Color Swatches Row */
+.spec-swatch-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 4px 2px;
+}
+
+.spec-swatch-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 50%;
+  outline: none;
+}
+
+.spec-swatch-btn:hover:not(:disabled) .spec-swatch-circle {
+  transform: scale(1.06);
+}
+
+.spec-swatch-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.spec-swatch-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.spec-swatch-btn.selected .spec-swatch-ring {
+  position: absolute;
+  inset: 0px;
+  border: 2px solid var(--primary-accent);
+  border-radius: 50%;
+  pointer-events: none;
+}
+

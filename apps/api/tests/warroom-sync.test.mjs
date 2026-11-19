@@ -157,6 +157,16 @@ test('Mac attributes: warroom\'s capacity is the RAM, so the storage is read fro
   assert.equal(wr.colorOf('16GB/512GB - Silver'), 'Silver');
   assert.equal(wr.colorOf('Space Black'), 'Space Black');
   assert.equal(wr.colorOf('Deep Blue'), 'Deep Blue');
+  assert.equal(wr.colorOf('- Space Black'), 'Space Black', 'strips leading dash');
+  assert.equal(wr.colorOf('1TB Space Black'), 'Space Black', 'strips capacity without dash');
+  assert.equal(wr.colorOf('Space Black with nano-texture glass'), 'Space Black', 'strips nano-texture glass');
+  assert.equal(wr.colorOf('- Space Black with nano-texture glass'), 'Space Black', 'strips dash and nano-texture glass');
+  assert.equal(wr.colorOf('- '), null, 'dash only becomes null');
+  assert.deepEqual(wr.parseColorField('1TB - Space Black with nano-texture glass'), {
+    color: 'Space Black',
+    storage: '1TB',
+    display: 'Nano-texture Glass',
+  });
   assert.equal(wr.colorOf('1TB'), '1TB', 'never empty');
   assert.equal(wr.colorOf(null), null);
   assert.notEqual(wr.fingerprint(10, 5), wr.fingerprint(11, 5));
@@ -206,6 +216,56 @@ test('catalog: Mac variants share one model, with RAM and capacity of their own;
   assert.equal(by('D/A').modelName, 'Macbook Air M5 13.6', 'the all-caps spelling joins the mixed-case one');
   assert.equal(by('D/A').memory, '16GB');
   assert.match(by('D/A').skuName, /Eng/, 'the layout marker stays in the SKU name');
+});
+
+test('iPad specifications: connectivity parsed (Wi-Fi vs Cellular), model name stripped, single merged model (D142)', () => {
+  assert.equal(wr.CATALOG_RULES_VERSION, 8);
+  assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi 256GB'), 'Wi-Fi');
+  assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi + Cellular 256GB'), 'Wi-Fi + Cellular');
+  assert.equal(wr.connectivityOf('iPad Pro 13 WiFi 1TB'), 'Wi-Fi');
+  assert.equal(wr.connectivityOf('Apple Watch S10 46mm GPS'), 'GPS');
+  assert.equal(wr.connectivityOf('Apple Watch S10 46mm GPS + Cell'), 'GPS + Cellular');
+  assert.equal(wr.caseSizeOf('Apple Watch S10 46mm GPS'), '46mm');
+  assert.equal(wr.caseSizeOf('Apple Watch S10 42mm GPS'), '42mm');
+
+  const name = (n, cap, cat) => wr.modelNameOf(n, cap, cat);
+  assert.equal(name('iPad Air 11 M3 Wi-Fi 256GB', '256GB', 'iPad'), 'iPad Air 11 M3');
+  assert.equal(name('iPad Air 11 M3 Wi-Fi + Cellular 256GB', '256GB', 'iPad'), 'iPad Air 11 M3');
+  assert.equal(name('iPad Air 11 M3 (Wi-Fi) 256GB', '256GB', 'iPad'), 'iPad Air 11 M3');
+  assert.equal(name('iPad Pro 13 M4 - Wi-Fi + Cellular 1TB', '1TB', 'iPad'), 'iPad Pro 13 M4');
+
+  const row = (partNo, subsub, cap, color) => ({
+    branchCode: 'B',
+    partNo,
+    upc: 'u',
+    productName: `Apple ${partNo} ${subsub} ${color}`,
+    cat: 'iPad',
+    subcat: 'iPad Air 11',
+    subsubcat: subsub,
+    capacity: cap,
+    color,
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+  });
+
+  const { items } = wr.buildCatalog([
+    row('IPAD-WIFI/A', 'iPad Air 11 M3 Wi-Fi 128GB', '128GB', 'Space Gray'),
+    row('IPAD-CELL/A', 'iPad Air 11 M3 Wi-Fi + Cellular 256GB', '256GB', 'Starlight'),
+  ]);
+
+  const wifi = items.find((i) => i.partNo === 'IPAD-WIFI/A');
+  const cell = items.find((i) => i.partNo === 'IPAD-CELL/A');
+
+  assert.equal(wifi.modelName, 'iPad Air 11 M3');
+  assert.equal(cell.modelName, 'iPad Air 11 M3');
+  assert.equal(wifi.modelName, cell.modelName, 'Wi-Fi and Cellular share ONE merged model');
+  assert.equal(wifi.attributes?.connectivity, 'Wi-Fi');
+  assert.equal(cell.attributes?.connectivity, 'Wi-Fi + Cellular');
+  assert.equal(wifi.storage, '128GB');
+  assert.equal(cell.storage, '256GB');
+  assert.equal(wifi.attributes?.storage, '128GB');
+  assert.equal(cell.attributes?.storage, '256GB');
 });
 
 test('short name drops the "Apple <part>" prefix', () => {

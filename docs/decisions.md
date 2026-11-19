@@ -2190,7 +2190,95 @@ Decisions:
    - Under `@media (max-width: 640px)`, `.mobile-full-btn` expands to `width: 100% !important; display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important;`.
    - Desktop layout (>640px) remains unchanged with natural content width.
 
-## D140 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
+
+## D142 — Category Specification Templates and Dynamic SKU Attributes (2026-11-18)
+
+Owner instruction via `/grill-me`: "เพิ่มการจัดการรายละเอียดสินค้าแต่ละประเภท ตอนนี้รายละเอียดดูจาก iPhone เป็นหลักทำให้พอเป็นกับสินค้าประเภทอื่นไมค่อยเหมาะสมเกิดเป็นรุ่นสินค้าที่เยอะเกินไป เช่น iPad จริงๆต้องมีแยกเป็น Wi-Fi และ Wi-Fi + Cellular แต่พอไม่มีทำให้ไป hardcode ที่สินค้าแต่ละตัว". Amends D72, D78, D79, and D125.
+
+1. **Category Specification Templates.** Each Category can define an ordered list of specification templates (`Category.attributes` JSON), e.g. key, label, options, and required flag. Default templates are provided for standard Apple device lines:
+   - `iPad`: การเชื่อมต่อ (connectivity: `Wi-Fi`, `Wi-Fi + Cellular`) → ความจุ (storage) → สี (color)
+   - `iPhone`: ความจุ (storage) → สี (color)
+   - `Mac`: RAM (memory) → ความจุ (storage) → สี (color)
+   - `Watch`: ขนาดตัวเรือน (caseSize) → การเชื่อมต่อ (connectivity: `GPS`, `GPS + Cellular`) → สี (color)
+   - `Accessories`: สี (color)
+2. **SKU Attributes.** Each SKU stores its specifications in `ProductSku.attributes` (JSON), with legacy columns `color`, `storage`, and `memory` kept in sync for full backward compatibility.
+3. **ERP Warroom Sync (Catalog Rules Version 7).** `CATALOG_RULES_VERSION` is raised to 7. `warroom-sync.service.ts` parses connectivity (`connectivityOf`: Wi-Fi, Wi-Fi + Cellular, GPS, GPS + Cellular) and case size (`caseSizeOf`), and strips them from iPad and Watch model names (`modelNameOf`). Redundant model rows from ERP (e.g. "iPad Air 11 M3 Wi-Fi" vs "iPad Air 11 M3 Wi-Fi + Cellular") merge into a single clean model (e.g. "iPad Air 11 M3"), re-filing existing SKUs and pruning orphaned empty models.
+4. **Staff SkuPicker.** In `SkuPicker.tsx`, selection steps are rendered dynamically as Chips matching the Category's specification template. Any step with a single available choice is automatically taken. Final step shows available SKU options (colors) with stock status.
+5. **Back Office Management.** `CategoriesPanel.tsx` includes a "สเปก" (Specs) modal where ADMIN can customize or reorder specifications per category, add new attributes, or restore default Apple templates. `ProductWorkspace.tsx` dynamically renders input and select fields matching the Category template when creating or editing SKUs.
+6. **Serial and IMEI Validation (D125).** `serialKindOf` inspects `sku.attributes` (including `connectivity`) alongside model and SKU names, ensuring Cellular iPads and Watches are verified as IMEIs and Wi-Fi models as Serials even when the model name does not state Cellular.
+
+## D143 — Central Color Palette Management & Free-Form SKU Attribute Values (2026-11-18)
+
+Owner instruction via `/grill-me`:
+1. "ส่วนของสเปกที่เป็นสี เมื่อดึงค่าจาก ERP มาแล้ว ให้สามารถกำหนด code สีของค่านั้นได้ เพื่อให้เมื่อนำไปใช้งานในการแสดงผลจะได้สีตามที่ต้องการ และเมื่อมการซิ้งก์ ERP ใหม่ ต้องไม่ทับหายไป"
+2. "ค่าของตัวเลือกในสเปก ของรายการคุณลักษณะภายในแต่ละอันไม่เหมือนกัน ไม่ต้องมีการกำหนดในส่วนนี้ ให้ไปจัดการในสินค้าแต่ละตัว"
+
+1. **Central Color Palette (`ProductColor`).**
+   - Central table `ProductColor` (`id`, `name` UNIQUE, `hexCode`, `createdAt`, `updatedAt`) stores hex color codes mapped to color names.
+   - Distinct color names synced from ERP or present on manual SKUs (`ProductSku.color`) are gathered dynamically.
+   - ADMIN configures hex codes centrally in Admin Hub ("จัดการสีสินค้า (Color Palette)").
+   - Because color codes reside in `ProductColor`, subsequent ERP sync runs (which touch only `Product`, `ProductModel`, and `ProductSku`) never overwrite or clear the color configurations.
+2. **Category Specification Templates: Attributes without Hardcoded Options.**
+   - Specification templates at Category level (`Category.attributes`) define attribute keys, labels, and required flags, without rigid `options` restrictions (as each product or model variant may offer different combinations).
+   - In `CategoriesPanel.tsx`, the spec editor manages key, label, and required state.
+3. **SKU Free-Form Text Entry with Auto-Suggest Datalist.**
+   - In `ProductWorkspace.tsx`, SKU specification fields are rendered as free-form text inputs paired with HTML5 `<datalist>` populated dynamically with existing values from that product's SKUs.
+   - Allows flexibility across different models while providing fast auto-complete to prevent typos.
+4. **API and Admin UI.**
+   - `ColorsModule` provides `GET /colors` (list with SKU counts and assigned hex codes), `GET /colors/map`, `POST /colors` (upsert with hex code validation), and `DELETE /colors/:id`.
+   - Admin navigation sidebar includes a dedicated "จัดการสีสินค้า" sub-view (`ColorsPanel.tsx`) with search, filter tabs (All, Configured, Unassigned), visual color preview swatches, color picker, and quick inline saving.
+5. **Elimination of Hardcoded Category Specification Constants.**
+   - `DEFAULT_CATEGORY_SPECS` in NestJS `categories.service.ts` and `DEFAULT_SPECS` in React `catalog.ts` are completely removed.
+   - Category specification templates are read 100% from the database column `Category.attributes`.
+   - Initial templates are seeded into MySQL via migration `202611180001_category_and_sku_attributes`.
+   - Categories without attributes configured simply show all SKUs directly in `SkuPicker` without forcing intermediate attribute steps.
+   - The "คืนค่ามาตรฐาน" (Reset to default) button in `CategoriesPanel.tsx` is removed; all changes are managed directly by ADMIN.
+
+## D144 — Apple Store-Style Product Configurator Layout in Web Tone (2026-11-18)
+
+Owner instruction via `/grill-me`: "ต้องการการแสดงผลตอนเลือกรายละเอียดต่างๆแบบในภาพ แต่ให้ยังคงเป็นโทนสีของ web". Amends D74, D78, D142, and D143.
+
+1. **Configurator Container Card (`.spec-config-box`).**
+   - In `SkuPicker.tsx`, choosing a product model transitions the picker into a clean configurator card styled with rounded corners (`16px`), brand teal border (`1.5px solid #0abab5`), and card shadow.
+   - Container header displays the chosen model name with a "เปลี่ยนรุ่น" button to allow staff to return to the model list at any time.
+2. **Specification Step Headers.**
+   - Each specification section displays `[Label]` alongside the selected value (e.g. `ตัวเรือน - อะลูมิเนียม`, `สี - Jet Black`, `ขนาดตัวเรือน - 42mm`, `การเชื่อมต่อ - GPS`).
+3. **Adaptive Option Cards with Real-Time Stock Subtitle.**
+   - Text specification attributes render as interactive cards (`.spec-option-card`).
+   - Cards display the attribute value prominently, paired with real-time stock availability subtitle ("พร้อมขาย", "เหลือ X ชิ้น", "สินค้าหมด", "มีจำหน่าย").
+   - Layout automatically adapts: 2 columns for <= 2 short choices (e.g. sizes, connectivity), and 1 column full-width for >= 3 choices or longer descriptive text (e.g. case materials).
+   - Selected card is highlighted with `2px solid #0abab5` and light teal tint (`var(--primary-subtle)`).
+4. **Circular Color Swatches with Active Ring.**
+   - Color steps render as circular swatches (`.spec-swatch-circle`) using hex codes mapped from `ProductColor` (`/colors/map`).
+   - Active selection displays a double ring outline in web brand teal (`.spec-swatch-ring`).
+   - Hover and touch tooltips display color name and stock availability.
+5. **Resolved SKU Footer.**
+   - When all specification steps are completed and resolve to a single SKU, a summary footer inside the card shows the resolved SKU code and a stock status tag.
+
+## D145 — Robust Warroom ERP Color Parsing & Attribute Separation (2026-11-18)
+
+Owner instruction via `/grill-me`: "ทำไมสีบางอันติด - มาด้วย บางอันติดความจุมาด้วย 1TB บางอันติด with nano-texture glass". Amends D78, D80, D142, and D143.
+
+1. **Root Cause Analysis.**
+   - In Warroom ERP (`mart.stock_mv`), product colors frequently contain raw unnormalized strings:
+     - Leading punctuation (e.g. `"- Space Black"`, `"- "`, `": Silver"`).
+     - Storage capacities embedded in the color string without delimiters (e.g. `"1TB Space Black"`).
+     - Display glass variations appended to color strings (e.g. `"Space Black with nano-texture glass"`).
+   - The previous regex in `colorOf` only matched capacity followed by explicit separators (`/^(?:\d+GB|TB ... )+[-–·:]\s*/i`), failing on leading dashes alone, capacity without dashes, and display glass options.
+2. **Nano-texture Glass Specification Separation (`display`).**
+   - The `nano-texture glass` / `with nano-texture glass` designation represents a physical glass finish, not a color.
+   - `parseColorField` extracts nano-texture and returns `display: 'Nano-texture Glass'`, leaving the `color` attribute clean (e.g. `'Space Black'`).
+   - In `buildCatalog`, when any SKU in a product model has `display: 'Nano-texture Glass'`, peer SKUs without explicit glass specifications are automatically assigned `display: 'Standard Glass'` so staff can pick between standard and nano-texture glass in the configurator.
+3. **Punctuation and Storage Stripping.**
+   - Leading/trailing punctuation (`-`, `–`, `·`, `:`, `/`, spaces) is completely stripped.
+   - Any embedded storage tokens (`1TB`, `512GB`, `16GB/512GB`) are removed from the color string.
+   - If the SKU does not already have a storage attribute, the extracted capacity is used as a fallback for `attrs.storage`.
+   - If the cleaned string is empty or contains only punctuation (e.g. `"-"`), the color becomes `null`.
+4. **Database Cleanup and Catalog Rules Version 8.**
+   - `CATALOG_RULES_VERSION` is incremented to 8 to trigger re-sync and catalog re-indexing.
+   - Prisma SQL migration `202611180003_clean_product_colors/migration.sql` immediately cleans existing rows in `ProductSku` (`color`, `attributes`) and purges dirty/invalid color names from `ProductColor`.
+
+## D160 — Configurable Customer Surveys (BUY & NOT_BUY) and Survey Management (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2213,7 +2301,7 @@ Decisions:
    - Added `SURVEY_SUBMITTED` to `EventType`.
    - Survey responses are visible in Session Logs (`SessionLogsWorkspace`) and exported with session logs.
 
-## D141 — Survey "Other" Option, Postpone Button, Staff Survey Workspace & Nav-Counter (2026-11-16)
+## D161 — Survey "Other" Option, Postpone Button, Staff Survey Workspace & Nav-Counter (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2240,7 +2328,7 @@ Decisions:
    - For pending items, shows queue label, phone, type (ซื้อ / ไม่ซื้อ), timestamp, and a "ทำแบบสำรวจ" button to complete the survey anytime.
    - For completed items, provides a "ดูผลสำรวจ" modal to review recorded customer answers.
 
-## D142 — Drag-and-Drop Question Reordering and Segmented Control Mode Toggles (2026-11-16)
+## D162 — Drag-and-Drop Question Reordering and Segmented Control Mode Toggles (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2259,7 +2347,7 @@ Decisions:
    - In `SurveyManagementPanel`: Target switch (BUY vs NOT_BUY) is converted to a modern iOS/web segmented control with `#f1f5f9` container and floating white active pill with shadow.
    - In `SurveyWorkspace`: Mode switch (Pending vs Completed) is similarly converted to the modern segmented control style with count badges.
 
-## D143 — Comprehensive Customer Session Logs Export Columns (2026-11-16)
+## D163 — Comprehensive Customer Session Logs Export Columns (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2280,7 +2368,7 @@ Decisions:
    - Each row populates the specific answer provided by that customer for that question, cleanly formatting single choice and multi-choice arrays (`join(', ')`).
    - Retains the summary `surveyAnswers` column in Category 2 for consolidated overview.
 
-## D144 — Survey "Required Now" Pre-Postpone Validation and Partial State Persistence (2026-11-16)
+## D164 — Survey "Required Now" Pre-Postpone Validation and Partial State Persistence (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2306,7 +2394,7 @@ Decisions:
    - In `App.tsx`, `pendingSurveysCount` includes sessions with no response or with `completed === false`.
    - In `SurveyWorkspace.tsx`, pending sessions with saved answers show action button `ทำแบบสำรวจต่อ`.
 
-## D145 — Main Product Selection In-Place Expandable Cards and SKU Pricing (2026-11-16)
+## D165 — Main Product Selection In-Place Expandable Cards and SKU Pricing (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2331,7 +2419,7 @@ Decisions:
    - `modelChoices` calculates `minPrice` across active SKUs of each model, automatically showing "เริ่มต้น ฿XX,XXX" or hiding price when not set.
    - Selection preview in `SelectionEditor.tsx` and `WalkInForm.tsx` shows formatted price badges.
 
-## D146 — Model Deselection, Mandatory Payment Selection, and Mobile Fixed Bottom Workflow Navigation (2026-11-16)
+## D166 — Model Deselection, Mandatory Payment Selection, and Mobile Fixed Bottom Workflow Navigation (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2361,7 +2449,7 @@ Decisions:
    - Button "ยืนยันการสั่งซื้อ" is disabled until the sentinel intersects the viewport (i.e. user has scrolled down to the end).
    - Displays a helpful guidance indicator: "กรุณาเลื่อนดูข้อมูลสรุปให้ครบถ้วนก่อนยืนยัน" until scrolled to the bottom.
 
-## D147 — Model Deselect via Checkmark Icon, Mobile Fixed Bottom Step 1, Mandatory Step 2 Device Selection, Left-Aligned Summary Accessories, and Responsive Customer Survey Card (2026-11-16)
+## D167 — Model Deselect via Checkmark Icon, Mobile Fixed Bottom Step 1, Mandatory Step 2 Device Selection, Left-Aligned Summary Accessories, and Responsive Customer Survey Card (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2390,7 +2478,7 @@ Decisions:
      - Desktop: `queue info action` in a single horizontal row.
      - Mobile: Row 1 displays `queue` on the left and `action` button on the right at the same level; Row 2 displays `info` (phone number, buy/not-buy badge, walk-in time, and staff in charge) underneath.
 
-## D148 — Model Card Checkmark Circle Geometry Fix and Customer Survey Mobile Refinements (2026-11-16)
+## D168 — Model Card Checkmark Circle Geometry Fix and Customer Survey Mobile Refinements (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2414,7 +2502,7 @@ Decisions:
    - Walk-in time (`timeStr`) is placed inline on the same row with the customer phone number and the purchase status badge (`[ซื้อสินค้า]` / `[ไม่ซื้อ / ยกเลิก]`), rendering cleanly on a single line.
    - For non-staff (Admin/Manager), the staff attribution continues to be displayed.
 
-## D149 — Single Horizontal Level Customer Survey Card on Mobile (2026-11-16)
+## D169 — Single Horizontal Level Customer Survey Card on Mobile (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2434,7 +2522,7 @@ Decisions:
    - Standard 28px height matching the queue badge.
    - If screen width is narrow (<= 480px) or queue identifier is long, the button automatically collapses text and renders as an icon-only button to guarantee zero card overflow.
 
-## D150 — Customer Survey Staff-Specific Scoping (2026-11-16)
+## D170 — Customer Survey Staff-Specific Scoping (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2448,7 +2536,7 @@ Decisions:
 2. **Contextual Messaging and Subtitle:**
    - Subtitle and empty state notifications in `SurveyWorkspace.tsx` dynamically adapt to reflect the staff member's personal scope (e.g. "คุณทำแบบสำรวจของลูกค้าที่คุณรับผิดชอบวันนี้ครบถ้วนแล้ว").
 
-## D151 — Session Logs Detail Readability: Info Grid Card and Event Audit Log Timeline (2026-11-16)
+## D171 — Session Logs Detail Readability: Info Grid Card and Event Audit Log Timeline (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2472,7 +2560,7 @@ Decisions:
      - Bottom line: Technical event code badge, Staff ID attribution, and Thai date.
    - Eliminates text collisions, truncations, and awkward wrapping on mobile viewports.
 
-## D152 — Step 2 Optional Phone Input with Customer History Auto-Lookup & Step 3 Pre-Fill (2026-11-16)
+## D172 — Step 2 Optional Phone Input with Customer History Auto-Lookup & Step 3 Pre-Fill (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2491,7 +2579,7 @@ Decisions:
    - In Step 2 submission (`handleConfirmAppleDeviceStep`), only `currentAppleDevices` is committed without prematurely setting the DB session phone, ensuring the workflow cleanly advances to Step 3 ("กรอกเบอร์โทรศัพท์ลูกค้า").
    - In Step 3, the phone number is already pre-filled from Step 2, eliminating duplicate data entry for staff while allowing them to verify and proceed directly to Step 4 ("เริ่มบริการ").
 
-## D153 — Step 3 Product Recommendations with Variant Switcher & Auto-Cart Insertion (2026-11-16)
+## D173 — Step 3 Product Recommendations with Variant Switcher & Auto-Cart Insertion (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2532,7 +2620,7 @@ Decisions:
 5. **API Readiness (`recommendations.ts`):**
    - Encapsulated mock recommendation generation in `recommendations.ts` with `fetchProductRecommendationsApi()`, ready for future backend API integration.
 
-## D154 — Recommendations Header Collapsing & Mobile Action Grid Refinement (2026-11-16)
+## D174 — Recommendations Header Collapsing & Mobile Action Grid Refinement (2026-11-16)
 
 Owner instruction via `/grill-me`:
 
@@ -2561,7 +2649,7 @@ Decisions:
      - Left: Button "ดูตัวเลือกอื่น ▾".
      - Right: All 4 status buttons neatly grouped in a single horizontal row.
 
-## D155 — Preserve Recommendations Reviewed State Across Periodic Background Polling (2026-11-17)
+## D175 — Preserve Recommendations Reviewed State Across Periodic Background Polling (2026-11-17)
 
 Owner inquiry via `/grill-me`:
 
@@ -2584,7 +2672,7 @@ Decisions:
 3. **Session API Mapping (`sessionApi.ts`):**
    - Mapped `recommendationsReviewed` and `recommendationRecords` in `mapApiSessionToMockSession` so that whenever the backend API introduces native recommendation persistence, the frontend automatically consumes it.
 
-## D156 — Pinned Modal Header & Footer with Scrollable Content for Mobile Bottom Sheet (2026-11-17)
+## D176 — Pinned Modal Header & Footer with Scrollable Content for Mobile Bottom Sheet (2026-11-17)
 
 Owner instruction via `/grill-me`:
 
@@ -2606,7 +2694,7 @@ Decisions:
    - Removed nested `maxHeight: '60vh'` and inner `overflowY: 'auto'` container, allowing all survey questions to scroll natively inside `.modal-body`.
    - On mobile screens, footer buttons expand to 50%/50% width with 44px min-height for optimal touch accessibility.
 
-## D157 — Enforce Survey Completion Gate: Lock Backdrop Dismiss & Hide Close Button (2026-11-17)
+## D177 — Enforce Survey Completion Gate: Lock Backdrop Dismiss & Hide Close Button (2026-11-17)
 
 Owner instruction via `/grill-me`:
 
@@ -2624,7 +2712,7 @@ Decisions:
      - **"บันทึก"**: Enforces that all survey questions are answered completely before finalizing.
    - If `onClose` is ever invoked programmatically, it routes through `handlePostpone()` when questions exist, preventing any bypass.
 
-## D158 — Mobile Product Picker Auto-Scroll Sequence: Category to Models & Reset to Categories (2026-11-17)
+## D178 — Mobile Product Picker Auto-Scroll Sequence: Category to Models & Reset to Categories (2026-11-17)
 
 Owner instruction via `/grill-me`:
 
@@ -2640,7 +2728,7 @@ Decisions:
 3. **Smooth Scroll Back to Categories Upon Selection Completion (`WalkInForm.tsx` & `SelectionEditor.tsx`):**
    - When an item selection is completed (staff picks the final spec and the item is added to the order/interested list), the view automatically and smoothly scrolls back up to the Category tiles section (`categorySectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })`), enabling staff to immediately choose the next product category without manual scrolling.
 
-## D159 — Lock Screen Position During Model & Spec Selection (`SkuPicker.tsx`) (2026-11-17)
+## D179 — Lock Screen Position During Model & Spec Selection (`SkuPicker.tsx`) (2026-11-17)
 
 Owner instruction via `/grill-me`:
 

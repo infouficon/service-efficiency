@@ -66,6 +66,8 @@ test('D125: the kind of number follows the product: IMEI for iPhone / iPad Cellu
   const { serialKindOf, serialProblem } = await import('../src/features/stock/scanning.ts');
   assert.equal(serialKindOf('iPhone', 'iPhone 18 Pro Max'), 'imei');
   assert.equal(serialKindOf('iPad', 'iPad Air WiFi + Cellular', 'iPad Air 11 M3 Wi-Fi + Cellular'), 'imei');
+  assert.equal(serialKindOf('iPad', 'iPad Air 11 M3', 'iPad Air 11 M3', JSON.stringify({ connectivity: 'Wi-Fi + Cellular' })), 'imei', 'D142 attributes connectivity Cellular');
+  assert.equal(serialKindOf('iPad', 'iPad Air 11 M3', 'iPad Air 11 M3', JSON.stringify({ connectivity: 'Wi-Fi' })), 'serial', 'D142 attributes connectivity Wi-Fi');
   assert.equal(serialKindOf('iPad', 'iPad Pro', 'iPad Pro 13 M5 Wi-Fi'), 'serial');
   assert.equal(serialKindOf('Watch', 'Watch S 12', 'Watch S 12 GPS + Cell 46mm'), 'imei');
   assert.equal(serialKindOf('Watch', 'Watch Ultra 4', 'Watch Ultra 4 49mm (Demo)'), 'serial');

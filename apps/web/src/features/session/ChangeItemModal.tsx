@@ -232,7 +232,14 @@ export function ChangeItemModal({
                   setPicked(null);
                 }}
               />
-              {category && <SkuPicker key={category} models={models} onPick={setPicked} />}
+              {category && (
+                <SkuPicker
+                  key={category}
+                  models={models}
+                  categories={categoryList ?? undefined}
+                  onPick={setPicked}
+                />
+              )}
             </div>
           )}
 

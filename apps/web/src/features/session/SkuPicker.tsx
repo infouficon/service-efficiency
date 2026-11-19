@@ -1,14 +1,17 @@
-import { useId, useMemo, useRef, useState } from 'react';
-import { Check, Search, X } from 'lucide-react';
-import { distinct, settleChoice } from './workflow';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
+import { distinct } from './workflow';
 import {
   formatPrice,
+  getSkuAttribute,
   isOutOfStock,
   isUnlimited,
   type CatalogSku,
   type ModelChoice,
   type Picked,
 } from './catalog';
+import type { Category, CategoryAttributeSpec } from '../../types/session';
+import { api } from '../../services/api';
 
 function stockText(s: CatalogSku): string {
   if (isUnlimited(s)) return 'มีจำหน่าย';
@@ -17,358 +20,480 @@ function stockText(s: CatalogSku): string {
   return 'พร้อมขาย';
 }
 
-function colourLabel(s: CatalogSku): string {
-  if (s.color && s.name) {
-    if (s.name.toLowerCase().includes(s.color.toLowerCase())) return s.color;
-    return `${s.name} (${s.color})`;
-  }
-  return s.color || s.name || 'มาตรฐาน';
+function getOptionStockText(skusForOption: CatalogSku[]): { text: string; outOfStock: boolean } {
+  if (skusForOption.length === 0) return { text: '', outOfStock: true };
+  if (skusForOption.every(isOutOfStock)) return { text: 'สินค้าหมด', outOfStock: true };
+  if (skusForOption.some(isUnlimited)) return { text: 'มีจำหน่าย', outOfStock: false };
+
+  const totalStock = skusForOption.reduce(
+    (sum, s) => sum + (typeof s.stock === 'number' ? s.stock : 0),
+    0,
+  );
+  if (totalStock > 0) return { text: `เหลือ ${totalStock} ชิ้น`, outOfStock: false };
+  return { text: 'พร้อมขาย', outOfStock: false };
 }
+
+const isColorSpec = (spec: CategoryAttributeSpec) =>
+  spec.key.toLowerCase() === 'color' || spec.label.trim() === 'สี';
+
+const isTwoColumns = (options: string[]) =>
+  options.length <= 2 && options.every((opt) => opt.length <= 16);
 
 /** "wi-fi", "WiFi" and "wifi" are the same to someone typing on a phone. */
 const searchable = (text: string) => text.toLowerCase().replaceAll('-', '');
 
 /**
- * Pick one SKU of a category (D78, D79, D145): models displayed as rounded cards with in-place expansion,
- * and 2-column grid sub-options for RAM, capacity, and colour.
+ * Pick one SKU of a category (D78, D79, D142, D144):
+ * Clean Apple Store-style configurator layout in the system's teal theme.
+ * Displays Model header, then step-by-step option cards and circular color swatches.
  */
 export function SkuPicker({
   models,
+  categorySpecs,
+  categories,
   onPick,
   onComplete,
   allowOutOfStock = false,
 }: {
   models: ModelChoice[];
+  categorySpecs?: CategoryAttributeSpec[];
+  categories?: Category[];
   onPick: (picked: Picked | null) => void;
   onComplete?: (picked: Picked) => void;
   allowOutOfStock?: boolean;
 }) {
   const [modelKey, setModelKey] = useState('');
-  const [memory, setMemory] = useState('');
-  const [storage, setStorage] = useState('');
+  const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [skuId, setSkuId] = useState('');
   const [query, setQuery] = useState('');
+  const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
-  const memoryRef = useRef<HTMLDivElement>(null);
-  const storageRef = useRef<HTMLDivElement>(null);
-  const colourRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
+
+  // Load color palette mapping for color swatches
+  useEffect(() => {
+    let active = true;
+    api<Record<string, string>>('/colors/map')
+      .then((m) => {
+        if (active && m) setColorMap(m);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const chosen = models.find((m) => m.key === modelKey) ?? null;
   const modelSkus = useMemo(() => chosen?.model.skus ?? [], [chosen]);
-  const pickedSku = useMemo(
-    () => modelSkus.find((s) => s.id === skuId),
-    [modelSkus, skuId],
-  );
 
-  const memories = useMemo(
-    () => distinct(modelSkus.map((s) => s.memory)),
-    [modelSkus],
-  );
-  const memorySkus =
-    memories.length > 0
-      ? modelSkus.filter((s) => (s.memory?.trim() || '') === memory)
-      : modelSkus;
-  const storages = distinct(memorySkus.map((s) => s.storage));
-  const colourSkus =
-    (memories.length > 0 && !memory) || (storages.length > 0 && !storage)
-      ? []
-      : storages.length > 0
-        ? memorySkus.filter((s) => (s.storage?.trim() || '') === storage)
-        : memorySkus;
+  // Resolve category specifications template (D142, D144)
+  const categoryName = chosen?.product.category ?? '';
+  const resolvedSpecs = useMemo<CategoryAttributeSpec[]>(() => {
+    if (!chosen) return [];
+    if (categorySpecs && categorySpecs.length > 0) return categorySpecs;
+    if (categoryName) {
+      const fromCat = categories?.find(
+        (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
+      )?.attributes;
+      if (fromCat && fromCat.length > 0) return fromCat;
+    }
+    // Dynamic fallback when no template: check if memory or storage or color exist in SKUs
+    const fallback: CategoryAttributeSpec[] = [];
+    if (modelSkus.some((s) => s.memory)) {
+      fallback.push({ key: 'memory', label: 'RAM', required: true });
+    }
+    if (modelSkus.some((s) => s.storage)) {
+      fallback.push({ key: 'storage', label: 'ความจุ', required: true });
+    }
+    if (modelSkus.some((s) => s.color)) {
+      fallback.push({ key: 'color', label: 'สี', required: true });
+    }
+    return fallback;
+  }, [chosen, categorySpecs, categories, categoryName, modelSkus]);
 
-  // two colours of one model can have the same label (a keyboard layout only in the part): the part number tells them apart
-  const labels = colourSkus.map(colourLabel);
-  const colourLabels = colourSkus.map((s, i) =>
-    labels.filter((l) => l === labels[i]).length > 1
-      ? `${labels[i]} · ${s.sku}`
-      : labels[i],
-  );
+  // Ensure color is present in specs if SKUs have colors
+  const allSpecs = useMemo<CategoryAttributeSpec[]>(() => {
+    const list = [...resolvedSpecs];
+    if (modelSkus.some((s) => s.color) && !list.some(isColorSpec)) {
+      list.push({ key: 'color', label: 'สี', required: true });
+    }
+    return list;
+  }, [resolvedSpecs, modelSkus]);
 
-  const tokens = searchable(query).split(/\s+/).filter(Boolean);
-  const shown =
-    tokens.length === 0
-      ? models
-      : models.filter((m) => {
-          const text = searchable(`${m.model.name} ${m.product.name}`);
-          return tokens.every((t) => text.includes(t));
-        });
+  // Compute available choices and candidate SKUs for each step
+  const { steps, remainingSkus } = useMemo(() => {
+    let candidates = modelSkus;
+    const computedSteps: {
+      spec: CategoryAttributeSpec;
+      options: string[];
+      selectedValue: string;
+      skusAtStep: CatalogSku[];
+    }[] = [];
 
-  /** Keep the state and tell the parent which SKU (if any) it now stands for. */
-  const settle = (
-    choice: ModelChoice | null,
-    mem: string,
-    st: string,
-    triggerComplete = false,
+    for (const spec of allSpecs) {
+      const options = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean));
+      if (options.length === 0) continue;
+
+      const currentVal = selectedValues[spec.key] || '';
+      computedSteps.push({
+        spec,
+        options,
+        selectedValue: currentVal,
+        skusAtStep: candidates,
+      });
+
+      if (currentVal) {
+        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === currentVal);
+      } else {
+        break; // Pause further spec evaluation until current step is selected
+      }
+    }
+
+    return { steps: computedSteps, remainingSkus: candidates };
+  }, [allSpecs, modelSkus, selectedValues]);
+
+  // Helper to cascade-select single choices automatically
+  const resolveAutoChoices = (
+    skus: CatalogSku[],
+    specs: CategoryAttributeSpec[],
+    currentVals: Record<string, string>,
   ) => {
-    // D133: Always require explicit colour selection; do not auto-pick skuId
-    const next = choice
-      ? settleChoice(choice.model.skus, mem, st, false)
-      : { memory: '', storage: '', skuId: '' };
-    setMemory(next.memory);
-    setStorage(next.storage);
-    setSkuId(next.skuId);
-    const sku = choice?.model.skus.find((s) => s.id === next.skuId);
-    const pickedObj =
-      choice && sku
-        ? { product: choice.product, model: choice.model, sku }
-        : null;
-    onPick(pickedObj);
-    if (
-      triggerComplete &&
-      pickedObj &&
-      (allowOutOfStock || !isOutOfStock(pickedObj.sku)) &&
-      next.skuId
-    ) {
-      onComplete?.(pickedObj);
+    let candidates = skus;
+    const nextValues: Record<string, string> = { ...currentVals };
+
+    for (const spec of specs) {
+      const options = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean));
+      if (options.length === 1) {
+        nextValues[spec.key] = options[0];
+        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === options[0]);
+      } else if (nextValues[spec.key] && options.includes(nextValues[spec.key])) {
+        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === nextValues[spec.key]);
+      } else {
+        delete nextValues[spec.key];
+        break;
+      }
+    }
+    return { nextValues, remainingSkus: candidates };
+  };
+
+  const pickModel = (m: ModelChoice) => {
+    setModelKey(m.key);
+    // Auto-resolve single choices for this model
+    const mSkus = m.model.skus;
+    const catName = m.product.category ?? '';
+    let specs = categorySpecs && categorySpecs.length > 0 ? categorySpecs : [];
+    if (specs.length === 0 && catName) {
+      specs = categories?.find((c) => c.name.toLowerCase() === catName.toLowerCase())?.attributes ?? [];
+    }
+    const { nextValues, remainingSkus: rem } = resolveAutoChoices(mSkus, specs, {});
+    setSelectedValues(nextValues);
+
+    if (rem.length === 1) {
+      const single = rem[0];
+      setSkuId(single.id);
+      const pickedObj = { product: m.product, model: m.model, sku: single };
+      onPick(pickedObj);
+      if (allowOutOfStock || !isOutOfStock(single)) {
+        onComplete?.(pickedObj);
+      }
+    } else {
+      setSkuId('');
+      onPick(null);
     }
   };
 
-  const pickModel = (choice: ModelChoice) => {
-    setModelKey(choice.key);
-    setQuery('');
-    settle(choice, '', '', false);
+  const handleStepChange = (specKey: string, value: string) => {
+    const initial: Record<string, string> = {};
+    for (const s of allSpecs) {
+      if (s.key === specKey) {
+        initial[s.key] = value;
+        break;
+      }
+      if (selectedValues[s.key]) {
+        initial[s.key] = selectedValues[s.key];
+      }
+    }
+
+    const { nextValues, remainingSkus: nextRemaining } = resolveAutoChoices(modelSkus, allSpecs, initial);
+    setSelectedValues(nextValues);
+
+    if (nextRemaining.length === 1 && chosen) {
+      const single = nextRemaining[0];
+      setSkuId(single.id);
+      const pickedObj = { product: chosen.product, model: chosen.model, sku: single };
+      onPick(pickedObj);
+      if (allowOutOfStock || !isOutOfStock(single)) {
+        onComplete?.(pickedObj);
+      }
+    } else {
+      setSkuId('');
+      onPick(null);
+    }
   };
 
-  const handleMemoryChange = (mem: string) => {
-    settle(chosen, mem, '');
-  };
+  const singleResolvedSku = remainingSkus.length === 1 && skuId === remainingSkus[0].id ? remainingSkus[0] : null;
 
-  const handleStorageChange = (st: string) => {
-    settle(chosen, memory, st, false);
-  };
-
-  const pickColour = (id: string) => {
-    const sku = modelSkus.find((s) => s.id === id);
-    if (!chosen || !sku || (!allowOutOfStock && isOutOfStock(sku))) return;
-    setSkuId(id);
-    const pickedObj = { product: chosen.product, model: chosen.model, sku };
-    onPick(pickedObj);
-    onComplete?.(pickedObj);
-  };
+  // Filter models by query
+  const shown = useMemo(() => {
+    const q = searchable(query.trim());
+    if (!q) return models;
+    return models.filter((m) => searchable(m.model.name).includes(q));
+  }, [models, query]);
 
   return (
     <div className="sku-picker" ref={rootRef}>
-      <div className="picker-field">
-        <span className="picker-label" id={labelId}>
-          เลือกรุ่นสินค้า <span className="required">*</span>
-        </span>
-
-        {models.length === 0 ? (
-          <p className="muted">ไม่มีรุ่นสินค้าในหมวดนี้</p>
-        ) : (
-          <>
-            {models.length > 6 && (
-              <label className="model-search" style={{ marginBottom: '12px' }}>
-                <Search size={16} aria-hidden="true" />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="ค้นหารุ่น เช่น 13 m4, pro"
-                  aria-label="ค้นหารุ่น"
-                  enterKeyHint="search"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    aria-label="ล้างคำค้น"
-                    onClick={() => setQuery('')}
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </label>
-            )}
-
-            <div
-              style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
-              role="group"
-              aria-labelledby={labelId}
+      {/* 1. MODEL SELECTION VIEW (when no model selected yet) */}
+      {!chosen ? (
+        <div className="picker-field">
+          <span className="picker-label" id={labelId}>
+            เลือกรุ่นสินค้า <span className="required">*</span>
+          </span>
+          {models.length === 0 ? (
+            <p className="muted">ไม่มีรุ่นสินค้าในหมวดนี้</p>
+          ) : (
+            <>
+              {models.length > 8 && (
+                <label className="model-search">
+                  <Search size={16} aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="ค้นหารุ่น เช่น 13 m4"
+                    aria-label="ค้นหารุ่น"
+                    enterKeyHint="search"
+                  />
+                  {query && (
+                    <button type="button" aria-label="ล้างคำค้น" onClick={() => setQuery('')}>
+                      <X size={14} />
+                    </button>
+                  )}
+                </label>
+              )}
+              <div className="model-list" role="group" aria-labelledby={labelId}>
+                {shown.map((m) => {
+                  const prices = m.model.skus
+                    .map((s) => (s.price != null ? Number(s.price) : null))
+                    .filter((p): p is number => p != null && !Number.isNaN(p));
+                  const minPrice = prices.length > 0 ? Math.min(...prices) : null;
+                  const priceText = minPrice != null ? formatPrice(minPrice) : m.sub || '';
+                  return (
+                    <button type="button" key={m.key} className="model-option" onClick={() => pickModel(m)}>
+                      <strong>{m.model.name}</strong>
+                      {priceText && <small>{priceText}</small>}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        /* 2. APPLE STORE STYLE CONFIGURATOR CARD (when model is chosen) */
+        <div className="spec-config-box">
+          {/* Card Header: Chosen Model & Change Button */}
+          <div className="spec-config-header">
+            <h3 className="spec-config-title">{chosen.model.name}</h3>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ fontSize: '0.85rem', padding: '6px 14px' }}
+              onClick={() => {
+                setModelKey('');
+                setSelectedValues({});
+                setSkuId('');
+                onPick(null);
+              }}
             >
-              {shown.map((m) => {
-                const isSelected = m.key === modelKey;
-                const formattedPriceVal =
-                  isSelected && pickedSku?.price != null
-                    ? formatPrice(pickedSku.price)
-                    : m.minPrice != null
-                      ? `เริ่มต้น ${formatPrice(m.minPrice)}`
-                      : null;
-                const priceText = formattedPriceVal || m.sub || '';
+              เปลี่ยนรุ่น
+            </button>
+          </div>
 
-                return (
-                  <div
-                    key={m.key}
-                    onClick={() => {
-                      if (!isSelected) {
-                        pickModel(m);
-                      }
-                    }}
-                    style={{
-                      borderRadius: '14px',
-                      border: isSelected
-                        ? '2px solid #0abab5'
-                        : '1.5px solid #e2e8f0',
-                      background: isSelected ? '#f8fafc' : '#ffffff',
-                      padding: '16px',
-                      cursor: isSelected ? 'default' : 'pointer',
-                      boxShadow: isSelected
-                        ? '0 4px 14px rgba(10, 186, 181, 0.12)'
-                        : '0 1px 3px rgba(0, 0, 0, 0.04)',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {/* Top Row: Model Name & Price & Checkmark */}
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '12px',
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: '16px',
-                            fontWeight: 700,
-                            color: '#0f172a',
-                            lineHeight: 1.3,
-                          }}
-                        >
-                          {m.model.name}
-                        </div>
-                        {priceText && (
-                          <div
-                            style={{
-                              fontSize:
-                                isSelected && pickedSku?.price != null
-                                  ? '15px'
-                                  : '13.5px',
-                              color:
-                                isSelected && pickedSku?.price != null
-                                  ? '#0f766e'
-                                  : '#64748b',
-                              fontWeight:
-                                isSelected && pickedSku?.price != null
-                                  ? 700
-                                  : 500,
-                              marginTop: '3px',
-                            }}
-                          >
-                            {priceText}
-                          </div>
-                        )}
-                      </div>
+          {/* Sequential Specification Steps */}
+          {steps.map((st) => {
+            const isColor = isColorSpec(st.spec);
+            const gridColsClass = isTwoColumns(st.options) ? 'cols-2' : 'cols-1';
 
-                      {/* Checkmark Button to collapse/deselect when selected */}
-                      {isSelected && (
+            return (
+              <div key={st.spec.key} className="spec-config-section">
+                <div className="spec-config-section-label">
+                  <span>{st.spec.label}</span>
+                  {st.selectedValue && (
+                    <span className="spec-config-selected-val"> - {st.selectedValue}</span>
+                  )}
+                </div>
+
+                {isColor ? (
+                  /* Color Step: Circular Swatches */
+                  <div className="spec-swatch-row" role="radiogroup" aria-label={st.spec.label}>
+                    {st.options.map((opt) => {
+                      const matchingSkus = st.skusAtStep.filter(
+                        (s) => getSkuAttribute(s, st.spec.key) === opt,
+                      );
+                      const stockInfo = getOptionStockText(matchingSkus);
+                      const isSelected = st.selectedValue === opt;
+                      const hex = colorMap[opt.toLowerCase()] || '#cbd5e1';
+
+                      return (
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setModelKey('');
-                            settle(null, '', '', false);
-                          }}
-                          style={{
-                            width: '28px',
-                            height: '28px',
-                            minWidth: '28px',
-                            maxWidth: '28px',
-                            minHeight: '28px',
-                            maxHeight: '28px',
-                            borderRadius: '50%',
-                            backgroundColor: '#0abab5',
-                            border: 'none',
-                            padding: 0,
-                            margin: 0,
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            color: '#ffffff',
-                            flexShrink: 0,
-                            cursor: 'pointer',
-                            boxSizing: 'border-box',
-                            lineHeight: 1,
-                            boxShadow: '0 1px 4px rgba(10, 186, 181, 0.4)',
-                            transition: 'all 0.15s ease',
-                          }}
-                          title="แตะเพื่อยกเลิกการเลือก"
-                          aria-label="แตะเพื่อยกเลิกการเลือก"
+                          role="radio"
+                          key={opt}
+                          aria-checked={isSelected}
+                          aria-label={`${opt} (${stockInfo.text})`}
+                          title={`${opt} — ${stockInfo.text}`}
+                          disabled={!allowOutOfStock && stockInfo.outOfStock}
+                          className={`spec-swatch-btn ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleStepChange(st.spec.key, opt)}
                         >
-                          <Check size={18} strokeWidth={2.8} />
+                          <span
+                            className="spec-swatch-circle"
+                            style={{
+                              backgroundColor: hex,
+                              opacity: !allowOutOfStock && stockInfo.outOfStock ? 0.35 : 1,
+                            }}
+                          />
+                          {isSelected && <span className="spec-swatch-ring" />}
                         </button>
-                      )}
-                    </div>
-
-                    {/* In-place Expanded Sub-options */}
-                    {isSelected && (
-                      <div
-                        style={{
-                          borderTop: '1px solid #e2e8f0',
-                          marginTop: '14px',
-                          paddingTop: '2px',
-                        }}
-                      >
-                        {/* RAM */}
-                        {memories.length > 0 && (
-                          <div ref={memoryRef}>
-                            <SpecGrid
-                              label="RAM"
-                              required
-                              options={memories.map((mem) => ({
-                                value: mem,
-                                label: mem,
-                              }))}
-                              value={memory}
-                              onChange={handleMemoryChange}
-                            />
-                          </div>
-                        )}
-
-                        {/* ความจุ */}
-                        {storages.length > 0 && (
-                          <div ref={storageRef}>
-                            <SpecGrid
-                              label="ความจุ"
-                              required
-                              options={storages.map((st) => ({
-                                value: st,
-                                label: st,
-                              }))}
-                              value={storage}
-                              onChange={handleStorageChange}
-                            />
-                          </div>
-                        )}
-
-                        {/* สี */}
-                        {colourSkus.length > 0 && (
-                          <div ref={colourRef}>
-                            <SpecGrid
-                              label="สี"
-                              required
-                              options={colourSkus.map((s, i) => ({
-                                value: s.id,
-                                label: colourLabels[i],
-                                sub: stockText(s),
-                                disabled: !allowOutOfStock && isOutOfStock(s),
-                              }))}
-                              value={skuId}
-                              onChange={pickColour}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                ) : (
+                  /* Option Cards (Grid 1-col or 2-col) */
+                  <div className={`spec-card-grid ${gridColsClass}`}>
+                    {st.options.map((opt) => {
+                      const matchingSkus = st.skusAtStep.filter(
+                        (s) => getSkuAttribute(s, st.spec.key) === opt,
+                      );
+                      const stockInfo = getOptionStockText(matchingSkus);
+                      const isSelected = st.selectedValue === opt;
 
-              {shown.length === 0 && <p className="muted">ไม่พบรุ่นที่ค้นหา</p>}
+                      return (
+                        <button
+                          type="button"
+                          key={opt}
+                          disabled={!allowOutOfStock && stockInfo.outOfStock}
+                          className={`spec-option-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleStepChange(st.spec.key, opt)}
+                        >
+                          <span className="spec-option-title">{opt}</span>
+                          <span className={`spec-option-sub ${stockInfo.outOfStock ? 'out-of-stock' : ''}`}>
+                            {stockInfo.text}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Fallback SKU choice if multiple SKUs remain after all steps */}
+          {steps.every((s) => !!s.selectedValue) && remainingSkus.length > 1 && (
+            <div className="spec-config-section">
+              <div className="spec-config-section-label">
+                <span>รายการสินค้า</span>
+                {skuId && (
+                  <span className="spec-config-selected-val">
+                    {' '}
+                    - {modelSkus.find((s) => s.id === skuId)?.name}
+                  </span>
+                )}
+              </div>
+              <div className="spec-card-grid cols-1">
+                {remainingSkus.map((s) => (
+                  <button
+                    type="button"
+                    key={s.id}
+                    disabled={!allowOutOfStock && isOutOfStock(s)}
+                    className={`spec-option-card ${s.id === skuId ? 'selected' : ''}`}
+                    onClick={() => {
+                      setSkuId(s.id);
+                      const pickedObj = { product: chosen.product, model: chosen.model, sku: s };
+                      onPick(pickedObj);
+                      if (allowOutOfStock || !isOutOfStock(s)) onComplete?.(pickedObj);
+                    }}
+                  >
+                    <span className="spec-option-title">{s.name} ({s.sku})</span>
+                    <span className={`spec-option-sub ${isOutOfStock(s) ? 'out-of-stock' : ''}`}>
+                      {stockText(s)}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </>
-        )}
+          )}
+
+          {/* Footer: Resolved SKU Summary */}
+          {singleResolvedSku && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 20px',
+                background: 'var(--primary-subtle, #f0fdfa)',
+                borderTop: '1px solid var(--border-color, #e5e7eb)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '0.85rem', color: '#64748b' }}>รหัส SKU:</span>
+                <code style={{ fontSize: '0.9rem', fontWeight: 600 }}>{singleResolvedSku.sku}</code>
+                {singleResolvedSku.price != null && (
+                  <span style={{ color: '#0f766e', fontWeight: 700, fontSize: '0.95rem' }}>
+                    ฿{Number(singleResolvedSku.price).toLocaleString('th-TH')}
+                  </span>
+                )}
+              </div>
+              <span
+                className={`status-tag ${isOutOfStock(singleResolvedSku) ? 'status-danger' : 'status-success'}`}
+                style={{ fontSize: '0.8rem', padding: '3px 8px', borderRadius: '6px' }}
+              >
+                {stockText(singleResolvedSku)}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Legacy chip button group for backward compatibility where imported */
+export function Chips({
+  label,
+  required = false,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  required?: boolean;
+  options: { value: string; label: string; sub?: string; disabled?: boolean }[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="picker-field">
+      <span className="picker-label">
+        {label} {required && <span className="required">*</span>}
+      </span>
+      <div className="chip-row" role="radiogroup" aria-label={label}>
+        {options.map((o) => (
+          <button
+            type="button"
+            role="radio"
+            key={o.value}
+            aria-checked={o.value === value}
+            className={`chip${o.value === value ? ' selected' : ''}`}
+            disabled={o.disabled}
+            onClick={() => onChange(o.value)}
+          >
+            <span>{o.label}</span>
+            {o.sub && <small>{o.sub}</small>}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -474,45 +599,6 @@ export function SpecGrid({
             </button>
           );
         })}
-      </div>
-    </div>
-  );
-}
-
-/** Legacy Chips component preserved for compatibility */
-export function Chips({
-  label,
-  required = false,
-  options,
-  value,
-  onChange,
-}: {
-  label: string;
-  required?: boolean;
-  options: { value: string; label: string; sub?: string; disabled?: boolean }[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="picker-field">
-      <span className="picker-label">
-        {label} {required && <span className="required">*</span>}
-      </span>
-      <div className="chip-row" role="radiogroup" aria-label={label}>
-        {options.map((o) => (
-          <button
-            type="button"
-            role="radio"
-            key={o.value}
-            aria-checked={o.value === value}
-            className={`chip${o.value === value ? ' selected' : ''}`}
-            disabled={o.disabled}
-            onClick={() => onChange(o.value)}
-          >
-            <span>{o.label}</span>
-            {o.sub && <small>{o.sub}</small>}
-          </button>
-        ))}
       </div>
     </div>
   );

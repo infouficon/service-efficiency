@@ -86,9 +86,18 @@ export class SkuCreateDto {
   storage?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  memory?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   price?: number;
+
+  /** D142: dynamic specifications for this SKU, matching its Category template */
+  @IsOptional()
+  attributes?: Record<string, string>;
 }
 
 export class SkuUpdateDto {
@@ -115,9 +124,18 @@ export class SkuUpdateDto {
   storage?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  memory?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   price?: number;
+
+  /** D142: dynamic specifications for this SKU, matching its Category template */
+  @IsOptional()
+  attributes?: Record<string, string>;
 
   @IsOptional()
   @IsBoolean()

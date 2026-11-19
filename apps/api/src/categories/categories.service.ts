@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import type { CategoryAttributeSpecDto } from './dto';
 
 const ORDER: Prisma.CategoryOrderByWithRelationInput[] = [
   { position: 'asc' },
@@ -27,7 +28,11 @@ export class CategoriesService {
       where: all ? undefined : { active: true },
       orderBy: ORDER,
     });
-    if (!all) return rows;
+    const withAttrs = rows.map((c) => ({
+      ...c,
+      attributes: (c.attributes as CategoryAttributeSpecDto[] | null) ?? [],
+    }));
+    if (!all) return withAttrs;
     const counts = await this.prisma.product.groupBy({
       by: ['category'],
       _count: { _all: true },
@@ -36,20 +41,31 @@ export class CategoriesService {
     const byName = new Map(
       counts.map((c) => [c.category.toLowerCase(), c._count._all]),
     );
-    return rows.map((c) => ({
+    return withAttrs.map((c) => ({
       ...c,
       productCount: byName.get(c.name.toLowerCase()) ?? 0,
     }));
   }
 
-  async create(name: string, isAccessory = false) {
+  async create(name: string, isAccessory = false, attributes?: CategoryAttributeSpecDto[]) {
     const last = await this.prisma.category.aggregate({
       _max: { position: true },
     });
     try {
-      return await this.prisma.category.create({
-        data: { name, isAccessory, position: (last._max.position ?? 0) + 1 },
+      const created = await this.prisma.category.create({
+        data: {
+          name,
+          isAccessory,
+          position: (last._max.position ?? 0) + 1,
+          attributes: attributes
+            ? (attributes as unknown as Prisma.InputJsonValue)
+            : undefined,
+        },
       });
+      return {
+        ...created,
+        attributes: (created.attributes as CategoryAttributeSpecDto[] | null) ?? [],
+      };
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -60,10 +76,23 @@ export class CategoriesService {
     }
   }
 
-  async update(id: string, data: { active?: boolean; isAccessory?: boolean }) {
+  async update(id: string, data: { active?: boolean; isAccessory?: boolean; attributes?: CategoryAttributeSpecDto[] }) {
     const found = await this.prisma.category.findUnique({ where: { id } });
     if (!found) throw new NotFoundException('ไม่พบหมวดหมู่');
-    return this.prisma.category.update({ where: { id }, data });
+    const updated = await this.prisma.category.update({
+      where: { id },
+      data: {
+        ...(data.active !== undefined ? { active: data.active } : {}),
+        ...(data.isAccessory !== undefined ? { isAccessory: data.isAccessory } : {}),
+        ...(data.attributes !== undefined
+          ? { attributes: data.attributes as unknown as Prisma.InputJsonValue }
+          : {}),
+      },
+    });
+    return {
+      ...updated,
+      attributes: (updated.attributes as CategoryAttributeSpecDto[] | null) ?? [],
+    };
   }
 
   /** Swaps a category with its neighbour in the full list and renumbers the list 1..n. */

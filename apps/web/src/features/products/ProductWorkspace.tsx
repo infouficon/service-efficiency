@@ -49,6 +49,8 @@ export interface SkuItem {
   /** RAM of a Mac (D79) */
   memory?: string | null;
   price?: number | null;
+  /** D142: category specification key-values */
+  attributes?: Record<string, string> | null;
   /** barcode from warroom (D72), next to the part number in `sku` */
   upc?: string | null;
   active: boolean;
@@ -75,6 +77,19 @@ export interface ProductItem {
   active: boolean;
   erpManaged?: boolean;
   models: ModelItem[];
+}
+
+/** Format SKU specifications for display (D142) */
+function formatSkuSpecs(sku: {
+  memory?: string | null;
+  storage?: string | null;
+  color?: string | null;
+  attributes?: Record<string, string> | null;
+}): string {
+  if (sku.attributes && Object.keys(sku.attributes).length > 0) {
+    return Object.values(sku.attributes).filter(Boolean).join(' · ');
+  }
+  return [sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ');
 }
 
 /** Does this branch row carry ERP numbers? */
@@ -240,7 +255,9 @@ export function ProductWorkspace({
     name: string;
     color: string;
     storage: string;
+    memory: string;
     price: string;
+    attributes: Record<string, string>;
     active: boolean;
   }>({
     open: false,
@@ -248,7 +265,9 @@ export function ProductWorkspace({
     name: '',
     color: '',
     storage: '',
+    memory: '',
     price: '',
+    attributes: {},
     active: true,
   });
 
@@ -562,28 +581,24 @@ export function ProductWorkspace({
           ? Number(skuModal.price)
           : null;
 
+      const payload = {
+        sku: skuModal.sku,
+        name: skuModal.name,
+        color: skuModal.attributes.color || skuModal.color || undefined,
+        storage: skuModal.attributes.storage || skuModal.storage || undefined,
+        memory: skuModal.attributes.memory || skuModal.memory || undefined,
+        price: priceVal !== null ? priceVal : undefined,
+        attributes: Object.keys(skuModal.attributes).length > 0 ? skuModal.attributes : undefined,
+      };
       if (skuModal.editingId) {
         await api(`/products/skus/${skuModal.editingId}`, 'PUT', {
-          ...(skuLocked
-            ? {}
-            : {
-                sku: skuModal.sku,
-                name: skuModal.name,
-                color: skuModal.color || undefined,
-                storage: skuModal.storage || undefined,
-              }),
+          ...(skuLocked ? {} : payload),
           price: priceVal,
           active: skuModal.active,
         });
         toast.success('อัปเดต SKU เรียบร้อย');
       } else if (skuModal.modelId) {
-        await api(`/products/models/${skuModal.modelId}/skus`, 'POST', {
-          sku: skuModal.sku,
-          name: skuModal.name,
-          color: skuModal.color || undefined,
-          storage: skuModal.storage || undefined,
-          price: priceVal !== null ? priceVal : undefined,
-        });
+        await api(`/products/models/${skuModal.modelId}/skus`, 'POST', payload);
         toast.success('เพิ่ม SKU ใหม่เรียบร้อย');
       }
       setSkuModal({
@@ -592,7 +607,9 @@ export function ProductWorkspace({
         name: '',
         color: '',
         storage: '',
+        memory: '',
         price: '',
+        attributes: {},
         active: true,
       });
       await loadData();
@@ -1099,10 +1116,7 @@ export function ProductWorkspace({
                             {product.name} · {model.name}
                           </div>
                           <div className="fine muted">
-                            {sku.name}{' '}
-                            {[sku.memory, sku.storage, sku.color]
-                              .filter(Boolean)
-                              .join(' · ')}
+                            {sku.name} {formatSkuSpecs(sku) && `(${formatSkuSpecs(sku)})`}
                           </div>
                         </td>
                         <td>
@@ -1650,7 +1664,9 @@ export function ProductWorkspace({
                                 name: '',
                                 color: '',
                                 storage: '',
+                                memory: '',
                                 price: '',
+                                attributes: {},
                                 active: true,
                               })
                             }
@@ -1671,20 +1687,29 @@ export function ProductWorkspace({
                           {model.skus.map((s) => (
                             <span
                               key={s.id}
-                              onClick={() =>
+                              onClick={() => {
+                                const initialAttrs = { ...(s.attributes ?? {}) };
+                                if (s.color && !initialAttrs.color) initialAttrs.color = s.color;
+                                if (s.storage && !initialAttrs.storage) initialAttrs.storage = s.storage;
+                                if (s.memory && !initialAttrs.memory) initialAttrs.memory = s.memory;
                                 setSkuModal({
                                   open: true,
+                                  modelId: model.id,
                                   editingId: s.id,
                                   sku: s.sku,
                                   name: s.name,
                                   color: s.color || '',
                                   storage: s.storage || '',
+                                  memory: s.memory || '',
                                   price: s.price != null ? String(s.price) : '',
+                                  attributes: initialAttrs,
                                   active: s.active,
-                                })
-                              }
+                                });
+                              }}
                               style={{
-                                display: 'inline-block',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
                                 marginRight: '6px',
                                 marginBottom: '4px',
                                 padding: '2px 6px',
@@ -1695,7 +1720,7 @@ export function ProductWorkspace({
                               }}
                               title="คลิกเพื่อแก้ไข SKU"
                             >
-                              {s.sku} ({s.name})
+                              {s.sku} ({s.name}) {formatSkuSpecs(s) ? `· ${formatSkuSpecs(s)}` : ''}
                               {s.price != null && (
                                 <span
                                   style={{
@@ -1848,37 +1873,125 @@ export function ProductWorkspace({
                 }
               />
             </label>
-            <div
-              className="form-grid-2col"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1rem',
-              }}
-            >
-              <label>
-                ความจุ (Storage)
-                <input
-                  disabled={skuLocked}
-                  placeholder="เช่น 128GB, 256GB"
-                  value={skuModal.storage}
-                  onChange={(e) =>
-                    setSkuModal({ ...skuModal, storage: e.target.value })
-                  }
-                />
-              </label>
-              <label>
-                สี (Color)
-                <input
-                  disabled={skuLocked}
-                  placeholder="เช่น Natural Titanium"
-                  value={skuModal.color}
-                  onChange={(e) =>
-                    setSkuModal({ ...skuModal, color: e.target.value })
-                  }
-                />
-              </label>
-            </div>
+            {(() => {
+              const currentProduct = products.find((p) =>
+                p.models.some((m) => m.id === skuModal.modelId),
+              );
+              const currentCategory = currentProduct
+                ? categories.find(
+                    (c) => c.name.toLowerCase() === currentProduct.category.toLowerCase(),
+                  )
+                : null;
+              const categorySpecs =
+                currentCategory?.attributes && currentCategory.attributes.length > 0
+                  ? currentCategory.attributes
+                  : [];
+
+              if (categorySpecs.length > 0) {
+                return (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: categorySpecs.length > 1 ? '1fr 1fr' : '1fr',
+                      gap: '1rem',
+                      marginTop: '0.5rem',
+                      marginBottom: '0.5rem',
+                    }}
+                  >
+                    {categorySpecs.map((spec) => {
+                      const val =
+                        skuModal.attributes[spec.key] ??
+                        (spec.key === 'color'
+                          ? skuModal.color
+                          : spec.key === 'storage'
+                            ? skuModal.storage
+                            : spec.key === 'memory'
+                              ? skuModal.memory
+                              : '');
+                      const suggestedValues = currentProduct
+                        ? Array.from(
+                            new Set(
+                              currentProduct.models.flatMap((m) =>
+                                m.skus.map((s) => {
+                                  if (
+                                    s.attributes &&
+                                    typeof s.attributes[spec.key] === 'string' &&
+                                    s.attributes[spec.key].trim()
+                                  ) {
+                                    return s.attributes[spec.key].trim();
+                                  }
+                                  if (spec.key === 'color') return s.color?.trim() || '';
+                                  if (spec.key === 'storage') return s.storage?.trim() || '';
+                                  if (spec.key === 'memory') return s.memory?.trim() || '';
+                                  return '';
+                                }),
+                              ).filter(Boolean),
+                            ),
+                          )
+                        : [];
+                      return (
+                        <label key={spec.key}>
+                          {spec.label} {spec.required && <span className="required">*</span>}
+                          <input
+                            list={`datalist-sku-${spec.key}`}
+                            disabled={skuLocked}
+                            required={spec.required}
+                            placeholder={`ระบุหรือเลือก${spec.label}`}
+                            value={val}
+                            onChange={(e) =>
+                              setSkuModal({
+                                ...skuModal,
+                                attributes: { ...skuModal.attributes, [spec.key]: e.target.value },
+                                ...(spec.key === 'color' ? { color: e.target.value } : {}),
+                                ...(spec.key === 'storage' ? { storage: e.target.value } : {}),
+                                ...(spec.key === 'memory' ? { memory: e.target.value } : {}),
+                              })
+                            }
+                          />
+                          {suggestedValues.length > 0 && (
+                            <datalist id={`datalist-sku-${spec.key}`}>
+                              {suggestedValues.map((opt) => (
+                                <option key={opt} value={opt} />
+                              ))}
+                            </datalist>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  className="form-grid-2col"
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}
+                >
+                  <label>
+                    ความจุ (Storage)
+                    <input
+                      disabled={skuLocked}
+                      placeholder="เช่น 128GB, 256GB"
+                      value={skuModal.storage}
+                      onChange={(e) =>
+                        setSkuModal({ ...skuModal, storage: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    สี (Color)
+                    <input
+                      disabled={skuLocked}
+                      placeholder="เช่น Natural Titanium"
+                      value={skuModal.color}
+                      onChange={(e) =>
+                        setSkuModal({ ...skuModal, color: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+              );
+            })()}
             <label>
               ราคา (บาท)
               <input
@@ -1892,14 +2005,7 @@ export function ProductWorkspace({
                 }
               />
             </label>
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: 'pointer',
-              }}
-            >
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
               <input
                 type="checkbox"
                 checked={skuModal.active}

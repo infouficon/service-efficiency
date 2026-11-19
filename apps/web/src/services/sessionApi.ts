@@ -359,7 +359,7 @@ export function createCategoryApi(
 
 export function saveCategoryApi(
   id: string,
-  patch: { active?: boolean; isAccessory?: boolean },
+  patch: { active?: boolean; isAccessory?: boolean; attributes?: Category['attributes'] },
 ): Promise<Category> {
   return api<Category>(`/categories/${encodeURIComponent(id)}`, 'PUT', patch);
 }

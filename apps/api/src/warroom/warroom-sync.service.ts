@@ -89,6 +89,8 @@ export interface CatalogItem {
   /** RAM parsed from the names ("Ram 16" -> "16GB"), D79 */
   memory: string | null;
   upc: string | null;
+  /** D142: dynamic specifications parsed from names */
+  attributes?: Record<string, string> | null;
 }
 /** How a warroom category text is handled (D72): which SES category it goes to, and whether SES has it switched on. */
 export interface CategoryTally {
@@ -250,31 +252,130 @@ export function storageOf(
   return cap && cap.toUpperCase() !== memory ? cap : null;
 }
 
-/** The colour without the capacity warroom puts in front of it ("1TB SSD - Space Black" -> "Space Black"). */
-export function colorOf(color: string | null): string | null {
-  const text = (color ?? '').trim();
-  if (!text) return null;
-  const stripped = text
-    .replace(
-      /^(?:\d+(?:\.\d+)?\s*(?:GB|TB)(?:\s*(?:SSD|RAM|Memory|Storage))?[\s,/+]*)+[-–·:]\s*/i,
-      '',
-    )
-    .trim();
-  return stripped || text;
+export interface ParsedColorInfo {
+  color: string | null;
+  storage: string | null;
+  display: string | null;
 }
 
 /**
- * A model name as staff should see it (D79): without the capacity (D78), without the memory ("Ram 16"), and without a
- * trailing keyboard-layout marker ("Eng", which stays in the SKU name), so one model carries all its RAM / capacity /
- * colour variants. Screen size and chip stay in the name ("MacBook Air M5 13.6").
+ * D145: Parse color field from ERP, separating embedded capacity and nano-texture display glass.
+ * Cleans leading/trailing dashes, colons and punctuation.
  */
-export function modelNameOf(name: string | null, capacity: string | null): string | null {
+export function parseColorField(rawColor: string | null): ParsedColorInfo {
+  let text = (rawColor ?? '').trim();
+  if (!text) return { color: null, storage: null, display: null };
+
+  let display: string | null = null;
+  let storage: string | null = null;
+
+  // 1. Detect and strip "with nano-texture glass" / "nano-texture glass"
+  if (/\bnano-?texture(?:\s+glass)?\b/i.test(text)) {
+    display = 'Nano-texture Glass';
+    text = text
+      .replace(/\b(?:with\s+)?nano-?texture(?:\s+glass)?\b/gi, '')
+      .trim();
+  }
+
+  // 2. Detect capacity if embedded (e.g. "1TB", "512GB", "16GB/512GB")
+  const capMatches = Array.from(text.matchAll(/\b(\d+(?:\.\d+)?)\s*(GB|TB)\b/gi));
+  if (capMatches.length > 0) {
+    const lastCap = capMatches[capMatches.length - 1];
+    storage = `${lastCap[1]}${lastCap[2].toUpperCase()}`;
+  }
+
+  // 3. Strip capacity tokens, RAM, SSD, Storage words and leading/trailing separators
+  const withoutCaps = text
+    .replace(/(?:^|[\s,/+])(?:\d+(?:\.\d+)?\s*(?:GB|TB)\b(?:\s*(?:SSD|RAM|Memory|Storage))?)/gi, ' ')
+    .replace(/\b(?:SSD|RAM|Memory|Storage)\b/gi, ' ')
+    .replace(/[-–·:]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Strip leading/trailing punctuation
+  const cleanColor = withoutCaps.replace(/^[-–·:/\s]+|[-–·:/\s]+$/g, '').trim();
+
+  return {
+    color: cleanColor || (storage ? storage : null),
+    storage,
+    display,
+  };
+}
+
+/** The colour without capacity, display glass, or leading/trailing dashes ("- Space Black" -> "Space Black"). */
+export function colorOf(color: string | null): string | null {
+  return parseColorField(color).color;
+}
+
+/**
+ * D142: Connectivity parsed from names: "Wi-Fi + Cellular", "Wi-Fi", "GPS + Cellular", "GPS"
+ */
+export function connectivityOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (/\bwi-?fi\s*\+\s*cell(?:ular)?\b/i.test(text) || /\bcellular\b/i.test(text)) {
+      return 'Wi-Fi + Cellular';
+    }
+    if (/\bgps\s*\+\s*cell(?:ular)?\b/i.test(text)) {
+      return 'GPS + Cellular';
+    }
+  }
+  for (const t of texts) {
+    const text = (t ?? '').trim();
+    if (/\bwi-?fi\b/i.test(text) || /\bwifi\b/i.test(text)) {
+      return 'Wi-Fi';
+    }
+    if (/\bgps\b/i.test(text)) {
+      return 'GPS';
+    }
+  }
+  return null;
+}
+
+/**
+ * D142: Case size parsed from names (e.g. "46mm", "42mm")
+ */
+export function caseSizeOf(...texts: (string | null | undefined)[]): string | null {
+  for (const t of texts) {
+    const m = (t ?? '').match(/\b(38|40|41|42|44|45|46|49)\s*mm\b/i);
+    if (m) return `${m[1]}mm`;
+  }
+  return null;
+}
+
+/**
+ * A model name as staff should see it (D79, D142): without the capacity (D78), without the memory ("Ram 16"), without a
+ * trailing keyboard-layout marker ("Eng", which stays in the SKU name), and without connectivity markers (Wi-Fi, Cellular,
+ * GPS) which are now distinct attributes, so one model carries all its variant SKUs cleanly.
+ */
+export function modelNameOf(
+  name: string | null,
+  capacity: string | null,
+  category?: string | null,
+): string | null {
   const base = withoutCapacity(name, capacity);
   if (!base) return base;
-  const cleaned = base
+  let cleaned = base
     .replace(/\s*\bram\s*\d+\s*(?:gb)?\b\s*/gi, ' ')
     .replace(/\s*\b\d+\s*gb\s*ram\b\s*/gi, ' ')
-    .replace(/\s+(?:eng|english)\s*$/i, '')
+    .replace(/\s+(?:eng|english)\s*$/i, '');
+
+  const cat = (category ?? '').toLowerCase();
+  if (cat.includes('ipad') || (!category && /ipad/i.test(base))) {
+    cleaned = cleaned
+      .replace(/\s*\bwi-?fi\s*\+\s*cell(?:ular)?\b\s*/gi, ' ')
+      .replace(/\s*\bwi-?fi\b\s*/gi, ' ')
+      .replace(/\s*\bwifi\b\s*/gi, ' ')
+      .replace(/\s*\bcellular\b\s*/gi, ' ');
+  }
+  if (cat.includes('watch') || (!category && /watch/i.test(base))) {
+    cleaned = cleaned
+      .replace(/\s*\bgps\s*\+\s*cell(?:ular)?\b\s*/gi, ' ')
+      .replace(/\s*\bgps\b\s*/gi, ' ');
+  }
+
+  cleaned = cleaned
+    .replace(/\(\s*\)/g, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/[\s\-·/]+$/, '')
     .trim();
@@ -425,31 +526,77 @@ export function buildCatalog(rows: WarroomRow[]): {
     const skuName = shortName(name, partNo).slice(0, 191);
     // D112: AirPods, Apple TV, HomePod and AirTag leave the accessories for a main-product category of their own
     const line = rule.name === 'Accessories' ? deviceLineOf(subcat, subsubcat, skuName) : null;
+    const finalCategory = line?.category ?? rule.name;
+    const finalProductName = line ? clean(line.productName, 191) ?? productName : productName;
+    const finalModelName =
+      (line
+        ? clean(line.modelName, 191)
+        : clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
+
+    const parsedColor = parseColorField(first(rs, (r) => r.color));
+    const colorClean = clean(parsedColor.color, 64);
+    const storageClean = clean(capacity || parsedColor.storage, 64);
+
+    // D142, D145: specifications per category
+    const attrs: Record<string, string> = {};
+    const connectivity = connectivityOf(...nameTexts);
+    const caseSize = caseSizeOf(...nameTexts);
+
+    if (finalCategory === 'iPad') {
+      if (connectivity) attrs.connectivity = connectivity;
+      if (storageClean) attrs.storage = storageClean;
+      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (colorClean) attrs.color = colorClean;
+    } else if (finalCategory === 'Watch') {
+      if (caseSize) attrs.caseSize = caseSize;
+      if (connectivity) attrs.connectivity = connectivity;
+      if (colorClean) attrs.color = colorClean;
+    } else if (finalCategory === 'Mac') {
+      if (memory) attrs.memory = memory;
+      if (storageClean) attrs.storage = storageClean;
+      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (colorClean) attrs.color = colorClean;
+    } else {
+      if (storageClean) attrs.storage = storageClean;
+      if (parsedColor.display) attrs.display = parsedColor.display;
+      if (colorClean) attrs.color = colorClean;
+    }
+
     items.push({
       partNo,
-      category: line?.category ?? rule.name,
+      category: finalCategory,
       isAccessory: line ? false : rule.isAccessory,
       upc: clean(
         first(rs, (r) => r.upc),
         64,
       ),
-      productName: line ? clean(line.productName, 191) ?? productName : productName,
-      modelName: (line ? clean(line.modelName, 191) : clean(modelNameOf(subsubcat, capacity), 191)) ?? productName,
+      productName: finalProductName,
+      modelName: finalModelName,
       memory,
       skuName,
-      color: clean(
-        colorOf(first(rs, (r) => r.color)),
-        64,
-      ),
-      storage: clean(capacity, 64),
+      color: colorClean,
+      storage: storageClean,
+      attributes: Object.keys(attrs).length > 0 ? attrs : null,
     });
   }
   // names that differ only in case are one product / model (D79)
   const productSpelling = canonicalSpellings(items.map((i) => i.productName));
   const modelSpelling = canonicalSpellings(items.map((i) => i.modelName));
+  const modelsWithNanoTexture = new Set(
+    items
+      .filter((i) => i.attributes?.display === 'Nano-texture Glass')
+      .map((i) => `${i.productName}:::${i.modelName}`),
+  );
   for (const item of items) {
     item.productName = productSpelling.get(item.productName.toLowerCase()) ?? item.productName;
     item.modelName = modelSpelling.get(item.modelName.toLowerCase()) ?? item.modelName;
+    const key = `${item.productName}:::${item.modelName}`;
+    if (modelsWithNanoTexture.has(key)) {
+      item.attributes = item.attributes ?? {};
+      if (!item.attributes.display) {
+        item.attributes.display = 'Standard Glass';
+      }
+    }
   }
   return {
     items,
@@ -584,7 +731,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 6;
+export const CATALOG_RULES_VERSION = 8;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still
@@ -882,6 +1029,7 @@ export class WarroomSyncService
         storage: true,
         memory: true,
         upc: true,
+        attributes: true,
         model: {
           select: {
             name: true,
@@ -1029,6 +1177,7 @@ export class WarroomSyncService
           (s.color ?? null) !== i.color ||
           (s.storage ?? null) !== i.storage ||
           (s.memory ?? null) !== i.memory ||
+          JSON.stringify(s.attributes ?? null) !== JSON.stringify(i.attributes ?? null) ||
           (i.upc !== null && (s.upc ?? null) !== i.upc))
       );
     });
@@ -1224,6 +1373,7 @@ export class WarroomSyncService
             storage: item.storage,
             memory: item.memory,
             upc: item.upc,
+            attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,
             active: true,
             erpManaged: true,
           },
@@ -1250,6 +1400,7 @@ export class WarroomSyncService
           color: item.color,
           storage: item.storage,
           memory: item.memory,
+          attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,
           ...(item.upc !== null ? { upc: item.upc } : {}),
         },
       });
@@ -1292,7 +1443,15 @@ export class WarroomSyncService
       }
       await this.prisma.productSku.update({
         where: { id: sku.id },
-        data: { modelId: mid },
+        data: {
+          modelId: mid,
+          name: item.skuName,
+          color: item.color,
+          storage: item.storage,
+          memory: item.memory,
+          attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,
+          ...(item.upc !== null ? { upc: item.upc } : {}),
+        },
       });
       moved += 1;
     }

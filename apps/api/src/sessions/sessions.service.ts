@@ -175,8 +175,9 @@ export function serialKindOf(category: string | null | undefined, ...names: (str
 }
 
 /** D125: the serial kind of a session item (its SKU with model and product, as `sessionInclude` loads it). */
-function kindOfItem(item: { sku: { name: string; model?: { name: string; product?: { category: string; name: string } | null } | null } }): SerialKind {
-  return serialKindOf(item.sku.model?.product?.category, item.sku.model?.product?.name, item.sku.model?.name, item.sku.name);
+function kindOfItem(item: { sku: { name: string; attributes?: unknown; model?: { name: string; product?: { category: string; name: string } | null } | null } }): SerialKind {
+  const attrStr = item.sku.attributes ? JSON.stringify(item.sku.attributes) : null;
+  return serialKindOf(item.sku.model?.product?.category, item.sku.model?.product?.name, item.sku.model?.name, item.sku.name, attrStr);
 }
 
 /**

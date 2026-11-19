@@ -95,6 +95,36 @@ function newestUpc(model: CatalogModel): number {
 }
 
 /**
+ * D148: Canonical series model name for Apple Watch (e.g. "Apple Watch Series 12", "Apple Watch Ultra 2", "Apple Watch SE")
+ */
+export function normalizeWatchModelName(name: string): string {
+  const text = name.trim();
+  if (/(?:Apple\s+)?Watch\s+Ultra\s*2\b/i.test(text) || /\bUltra\s*2\b/i.test(text)) {
+    return 'Apple Watch Ultra 2';
+  }
+  if (/(?:Apple\s+)?Watch\s+Ultra\b/i.test(text) || /\bUltra\b/i.test(text)) {
+    return 'Apple Watch Ultra';
+  }
+  const seriesMatch =
+    text.match(/(?:Apple\s+)?Watch\s+(?:Series\s+|S\s*)(\d{1,2})\b/i) ||
+    text.match(/\b(?:Series\s+|S\s*)(\d{1,2})\b/i);
+  if (seriesMatch) {
+    return `Apple Watch Series ${seriesMatch[1]}`;
+  }
+  if (
+    /(?:Apple\s+)?Watch\s+SE\b/i.test(text) ||
+    /\bApple\s+Watch\s+SE\b/i.test(text) ||
+    /\bSE\s*\d*\b/i.test(text)
+  ) {
+    return 'Apple Watch SE';
+  }
+  if (/Herm[eè]s/i.test(text)) {
+    return 'Apple Watch Hermès';
+  }
+  return text;
+}
+
+/**
  * The models of one category with something to sell, new to old (D109): the ones ADMIN pinned first (the last pinned on top),
  * then by the newest UPC (Apple numbers them in launch order), then by name.
  */
@@ -107,6 +137,41 @@ export function modelChoices(catalog: CatalogProduct[] | null, category: string)
       if (m.skus.length > 0) list.push({ key: `${p.id}::${m.id}`, product: p, model: m });
     }
   }
+
+  // D148: For Watch, normalize series names and merge duplicate models into a single canonical model card
+  if (category.toLowerCase() === 'watch') {
+    const mergedByName = new Map<string, ModelChoice>();
+    for (const choice of list) {
+      const canonicalName = normalizeWatchModelName(choice.model.name);
+      const key = canonicalName.toLowerCase();
+      const existing = mergedByName.get(key);
+      if (existing) {
+        existing.model = {
+          ...existing.model,
+          name: canonicalName,
+          skus: [
+            ...existing.model.skus,
+            ...choice.model.skus.filter((s) => !existing.model.skus.some((es) => es.id === s.id)),
+          ],
+        };
+      } else {
+        mergedByName.set(key, {
+          ...choice,
+          product: {
+            ...choice.product,
+            name: canonicalName,
+          },
+          model: {
+            ...choice.model,
+            name: canonicalName,
+          },
+        });
+      }
+    }
+    list.length = 0;
+    list.push(...mergedByName.values());
+  }
+
   const pinned = (c: ModelChoice) => (c.model.pinnedAt ? Date.parse(c.model.pinnedAt) || 0 : 0);
   list.sort(
     (a, b) =>

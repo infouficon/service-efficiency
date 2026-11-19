@@ -369,12 +369,12 @@ export function watchModelOf(...texts: (string | null | undefined)[]): string | 
     if (seriesMatch) {
       return `Apple Watch Series ${seriesMatch[1]}`;
     }
-    // SE 2nd Gen / Gen 2
-    if (/(?:Apple\s+)?Watch\s+SE\s*(?:\(?2(?:nd)?(?:\s*gen(?:eration)?)?\)?|\s*\(gen\s*2\))/i.test(text)) {
-      return 'Apple Watch SE (2nd Gen)';
-    }
-    // SE
-    if (/(?:Apple\s+)?Watch\s+SE\b/i.test(text) || /\bApple\s+Watch\s+SE\b/i.test(text)) {
+    // SE (e.g. SE, SE2, SE3, SE 2nd Gen, SE (2026))
+    if (
+      /(?:Apple\s+)?Watch\s+SE\b/i.test(text) ||
+      /\bApple\s+Watch\s+SE\b/i.test(text) ||
+      /\bSE\s*\d*\b/i.test(text)
+    ) {
       return 'Apple Watch SE';
     }
     // Hermès
@@ -686,13 +686,15 @@ export function buildCatalog(rows: WarroomRow[]): {
     // D112: AirPods, Apple TV, HomePod and AirTag leave the accessories for a main-product category of their own
     const line = rule.name === 'Accessories' ? deviceLineOf(subcat, subsubcat, skuName) : null;
     const finalCategory = line?.category ?? rule.name;
-    const finalProductName = line ? clean(line.productName, 191) ?? productName : productName;
+    const watchSeries = finalCategory === 'Watch' ? watchModelOf(...nameTexts) : null;
+    const finalProductName =
+      (line
+        ? clean(line.productName, 191)
+        : watchSeries ?? productName) ?? productName;
     const finalModelName =
       (line
         ? clean(line.modelName, 191)
-        : finalCategory === 'Watch'
-          ? (watchModelOf(...nameTexts) ?? clean(modelNameOf(subsubcat, capacity, finalCategory), 191))
-          : clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
+        : watchSeries ?? clean(modelNameOf(subsubcat, capacity, finalCategory), 191)) ?? productName;
 
     const parsedColor = parseColorField(first(rs, (r) => r.color));
     const watchColor = finalCategory === 'Watch' ? watchColorOf(...nameTexts) : null;

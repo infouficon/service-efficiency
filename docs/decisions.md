@@ -2135,12 +2135,13 @@ Owner instruction via `/grill-me`: "ทำไม watch ที่ถึง sku �
 1. **Root Cause of Granular Watch Models:**
    - In Warroom ERP, `subsubcat` often contains the complete descriptive SKU string (e.g., `Watch Series 12 GPS 42mm Space Grey Aluminium Case Navy Blue SB - S/M`).
    - Previously, only `GPS` and `GPS + Cellular` were stripped in `modelNameOf`, leaving case, band, and size in `modelName`, causing every individual band/case variant to be imported as an isolated `ProductModel`.
-2. **Canonical Series Normalization (`watchModelOf`):**
-   - All Watch SKUs are normalized and merged into canonical series models:
+2. **Canonical Series Normalization (`watchModelOf` / `normalizeWatchModelName`):**
+   - Both `finalProductName` and `finalModelName` in `warroom-sync.service.ts` are mapped to the canonical series name:
      - `Apple Watch Series X` (e.g. Series 12, Series 11, Series 10, S12, S11, etc.)
      - `Apple Watch Ultra` / `Apple Watch Ultra 2`
-     - `Apple Watch SE` / `Apple Watch SE (2nd Gen)`
+     - `Apple Watch SE` (including SE, SE2, SE3, SE (2026))
      - `Apple Watch Hermès`
+   - In `apps/web/src/features/session/catalog.ts`: `modelChoices` for `Watch` normalizes series names and unifies duplicate models sharing the same series into a single model card, pooling all variant SKUs together and eliminating confusing subtitles (e.g. `S12 Alu GPS`, `S12 Alu Ti`).
 3. **Five Standard Watch Specification Attributes:**
    - Watch category attributes are standardized into 5 sequential steps (`Category.attributes` updated via migration `202611190002_merge_watch_models`):
      1. `caseMaterial` (ตัวเรือน): Aluminium, Titanium, Stainless Steel, Ceramic

@@ -219,7 +219,7 @@ test('catalog: Mac variants share one model, with RAM and capacity of their own;
 });
 
 test('iPad specifications: connectivity parsed (Wi-Fi vs Cellular), model name stripped, single merged model (D142)', () => {
-  assert.equal(wr.CATALOG_RULES_VERSION, 8);
+  assert.equal(wr.CATALOG_RULES_VERSION, 9);
   assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi 256GB'), 'Wi-Fi');
   assert.equal(wr.connectivityOf('iPad Air 11 M3 Wi-Fi + Cellular 256GB'), 'Wi-Fi + Cellular');
   assert.equal(wr.connectivityOf('iPad Pro 13 WiFi 1TB'), 'Wi-Fi');
@@ -266,6 +266,85 @@ test('iPad specifications: connectivity parsed (Wi-Fi vs Cellular), model name s
   assert.equal(cell.storage, '256GB');
   assert.equal(wifi.attributes?.storage, '128GB');
   assert.equal(cell.attributes?.storage, '256GB');
+});
+
+test('Watch specifications: canonical series model, case material, color, size, connectivity, band extracted and models merged (D148)', () => {
+  assert.equal(wr.watchModelOf('Watch Series 12 GPS 42mm Space Grey Aluminium Case Navy Blue SB - S/M'), 'Apple Watch Series 12');
+  assert.equal(wr.watchModelOf('Apple Watch S11 46mm GPS'), 'Apple Watch Series 11');
+  assert.equal(wr.watchModelOf('Apple Watch Ultra 2 GPS + Cellular 49mm Titanium Case with Ocean Band - Blue'), 'Apple Watch Ultra 2');
+  assert.equal(wr.watchModelOf('Apple Watch SE GPS 40mm Starlight Aluminium Case Starlight Sport Band - S/M'), 'Apple Watch SE');
+
+  assert.equal(wr.caseMaterialOf('Aluminium Case'), 'Aluminium');
+  assert.equal(wr.caseMaterialOf('Titanium Case'), 'Titanium');
+  assert.equal(wr.caseMaterialOf('Stainless Steel Case'), 'Stainless Steel');
+  assert.equal(wr.caseMaterialOf('Ceramic Case'), 'Ceramic');
+
+  assert.equal(wr.watchColorOf('Space Grey Aluminium Case Navy Blue SB - S/M'), 'Space Grey');
+  assert.equal(wr.watchColorOf('Jet Black Aluminium Case with Black Sport Band - M/L'), 'Jet Black');
+
+  assert.equal(
+    wr.watchBandOf('Watch Series 12 GPS 42mm Space Grey Aluminium Case Navy Blue SB - S/M) · 42mm · GPS'),
+    'Navy Blue SB - S/M',
+  );
+  assert.equal(
+    wr.watchBandOf('Apple Watch Ultra 2 GPS + Cellular 49mm Titanium Case with Ocean Band - Blue'),
+    'Ocean Band - Blue',
+  );
+  assert.equal(
+    wr.watchBandOf('Apple Watch Series 10 GPS 42mm Silver Aluminium Case Denim Sport Band - S/M'),
+    'Denim Sport Band - S/M',
+  );
+  assert.equal(
+    wr.watchBandOf('Apple Watch SE 40mm Starlight Sport Band - S/M'),
+    'Starlight Sport Band - S/M',
+  );
+
+  const row = (partNo, subsub, color) => ({
+    branchCode: 'B',
+    partNo,
+    upc: 'u',
+    productName: `Apple ${partNo} ${subsub}`,
+    cat: 'Watch',
+    subcat: 'Watch Series 12',
+    subsubcat: subsub,
+    capacity: null,
+    color,
+    ready: 1,
+    transfer: 0,
+    snapshotAt: new Date(),
+  });
+
+  const { items } = wr.buildCatalog([
+    row(
+      'MX12-NAVY/A',
+      'Watch Series 12 GPS 42mm Space Grey Aluminium Case Navy Blue SB - S/M) · 42mm · GPS',
+      null,
+    ),
+    row(
+      'MX12-DENIM/A',
+      'Watch Series 12 GPS + Cellular 46mm Silver Aluminium Case with Denim Sport Band - M/L) · 46mm · GPS + Cell',
+      'Silver',
+    ),
+  ]);
+
+  const navy = items.find((i) => i.partNo === 'MX12-NAVY/A');
+  const denim = items.find((i) => i.partNo === 'MX12-DENIM/A');
+
+  assert.equal(navy.modelName, 'Apple Watch Series 12');
+  assert.equal(denim.modelName, 'Apple Watch Series 12');
+  assert.equal(navy.modelName, denim.modelName, 'All Watch Series 12 SKUs share ONE canonical series model');
+
+  assert.equal(navy.attributes?.caseMaterial, 'Aluminium');
+  assert.equal(navy.attributes?.color, 'Space Grey');
+  assert.equal(navy.attributes?.caseSize, '42mm');
+  assert.equal(navy.attributes?.connectivity, 'GPS');
+  assert.equal(navy.attributes?.band, 'Navy Blue SB - S/M');
+
+  assert.equal(denim.attributes?.caseMaterial, 'Aluminium');
+  assert.equal(denim.attributes?.color, 'Silver');
+  assert.equal(denim.attributes?.caseSize, '46mm');
+  assert.equal(denim.attributes?.connectivity, 'GPS + Cellular');
+  assert.equal(denim.attributes?.band, 'Denim Sport Band - M/L');
 });
 
 test('short name drops the "Apple <part>" prefix', () => {

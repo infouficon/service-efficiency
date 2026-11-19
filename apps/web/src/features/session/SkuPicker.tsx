@@ -155,32 +155,11 @@ export function SkuPicker({
         return tokens.every((t) => text.includes(t));
       });
 
-  /** Helper to cascade auto-select single options */
-  const resolveAutoChoices = (
-    skus: CatalogSku[],
-    currentSpecs: CategoryAttributeSpec[],
-    initialValues: Record<string, string>,
-  ): { nextValues: Record<string, string>; remainingSkus: CatalogSku[] } => {
-    const nextValues = { ...initialValues };
-    let candidates = skus;
-    for (const spec of currentSpecs) {
-      const available = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)));
-      if (available.length === 1 && !nextValues[spec.key]) {
-        nextValues[spec.key] = available[0];
-      }
-      const val = nextValues[spec.key];
-      if (val) {
-        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === val);
-      }
-    }
-    return { nextValues, remainingSkus: candidates };
-  };
-
   const pickModel = (choice: ModelChoice) => {
     setModelKey(choice.key);
     setQuery('');
 
-    // Pre-calculate auto choices
+    // Check if there are any applicable specs for this model
     const currentCategoryName = choice.product.category;
     let currentSpecs: CategoryAttributeSpec[] = [];
     if (categorySpecs && categorySpecs.length > 0) {
@@ -195,40 +174,65 @@ export function SkuPicker({
       currentSpecs = [...currentSpecs, { key: 'color', label: 'สี', required: true }];
     }
 
-    const { nextValues, remainingSkus: nextRemaining } = resolveAutoChoices(choice.model.skus, currentSpecs, {});
-    setSelectedValues(nextValues);
+    const hasAnySpecs = currentSpecs.some((spec) => {
+      const available = distinct(choice.model.skus.map((s) => getSkuAttribute(s, spec.key)));
+      return available.length > 0 && !(available.length === 1 && !available[0]);
+    });
 
-    if (nextRemaining.length === 1) {
-      const single = nextRemaining[0];
+    // D147: Even if a spec step has only 1 choice (or model has 1 SKU with specs),
+    // start unselected so staff must click every step manually.
+    if (!hasAnySpecs && choice.model.skus.length === 1) {
+      const single = choice.model.skus[0];
       setSkuId(single.id);
+      setSelectedValues({});
       const pickedObj = { product: choice.product, model: choice.model, sku: single };
       onPick(pickedObj);
       if (!isOutOfStock(single)) {
         onComplete?.(pickedObj);
       }
     } else {
+      setSelectedValues({});
       setSkuId('');
       onPick(null);
     }
   };
 
   const handleStepChange = (specKey: string, value: string) => {
-    const initial: Record<string, string> = {};
+    // Keep values of steps before specKey, and set specKey to value
+    // Any step after specKey is cleared / reset so staff must choose them again
+    const nextValues: Record<string, string> = {};
     for (const s of allSpecs) {
       if (s.key === specKey) {
-        initial[s.key] = value;
+        nextValues[s.key] = value;
         break;
       }
       if (selectedValues[s.key]) {
-        initial[s.key] = selectedValues[s.key];
+        nextValues[s.key] = selectedValues[s.key];
       }
     }
 
-    const { nextValues, remainingSkus: nextRemaining } = resolveAutoChoices(modelSkus, allSpecs, initial);
     setSelectedValues(nextValues);
 
-    if (nextRemaining.length === 1 && chosen) {
-      const single = nextRemaining[0];
+    // Filter candidates based on nextValues and check if all applicable steps are filled
+    let candidates = modelSkus;
+    let allStepsFilled = true;
+
+    for (const spec of allSpecs) {
+      const available = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)));
+      const isApplicable = available.length > 0 && !(available.length === 1 && !available[0]);
+      if (isApplicable) {
+        const val = nextValues[spec.key];
+        if (!val) {
+          allStepsFilled = false;
+          break;
+        }
+        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === val);
+      }
+    }
+
+    // Auto-complete only when all steps have been manually clicked down to 1 resolved SKU
+    if (allStepsFilled && candidates.length === 1 && chosen) {
+      const single = candidates[0];
       setSkuId(single.id);
       const pickedObj = { product: chosen.product, model: chosen.model, sku: single };
       onPick(pickedObj);

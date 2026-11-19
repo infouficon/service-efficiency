@@ -2114,3 +2114,17 @@ Owner instruction via `/grill-me`:
    - «ลูกค้ามาจากช่องทางใด» is placed immediately following «VAT Refund» as single-select option chips in web tone.
    - Displayed in `Summary.tsx` (Review modal) before confirmation, in `StaffWorkspace.tsx` (Queue cards and active strip), and in `SessionLogsWorkspace.tsx` (Excel export columns).
 
+## D147 — Strictly Manual Specification Step Selection in SkuPicker (2026-11-19)
+
+Owner instruction via `/grill-me`: "ตอนเลือกสเปกสินค้า ต่อให้มีตัวเลือกเดียวก็ต้องให้กดเองก่อนไม่ auto เลือกเอง". Amends D79, D142, and D144.
+
+1. **No Auto-Select on Specs.**
+   - In `SkuPicker.tsx`, `resolveAutoChoices` is completely removed.
+   - When staff select a model (`pickModel`), all specification steps start in an unselected state (`selectedValues: {}`), and `skuId` is reset to `''`.
+   - Even if a specification step has only 1 option available (or a model has only 1 SKU with specs), staff must explicitly tap/click each specification step.
+2. **Cascade Reset on Prior Step Changes.**
+   - When staff change or re-select an earlier specification step (`handleStepChange`), all subsequent steps are reset to empty and hidden until the previous step is chosen.
+   - Subsequent steps do not auto-select even if only 1 choice remains after filtering.
+3. **Auto-Complete on Final Pick.**
+   - Only when all applicable specification steps have been explicitly clicked and chosen down to a single resolved SKU, the item is automatically added to the order (`onComplete`) and the picker modal closes.
+

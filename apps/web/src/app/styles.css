@@ -1817,6 +1817,14 @@ footer {
     justify-content: center;
   }
 
+  .mobile-sticky-summary {
+    transition: opacity 120ms ease, transform 120ms ease;
+  }
+  .mobile-sticky-summary.interactive:active {
+    opacity: 0.7;
+    transform: scale(0.98);
+  }
+
   /* MODAL AS BOTTOM SHEET */
   .modal-backdrop {
     padding: 0 !important;

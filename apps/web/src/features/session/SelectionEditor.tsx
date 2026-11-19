@@ -14,6 +14,7 @@ import {
   CreditCard,
   Pencil,
   Plus,
+  ShoppingBag,
   X,
 } from 'lucide-react';
 import { CategoryIcon } from '../../components/CategoryIcon';
@@ -183,6 +184,7 @@ export function SelectionEditor({
   const [category, setCategory] = useState<string>('');
   const [picked, setPicked] = useState<Picked | null>(null);
   const [pickerRun, setPickerRun] = useState(0);
+  const [cartModalOpen, setCartModalOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -1232,12 +1234,27 @@ export function SelectionEditor({
       {/* Mobile Sticky Action Bar */}
       <div className="mobile-sticky-bar">
         <div
+          role={value.items.length > 0 ? 'button' : undefined}
+          tabIndex={value.items.length > 0 ? 0 : undefined}
+          aria-label={value.items.length > 0 ? 'ดูรายการสินค้าที่เลือก' : undefined}
+          className={`mobile-sticky-summary${value.items.length > 0 ? ' interactive' : ''}`}
+          onClick={() => {
+            if (value.items.length > 0) setCartModalOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (value.items.length > 0 && (e.key === 'Enter' || e.key === ' ')) {
+              e.preventDefault();
+              setCartModalOpen(true);
+            }
+          }}
           style={{
             flex: 1,
             minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
+            cursor: value.items.length > 0 ? 'pointer' : 'default',
+            userSelect: 'none',
           }}
         >
           <strong
@@ -1272,6 +1289,165 @@ export function SelectionEditor({
           </span>
         </Button>
       </div>
+
+      {/* Cart Summary Modal */}
+      {cartModalOpen && (() => {
+        const totalMainQty = value.items.reduce((sum, item) => sum + item.quantity, 0);
+        const accEntries = Object.entries(value.accessories).filter(([, qty]) => Number(qty) > 0);
+        const totalAccQty = accEntries.reduce((sum, [, qty]) => sum + (Number(qty) || 0), 0);
+
+        return (
+          <Modal
+            isOpen={true}
+            onClose={() => setCartModalOpen(false)}
+            title={
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <ShoppingBag size={20} color="#0abab5" />
+                รายการสินค้าที่เลือก
+              </span>
+            }
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {/* Summary count banner */}
+              <div
+                style={{
+                  background: 'var(--primary-subtle, #f0fdf4)',
+                  border: '1px solid var(--primary-border, #bbf7d0)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  fontSize: '13px',
+                  color: 'var(--primary-dark, #166534)',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '6px',
+                }}
+              >
+                <span>
+                  รวมสินค้าหลัก <strong>{value.items.length}</strong> รายการ
+                </span>
+                <span>
+                  อุปกรณ์เสริม <strong>{accEntries.length}</strong> รายการ
+                </span>
+              </div>
+
+              {/* Main Items Section */}
+              <div>
+                <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: 'var(--text-primary)' }}>
+                  สินค้าหลัก ({value.items.length})
+                </h4>
+                <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: '8px' }}>
+                  {value.items.map((item, idx) => (
+                    <li
+                      key={item.id ?? `${item.product.id}-${idx}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '12px',
+                        padding: '10px 12px',
+                        background: 'var(--bg-surface)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: '40px',
+                          height: '40px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          background: 'var(--bg-app)',
+                          borderRadius: '6px',
+                          flexShrink: 0,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        <CategoryPicture cat={item.product.category} size={32} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            fontSize: '14px',
+                            color: 'var(--text-primary)',
+                            lineHeight: 1.3,
+                            wordBreak: 'break-word',
+                          }}
+                        >
+                          {itemName(item)}
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            marginTop: '2px',
+                            fontSize: '12px',
+                            color: 'var(--text-muted)',
+                            fontFamily: 'ui-monospace, monospace',
+                          }}
+                        >
+                          <span>{item.product.sku || '—'}</span>
+                          {item.product.category && (
+                            <span style={{ color: '#0abab5', fontWeight: 500 }}>
+                              · {item.product.category}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          flexShrink: 0,
+                          fontSize: '14px',
+                          fontWeight: 700,
+                          color: '#0abab5',
+                          padding: '4px 10px',
+                          background: 'rgba(10, 186, 181, 0.1)',
+                          borderRadius: '16px',
+                        }}
+                      >
+                        × {item.quantity}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Accessories Section */}
+              <div>
+                <h4 style={{ margin: '0 0 10px', fontSize: '14px', color: 'var(--text-primary)' }}>
+                  อุปกรณ์เสริม ({accEntries.length})
+                </h4>
+                {accEntries.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                    {accEntries.map(([name, qty]) => (
+                      <span key={name} className="accessory-chip-pill">
+                        <strong>{name}</strong>
+                        <span style={{ color: '#0abab5', fontWeight: 700 }}>
+                          × {qty}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted" style={{ margin: 0, fontSize: '13px' }}>
+                    ไม่มีอุปกรณ์เสริม
+                  </p>
+                )}
+              </div>
+
+              {/* Close Button */}
+              <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+                <Button variant="secondary" onClick={() => setCartModalOpen(false)} style={{ minWidth: '80px' }}>
+                  ปิด
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
     </>
   );
 }

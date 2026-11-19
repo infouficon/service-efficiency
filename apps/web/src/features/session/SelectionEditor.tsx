@@ -1174,32 +1174,14 @@ export function SelectionEditor({
         <div
           role="radiogroup"
           aria-label="ลูกค้ามาจากช่องทางใด"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-            gap: '8px',
-            marginTop: '6px',
-          }}
+          className="customer-source-grid"
         >
           {CUSTOMER_SOURCE_OPTIONS.map((opt) => {
             const selected = value.customerSource === opt.value;
             return (
               <label
                 key={opt.value}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  padding: '0 14px',
-                  marginBottom: '0px',
-                  border: `1.5px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
-                  borderRadius: '8px',
-                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
-                  cursor: 'pointer',
-                  transition:
-                    'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
-                  userSelect: 'none',
-                }}
+                className={`customer-source-card ${selected ? 'selected' : ''}`}
               >
                 <input
                   type="radio"
@@ -1221,9 +1203,7 @@ export function SelectionEditor({
                     fontSize: '13.5px',
                     fontWeight: selected ? 600 : 500,
                     color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    lineHeight: 1.35,
                   }}
                 >
                   {opt.label}
@@ -1236,21 +1216,6 @@ export function SelectionEditor({
       {value.items.length > 0 && !paymentsValid && (
         <Notice error>
           กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
-        </Notice>
-      )}
-      {value.items.length > 0 && !receiptValid && (
-        <Notice error>
-          กรุณาเลือกประเภทใบเสร็จก่อนตรวจสอบรายการ
-        </Notice>
-      )}
-      {value.items.length > 0 && !discountValid && (
-        <Notice error>
-          กรุณาเลือกประเภทส่วนลดก่อนตรวจสอบรายการ
-        </Notice>
-      )}
-      {value.items.length > 0 && !customerSourceValid && (
-        <Notice error>
-          กรุณาเลือกว่าลูกค้ามาจากช่องทางใดก่อนตรวจสอบรายการ
         </Notice>
       )}
       <div className="actions">

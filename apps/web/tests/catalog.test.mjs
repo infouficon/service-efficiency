@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { modelChoices } from '../src/features/session/catalog.ts';
+import { getMacType, MAC_TYPES, modelChoices } from '../src/features/session/catalog.ts';
 
 const model = (name, upcs, pinnedAt = null) => ({
   id: name,
@@ -57,4 +57,23 @@ test('Watch modelChoices: models sharing series name are merged into a single ca
   assert.equal(s12.sub, undefined, 'no confusing subtitle on merged Series 12 card');
   assert.equal(se.sub, undefined, 'no confusing subtitle on SE card');
   assert.equal(s12.model.skus.length, 4, 'all 4 S12 variant SKUs are combined into one model');
+});
+
+test('Mac family classification: iMac, Mac Studio, Mac mini, MacBook (D149)', () => {
+  assert.deepEqual(MAC_TYPES, ['iMac', 'Mac Studio', 'Mac mini', 'MacBook']);
+
+  assert.equal(getMacType('iMac 24 M4'), 'iMac');
+  assert.equal(getMacType('iMac (24-inch, M3)'), 'iMac');
+
+  assert.equal(getMacType('Mac Studio M2 Max'), 'Mac Studio');
+  assert.equal(getMacType('Mac Studio M2 Ultra'), 'Mac Studio');
+
+  assert.equal(getMacType('Mac mini M4'), 'Mac mini');
+  assert.equal(getMacType('Mac mini M4 Pro'), 'Mac mini');
+
+  assert.equal(getMacType('MacBook Air 13 M3'), 'MacBook');
+  assert.equal(getMacType('MacBook Air 15 M3'), 'MacBook');
+  assert.equal(getMacType('MacBook Pro 14 M4'), 'MacBook');
+  assert.equal(getMacType('MacBook Pro 16 M4 Pro'), 'MacBook');
+  assert.equal(getMacType('MacBook Neo A18 Pro'), 'MacBook');
 });

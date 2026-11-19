@@ -2,9 +2,11 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { distinct } from './workflow';
 import {
+  getMacType,
   getSkuAttribute,
   isOutOfStock,
   isUnlimited,
+  MAC_TYPES,
   type CatalogSku,
   type ModelChoice,
   type Picked,
@@ -63,6 +65,7 @@ export function SkuPicker({
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [skuId, setSkuId] = useState('');
   const [query, setQuery] = useState('');
+  const [selectedMacType, setSelectedMacType] = useState<string>('');
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
@@ -146,11 +149,24 @@ export function SkuPicker({
     return { steps: computedSteps, remainingSkus: candidates };
   }, [modelSkus, allSpecs, selectedValues]);
 
+  const isMac = useMemo(() => {
+    return (
+      (chosen?.product.category?.toLowerCase() === 'mac') ||
+      models.some((m) => m.product.category?.toLowerCase() === 'mac')
+    );
+  }, [chosen, models]);
+
+  const macFilteredModels = useMemo(() => {
+    if (!isMac) return models;
+    if (!selectedMacType) return [];
+    return models.filter((m) => getMacType(m.model.name) === selectedMacType);
+  }, [isMac, models, selectedMacType]);
+
   // Model search tokens
   const tokens = searchable(query).split(/\s+/).filter(Boolean);
   const shown = tokens.length === 0
-    ? models
-    : models.filter((m) => {
+    ? macFilteredModels
+    : macFilteredModels.filter((m) => {
         const text = searchable(`${m.model.name} ${m.product.name}`);
         return tokens.every((t) => text.includes(t));
       });
@@ -252,14 +268,46 @@ export function SkuPicker({
       {/* 1. MODEL SELECTION VIEW (when no model selected yet) */}
       {!chosen ? (
         <div className="picker-field">
+          {isMac && (
+            <div style={{ marginBottom: '14px' }}>
+              <span className="picker-label" style={{ marginBottom: '8px' }}>
+                เลือกประเภท Mac <span className="required">*</span>
+              </span>
+              <div className="mac-type-chips" role="group" aria-label="ประเภท Mac">
+                {MAC_TYPES.map((type) => {
+                  const isSelected = selectedMacType === type;
+                  const count = models.filter((m) => getMacType(m.model.name) === type).length;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`mac-type-chip${isSelected ? ' selected' : ''}`}
+                      aria-pressed={isSelected}
+                      disabled={count === 0}
+                      onClick={() => {
+                        setSelectedMacType(type);
+                        setQuery('');
+                      }}
+                    >
+                      <strong>{type}</strong>
+                      {count > 0 && <span className="mac-type-count">{count}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <span className="picker-label" id={labelId}>
             เลือกรุ่นสินค้า <span className="required">*</span>
           </span>
           {models.length === 0 ? (
             <p className="muted">ไม่มีรุ่นสินค้าในหมวดนี้</p>
+          ) : isMac && !selectedMacType ? (
+            <p className="muted picker-hint">เลือกประเภท Mac ด้านบนก่อน</p>
           ) : (
             <>
-              {models.length > 8 && (
+              {macFilteredModels.length > 8 && (
                 <label className="model-search">
                   <Search size={16} aria-hidden="true" />
                   <input

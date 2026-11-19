@@ -11,6 +11,19 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
   return '';
 }
 
+/** D149: Canonical Mac family classification types */
+export const MAC_TYPES = ['iMac', 'Mac Studio', 'Mac mini', 'MacBook'] as const;
+export type MacType = (typeof MAC_TYPES)[number];
+
+export function getMacType(modelName: string): MacType | null {
+  const name = modelName.trim();
+  if (/\bimac\b/i.test(name)) return 'iMac';
+  if (/\bmac\s*studio\b/i.test(name)) return 'Mac Studio';
+  if (/\bmac\s*mini\b/i.test(name)) return 'Mac mini';
+  if (/\bmacbook\b/i.test(name)) return 'MacBook';
+  return null;
+}
+
 /** A SKU as the branch product list returns it (D41, D52, D59). */
 export interface CatalogSku {
   id: string;

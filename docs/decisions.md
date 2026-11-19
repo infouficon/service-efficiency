@@ -2152,4 +2152,24 @@ Owner instruction via `/grill-me`: "ทำไม watch ที่ถึง sku �
 4. **Sync Version Bump:**
    - `CATALOG_RULES_VERSION` bumped from 8 to 9 in `apps/api/src/warroom/warroom-sync.service.ts` so the sync recalculates all Watch catalog models and attributes automatically.
 
+## D149 — Mac Family Classification (iMac, Mac Studio, Mac mini, MacBook) (2026-11-19)
+
+Owner instruction via `/grill-me`: "ส่วนของ Mac กดให้ให้เลือกประเภทก่อน เป็น iMac, Mac Studio, Mac mini, MacBook".
+
+1. **Mac Classification into 4 Families:**
+   - When Category "Mac" is chosen, staff must first pick one of the four Mac family types:
+     - `iMac`: matches `/\bimac\b/i`
+     - `Mac Studio`: matches `/\bmac\s*studio\b/i`
+     - `Mac mini`: matches `/\bmac\s*mini\b/i`
+     - `MacBook`: matches `/\bmacbook\b/i` (includes both MacBook Air and MacBook Pro models)
+2. **Strictly Manual Initial Selection:**
+   - Following D147, when staff click Category "Mac", no Mac family type is pre-selected by default.
+   - The UI presents 4 horizontal filter chips (`.mac-type-chips`) showing each family type and its available model count (or disabled if 0 models in stock).
+   - Staff must explicitly click one of the four family types before the model list is displayed.
+3. **Responsive UI & Re-selection:**
+   - Renders 4 columns on desktop/tablet, wrapping to 2x2 grid on mobile screens (`max-width: 640px`).
+   - Staff can freely click any of the 4 chips to switch families.
+   - When staff click "เปลี่ยนรุ่น" (Change Model) from within the configurator, the selected family type is preserved for seamless navigation between models of the same family, with the option to click another family chip.
+
+
 

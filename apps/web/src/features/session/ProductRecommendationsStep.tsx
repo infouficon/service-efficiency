@@ -84,13 +84,29 @@ export function ProductRecommendationsStep({
     const map: Record<string, RecommendationVariant> = {};
     for (const group of mainProductGroups) {
       for (const item of group.recommendations) {
-        if (item.variants.length > 0) {
+        const savedRec = session.recommendationRecords?.find(
+          (r) => r.id === item.id,
+        );
+        const matchedVariant = savedRec
+          ? item.variants.find((v) => v.skuCode === savedRec.skuCode)
+          : null;
+        if (matchedVariant) {
+          map[item.id] = matchedVariant;
+        } else if (item.variants.length > 0) {
           map[item.id] = item.variants[0];
         }
       }
     }
     for (const item of additionalItems) {
-      if (item.variants.length > 0) {
+      const savedRec = session.recommendationRecords?.find(
+        (r) => r.id === item.id,
+      );
+      const matchedVariant = savedRec
+        ? item.variants.find((v) => v.skuCode === savedRec.skuCode)
+        : null;
+      if (matchedVariant) {
+        map[item.id] = matchedVariant;
+      } else if (item.variants.length > 0) {
         map[item.id] = item.variants[0];
       }
     }
@@ -105,12 +121,50 @@ export function ProductRecommendationsStep({
   // State: tracking recommendation & interest status for Section 1
   const [mainItemStatus, setMainItemStatus] = useState<
     Record<string, { recommended: boolean; interested: boolean }>
-  >({});
+  >(() => {
+    const initial: Record<
+      string,
+      { recommended: boolean; interested: boolean }
+    > = {};
+    if (session.recommendationRecords) {
+      for (const rec of session.recommendationRecords) {
+        if (rec.section === 'MAIN') {
+          initial[rec.id] = {
+            recommended:
+              rec.status === 'RECOMMENDED' || rec.status === 'INTERESTED',
+            interested: rec.status === 'INTERESTED',
+          };
+        }
+      }
+    }
+    return initial;
+  });
 
-  // State: tracking status for Section 2 items
-  const [additionalItemStatus, setAdditionalItemStatus] = useState<
-    Record<string, AdditionalItemStatus>
-  >({});
+  // State: tracking status for Section 2 items ({ recommended: boolean; status: AdditionalItemStatus })
+  const [additionalItemState, setAdditionalItemState] = useState<
+    Record<string, { recommended: boolean; status: AdditionalItemStatus }>
+  >(() => {
+    const initial: Record<
+      string,
+      { recommended: boolean; status: AdditionalItemStatus }
+    > = {};
+    if (session.recommendationRecords) {
+      for (const rec of session.recommendationRecords) {
+        if (rec.section === 'ADDITIONAL') {
+          const isRec =
+            rec.status === 'RECOMMENDED' ||
+            rec.status === 'OWNED' ||
+            rec.status === 'OLD_MODEL' ||
+            rec.status === 'INTERESTED';
+          initial[rec.id] = {
+            recommended: isRec,
+            status: rec.status,
+          };
+        }
+      }
+    }
+    return initial;
+  });
 
   // Toggle "ดูตัวเลือกอื่น" dropdown
   const toggleVariantDropdown = (itemId: string) => {
@@ -167,15 +221,42 @@ export function ProductRecommendationsStep({
     });
   };
 
-  // Set status for additional item
+  // Set status for additional item (OWNED, OLD_MODEL, INTERESTED)
   const handleSetAdditionalStatus = (
     itemId: string,
-    status: AdditionalItemStatus,
+    status: 'OWNED' | 'OLD_MODEL' | 'INTERESTED',
   ) => {
-    setAdditionalItemStatus((prev) => ({
-      ...prev,
-      [itemId]: prev[itemId] === status ? 'NONE' : status,
-    }));
+    setAdditionalItemState((prev) => {
+      const current = prev[itemId] || { recommended: false, status: 'NONE' };
+      const nextStatus = current.status === status ? 'NONE' : status;
+      // When OWNED, OLD_MODEL, or INTERESTED is clicked, recommended automatically becomes true!
+      const nextRecommended =
+        nextStatus !== 'NONE' ? true : current.recommended;
+      return {
+        ...prev,
+        [itemId]: {
+          recommended: nextRecommended,
+          status: nextStatus,
+        },
+      };
+    });
+  };
+
+  // Toggle "แนะนำ" for additional item
+  const handleToggleAdditionalRecommend = (itemId: string) => {
+    setAdditionalItemState((prev) => {
+      const current = prev[itemId] || { recommended: false, status: 'NONE' };
+      const nextRecommended = !current.recommended;
+      // If un-recommending, clear customer status as well
+      const nextStatus = nextRecommended ? current.status : 'NONE';
+      return {
+        ...prev,
+        [itemId]: {
+          recommended: nextRecommended,
+          status: nextStatus,
+        },
+      };
+    });
   };
 
   // Handle proceed to next step
@@ -222,12 +303,28 @@ export function ProductRecommendationsStep({
 
     // Process Section 2 items
     for (const item of additionalItems) {
-      const status = additionalItemStatus[item.id] || 'NONE';
+      const current = additionalItemState[item.id] || {
+        recommended: false,
+        status: 'NONE',
+      };
       const activeVariant = selectedVariants[item.id];
       const activeSku = activeVariant?.skuCode || item.skuCode;
       const activeName = activeVariant?.name || item.name;
 
-      if (status === 'INTERESTED' && item.accessoryCategory) {
+      const isRec =
+        current.recommended ||
+        current.status === 'OWNED' ||
+        current.status === 'OLD_MODEL' ||
+        current.status === 'INTERESTED';
+
+      const finalStatus: AdditionalItemStatus =
+        current.status !== 'NONE'
+          ? current.status
+          : isRec
+            ? 'RECOMMENDED'
+            : 'NONE';
+
+      if (finalStatus === 'INTERESTED' && item.accessoryCategory) {
         interestedAcc[item.accessoryCategory] = '1';
       }
       records.push({
@@ -235,7 +332,7 @@ export function ProductRecommendationsStep({
         name: activeName,
         skuCode: activeSku,
         section: 'ADDITIONAL',
-        status,
+        status: finalStatus,
       });
     }
 
@@ -248,22 +345,30 @@ export function ProductRecommendationsStep({
     for (const val of Object.values(mainItemStatus)) {
       if (val.recommended) count++;
     }
-    for (const val of Object.values(additionalItemStatus)) {
-      if (val === 'RECOMMENDED' || val === 'INTERESTED') count++;
+    for (const val of Object.values(additionalItemState)) {
+      if (
+        val.recommended ||
+        val.status === 'RECOMMENDED' ||
+        val.status === 'OWNED' ||
+        val.status === 'OLD_MODEL' ||
+        val.status === 'INTERESTED'
+      ) {
+        count++;
+      }
     }
     return count;
-  }, [mainItemStatus, additionalItemStatus]);
+  }, [mainItemStatus, additionalItemState]);
 
   const interestedCount = useMemo(() => {
     let count = 0;
     for (const val of Object.values(mainItemStatus)) {
       if (val.interested) count++;
     }
-    for (const val of Object.values(additionalItemStatus)) {
-      if (val === 'INTERESTED') count++;
+    for (const val of Object.values(additionalItemState)) {
+      if (val.status === 'INTERESTED') count++;
     }
     return count;
-  }, [mainItemStatus, additionalItemStatus]);
+  }, [mainItemStatus, additionalItemState]);
 
   return (
     <div
@@ -317,7 +422,7 @@ export function ProductRecommendationsStep({
               color: '#64748b',
             }}
           >
-            แนะนำอุปกรณ์เสริมที่เข้าคู่กันสำหรับสินค้าหลักแต่ละชิ้นที่ลูกค้าเลือก (กดที่ส่วนหัวเพื่อย่อ/ขยายได้)
+            แนะนำอุปกรณ์เสริมที่เข้าคู่กันสำหรับสินค้าหลักแต่ละชิ้นที่ลูกค้าเลือก
           </p>
         </div>
 
@@ -777,7 +882,16 @@ export function ProductRecommendationsStep({
           {additionalItems.map((item, idx) => {
             const activeVariant = selectedVariants[item.id];
             const isExpanded = Boolean(expandedVariants[item.id]);
-            const currentStatus = additionalItemStatus[item.id] || 'NONE';
+            const current = additionalItemState[item.id] || {
+              recommended: false,
+              status: 'NONE',
+            };
+            const currentStatus = current.status;
+            const isRecommended =
+              current.recommended ||
+              currentStatus === 'OWNED' ||
+              currentStatus === 'OLD_MODEL' ||
+              currentStatus === 'INTERESTED';
             const displayName = activeVariant?.name || item.name;
             const displayPrice = activeVariant?.price ?? item.price;
             const displaySku = activeVariant?.skuCode || item.skuCode;
@@ -789,14 +903,14 @@ export function ProductRecommendationsStep({
                   background:
                     currentStatus === 'INTERESTED'
                       ? '#f0fdfa'
-                      : currentStatus !== 'NONE'
+                      : currentStatus !== 'NONE' || isRecommended
                         ? '#f8fafc'
                         : '#ffffff',
                   border:
                     currentStatus === 'INTERESTED'
                       ? '2px solid #0abab5'
-                      : currentStatus !== 'NONE'
-                        ? '1.5px solid #cbd5e1'
+                      : currentStatus !== 'NONE' || isRecommended
+                        ? '1.5px solid #0abab5'
                         : '1px solid #e2e8f0',
                   borderRadius: '12px',
                   padding: '16px 18px',
@@ -1047,21 +1161,21 @@ export function ProductRecommendationsStep({
                       <button
                         type="button"
                         onClick={() =>
-                          handleSetAdditionalStatus(item.id, 'RECOMMENDED')
+                          handleToggleAdditionalRecommend(item.id)
                         }
                         style={{
                           padding: '6px 12px',
                           borderRadius: '8px',
                           border:
-                            currentStatus === 'RECOMMENDED'
+                            isRecommended
                               ? '1.5px solid #0abab5'
                               : '1px solid #cbd5e1',
                           background:
-                            currentStatus === 'RECOMMENDED'
+                            isRecommended
                               ? '#f0fdfa'
                               : '#ffffff',
                           color:
-                            currentStatus === 'RECOMMENDED'
+                            isRecommended
                               ? '#0f766e'
                               : '#475569',
                           fontWeight: 600,
@@ -1073,9 +1187,9 @@ export function ProductRecommendationsStep({
                           transition: 'all 0.15s ease',
                         }}
                       >
-                        {currentStatus === 'RECOMMENDED' && <Check size={13} />}
+                        {isRecommended && <Check size={13} />}
                         <span>
-                          {currentStatus === 'RECOMMENDED'
+                          {isRecommended
                             ? 'แนะนำแล้ว'
                             : 'แนะนำ'}
                         </span>

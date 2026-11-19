@@ -1110,6 +1110,9 @@ legend {
   font-weight: 700;
   margin-bottom: 12px;
 }
+.required {
+  color: #ef4444;
+}
 .choices {
   display: flex;
   flex-wrap: wrap;
@@ -4509,9 +4512,6 @@ input[aria-invalid='true'] {
   display: flex;
   flex-direction: column;
 }
-.picker-label .required {
-  color: #ef4444;
-}
 .picker-sku-summary {
   margin-top: 4px;
   margin-bottom: 16px;
@@ -6047,4 +6047,3 @@ input[aria-invalid='true'] {
 .sidebar.sidebar-collapsed ~ main .customer-source-card {
   padding: 0 16px;
 }
-

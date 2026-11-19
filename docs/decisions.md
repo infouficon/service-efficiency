@@ -2488,7 +2488,7 @@ Decisions:
    - Replaced static checkmark on selected model card with a circular toggle button containing `ChevronUp` (`#0abab5` background).
    - Tapping the icon or card header collapses the model card and clears the current draft selection (`settle(null, '', '', false)`), returning the list to an unselected state so staff can choose another model.
 2. **Mandatory Payment Selection (`SelectionEditor.tsx`):**
-   - Updated Payment fieldset legend to `Payment (เลือกอย่างน้อย 1 ช่องทาง) *`.
+   - Updated Payment fieldset legend to `Payment *`.
    - `reviewDisabled` enforces `(value.payments ?? []).length > 0`.
 3. **Mobile Sticky Bottom Navigation (Steps 2 & 3 in `StaffWorkspace.tsx`):**
    - Step 2 (Apple devices): Fixed bottom bar (`.mobile-sticky-bar`) renders the "ถัดไป" button on mobile (`@media (max-width: 640px)`).

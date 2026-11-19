@@ -15,6 +15,7 @@ import {
   Tag,
   RefreshCw,
   ArrowRight,
+  Sparkles,
 } from 'lucide-react';
 import { Button, Notice, Panel } from '../../components/ui';
 import { PhoneInput } from '../../components/PhoneInput';
@@ -529,9 +530,17 @@ export function StaffWorkspace({
           currentPhone,
           activeSession.currentAppleDevices,
         );
-        onUpdateSession({ ...updated, phone: currentPhone });
+        onUpdateSession({
+          ...updated,
+          phone: currentPhone,
+          recommendationRecords: activeSession.recommendationRecords,
+        });
       } else {
-        onUpdateSession({ ...activeSession, phone: currentPhone });
+        onUpdateSession({
+          ...activeSession,
+          phone: currentPhone,
+          recommendationRecords: activeSession.recommendationRecords,
+        });
       }
     } catch (err) {
       setError(
@@ -1505,118 +1514,6 @@ export function StaffWorkspace({
                               gap: '1.25rem',
                             }}
                           >
-                            {/* Customer interested products from Step 1 */}
-                            <div
-                              style={{
-                                background: '#f8fafc',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '12px',
-                                padding: '16px',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  marginBottom: '12px',
-                                }}
-                              >
-                                <strong
-                                  style={{ fontSize: '14px', color: '#0f172a' }}
-                                >
-                                  รายการสินค้าที่สนใจ (
-                                  {activeSession.selection?.items?.length ?? 0}{' '}
-                                  รายการ)
-                                </strong>
-                              </div>
-                              {!activeSession.selection?.items ||
-                              activeSession.selection.items.length === 0 ? (
-                                <p className="muted" style={{ margin: 0 }}>
-                                  ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก
-                                </p>
-                              ) : (
-                                <div
-                                  style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '8px',
-                                  }}
-                                >
-                                  {activeSession.selection.items.map((item) => {
-                                    const outOfStock = isOutOfStock(
-                                      item.product,
-                                    );
-                                    return (
-                                      <div
-                                        key={item.product.id}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          padding: '8px 12px',
-                                          background: '#ffffff',
-                                          border: '1px solid #edf2f7',
-                                          borderRadius: '8px',
-                                        }}
-                                      >
-                                        <div
-                                          style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '10px',
-                                          }}
-                                        >
-                                          <CategoryPicture
-                                            cat={item.product.category}
-                                            size={32}
-                                          />
-                                          <div>
-                                            <div
-                                              style={{
-                                                fontWeight: 600,
-                                                fontSize: '13px',
-                                                color: '#1e293b',
-                                              }}
-                                            >
-                                              {itemName(item)}
-                                            </div>
-                                            <small style={{ color: '#64748b' }}>
-                                              {item.product.sku}
-                                            </small>
-                                          </div>
-                                        </div>
-                                        <div>
-                                          {outOfStock ? (
-                                            <span
-                                              className="stock-badge stock-badge-out"
-                                              style={{
-                                                fontSize: '11px',
-                                                padding: '3px 8px',
-                                                borderRadius: '4px',
-                                              }}
-                                            >
-                                              สินค้าหมด (สนใจ)
-                                            </span>
-                                          ) : (
-                                            <span
-                                              className="stock-badge stock-badge-in"
-                                              style={{
-                                                fontSize: '11px',
-                                                padding: '3px 8px',
-                                                borderRadius: '4px',
-                                              }}
-                                            >
-                                              มีสินค้า
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
 
                             {/* Apple devices survey */}
                             <div
@@ -1627,7 +1524,7 @@ export function StaffWorkspace({
                                 padding: '16px',
                               }}
                             >
-                              <label
+                              {/* <label
                                 style={{
                                   display: 'block',
                                   fontWeight: 600,
@@ -1638,7 +1535,7 @@ export function StaffWorkspace({
                               >
                                 ลูกค้าใช้สินค้า Apple อะไรอยู่บ้าง?{' '}
                                 <span style={{ color: '#dc2626' }}>*</span>
-                              </label>
+                              </label> */}
                               <p
                                 style={{
                                   margin: '0 0 14px',
@@ -1993,118 +1890,350 @@ export function StaffWorkspace({
                                 )}
                             </div>
 
-                            {/* Customer interested products from Step 1 */}
-                            <div
-                              style={{
-                                background: '#f8fafc',
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '12px',
-                                padding: '16px',
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'space-between',
-                                  marginBottom: '12px',
-                                }}
-                              >
-                                <strong
-                                  style={{ fontSize: '14px', color: '#0f172a' }}
-                                >
-                                  รายการสินค้าที่สนใจ (
-                                  {activeSession.selection?.items?.length ?? 0}{' '}
-                                  รายการ)
-                                </strong>
-                              </div>
-                              {!activeSession.selection?.items ||
-                              activeSession.selection.items.length === 0 ? (
-                                <p className="muted" style={{ margin: 0 }}>
-                                  ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรก
-                                </p>
-                              ) : (
+                            {/* Customer interested products from Step 1 and Step 3 */}
+                            {(() => {
+                              const mainItems =
+                                activeSession.selection?.items || [];
+                              const interestedRecs = (
+                                activeSession.recommendationRecords || []
+                              ).filter((r) => r.status === 'INTERESTED');
+                              const fallbackAccEntries =
+                                interestedRecs.length === 0 &&
+                                activeSession.selection?.accessories
+                                  ? Object.entries(
+                                      activeSession.selection.accessories,
+                                    ).filter(([_, qty]) => Number(qty) > 0)
+                                  : [];
+                              const totalCount =
+                                mainItems.length +
+                                (interestedRecs.length > 0
+                                  ? interestedRecs.length
+                                  : fallbackAccEntries.length);
+
+                              return (
                                 <div
                                   style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: '8px',
+                                    background: '#f8fafc',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '12px',
+                                    padding: '16px',
                                   }}
                                 >
-                                  {activeSession.selection.items.map((item) => {
-                                    const outOfStock = isOutOfStock(
-                                      item.product,
-                                    );
-                                    return (
-                                      <div
-                                        key={item.product.id}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          padding: '8px 12px',
-                                          background: '#ffffff',
-                                          border: '1px solid #edf2f7',
-                                          borderRadius: '8px',
-                                        }}
-                                      >
+                                  <div
+                                    style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'space-between',
+                                      marginBottom: '12px',
+                                    }}
+                                  >
+                                    <strong
+                                      style={{
+                                        fontSize: '14px',
+                                        color: '#0f172a',
+                                      }}
+                                    >
+                                      รายการสินค้าที่สนใจ ({totalCount} รายการ)
+                                    </strong>
+                                  </div>
+                                  {totalCount === 0 ? (
+                                    <p className="muted" style={{ margin: 0 }}>
+                                      ไม่มีสินค้าที่ระบุไว้ในขั้นตอนแรกหรือขั้นตอนแนะนำ
+                                    </p>
+                                  ) : (
+                                    <div
+                                      style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: '8px',
+                                      }}
+                                    >
+                                      {/* Main products from Step 1 */}
+                                      {mainItems.map((item) => {
+                                        const outOfStock = isOutOfStock(
+                                          item.product,
+                                        );
+                                        return (
+                                          <div
+                                            key={item.product.id}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'space-between',
+                                              padding: '8px 12px',
+                                              background: '#ffffff',
+                                              border: '1px solid #edf2f7',
+                                              borderRadius: '8px',
+                                            }}
+                                          >
+                                            <div
+                                              style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '10px',
+                                              }}
+                                            >
+                                              <CategoryPicture
+                                                cat={item.product.category}
+                                                size={32}
+                                              />
+                                              <div>
+                                                <div
+                                                  style={{
+                                                    fontWeight: 600,
+                                                    fontSize: '13px',
+                                                    color: '#1e293b',
+                                                  }}
+                                                >
+                                                  {itemName(item)}
+                                                </div>
+                                                <div
+                                                  style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    marginTop: '2px',
+                                                  }}
+                                                >
+                                                  {item.product.sku && (
+                                                    <small
+                                                      style={{
+                                                        color: '#64748b',
+                                                      }}
+                                                    >
+                                                      {item.product.sku}
+                                                    </small>
+                                                  )}
+                                                  <span
+                                                    style={{
+                                                      fontSize: '10.5px',
+                                                      color: '#475569',
+                                                      background: '#f1f5f9',
+                                                      padding: '1px 6px',
+                                                      borderRadius: '4px',
+                                                      fontWeight: 500,
+                                                    }}
+                                                  >
+                                                    สินค้าหลัก
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div>
+                                              {outOfStock ? (
+                                                <span
+                                                  className="stock-badge stock-badge-out"
+                                                  style={{
+                                                    fontSize: '11px',
+                                                    padding: '3px 8px',
+                                                    borderRadius: '4px',
+                                                  }}
+                                                >
+                                                  สินค้าหมด (สนใจ)
+                                                </span>
+                                              ) : (
+                                                <span
+                                                  className="stock-badge stock-badge-in"
+                                                  style={{
+                                                    fontSize: '11px',
+                                                    padding: '3px 8px',
+                                                    borderRadius: '4px',
+                                                  }}
+                                                >
+                                                  มีสินค้า
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+
+                                      {/* Recommendations from Step 3 marked as INTERESTED */}
+                                      {interestedRecs.map((rec, idx) => (
                                         <div
+                                          key={`rec-${rec.id || idx}`}
                                           style={{
                                             display: 'flex',
                                             alignItems: 'center',
-                                            gap: '10px',
+                                            justifyContent: 'space-between',
+                                            padding: '8px 12px',
+                                            background: '#ffffff',
+                                            border: '1px solid #edf2f7',
+                                            borderRadius: '8px',
                                           }}
                                         >
-                                          <CategoryPicture
-                                            cat={item.product.category}
-                                            size={32}
-                                          />
-                                          <div>
+                                          <div
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              gap: '10px',
+                                            }}
+                                          >
                                             <div
                                               style={{
-                                                fontWeight: 600,
-                                                fontSize: '13px',
-                                                color: '#1e293b',
+                                                width: 32,
+                                                height: 32,
+                                                borderRadius: 8,
+                                                background: '#f0fdf4',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                color: '#16a34a',
+                                                flexShrink: 0,
                                               }}
                                             >
-                                              {itemName(item)}
+                                              <Sparkles size={18} />
                                             </div>
-                                            <small style={{ color: '#64748b' }}>
-                                              {item.product.sku}
-                                            </small>
+                                            <div>
+                                              <div
+                                                style={{
+                                                  fontWeight: 600,
+                                                  fontSize: '13px',
+                                                  color: '#1e293b',
+                                                }}
+                                              >
+                                                {rec.name}
+                                              </div>
+                                              <div
+                                                style={{
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '6px',
+                                                  marginTop: '2px',
+                                                }}
+                                              >
+                                                {rec.skuCode && (
+                                                  <small
+                                                    style={{
+                                                      color: '#64748b',
+                                                    }}
+                                                  >
+                                                    {rec.skuCode}
+                                                  </small>
+                                                )}
+                                                <span
+                                                  style={{
+                                                    fontSize: '10.5px',
+                                                    color: '#0369a1',
+                                                    background: '#e0f2fe',
+                                                    padding: '1px 6px',
+                                                    borderRadius: '4px',
+                                                    fontWeight: 500,
+                                                  }}
+                                                >
+                                                  {rec.section === 'MAIN'
+                                                    ? 'อุปกรณ์เสริม'
+                                                    : 'สินค้า Ecosystem'}
+                                                </span>
+                                              </div>
+                                            </div>
                                           </div>
                                         </div>
-                                        <div>
-                                          {outOfStock ? (
-                                            <span
-                                              className="stock-badge stock-badge-out"
+                                      ))}
+
+                                      {/* Fallback accessories from selection.accessories */}
+                                      {fallbackAccEntries.map(
+                                        ([accCat, qty]) => (
+                                          <div
+                                            key={`fallback-${accCat}`}
+                                            style={{
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'space-between',
+                                              padding: '8px 12px',
+                                              background: '#ffffff',
+                                              border: '1px solid #edf2f7',
+                                              borderRadius: '8px',
+                                            }}
+                                          >
+                                            <div
                                               style={{
-                                                fontSize: '11px',
-                                                padding: '3px 8px',
-                                                borderRadius: '4px',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '10px',
                                               }}
                                             >
-                                              สินค้าหมด (สนใจ)
-                                            </span>
-                                          ) : (
-                                            <span
-                                              className="stock-badge stock-badge-in"
-                                              style={{
-                                                fontSize: '11px',
-                                                padding: '3px 8px',
-                                                borderRadius: '4px',
-                                              }}
-                                            >
-                                              มีสินค้า
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
+                                              <div
+                                                style={{
+                                                  width: 32,
+                                                  height: 32,
+                                                  borderRadius: 8,
+                                                  background: '#f0fdf4',
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  justifyContent: 'center',
+                                                  color: '#16a34a',
+                                                  flexShrink: 0,
+                                                }}
+                                              >
+                                                <Sparkles size={18} />
+                                              </div>
+                                              <div>
+                                                <div
+                                                  style={{
+                                                    fontWeight: 600,
+                                                    fontSize: '13px',
+                                                    color: '#1e293b',
+                                                  }}
+                                                >
+                                                  {accCat}{' '}
+                                                  {Number(qty) > 1
+                                                    ? `(x${qty})`
+                                                    : ''}
+                                                </div>
+                                                <div
+                                                  style={{
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '6px',
+                                                    marginTop: '2px',
+                                                  }}
+                                                >
+                                                  <span
+                                                    style={{
+                                                      fontSize: '10.5px',
+                                                      color: '#0369a1',
+                                                      background: '#e0f2fe',
+                                                      padding: '1px 6px',
+                                                      borderRadius: '4px',
+                                                      fontWeight: 500,
+                                                    }}
+                                                  >
+                                                    อุปกรณ์เสริม
+                                                  </span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <span
+                                                style={{
+                                                  fontSize: '11px',
+                                                  padding: '3px 8px',
+                                                  borderRadius: '4px',
+                                                  background: '#f0fdf4',
+                                                  border: '1px solid #bbf7d0',
+                                                  color: '#166534',
+                                                  fontWeight: 600,
+                                                  display: 'inline-flex',
+                                                  alignItems: 'center',
+                                                  gap: '4px',
+                                                }}
+                                              >
+                                                <Check
+                                                  size={12}
+                                                  strokeWidth={2.5}
+                                                />
+                                                สนใจ
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ),
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
+                              );
+                            })()}
 
                             {/* Apple devices summary from Step 2 */}
                             {activeSession.currentAppleDevices &&

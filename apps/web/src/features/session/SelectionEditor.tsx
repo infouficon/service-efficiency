@@ -966,9 +966,6 @@ export function SelectionEditor({
       <fieldset>
         <legend>
           Payment{' '}
-          <small className="legend-note">
-            (เลือกอย่างน้อย 1 ช่องทาง)
-          </small>{' '}
           <span className="required">*</span>
         </legend>
         {otherPayments.length > 0 && (
@@ -1167,7 +1164,6 @@ export function SelectionEditor({
       <fieldset>
         <legend>
           ประเภทใบเสร็จ{' '}
-          <small className="legend-note">(เลือกย่างน้อย 1 ประเภท)</small>
           <span className="required">*</span>
         </legend>
         <div
@@ -1245,7 +1241,8 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ประเภทส่วนลด <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+          ประเภทส่วนลด{' '}
+          <span className="required">*</span>
         </legend>
         <div
           role="radiogroup"
@@ -1358,7 +1355,8 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ลูกค้ามาจากช่องทางใด <small className="legend-note">(จำเป็น · เลือก 1 ช่องทาง)</small>
+          ลูกค้ามาจากช่องทางใด{' '}
+          <span className="required">*</span>
         </legend>
         <div
           role="radiogroup"

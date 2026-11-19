@@ -24,6 +24,19 @@ import {
 } from '../../services/sessionApi';
 import type { Category } from '../../types/session';
 
+/** Format SKU specifications for display (D142) */
+function formatSkuSpecs(sku: {
+  memory?: string | null;
+  storage?: string | null;
+  color?: string | null;
+  attributes?: Record<string, string> | null;
+}): string {
+  if (sku.attributes && Object.keys(sku.attributes).length > 0) {
+    return Object.values(sku.attributes).filter(Boolean).join(' · ');
+  }
+  return [sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ');
+}
+
 /**
  * Step 1 of staff workflow (D131, D132, D133):
  * "ลูกค้าสนใจอะไร" - Pick up to 3 distinct main products of interest (even if out of stock).
@@ -93,14 +106,12 @@ export function WalkInForm({
     setCategory(cat);
     setDuplicateWarning('');
     setPickerRun((n) => n + 1);
-    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
-      setTimeout(() => {
-        skuPickerSectionRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        });
-      }, 50);
-    }
+    setTimeout(() => {
+      skuPickerSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }, 50);
   };
 
   /**
@@ -116,8 +127,9 @@ export function WalkInForm({
       (item) => item.sku.id === pickedObj.sku.id,
     );
     if (isDup) {
+      const specsText = formatSkuSpecs(pickedObj.sku);
       setDuplicateWarning(
-        `สินค้ารายการนี้ (${pickedObj.model.name} ${pickedObj.sku.storage || ''} ${pickedObj.sku.color || ''}) อยู่ในรายการที่เลือกไว้แล้ว`,
+        `สินค้ารายการนี้ (${pickedObj.model.name}${specsText ? ` · ${specsText}` : ''}) อยู่ในรายการที่เลือกไว้แล้ว`,
       );
       return;
     }
@@ -128,12 +140,13 @@ export function WalkInForm({
     setCategory('');
     setPickerRun((n) => n + 1);
 
-    if (typeof window !== 'undefined' && window.innerWidth <= 768) {
+    if (typeof window !== 'undefined') {
       setTimeout(() => {
-        categorySectionRef.current?.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-        });
+        const mainEl = document.querySelector('main');
+        if (mainEl && mainEl.scrollTop > 0) {
+          mainEl.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       }, 50);
     }
   };
@@ -300,9 +313,7 @@ export function WalkInForm({
                           textOverflow: 'ellipsis',
                         }}
                       >
-                        {[item.sku.memory, item.sku.storage, item.sku.color]
-                          .filter(Boolean)
-                          .join(' · ')}
+                        {formatSkuSpecs(item.sku)}
                       </div>
                       <div
                         style={{
@@ -485,6 +496,7 @@ export function WalkInForm({
                 <SkuPicker
                   key={`${category}:${pickerRun}`}
                   models={models}
+                  categories={categoryList ?? undefined}
                   onPick={() => {}}
                   onComplete={handleCompletePick}
                   allowOutOfStock={true}

@@ -111,10 +111,35 @@ export function SkuPicker({
     return fallback;
   }, [chosen, categorySpecs, categories, categoryName, modelSkus]);
 
-  // Ensure color is present in specs if SKUs have colors
+  // Ensure all distinguishing attributes present in SKUs are covered in allSpecs
   const allSpecs = useMemo<CategoryAttributeSpec[]>(() => {
     const list = [...resolvedSpecs];
-    if (modelSkus.some((s) => s.color) && !list.some(isColorSpec)) {
+    // If SKUs have memory (RAM e.g. Mac), ensure memory is in specs
+    if (
+      modelSkus.some((s) => s.memory || s.attributes?.memory) &&
+      !list.some((sp) => sp.key === 'memory')
+    ) {
+      list.unshift({ key: 'memory', label: 'RAM', required: true });
+    }
+    // If SKUs have connectivity (e.g. iPad, Watch), ensure connectivity is in specs
+    if (
+      modelSkus.some((s) => s.attributes?.connectivity) &&
+      !list.some((sp) => sp.key === 'connectivity')
+    ) {
+      list.unshift({ key: 'connectivity', label: 'การเชื่อมต่อ', required: true });
+    }
+    // If SKUs have storage (capacity), ensure storage is in specs
+    if (
+      modelSkus.some((s) => s.storage || s.attributes?.storage) &&
+      !list.some((sp) => sp.key === 'storage')
+    ) {
+      list.push({ key: 'storage', label: 'ความจุ', required: true });
+    }
+    // Ensure color is present in specs if SKUs have colors
+    if (
+      modelSkus.some((s) => s.color || s.attributes?.color) &&
+      !list.some(isColorSpec)
+    ) {
       list.push({ key: 'color', label: 'สี', required: true });
     }
     return list;
@@ -152,73 +177,51 @@ export function SkuPicker({
     return { steps: computedSteps, remainingSkus: candidates };
   }, [allSpecs, modelSkus, selectedValues]);
 
-  // Helper to cascade-select single choices automatically
-  const resolveAutoChoices = (
-    skus: CatalogSku[],
-    specs: CategoryAttributeSpec[],
-    currentVals: Record<string, string>,
-  ) => {
-    let candidates = skus;
-    const nextValues: Record<string, string> = { ...currentVals };
-
-    for (const spec of specs) {
-      const options = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean));
-      if (options.length === 1) {
-        nextValues[spec.key] = options[0];
-        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === options[0]);
-      } else if (nextValues[spec.key] && options.includes(nextValues[spec.key])) {
-        candidates = candidates.filter((s) => getSkuAttribute(s, spec.key) === nextValues[spec.key]);
-      } else {
-        delete nextValues[spec.key];
-        break;
-      }
-    }
-    return { nextValues, remainingSkus: candidates };
-  };
-
   const pickModel = (m: ModelChoice) => {
     setModelKey(m.key);
-    // Auto-resolve single choices for this model
-    const mSkus = m.model.skus;
-    const catName = m.product.category ?? '';
-    let specs = categorySpecs && categorySpecs.length > 0 ? categorySpecs : [];
-    if (specs.length === 0 && catName) {
-      specs = categories?.find((c) => c.name.toLowerCase() === catName.toLowerCase())?.attributes ?? [];
-    }
-    const { nextValues, remainingSkus: rem } = resolveAutoChoices(mSkus, specs, {});
-    setSelectedValues(nextValues);
-
-    if (rem.length === 1) {
-      const single = rem[0];
-      setSkuId(single.id);
-      const pickedObj = { product: m.product, model: m.model, sku: single };
-      onPick(pickedObj);
-      if (allowOutOfStock || !isOutOfStock(single)) {
-        onComplete?.(pickedObj);
-      }
-    } else {
-      setSkuId('');
-      onPick(null);
-    }
+    setSelectedValues({});
+    setSkuId('');
+    onPick(null);
   };
 
   const handleStepChange = (specKey: string, value: string) => {
-    const initial: Record<string, string> = {};
+    // Keep values up to this step, and set the clicked value
+    const nextValues: Record<string, string> = {};
     for (const s of allSpecs) {
       if (s.key === specKey) {
-        initial[s.key] = value;
-        break;
+        nextValues[s.key] = value;
+        break; // Clear downstream steps when an upstream step changes
       }
       if (selectedValues[s.key]) {
-        initial[s.key] = selectedValues[s.key];
+        nextValues[s.key] = selectedValues[s.key];
+      }
+    }
+    setSelectedValues(nextValues);
+
+    // Filter candidates based on nextValues
+    let candidates = modelSkus;
+    for (const s of allSpecs) {
+      const val = nextValues[s.key];
+      if (val) {
+        candidates = candidates.filter((sku) => getSkuAttribute(sku, s.key) === val);
       }
     }
 
-    const { nextValues, remainingSkus: nextRemaining } = resolveAutoChoices(modelSkus, allSpecs, initial);
-    setSelectedValues(nextValues);
+    // Check if all applicable steps for these candidates are answered
+    let tempCandidates = modelSkus;
+    let allAnswered = true;
+    for (const s of allSpecs) {
+      const options = distinct(tempCandidates.map((sku) => getSkuAttribute(sku, s.key)).filter(Boolean));
+      if (options.length === 0) continue;
+      if (!nextValues[s.key]) {
+        allAnswered = false;
+        break;
+      }
+      tempCandidates = tempCandidates.filter((sku) => getSkuAttribute(sku, s.key) === nextValues[s.key]);
+    }
 
-    if (nextRemaining.length === 1 && chosen) {
-      const single = nextRemaining[0];
+    if (allAnswered && candidates.length === 1 && chosen) {
+      const single = candidates[0];
       setSkuId(single.id);
       const pickedObj = { product: chosen.product, model: chosen.model, sku: single };
       onPick(pickedObj);
@@ -294,10 +297,9 @@ export function SkuPicker({
           {/* Card Header: Chosen Model & Change Button */}
           <div className="spec-config-header">
             <h3 className="spec-config-title">{chosen.model.name}</h3>
-            <button
+             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ fontSize: '0.85rem', padding: '6px 14px' }}
+              className="picked-model-change"
               onClick={() => {
                 setModelKey('');
                 setSelectedValues({});

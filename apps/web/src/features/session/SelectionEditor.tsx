@@ -53,6 +53,7 @@ import { SkuPicker } from './SkuPicker';
 import {
   extractAccessoryGroups,
   formatAccessoryItemName,
+  getSkuAttribute,
   isAccessoryFromProduct,
   isOutOfStock,
   isUnlimited,

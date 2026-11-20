@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertCircle, Camera, Check, X } from 'lucide-react';
+import { BusyOverlay } from '../../components/BusyOverlay';
 import { Button, Modal, Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
@@ -7,6 +8,12 @@ import { itemName, serialsLeft } from '../session/workflow';
 import { BranchUnitsList } from './BranchUnits';
 import { CameraScan } from './CameraScan';
 import { createWedgeReader, serialKindOf, serialProblem } from './scanning';
+
+/** D184: the screen waits for one FileMaker check at most this long (the server gives UAT 15 s); a late answer still sets the mark. */
+const CHECK_WAIT_MS = 15_000;
+
+/** D184: a page under a BusyOverlay is inert; a barcode scanner still types into the window, so its scans are refused then. */
+const pageLocked = () => document.getElementById('root')?.inert === true;
 
 /** The camera needs a secure page and a browser that can reach it. */
 const canUseCamera = () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
@@ -48,7 +55,9 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
  * (the unit is in no other open order, no repeat, not more than the quantity).
  * D111: there is no "found" tick any more (D102 is gone): a main product is found when all its units are scanned, and "send" needs that.
  * D104: with `SERIAL_CHECK=fmp` every saved serial is checked against FileMaker (ready here / another branch / not ready / another
- * model / not in stock); it only informs, nothing waits for it. D111: off by default; FileMaker checks the serials when STOCK sends.
+ * model / not in stock); the answer only informs. D111: off by default; FileMaker checks the serials when STOCK sends.
+ * D184: while a scan is being saved or checked, the whole page is locked (BusyOverlay) until the answer is back, so nothing is
+ * pressed twice and STOCK sees it is working. A scan fired at the locked page is not saved and says so: scan it again after.
  * D108: the phone camera can read the label (📷 on each product), and a barcode scanner works without tapping a box first: a
  * scan typed while nothing editable has the focus goes to the first product with units left.
  */
@@ -72,8 +81,11 @@ export function SerialScan({
   const [queued, setQueued] = useState<Scan[]>([]);
   const [removing, setRemoving] = useState(false);
   const [checks, setChecks] = useState<Record<string, StockCheck>>({});
+  /** D184: serials whose FileMaker check is still out (a serial can be in twice: once per check) */
+  const [checking, setChecking] = useState<string[]>([]);
   const [cameraFor, setCameraFor] = useState<string | null>(null);
-  const [allDone, setAllDone] = useState('');
+  /** a scan that went nowhere: every unit is scanned already, or the page was locked (D184) */
+  const [notice, setNotice] = useState('');
   const [showGuideModal, setShowGuideModal] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
@@ -97,11 +109,26 @@ export function SerialScan({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, focusKey]);
 
-  /** D104: asks about one serial; "off", "unavailable" or a failure only mean no mark. */
+  /** D104: asks about one serial; "off", "unavailable" or a failure only mean no mark. D184: the page waits for it (CHECK_WAIT_MS at most). */
   const checkSerial = (part: string, sn: string) => {
+    setChecking((current) => [...current, sn]);
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      setChecking((current) => {
+        const at = current.indexOf(sn);
+        return at < 0 ? current : [...current.slice(0, at), ...current.slice(at + 1)];
+      });
+    };
+    const giveUp = window.setTimeout(finish, CHECK_WAIT_MS);
     serialCheckApi(sn, part, session.id)
       .then((answer) => setChecks((current) => ({ ...current, [sn]: answer.status === 'ok' ? answer : null })))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        window.clearTimeout(giveUp);
+        finish();
+      });
   };
 
   // the serials already saved when the panel opens (scanned at the shelf, now at the hand-over) get their mark too
@@ -158,6 +185,7 @@ export function SerialScan({
     setQueued(queue.current);
     setValues((current) => ({ ...current, [itemId]: '' }));
     setProblems((current) => ({ ...current, [itemId]: '' }));
+    setNotice('');
     // this product is done: the scanner goes on with the next one
     if (left(item) - 1 <= 0) {
       const next = firstOpen(itemId);
@@ -170,12 +198,17 @@ export function SerialScan({
   const scanAnywhere = useRef<(text: string) => void>(() => undefined);
   useEffect(() => {
     scanAnywhere.current = (text: string) => {
-      const target = items.find((item) => item.id === firstOpen());
-      if (!target) {
-        setAllDone(`${text.trim().toUpperCase()}: ทุกเครื่องในออเดอร์นี้สแกนครบแล้ว`);
+      const sn = text.trim().toUpperCase();
+      if (pageLocked()) {
+        setNotice(`${sn}: ยังไม่ได้บันทึก เพราะยังรอ FileMaker อยู่ · เช็คเสร็จแล้วสแกนเครื่องนี้ใหม่`);
         return;
       }
-      setAllDone('');
+      const target = items.find((item) => item.id === firstOpen());
+      if (!target) {
+        setNotice(`${sn}: ทุกเครื่องในออเดอร์นี้สแกนครบแล้ว`);
+        return;
+      }
+      setNotice('');
       submit(target, text);
     };
   });
@@ -209,6 +242,12 @@ export function SerialScan({
 
   const total = items.reduce((sum, item) => sum + item.quantity, 0);
   const saved = items.reduce((sum, item) => sum + Math.min(item.quantity, item.serials?.length ?? 0), 0);
+  // D184: what the locked page is waiting for
+  const waitingFor = queued.length
+    ? `กำลังบันทึก ${queued[0].sn}${queued.length > 1 ? ` (+${queued.length - 1})` : ''}…`
+    : checking.length
+      ? `กำลังเช็ค ${checking[0]}${checking.length > 1 ? ` (+${checking.length - 1})` : ''} กับ FileMaker…`
+      : '';
 
   return (
     <div className="stock-note-section serial-scan" ref={rootRef}>
@@ -312,7 +351,8 @@ export function SerialScan({
           </div>
         </div>
       </Modal>
-      {allDone && <span className="serial-scan-problem">{allDone}</span>}
+      <BusyOverlay show={Boolean(waitingFor)} text={waitingFor} note={notice || undefined} />
+      {notice && <span className="serial-scan-problem">{notice}</span>}
       {items.map((item) => {
         const itemId = item.id as string;
         const remaining = left(item);

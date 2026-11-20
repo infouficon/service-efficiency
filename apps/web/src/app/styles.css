@@ -5654,6 +5654,72 @@ input[aria-invalid='true'] {
   }
 }
 
+/* D184: the page waits for the server or FileMaker; nothing under it takes clicks or keys (#root is inert) */
+.busy-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 5000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: transparent;
+  cursor: progress;
+  transition: background-color 150ms ease;
+}
+.busy-overlay.shown {
+  background: rgba(15, 23, 42, 0.35);
+}
+.busy-overlay-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 360px;
+  padding: 18px 22px;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  color: var(--text-primary, #1f2937);
+  font-size: 15px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.busy-overlay-card .spinner {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+  margin: 0;
+}
+.busy-overlay-note {
+  color: #b45309;
+  font-size: 13px;
+}
+.busy-overlay-slow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary, #4b5563);
+  font-size: 13px;
+  cursor: default;
+}
+.busy-overlay-slow button {
+  border: 1px solid #0abab5;
+  background: #0abab5;
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media print {
+  .busy-overlay {
+    display: none !important;
+  }
+}
+
 /* D183: what FileMaker has ready of one model in the branch */
 .branch-units {
   margin-top: 6px;

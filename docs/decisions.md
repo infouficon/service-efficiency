@@ -2289,3 +2289,13 @@ Owner: "เวลาใส่ผิด ให้ fmp แจ้งกลับว
 2. **At scan time (stock screen).** When a scanned serial is not ready here (not in stock, another branch, not ready, another model), the answer also carries `model` and `branchUnits` = FileMaker's ready units of that part in this branch. The part is matched by its UPC in SES's catalog and the branch by its ERP id: `product_upc eq … and BranchStore_id eq … and status eq 'ready'`, at most 200, cached for a minute. The screen shows "รุ่น MJXQ4ZP/A ที่สาขานี้ FileMaker มี ready 13 เครื่อง" and the serials. A unit another open SES order already holds is struck through with its queue, because it cannot be used again (D92). The scanned serial itself is never listed. It still only informs: nothing waits for it.
 3. **After sending.** The order's FMP status now carries `snMissing` (the serials FileMaker's `snCheck` left off the held bill, D119, at most 20). The order summary lists them with the reason. A button "ดู IMEI/SN รุ่น … ที่มีในสาขา" calls `GET /api/stock/branch-units?part=…[&branch=<code>, ADMIN]` (STOCK, STAFF, ADMIN; others get their own branch) for the same list.
 4. **Not done.** FileMaker's `ses` script is unchanged (KoB owns it). It cannot list a model's units quickly without the index.
+5. **Review fixes (Codex, same day).**
+   - Listing a model's units on the **real** FileMaker needs its own switch, `SERIAL_CHECK_UNITS=fmp`. An index on `product_sn` (enough for `SERIAL_CHECK=fmp`) does not make the `product_upc` query cheap.
+   - The after-send lookup asks the FileMaker the **bill** went to (`target=UAT|PRODUCTION` from the order's FMP status), not ADMIN's switch at that moment. The answer is keyed by order, has "ถามใหม่", and never shows on another order.
+   - Labels for units held by an open SES order:
+     - "ออเดอร์นี้": the order asking, sent as `session`, only compared
+     - "คิว 012": another order of this branch
+     - "ออเดอร์สาขาอื่น": another branch, whose queue is not shown
+   - The same FileMaker question asked twice at once is sent once, and each FileMaker has its own queue. The units cache is keyed by FileMaker + UPC + branch. "more" counts FileMaker's raw rows.
+   - Push mode `off` still reads the real FileMaker when `SERIAL_CHECK=fmp`, as before D183: the cashier still keys the bill in the real FileMaker.
+   - D182 banner: the entry is read from the fresh `index.html`'s module script, the latest check decides (a stale copy mid-deploy no longer leaves it up), and checks do not overlap.

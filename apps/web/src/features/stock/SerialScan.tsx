@@ -99,7 +99,7 @@ export function SerialScan({
 
   /** D104: asks about one serial; "off", "unavailable" or a failure only mean no mark. */
   const checkSerial = (part: string, sn: string) => {
-    serialCheckApi(sn, part)
+    serialCheckApi(sn, part, session.id)
       .then((answer) => setChecks((current) => ({ ...current, [sn]: answer.status === 'ok' ? answer : null })))
       .catch(() => undefined);
   };

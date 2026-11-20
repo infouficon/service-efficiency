@@ -19,11 +19,14 @@ export function BranchUnitsList({
   units,
   target,
   asOf,
+  onRefresh,
 }: {
   model: string;
   units: BranchUnits;
   target?: 'PRODUCTION' | 'UAT';
   asOf?: string | null;
+  /** shown as "ถามใหม่" when given */
+  onRefresh?: () => void;
 }) {
   const [all, setAll] = useState(false);
   const where = target === 'UAT' ? 'FileMaker UAT (ทดสอบ)' : 'FileMaker';
@@ -34,6 +37,14 @@ export function BranchUnitsList({
         รุ่น <strong>{model}</strong> ที่สาขานี้ {where} มี ready <strong>{units.count}{units.more ? '+' : ''}</strong> เครื่อง
         {asOf ? <span className="muted"> (ณ {timeText(asOf)})</span> : null}
         {units.count === 0 ? ' · ไม่มีเครื่องรุ่นนี้ ready ที่สาขานี้ ให้เช็ครับโอน/สต็อกใน FileMaker' : ':'}
+        {onRefresh && (
+          <>
+            {' '}
+            <button type="button" className="branch-units-more" onClick={onRefresh}>
+              ถามใหม่
+            </button>
+          </>
+        )}
       </div>
       {units.units.length > 0 && (
         <div className="branch-units-list">
@@ -41,10 +52,10 @@ export function BranchUnitsList({
             <span
               key={unit.sn}
               className={`branch-unit ${unit.taken ? 'taken' : ''}`}
-              title={unit.taken ? `อยู่ในออเดอร์ ${unit.taken} ที่ยังไม่จบ ใช้ซ้ำไม่ได้` : 'ready ที่สาขานี้'}
+              title={unit.taken ? `สแกนอยู่ใน${unit.taken}แล้ว (ออเดอร์ที่ยังไม่จบ) ใช้ซ้ำไม่ได้` : 'ready ที่สาขานี้'}
             >
               {unit.sn}
-              {unit.taken ? ` · คิว ${unit.taken}` : ''}
+              {unit.taken ? ` · ${unit.taken}` : ''}
             </span>
           ))}
           {!all && units.units.length > SHOW_FIRST && (
@@ -58,19 +69,33 @@ export function BranchUnitsList({
   );
 }
 
-/** D183: a button that asks FileMaker what the branch has of one model, then shows the list (or why it cannot). */
-export function BranchUnitsLookup({ part, branchCode }: { part: string; branchCode?: string | null }) {
+/**
+ * D183: a button that asks the FileMaker the bill went to (`target`) what the branch has of one model, then shows the list (or why
+ * it cannot). The parent keys it by order, so an answer never shows on another order's summary.
+ */
+export function BranchUnitsLookup({
+  part,
+  branchCode,
+  target,
+  sessionId,
+}: {
+  part: string;
+  branchCode?: string | null;
+  target?: 'PRODUCTION' | 'UAT' | 'NONE' | null;
+  sessionId?: string | null;
+}) {
   const [answer, setAnswer] = useState<BranchUnitsAnswer | null>(null);
   const [busy, setBusy] = useState(false);
   const ask = () => {
+    if (busy) return;
     setBusy(true);
-    branchUnitsApi(part, branchCode ?? undefined)
+    branchUnitsApi(part, { branch: branchCode, target: target === 'UAT' || target === 'PRODUCTION' ? target : null, session: sessionId })
       .then(setAnswer)
       .catch((err: unknown) => setAnswer({ status: 'unavailable', reason: err instanceof Error ? err.message : 'ถาม FileMaker ไม่ได้ตอนนี้' }))
       .finally(() => setBusy(false));
   };
   if (answer?.status === 'ok')
-    return <BranchUnitsList model={answer.model} units={answer} target={answer.target} asOf={answer.asOf} />;
+    return <BranchUnitsList model={answer.model} units={answer} target={answer.target} asOf={answer.asOf} onRefresh={busy ? undefined : ask} />;
   return (
     <span className="branch-units-lookup">
       <button type="button" className="branch-units-more" onClick={ask} disabled={busy}>
@@ -85,7 +110,15 @@ export function BranchUnitsLookup({ part, branchCode }: { part: string; branchCo
  * D183: the serials FileMaker left off this order's held bill and why, each with a lookup of what the branch does have of that
  * model, so the shop can swap the box without opening FileMaker.
  */
-export function SnMissingList({ fmp, branchCode }: { fmp: FmpStatus | null | undefined; branchCode?: string | null }) {
+export function SnMissingList({
+  fmp,
+  branchCode,
+  sessionId,
+}: {
+  fmp: FmpStatus | null | undefined;
+  branchCode?: string | null;
+  sessionId?: string | null;
+}) {
   const missing = fmp?.snMissing ?? [];
   if (!missing.length) return null;
   const parts = [...new Set(missing.map((one) => one.partNo).filter((part): part is string => Boolean(part)))];
@@ -100,7 +133,7 @@ export function SnMissingList({ fmp, branchCode }: { fmp: FmpStatus | null | und
         </div>
       ))}
       {parts.map((part) => (
-        <BranchUnitsLookup key={part} part={part} branchCode={branchCode} />
+        <BranchUnitsLookup key={`${sessionId ?? ''}:${fmp?.target ?? ''}:${part}`} part={part} branchCode={branchCode} target={fmp?.target} sessionId={sessionId} />
       ))}
     </div>
   );

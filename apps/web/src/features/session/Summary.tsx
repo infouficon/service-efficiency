@@ -306,10 +306,10 @@ export function Summary({
             {session.fmp && (
               <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
                 <span className="info-item-label">FileMaker:</span>
-                <span className="info-item-value">
+                <div className="info-item-value">
                   <FmpStatusLine fmp={session.fmp} />
-                  <SnMissingList fmp={session.fmp} branchCode={session.branchCode} />
-                </span>
+                  <SnMissingList key={session.id ?? session.reference} fmp={session.fmp} branchCode={session.branchCode} sessionId={session.id} />
+                </div>
               </div>
             )}
             {session.posBillNo && (

@@ -6,8 +6,9 @@ import { useEffect, useState } from 'react';
  * that page. This banner tells them a new version is out, so they reload before it bites.
  *
  * How it knows: every build gives the entry script a new file name (`assets/index-<hash>-g2.js`). The banner compares the
- * name this tab loaded with the one in a fresh `index.html` (nginx serves it uncached), when the tab comes back into view
- * and every few minutes. It never reloads by itself: STAFF may be halfway through an order.
+ * name this tab loaded with the module script of a fresh `index.html` (nginx serves it uncached), when the tab comes back into
+ * view and every few minutes. The latest answer decides, so a stale copy from a container still being replaced mid-deploy does not
+ * leave the banner up once the next check sees this tab's build. It never reloads by itself: STAFF may be halfway through an order.
  */
 
 const CHECK_EVERY_MS = 3 * 60 * 1000;
@@ -23,12 +24,22 @@ function loadedEntry(): string | null {
   return null;
 }
 
+/** The entry of an `index.html`: the `src` of its module script (not a preload link or a comment that happens to name a file). */
+function entryOf(html: string): string | null {
+  for (const tag of html.match(/<script\b[^>]*>/gi) ?? []) {
+    if (!/\btype\s*=\s*["']module["']/i.test(tag)) continue;
+    const src = /\bsrc\s*=\s*["']([^"']+)["']/i.exec(tag)?.[1];
+    const m = src ? new URL(src, window.location.href).pathname.match(ENTRY_RE) : null;
+    if (m) return m[0];
+  }
+  return null;
+}
+
 async function latestEntry(): Promise<string | null> {
   try {
     const res = await fetch(`/?v=${Date.now()}`, { cache: 'no-store', credentials: 'same-origin' });
     if (!res.ok) return null;
-    const m = (await res.text()).match(ENTRY_RE);
-    return m ? m[0] : null;
+    return entryOf(await res.text());
   } catch {
     return null; // offline or mid-deploy: try again next time
   }
@@ -41,10 +52,16 @@ export function NewVersionBanner() {
     const mine = loadedEntry();
     if (!mine) return;
     let stopped = false;
+    let checking = false; // focus and visibilitychange fire together: one check at a time
     const check = async () => {
-      if (stopped || document.visibilityState !== 'visible') return;
-      const latest = await latestEntry();
-      if (!stopped && latest && latest !== mine) setOutdated(true);
+      if (stopped || checking || document.visibilityState !== 'visible') return;
+      checking = true;
+      try {
+        const latest = await latestEntry();
+        if (!stopped && latest) setOutdated(latest !== mine);
+      } finally {
+        checking = false;
+      }
     };
     const onVisible = () => void check();
     const timer = window.setInterval(check, CHECK_EVERY_MS);

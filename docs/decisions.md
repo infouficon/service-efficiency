@@ -2255,8 +2255,10 @@ Owner instruction via `/grill-me`: "มีสีเกินมา with standard
    - Sets `display: 'Standard Glass'` and strips punctuation, returning clean colors (`"Starlight"`, `"Midnight"`).
    - In `buildCatalog`, if a product model has no Nano-texture Glass SKUs, `display: 'Standard Glass'` is omitted from `item.attributes` (per D150), so staff are not forced to select an obvious single-choice glass step.
    - When a model does have Nano-texture Glass SKUs, peer SKUs retain `display: 'Standard Glass'`, enabling the 2-way glass selection step.
-3. **Defense-in-Depth Sanitization in Frontend:**
-   - In `apps/web/src/features/session/catalog.ts` (`getSkuAttribute`), added a safety sanitizer for `color` to strip any lingering `with standard glass` / `with nano-texture glass` tokens if stale client caches exist.
+3. **Color Palette Management & Defense-in-Depth Sanitization:**
+   - In `apps/api/src/colors/colors.service.ts` (`ColorsService.list` and `getColorMap`), colors from existing SKUs and `ProductColor` are automatically normalized via `colorOf()`. Any legacy `"with standard glass - Midnight"` is counted under `"Midnight"` and no longer appears as a separate unassigned color in the Admin Color Palette panel.
+   - Added migration `202611200001_clean_standard_glass_color` to update existing MySQL database rows (`ProductSku.color`, `ProductSku.attributes`, and delete redundant `ProductColor` entries).
+   - In `apps/web/src/features/session/catalog.ts` (`toCatalog` and `getSkuAttribute`), added a safety sanitizer for `color` to strip any lingering `with standard glass` / `with nano-texture glass` tokens if stale client caches exist.
 4. **Sync Version Bump:**
    - Bumped `CATALOG_RULES_VERSION` from 10 to 11 in `warroom-sync.service.ts` to trigger automatic re-processing and attribute refresh across all branches.
 

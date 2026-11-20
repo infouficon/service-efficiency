@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { colorOf } from '../warroom/warroom-sync.service';
 
 export interface ColorItemDto {
   id: string | null;
@@ -26,14 +27,18 @@ export class ColorsService {
     const skuCounts = new Map<string, number>();
     for (const s of skus) {
       if (s.color && s.color.trim()) {
-        const c = s.color.trim();
+        const raw = s.color.trim();
+        const c = colorOf(raw) || raw;
         skuCounts.set(c, (skuCounts.get(c) ?? 0) + 1);
       }
     }
 
     const definedMap = new Map<string, { id: string; hexCode: string }>();
     for (const dc of definedColors) {
-      definedMap.set(dc.name, { id: dc.id, hexCode: dc.hexCode });
+      const cleanName = colorOf(dc.name) || dc.name;
+      if (!definedMap.has(cleanName) || dc.hexCode) {
+        definedMap.set(cleanName, { id: dc.id, hexCode: dc.hexCode });
+      }
     }
 
     const allNames = new Set<string>([...definedMap.keys(), ...skuCounts.keys()]);
@@ -88,6 +93,12 @@ export class ColorsService {
     const map: Record<string, string> = {};
     for (const c of colors) {
       map[c.name] = c.hexCode;
+      map[c.name.trim().toLowerCase()] = c.hexCode;
+      const cleanName = colorOf(c.name);
+      if (cleanName) {
+        map[cleanName] = c.hexCode;
+        map[cleanName.trim().toLowerCase()] = c.hexCode;
+      }
     }
     return map;
   }

@@ -1307,7 +1307,7 @@ export function SelectionEditor({
                                               {sku.sku}
                                             </span>
                                             {sku.color && (
-                                              <span>· สี {sku.color}</span>
+                                              <span>· สี {getSkuAttribute(sku, 'color') || sku.color}</span>
                                             )}
                                             {typeof sku.stock === 'number' &&
                                               !isUnlimited(sku) && (

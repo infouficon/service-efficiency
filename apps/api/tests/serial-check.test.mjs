@@ -79,12 +79,16 @@ test('one scanned serial: off by default (FileMaker checks at send), FileMaker l
       fmpRows = [{ product_sn: sn(5), BranchStore_id: here + 1, status: 'ready', product_upc: '190000000001' }];
       const moved = (await ask({ sn: sn(5), part: sku.sku })).data;
       assert.deepEqual([moved.source, moved.target, moved.verdict, moved.branchCode], ['fmp', 'PRODUCTION', 'other-branch', branches.b.code]);
-      const [call, units] = seen.slice(-2);
+      const call = seen.at(-1);
       assert.deepEqual([call.entity, call.filter, call.select, call.top], ['ProductStore_detail', `product_sn eq '${sn(5)}'`, 'product_sn,BranchStore_id,status,product_upc', '3']);
-      // D183: not ready here, so the branch's ready units of the model are asked too (by the catalog UPC and the branch's ERP id)
+      // D183: the real FileMaker lists a model's units only with SERIAL_CHECK_UNITS=fmp (product_upc needs its own index)
+      assert.equal(moved.branchUnits, undefined, 'no units query on the real FileMaker without its own switch');
+      process.env.SERIAL_CHECK_UNITS = 'fmp';
+      const listedToo = (await ask({ sn: sn(5), part: sku.sku })).data;
+      const units = seen.at(-1);
       assert.deepEqual([units.entity, units.filter, units.select, units.top], ['ProductStore_detail', `product_upc eq '190000000001' and BranchStore_id eq ${here} and status eq 'ready'`, 'product_sn', '201']);
-      assert.equal(moved.model, sku.sku);
-      assert.deepEqual(moved.branchUnits, { count: 0, more: false, units: [] }, 'the scanned unit itself is never offered');
+      assert.equal(listedToo.model, sku.sku);
+      assert.deepEqual([listedToo.branchUnits.count, listedToo.branchUnits.more, listedToo.branchUnits.units], [0, false, []], 'the scanned unit itself is never offered');
       fmpRows = [{ product_sn: sn(6), BranchStore_id: here, status: 'ready', product_upc: '199999999999' }];
       assert.equal((await ask({ sn: sn(6), part: sku.sku })).data.verdict, 'other-model', 'another barcode than the catalog has');
       const before = seen.length;
@@ -99,6 +103,7 @@ test('one scanned serial: off by default (FileMaker checks at send), FileMaker l
       assert.match(paused.reason, /พักการตรวจ 10 นาที/);
       assert.equal(seen.length - before, 1, 'nothing sent while paused');
       delete process.env.SERIAL_CHECK;
+      delete process.env.SERIAL_CHECK_UNITS;
     });
 
     await t.test('D183: while orders go to the test FileMaker, the check asks it (no SERIAL_CHECK needed) and lists the branch units', async () => {
@@ -128,15 +133,26 @@ test('one scanned serial: off by default (FileMaker checks at send), FileMaker l
         const wrong = (await ask({ sn: sn(9), part: sku.sku })).data;
         assert.deepEqual([wrong.status, wrong.target, wrong.verdict, wrong.model], ['ok', 'UAT', 'not-in-stock', sku.sku], JSON.stringify(wrong));
         assert.ok(seen.slice(before).every((call) => call.path === '/fmi/odata/v4/UF%20UAT/ProductStore_detail'), 'the test FileMaker, not the ERP');
-        assert.deepEqual(wrong.branchUnits, {
-          count: 3,
-          more: false,
-          units: [
+        const queueOf = order.queueNo === null ? order.reference : String(order.queueNo).padStart(3, '0');
+        assert.deepEqual([wrong.branchUnits.count, wrong.branchUnits.more, wrong.branchUnits.units], [
+          3,
+          false,
+          [
             { sn: sn(10), taken: null },
-            { sn: sn(11), taken: order.queueNo === null ? order.reference : String(order.queueNo).padStart(3, '0') },
+            { sn: sn(11), taken: `คิว ${queueOf}` },
             { sn: sn(12), taken: null },
           ],
-        });
+        ]);
+        // the order asking sees its own unit as its own, not as another order's
+        const own = (await ask({ sn: sn(9), part: sku.sku, session: id })).data;
+        assert.equal(own.branchUnits.units.find((u) => u.sn === sn(11)).taken, 'ออเดอร์นี้');
+        assert.equal((await ask({ sn: sn(9), session: 'bad id!' })).status, 400);
+
+        // the same question twice at once goes to FileMaker once
+        const once = seen.length;
+        const [a, b] = await Promise.all([ask({ sn: sn(14), part: sku.sku }), ask({ sn: sn(14), part: sku.sku })]);
+        assert.deepEqual([a.data.verdict, b.data.verdict], ['not-in-stock', 'not-in-stock']);
+        assert.equal(seen.slice(once).filter((call) => call.filter === `product_sn eq '${sn(14)}'`).length, 1, 'one request for both');
 
         // the same list for a serial FileMaker left off a held bill; an ADMIN names the branch, others get their own
         const listed = await request(`/stock/branch-units?${new URLSearchParams({ part: sku.sku })}`, 'GET', undefined, cookies.staff);
@@ -149,9 +165,15 @@ test('one scanned serial: off by default (FileMaker checks at send), FileMaker l
         // the real FileMaker again: off without SERIAL_CHECK=fmp, and the test FileMaker is not asked
         await db.setting.update({ where: { name: 'fmpPushMode' }, data: { value: 'production' } });
         const quiet = seen.length;
+        const units = (query) => request(`/stock/branch-units?${new URLSearchParams({ part: sku.sku, ...query })}`, 'GET', undefined, cookies.staff);
         assert.equal((await ask({ sn: sn(13), part: sku.sku })).data.status, 'off');
-        assert.equal((await request(`/stock/branch-units?part=${encodeURIComponent(sku.sku)}`, 'GET', undefined, cookies.staff)).data.status, 'off');
+        assert.equal((await units({})).data.status, 'off');
+        assert.equal((await units({ target: 'PRODUCTION' })).data.status, 'off');
         assert.equal(seen.length, quiet);
+        // a bill that went to the test FileMaker still looks there after ADMIN switched to the real one
+        const uatBill = (await units({ target: 'UAT' })).data;
+        assert.deepEqual([uatBill.status, uatBill.target, uatBill.count], ['ok', 'UAT', 3]);
+        assert.equal((await units({ target: 'TEST' })).status, 400);
       } finally {
         if (prior) await db.setting.update({ where: { name: 'fmpPushMode' }, data: { value: prior.value } });
         else await db.setting.deleteMany({ where: { name: 'fmpPushMode' } });

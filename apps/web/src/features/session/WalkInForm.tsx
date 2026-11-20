@@ -31,10 +31,24 @@ function formatSkuSpecs(sku: {
   color?: string | null;
   attributes?: Record<string, string> | null;
 }): string {
+  const parts: string[] = [];
   if (sku.attributes && Object.keys(sku.attributes).length > 0) {
-    return Object.values(sku.attributes).filter(Boolean).join(' · ');
+    for (const val of Object.values(sku.attributes)) {
+      if (val && val.trim() && !parts.includes(val.trim())) {
+        parts.push(val.trim());
+      }
+    }
   }
-  return [sku.memory, sku.storage, sku.color].filter(Boolean).join(' · ');
+  if (sku.memory && sku.memory.trim() && !parts.includes(sku.memory.trim())) {
+    parts.unshift(sku.memory.trim());
+  }
+  if (sku.storage && sku.storage.trim() && !parts.includes(sku.storage.trim())) {
+    parts.push(sku.storage.trim());
+  }
+  if (sku.color && sku.color.trim() && !parts.includes(sku.color.trim())) {
+    parts.push(sku.color.trim());
+  }
+  return parts.join(' · ');
 }
 
 /**

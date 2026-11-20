@@ -82,12 +82,15 @@ export class ColorsService {
     }
   }
 
-  /** Return a map of color name -> hexCode */
+  /** Return a map of color name -> hexCode (with case-insensitive keys) */
   async getColorMap(): Promise<Record<string, string>> {
     const colors = await this.prisma.productColor.findMany();
     const map: Record<string, string> = {};
     for (const c of colors) {
-      map[c.name] = c.hexCode;
+      const hex = c.hexCode?.trim() || '';
+      if (!hex) continue;
+      map[c.name] = hex;
+      map[c.name.trim().toLowerCase()] = hex;
     }
     return map;
   }

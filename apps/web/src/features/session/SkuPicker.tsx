@@ -38,6 +38,25 @@ function getOptionStockText(skusForOption: CatalogSku[]): { text: string; outOfS
 const isColorSpec = (spec: CategoryAttributeSpec) =>
   spec.key.toLowerCase() === 'color' || spec.label.trim() === 'สี';
 
+/** Standard Apple color palette fallback if not configured in database */
+const getAppleFallbackHex = (name: string): string | null => {
+  const n = name.trim().toLowerCase();
+  if (/(?:space\s+)?black|midnight|jet\s+black/.test(n)) return '#1f2022';
+  if (/white|starlight|silver/.test(n)) return '#e3e4e6';
+  if (/space\s*gr[ea]y|graphite/.test(n)) return '#535150';
+  if (/natural\s+titanium/.test(n)) return '#9f9587';
+  if (/desert\s+titanium|gold|rose\s+gold/.test(n)) return '#c5a98d';
+  if (/blue|ultramarine|sierra\s+blue|pacific\s+blue/.test(n)) return '#2c4664';
+  if (/teal/.test(n)) return '#2d777d';
+  if (/pink/.test(n)) return '#e8c4c7';
+  if (/green|alpine\s+green/.test(n)) return '#394c38';
+  if (/yellow/.test(n)) return '#f2d366';
+  if (/purple/.test(n)) return '#b6b3cd';
+  if (/red/.test(n)) return '#e2231a';
+  if (/orange/.test(n)) return '#f47920';
+  return null;
+};
+
 const isTwoColumns = (options: string[]) =>
   options.length <= 2 && options.every((opt) => opt.length <= 16);
 
@@ -78,13 +97,28 @@ export function SkuPicker({
     let active = true;
     api<Record<string, string>>('/colors/map')
       .then((m) => {
-        if (active && m) setColorMap(m);
+        if (active && m) {
+          const normalized: Record<string, string> = {};
+          for (const [k, v] of Object.entries(m)) {
+            normalized[k.trim().toLowerCase()] = v;
+            normalized[k.trim()] = v;
+          }
+          setColorMap(normalized);
+        }
       })
       .catch(() => {});
     return () => {
       active = false;
     };
   }, []);
+
+  const resolveColorHex = (colorName: string): string => {
+    const trimmed = colorName.trim();
+    const lower = trimmed.toLowerCase();
+    if (colorMap[lower]) return colorMap[lower];
+    if (colorMap[trimmed]) return colorMap[trimmed];
+    return getAppleFallbackHex(trimmed) || '#cbd5e1';
+  };
 
   const chosen = models.find((m) => m.key === modelKey) ?? null;
   const modelSkus = useMemo(() => chosen?.model.skus ?? [], [chosen]);
@@ -403,7 +437,7 @@ export function SkuPicker({
                       );
                       const stockInfo = getOptionStockText(matchingSkus);
                       const isSelected = st.selectedValue === opt;
-                      const hex = colorMap[opt.toLowerCase()] || '#cbd5e1';
+                      const hex = resolveColorHex(opt);
 
                       return (
                         <button

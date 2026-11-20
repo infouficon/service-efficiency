@@ -2923,20 +2923,24 @@ Owner instruction via `/grill-me`: "หากแสดงแค่ 1 ปุ่�
    - SKU options continue to render full-width (100%) rows.
    - Manual selection invariant (D147) is preserved: staff still explicitly tap the button to select the model and pick the SKU.
 
-## D180 — Robust Case-Insensitive Product Color Palette Resolution & Fallbacks (2026-11-20)
+## D181 — Standard Glass Display Specification Separation from Color (2026-11-20)
 
-Owner instruction via `/grill-me`: "ทำไมตอนเลือกสินค้าใน step 1 สีสินค้าไม่แสดง - ในหน้าต่างเลือกสเปก (SkuPicker) ปุ่มสีที่เลือกเป็นวงกลมสีเทา ไม่มีสีแสดง ทั้งที่ได้กำหนดค่าสีเรียบร้อย - แสดงเป็นวงกลมสีที่ดึงค่าสีถูกต้องเท่านั้น (แบบ Apple Store) และแสดงชื่อสีที่หัวข้อเมื่อกดเลือก".
+Owner instruction via `/grill-me`: "มีสีเกินมา with standard glass Starlight และ with standard glass - Midnight ซึ่งเป็นส่วนของจอภาพ แต่ในสีดันมีติดมา". Amends D145 and D150.
 
-1. **Context & Root Cause:**
-   - In `apps/api/src/colors/colors.service.ts`, `getColorMap()` returned keys with exact database casing (`map[c.name] = c.hexCode`).
-   - In frontend `SkuPicker.tsx`, `colorMap[opt.toLowerCase()]` queried lowercased keys, resulting in cache misses (`undefined`) and falling back to default `#cbd5e1` (grey) for all swatches.
-2. **Case-Insensitive Color Resolution:**
-   - Updated `getColorMap()` in `colors.service.ts` to populate both original and trimmed lowercase keys (`map[c.name]` and `map[c.name.trim().toLowerCase()]`).
-   - In `SkuPicker.tsx`, incoming map entries are normalized. `resolveColorHex` checks lowercased, trimmed, and includes an intelligent fallback palette for standard Apple colors (Black, Midnight, Starlight, Silver, Natural Titanium, Desert Titanium, Ultramarine, Teal, Pink, Alpine Green, etc.).
-3. **Apple Store Swatch Display Invariant:**
-   - Per owner decision, color options in `SkuPicker` display exclusively as color circles (`.spec-swatch-circle`) with their exact hex color, while displaying the selected color name in the step header (`.spec-config-selected-val`) upon selection.
-4. **Specification Display in Interested Products (`WalkInForm.tsx`):**
-   - Updated `formatSkuSpecs` in `WalkInForm.tsx` so that `sku.color` is always retained in the interested product summary cards even if `sku.attributes` does not include color.
+1. **Context & Problem:**
+   - Raw ERP product color data in Warroom occasionally contains `"with standard glass Starlight"` or `"with standard glass - Midnight"`.
+   - `parseColorField` in `warroom-sync.service.ts` previously only parsed and stripped `"nano-texture glass"`, leaving `"with standard glass"` embedded in the color attribute.
+   - This caused color options to show up as `"with standard glass Starlight"` and `"with standard glass - Midnight"` instead of clean colors (`"Starlight"`, `"Midnight"`), and prevented proper color swatch resolution.
+2. **Standard Glass Parsing & Separation:**
+   - Updated `parseColorField` in `apps/api/src/warroom/warroom-sync.service.ts` to detect and strip `/\b(?:with\s+)?standard(?:\s+glass)?\b/gi` in addition to nano-texture.
+   - Sets `display: 'Standard Glass'` and strips punctuation, returning clean colors (`"Starlight"`, `"Midnight"`).
+   - In `buildCatalog`, if a product model has no Nano-texture Glass SKUs, `display: 'Standard Glass'` is omitted from `item.attributes` (per D150), so staff are not forced to select an obvious single-choice glass step.
+   - When a model does have Nano-texture Glass SKUs, peer SKUs retain `display: 'Standard Glass'`, enabling the 2-way glass selection step.
+3. **Defense-in-Depth Sanitization in Frontend:**
+   - In `apps/web/src/features/session/catalog.ts` (`getSkuAttribute`), added a safety sanitizer for `color` to strip any lingering `with standard glass` / `with nano-texture glass` tokens if stale client caches exist.
+4. **Sync Version Bump:**
+   - Bumped `CATALOG_RULES_VERSION` from 10 to 11 in `warroom-sync.service.ts` to trigger automatic re-processing and attribute refresh across all branches.
+
 
 
 

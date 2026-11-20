@@ -2166,6 +2166,14 @@ footer {
     border-color 0.15s,
     background-color 0.15s;
 }
+.accessory-item.selected {
+  border-color: var(--primary-border, #0abab5);
+  background: var(--primary-subtle, #f0fdf4);
+}
+.accessory-item.expanded {
+  border-color: #0abab5;
+  box-shadow: 0 2px 8px rgba(10, 186, 181, 0.08);
+}
 .accessory-item.out-of-stock-item {
   background: #fff5f3;
   border-color: #f7c1b7;

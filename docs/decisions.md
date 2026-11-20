@@ -2868,6 +2868,66 @@ Decisions:
    - When staff selects a model, the card expands in-place calmly without jumping or pushing the model name/price off screen.
    - The user's screen remains stable, displaying the Model, Capacity, and Color chips together in a single clear view ("แสดงรุ่น ความจุ สี ครบ") until the user completes the selection by tapping a color.
 
+## D152 — Dynamic Accessories Group List from Catalog & In-List Search (2026-11-19)
+
+Owner instruction via `/grill-me`: "ตอนเลือก Accessories ให้ดึงค่าจริงมาแสดง".
+
+1. **Context & Problem:**
+   - The Accessories selection section previously used a hardcoded mock list of 15 items in `constants/options.ts`, ignoring real accessory categories and products synced from ERP / Warroom.
+2. **Dynamic Real Catalog Groups:**
+   - In `apps/web/src/features/session/catalog.ts` (`extractAccessoryGroups`), accessory groups are extracted dynamically from `GET /products` catalog:
+     - Includes all product names (`p.name`, representing ERP sub-categories) whose category is `Accessories` or has `isAccessory: true` in `Category`.
+     - Automatically falls back to the default options if no accessory products are returned from the API.
+     - Preserves any currently selected accessory keys to prevent loss of state.
+3. **Search & Pinned Selected Items:**
+   - Added a search input with clear (✕) button at the top of the Accessories section.
+   - Selected accessories are always pinned at the top of the list and remain visible even when a search query is active.
+   - Unselected items matching the search query appear below selected items.
+   - Displays empty state ("ไม่พบอุปกรณ์เสริมที่ตรงกับ ...") when no matching items exist.
+4. **Compatibility:**
+   - The underlying selection model `value.accessories` retains `{ [name]: quantity }` for backward compatibility with FileMaker, POS, and database (`SessionAccessory`).
+
+## D153 — Inline Model & SKU Configurator for Accessories (2026-11-19)
+
+Owner instruction via `/grill-me`: "เมื่อกดเลือก accessories แล้วให้ยังขึ้นที่เหลือด้วย ให้ถ้ามีสเปกต่างๆก้ให้สามารถเลือกได้ด้วยเหมือนในสินค้าหลัก".
+
+1. **Inline Accordion Selection:**
+   - In Staff Workspace product selection (`SelectionEditor.tsx`), clicking an accessory product group (e.g. `iPhone Case`) expands an inline accordion under that group.
+   - All other accessory groups remain visible and accessible so staff can select multiple items across different groups without leaving the screen.
+2. **Model and SKU Specification Picking:**
+   - When an accessory product contains catalog models and SKUs (such as `iPhone Case for iPhone 13`, `iPhone Case for iPhone 14 Pro`):
+     - Displays model selection chips (when more than 1 model exists).
+     - Renders all variant SKUs under the active model with their descriptive name, color, SKU part number, and live stock indicator.
+     - Staff can click "+ เพิ่ม" to add the SKU or adjust quantity with the stepper (`−`, input, `+`).
+     - Multiple SKUs under the same or different accessory groups can be selected simultaneously.
+3. **Selected Accessories Card & Accurate Part Number Naming:**
+   - Selected accessories are pinned in a dedicated summary card at the top of the Accessories section, showing the full descriptive name and quantity stepper with a direct delete (✕) button.
+   - Accessory items are formatted with their SKU part number: `formatAccessoryItemName(model, sku)` (e.g. `iPhone 13 Silicone Case with MagSafe - Marigold (MM243FE/A)`), ensuring Stock and Cashier identify the exact part number.
+4. **Database Migration:**
+   - Migration `202611190004_widen_session_accessory_name` widens `SessionAccessory.accessoryName` from `VARCHAR(64)` to `VARCHAR(191)` to safely store full Apple accessory names and SKU codes.
+
+## D156 — Pure Dynamic Accessories Catalog & Full-Width Single Button (2026-11-19)
+
+Owner instruction via `/grill-me`: "หากแสดงแค่ 1 ปุ่มก้ให้ยาวเต็มกรอบ และลบส่วน Accessories ที่ hardcode ไว้ออก".
+
+1. **Remove Hardcoded Accessories Fallback:**
+   - Previously, `extractAccessoryGroups` in `SelectionEditor.tsx` merged the hardcoded constant `accessories` from `constants/options.ts` (e.g. `'Software'`, `'Protection'`, `'Case'`).
+   - This caused duplicate or obsolete category names (such as "Software" alongside real catalog product "Software & Care") to appear in the Accessories list.
+   - Removed the hardcoded fallback from `SelectionEditor.tsx`. Accessory groups are now strictly derived from real active products (`GET /products`) belonging to accessory categories (or `Category.isAccessory: true`), alongside any keys already selected in the session.
+   - When no accessories match or the catalog is empty, a clean descriptive empty state is shown ("ไม่มีรายการอุปกรณ์เสริมในขณะนี้" or search empty state).
+2. **Responsive Model Button Sizing (Accessories):**
+   - Model buttons use `flex: 1 1 auto` (`minWidth: 0`, `boxSizing: border-box`).
+   - If an item is the only one in a row (e.g. because of long text such as "iPad Case for iPad Air 11-inch" or only 1 model in the group), it automatically stretches to fill 100% of the row width without leaving awkward empty gaps on the right.
+   - If 2 or 3 shorter model options fit on the same row, they share the row width side-by-side naturally.
+   - When selected, a checkmark (`✓`) is shown alongside the model name.
+   - SKU options continue to render full-width (100%) rows.
+   - Manual selection invariant (D147) is preserved: staff still explicitly tap the button to select the model and pick the SKU.
+
+
+
+
+
+
 
 
 

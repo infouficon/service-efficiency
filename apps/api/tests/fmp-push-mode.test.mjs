@@ -3,7 +3,7 @@ import http from 'node:http';
 import { test } from 'node:test';
 import { PATH, cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
 
-// D130: ADMIN's switch for where an order sent to the cashier goes: the real FileMaker (U POS), nowhere, or the test FileMaker.
+// D130: ADMIN's switch for where an order sent to the cashier goes: the real FileMaker (U•POS), nowhere, or the test FileMaker.
 process.env.FMP_WORKER_INTERVAL_SECONDS = '0'; // the test calls tick() itself
 const USER = 'ses';
 const PASSWORD = 'push-mode-test-password';
@@ -139,7 +139,7 @@ test('ADMIN switches where orders go: real FileMaker, nowhere (logged), or the U
       assert.equal(row.status, 'skipped');
       assert.equal(row.target, 'NONE');
       assert.match(row.lastError, /ปิดการส่ง/);
-      assert.equal(s.fmp.status, 'skipped', 'the order says why U POS has no bill');
+      assert.equal(s.fmp.status, 'skipped', 'the order says why U•POS has no bill');
       const logged = await db.fmpLog.findFirst({ where: { reference: s.reference, kind: 'skipped' } });
       assert.ok(logged, 'written to the FileMaker log');
       assert.ok(await db.fmpLog.findFirst({ where: { kind: 'mode', createdAt: { gte: testStart } } }), 'the switch is logged');

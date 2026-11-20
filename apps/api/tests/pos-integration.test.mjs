@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { PATH, cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
 
-// The U POS integration key (D60). Read per request, so setting it here is enough.
+// The U•POS integration key (D60). Read per request, so setting it here is enough.
 const KEY = 'test-pos-key-0123456789abcdef0123456789abcdef';
 process.env.POS_API_KEY = KEY;
 
-test('U POS reads the orders waiting at the cashier and reports the real bill (D60, F17)', async (t) => {
+test('U•POS reads the orders waiting at the cashier and reports the real bill (D60, F17)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) return;
   const { db, request } = ctx;
@@ -158,7 +158,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
           { reason: 'ลูกค้าเปลี่ยนใจ' },
           'manager',
         );
-        const billed = await driveTo('send'); // billed by U POS: nothing left to prefill
+        const billed = await driveTo('send'); // billed by U•POS: nothing left to prefill
         const billedRes = await call('/integrations/pos/bills', {
           method: 'POST',
           body: { reference: billed.reference, billNo: 'B-prefill', openedAt: new Date().toISOString() },
@@ -248,7 +248,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
     );
 
     await t.test(
-      'the bill opened in U POS moves the order on and records the real time',
+      'the bill opened in U•POS moves the order on and records the real time',
       async () => {
         const session = await driveTo('send');
         // a time after the walk-in but well before "now": the real bill time is not the moment SES hears about it
@@ -282,7 +282,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
         assert.equal(event.actorStaffId, 'U-POS');
         assert.equal(event.metadata.source, 'U-POS');
         assert.equal(event.metadata.billNo, 'INV-2026-000123');
-        // D105: no cashier in SES; when U POS reports no payment, ADMIN closes the sale
+        // D105: no cashier in SES; when U•POS reports no payment, ADMIN closes the sale
         for (const who of ['staff', 'stock', 'manager'])
           assert.equal(
             (await app(`/sessions/${session.id}/step`, 'POST', { action: 'complete' }, who)).status,
@@ -345,7 +345,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
     );
 
     await t.test(
-      'ADMIN closed the sale first (U POS reported nothing): a later U POS bill is still added beside it (D105)',
+      'ADMIN closed the sale first (U•POS reported nothing): a later U•POS bill is still added beside it (D105)',
       async () => {
         const completed = await driveTo('complete');
         assert.equal(completed.state, 'COMPLETED');
@@ -368,7 +368,7 @@ test('U POS reads the orders waiting at the cashier and reports the real bill (D
       },
     );
 
-    await t.test('what U POS may not do', async () => {
+    await t.test('what U•POS may not do', async () => {
       const bill = (body) =>
         call('/integrations/pos/bills', { method: 'POST', body });
       const atStock = await driveTo('found');

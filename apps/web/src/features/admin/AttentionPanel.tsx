@@ -63,7 +63,7 @@ const ageText = (minutes: number | null) => {
 };
 const fmpText = (fmp: WaitingRow['fmp']) => {
   if (!fmp) return 'ยังไม่ได้ส่ง FMP';
-  // D130: ADMIN's switch held it back: U POS has no held bill, the cashier keys it in (or ADMIN closes the sale here)
+  // D130: ADMIN's switch held it back: U•POS has no held bill, the cashier keys it in (or ADMIN closes the sale here)
   if (fmp.status === 'skipped') return 'ไม่ได้ส่ง FMP (ปิดการส่งอยู่ตอนกดส่ง)';
   if (fmp.ackStatus === 'error')
     return `FMP แจ้งผิดพลาด${fmp.ackMessage ? `: ${fmp.ackMessage}` : ''}`;
@@ -77,7 +77,7 @@ const fmpText = (fmp: WaitingRow['fmp']) => {
 };
 
 /**
- * SES-10 (D116): what needs a person, for ADMIN. Orders sent to the cashier where U POS / FileMaker has not opened a bill (or the
+ * SES-10 (D116): what needs a person, for ADMIN. Orders sent to the cashier where U•POS / FileMaker has not opened a bill (or the
  * customer has not paid) after the limit, and orders whose message to FileMaker failed, is stuck or was answered with an error. It
  * refreshes by itself every minute; a failed message can be sent again here.
  */
@@ -156,7 +156,7 @@ export function AttentionPanel() {
               {ageText(data.thresholds.payMinutes)}, ข้อความไป FMP ค้างเกิน{' '}
               {ageText(data.thresholds.stuckMinutes)} (ย้อนหลัง 14 วัน
               รีเฟรชเองทุก 1 นาที) ถ้า FMP ไม่ส่งเลขบิลกลับ
-              ปิดการขายเองได้ที่หน้า ประวัติ → ปิดการขาย (แทน U POS)
+              ปิดการขายเองได้ที่หน้า ประวัติ → ปิดการขาย (แทน U•POS)
               <Button
                 type="button"
                 variant="secondary"

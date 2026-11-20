@@ -58,7 +58,7 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
  * model / not in stock); the answer only informs. D111: off by default; FileMaker checks the serials when STOCK sends.
  * D184: while a scan is being saved or checked, the whole page is locked (BusyOverlay) until the answer is back, so nothing is
  * pressed twice and STOCK sees it is working. A scan fired at the locked page is not saved and says so: scan it again after.
- * D185: scanning the box stays the way. When STOCK cannot find the unit, "หาไม่เจอ?" under the box lists what U POS has ready of
+ * D185: scanning the box stays the way. When STOCK cannot find the unit, "หาไม่เจอ?" under the box lists what U•POS has ready of
  * that model here; a unit tapped there (or in the list after a wrong scan) is only used after STOCK confirms it matches the box.
  * D108: the phone camera can read the label (📷 on each product), and a barcode scanner works without tapping a box first: a
  * scan typed while nothing editable has the focus goes to the first product with units left.
@@ -247,7 +247,7 @@ export function SerialScan({
   const total = items.reduce((sum, item) => sum + item.quantity, 0);
   const saved = items.reduce((sum, item) => sum + Math.min(item.quantity, item.serials?.length ?? 0), 0);
   // D184: what the locked page is waiting for
-  const waitingFor = queued.length ? 'กำลังบันทึก IMEI/SN' : checking.length ? 'กำลังตรวจสอบ IMEI/SN กับ U POS' : '';
+  const waitingFor = queued.length ? 'กำลังบันทึก IMEI/SN' : checking.length ? 'กำลังตรวจสอบ IMEI/SN กับ U•POS' : '';
   // D185: serials this order has (saved or on their way), so a branch list never offers them again
   const used = [...session.selection.items.flatMap((one) => (one.serials ?? []).map((serial) => serial.sn)), ...queued.map((scan) => scan.sn)];
 
@@ -491,7 +491,7 @@ export function SerialScan({
               <span className="serial-pending">
                 {warned.verdict === 'other-model'
                   ? 'เครื่องนี้เป็นรุ่นอื่น: กด × แล้วสแกนเครื่องที่ถูกรุ่น'
-                  : 'U POS ไม่พบเครื่องนี้พร้อมขายที่สาขานี้: ถ้าหยิบผิด กด × แล้วสแกนเครื่องอื่น · ถ้าเป็นเครื่องที่โอนมา ให้รับโอนใน U POS ก่อน'}
+                  : 'U•POS ไม่พบเครื่องนี้พร้อมขายที่สาขานี้: ถ้าหยิบผิด กด × แล้วสแกนเครื่องอื่น · ถ้าเป็นเครื่องที่โอนมา ให้รับโอนใน U•POS ก่อน'}
               </span>
             )}
             {/* D183: what this branch does have of the model, so the right box can be found; D185: tap one to use it */}

@@ -31,7 +31,7 @@ export class SettingsController {
     const user = await this.accounts.authenticate(req);
     const { stockUnlimited, fmpPushMode, updatedAt, updatedBy } =
       await this.settings.read();
-    // D130: everybody sees where orders go, so STOCK knows when U POS gets no held bill
+    // D130: everybody sees where orders go, so STOCK knows when U•POS gets no held bill
     return user.roles.includes('ADMIN')
       ? { stockUnlimited, fmpPushMode, updatedAt, updatedBy }
       : { stockUnlimited, fmpPushMode };

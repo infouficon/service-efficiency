@@ -30,7 +30,7 @@ export class FmpResendDto {
   @IsString() @MinLength(1) @MaxLength(32) reference!: string;
 }
 
-/** D130: where orders sent to the cashier go: `production` (real FileMaker / U POS), `off` (nothing leaves SES) or `uat`. */
+/** D130: where orders sent to the cashier go: `production` (real FileMaker / U•POS), `off` (nothing leaves SES) or `uat`. */
 export class FmpModeDto {
   @IsIn(FMP_PUSH_MODES) mode!: FmpPushMode;
 }

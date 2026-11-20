@@ -5,7 +5,7 @@ import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
 import type { ManagedBranch } from '../../types/accounts';
 
-// D105: no CASHIER (the cashiers work in U POS)
+// D105: no CASHIER (the cashiers work in U•POS)
 type ExtraRole = 'STAFF' | 'STOCK';
 const ROLES: ExtraRole[] = ['STAFF', 'STOCK'];
 

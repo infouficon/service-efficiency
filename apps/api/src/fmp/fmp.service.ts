@@ -345,7 +345,7 @@ export function parseFmpTime(text: string): Date | null {
 /**
  * SES -> FileMaker (D88). When an order reaches the cashier SES writes a row of `FmpOutbox` in the same transaction; a worker
  * creates one record per row in the `ses` layout of the UFService database through the FileMaker Data API, putting the order
- * (the very same view the U POS door serves, `orderView`) as JSON text into the `ses_body` field. Per batch: one login, the
+ * (the very same view the U•POS door serves, `orderView`) as JSON text into the `ses_body` field. Per batch: one login, the
  * sends, one logout (FileMaker is slow to drop idle tokens). Retries with a back-off; at-least-once, so FileMaker dedupes by
  * `outboxId`. Nothing happens until `FMP_HOST`, `FMP_DATABASE`, `FMP_USER` and `FMP_PASSWORD` are set. Credentials are never logged.
  */
@@ -490,7 +490,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
       accessoriesForCashier: view.accessories,
     });
     if (route.skip) {
-      // D130: ADMIN's switch holds it back: kept (status `skipped`, never sent) so the log and the order say why U POS has no bill
+      // D130: ADMIN's switch holds it back: kept (status `skipped`, never sent) so the log and the order say why U•POS has no bill
       await db.fmpOutbox.create({
         data: { id, sessionId: session.id, reference: session.reference, event, payload, status: 'skipped', target: 'NONE', lastError: route.skip.slice(0, 255) },
       });
@@ -531,7 +531,7 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     if (releaseFor) return { target: releaseFor, skip: null };
     const mode: FmpPushMode = await this.settings.fmpPushMode(db);
     const target: FmpTarget = mode === 'uat' ? 'UAT' : 'PRODUCTION';
-    if (mode === 'off') return { target, skip: 'ADMIN ปิดการส่งเข้า U POS (FileMaker) อยู่' };
+    if (mode === 'off') return { target, skip: 'ADMIN ปิดการส่งเข้า U•POS (FileMaker) อยู่' };
     if (!this.configured(target)) {
       if (target === 'PRODUCTION' && mode === 'production') return null;
       return { target, skip: `ยังไม่ได้ตั้งค่า FileMaker ${target === 'UAT' ? 'UAT (FMP_UAT_*)' : 'จริง (FMP_*)'}` };
@@ -968,12 +968,12 @@ export class FmpService implements OnApplicationBootstrap, OnModuleDestroy {
     const before = await this.settings.fmpPushMode();
     const row = await this.settings.setFmpPushMode(mode, staffId);
     const names: Record<FmpPushMode, string> = { production: 'ส่งจริง', off: 'ปิด', uat: 'UAT' };
-    await this.record({ direction: 'SES', kind: 'mode', ok: true, summary: `ADMIN ${staffId} เปลี่ยนการส่งเข้า U POS: ${names[before]} → ${names[mode]}` });
+    await this.record({ direction: 'SES', kind: 'mode', ok: true, summary: `ADMIN ${staffId} เปลี่ยนการส่งเข้า U•POS: ${names[before]} → ${names[mode]}` });
     return row;
   }
 
   /**
-   * SES-10 (D116): what needs a person. `waiting` = orders SES sent on that U POS / FileMaker has not opened a bill for in `openMinutes`
+   * SES-10 (D116): what needs a person. `waiting` = orders SES sent on that U•POS / FileMaker has not opened a bill for in `openMinutes`
    * (default 30), or opened but not paid in `payMinutes` (default 240). `problems` = orders whose LATEST message to FileMaker failed,
    * is still waiting to go after `stuckMinutes` (default 10), or got an error answer from the `ses` script (the bill was not opened).
    * Only orders of the last 14 days, newest problems first; a later good message for the same order clears the problem.

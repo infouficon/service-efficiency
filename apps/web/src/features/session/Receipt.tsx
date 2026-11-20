@@ -8,7 +8,7 @@ import { formatPaymentLabel, itemName } from './workflow';
 
 /**
  * The receipt of a session on paper (F9, D58): a plain order summary for an 80 mm printer, **without prices** (the legal
- * receipt stays in U POS), with the branch's registration QR at the bottom (F10). It lives in a portal on `<body>` so the
+ * receipt stays in U•POS), with the branch's registration QR at the bottom (F10). It lives in a portal on `<body>` so the
  * print stylesheet can hide everything else and print only this.
  */
 /** A QR code of `text` as an SVG (with its quiet zone). `size` in pixels, or leave it to the stylesheet (`className`). */

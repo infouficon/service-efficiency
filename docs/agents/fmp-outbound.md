@@ -56,8 +56,8 @@ it never creates a second record (D96).
   `payments` and `paymentTypes` are unchanged.
 
 - **Accessories (D97):** `accessories` is always `[]` in the FileMaker message (the `ses` script refuses any; the shop adds them in
-  FileMaker by hand); what the customer picked is under `accessoriesForCashier` for information. The U POS door still lists them.
-- Everything from `reference` down is **the same view the U POS door serves** (`GET /api/integrations/pos/orders`), produced by one function.
+  FileMaker by hand); what the customer picked is under `accessoriesForCashier` for information. The U•POS door still lists them.
+- Everything from `reference` down is **the same view the U•POS door serves** (`GET /api/integrations/pos/orders`), produced by one function.
 - `reference` is the key (`SES-YYYYMMDD-NNNNNN`); `queue` is what staff call the customer by. Report the bill back with
   `POST /api/integrations/pos/bills {reference, billNo, openedAt, completedAt?}` (docs/agents/pos-integration.md).
 - `payments` = the payment **methods** as picked in SES (`Cash`, `Transfer`, `0% Credit Card`, `PayNext`, … — the list ADMIN keeps, so
@@ -179,7 +179,7 @@ direction or "only problems"; click a row for what was sent and what came back. 
 to their last four digits; rows are kept 90 days.
 
 ## Open
-For the bill itself, FileMaker can tell SES it opened the bill through the U POS door, `POST /api/integrations/pos/bills
+For the bill itself, FileMaker can tell SES it opened the bill through the U•POS door, `POST /api/integrations/pos/bills
 {reference, billNo, openedAt}` with `Authorization: Bearer <POS_API_KEY>` (the order moves to BILL_OPENED), and that the customer paid,
 the same call with `completedAt` (the order is COMPLETED at that time, D101; [pos-integration.md](pos-integration.md); the ready-made
 `ses_report_bill` v2 sends both; FileMaker still ran v1 on 2026-11-06, opened only, so orders stop at BILL_OPENED until an

@@ -408,7 +408,7 @@ export function SystemAuditLogs() {
                     </td>
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <div>
-                        <strong>{item.actorStaffId}</strong>
+                        <strong>{item.actorStaffId === 'U-POS' ? 'U•POS' : item.actorStaffId /* D186 */}</strong>
                         {item.actorName && item.actorName !== item.actorStaffId && (
                           <div style={{ fontSize: '11px', color: '#64748b' }}>
                             {item.actorName}

@@ -230,7 +230,7 @@ Staff: one request, `$select` of only `staff_id`, `"user name"`, `"user password
 | `active` | `status` active (ignore case) AND the branch is active |
 | `passwordHash` | scrypt of `user password`, recomputed only when the stored hash no longer verifies (≈ 90 hashes, a few seconds; compute **before** taking the `AccountLock`, see H-02) |
 | `mustChangePassword` | `false`: the ERP owns the password, so SES change/reset-password is refused for synced accounts with a Thai message |
-| roles | **D106 (2026-11-05):** every shop-floor position (`sale`, `store manager`, `cashier`, `stock`, normalised, contains) → **STAFF + STOCK**; CASHIER is never given (the till is U POS, D105) and an old CASHIER role is dropped at the next run; other positions (technician, housekeeper, no position, …) get **STAFF + STOCK too (D114)**. `ADMIN`/`MANAGER` are never granted or removed by the sync |
+| roles | **D106 (2026-11-05):** every shop-floor position (`sale`, `store manager`, `cashier`, `stock`, normalised, contains) → **STAFF + STOCK**; CASHIER is never given (the till is U•POS, D105) and an old CASHIER role is dropped at the next run; other positions (technician, housekeeper, no position, …) get **STAFF + STOCK too (D114)**. `ADMIN`/`MANAGER` are never granted or removed by the sync |
 
 **Never touched:** any account the sync did not create (existing/test users, `0001`). Track it with an additive column (for example
 `Staff.erpStaffId Int? @unique` plus `erpSyncedAt`); an ERP `user name` equal to an existing SES `staffId` is skipped and reported, never adopted.

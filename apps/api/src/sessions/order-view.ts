@@ -5,7 +5,7 @@ import { toOutboundCustomerPhone } from '../common/phone.util';
 import type { PrismaService } from '../prisma/prisma.service';
 import type { ReceiptTypeValue } from './dto';
 
-/** The parts of a session the outside world is told about (the U POS door and the FileMaker push, D60 / D88). */
+/** The parts of a session the outside world is told about (the U•POS door and the FileMaker push, D60 / D88). */
 export interface OrderViewSource {
   reference: string;
   queueLetter: string | null;
@@ -47,7 +47,7 @@ export async function loadPaymentTypes(
 }
 
 /**
- * One order as SES describes it to other systems. ONE function for every door, so what U POS reads and what FileMaker is sent
+ * One order as SES describes it to other systems. ONE function for every door, so what U•POS reads and what FileMaker is sent
  * cannot drift apart. No prices (SES stores none, D58). Serial numbers (`items[].sn`, D92) are the ones STOCK scanned.
  */
 export function orderView(s: OrderViewSource, paymentTypes: PaymentTypes) {

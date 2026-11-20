@@ -169,7 +169,7 @@ export function StockWorkspace({
     setError('');
     setSuccessMessage('');
     if (session.id) {
-      setBusy(action === 'send' ? 'กำลังส่งให้แคชเชียร์ (U POS)' : action === 'search' ? 'กำลังเริ่มหาสินค้า' : 'กำลังบันทึก');
+      setBusy(action === 'send' ? 'กำลังส่งให้แคชเชียร์ (U•POS)' : action === 'search' ? 'กำลังเริ่มหาสินค้า' : 'กำลังบันทึก');
       try {
         const updated = await advanceStepApi(session.id, action);
         onUpdateSession(updated);
@@ -737,8 +737,8 @@ export function StockWorkspace({
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <Check size={16} />
                         {serialsComplete(selectedSession)
-                          ? 'รอส่ง — กด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของให้แคชเชียร์'
-                          : 'รอส่ง — สแกน SN ให้ครบทุกเครื่อง แล้วกด "ส่งให้แคชเชียร์ (U POS)" ตอนยื่นของ'}
+                          ? 'รอส่ง — กด "ส่งให้แคชเชียร์ (U•POS)" ตอนยื่นของให้แคชเชียร์'
+                          : 'รอส่ง — สแกน SN ให้ครบทุกเครื่อง แล้วกด "ส่งให้แคชเชียร์ (U•POS)" ตอนยื่นของ'}
                       </span>
                     </Notice>
                   )}
@@ -1028,7 +1028,7 @@ export function StockWorkspace({
                               ) : (
                                 <>
                                   <Send size={16} />
-                                  {sending ? 'กำลังส่ง…' : 'ส่งให้แคชเชียร์ (U POS)'}
+                                  {sending ? 'กำลังส่ง…' : 'ส่งให้แคชเชียร์ (U•POS)'}
                                 </>
                               )}
                             </span>
@@ -1077,7 +1077,7 @@ export function StockWorkspace({
                               ) : (
                                 <>
                                   <Send size={16} />
-                                  ส่งให้แคชเชียร์ (U POS)
+                                  ส่งให้แคชเชียร์ (U•POS)
                                 </>
                               )}
                             </span>

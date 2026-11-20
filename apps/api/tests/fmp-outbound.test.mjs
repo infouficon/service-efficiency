@@ -172,7 +172,7 @@ test('orders reach FileMaker: queued with the order, sent in one session, retrie
 
     setEnv();
     let first;
-    await t.test('an order sent to the cashier is queued in the same change, with exactly the data the U POS door serves', async () => {
+    await t.test('an order sent to the cashier is queued in the same change, with exactly the data the U•POS door serves', async () => {
       first = await driveTo('send');
       assert.equal(first.state, 'SENT_TO_CASHIER');
       const row = await rowOf(first.reference);

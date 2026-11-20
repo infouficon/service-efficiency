@@ -46,13 +46,13 @@ export function BranchUnitsList({
 }) {
   const [all, setAll] = useState(false);
   const shown = all ? units.units : units.units.slice(0, SHOW_FIRST);
-  const when = [target === 'UAT' ? 'U POS ทดสอบ' : '', asOf ? `ข้อมูล ${timeText(asOf)}` : ''].filter(Boolean).join(' · ');
+  const when = [target === 'UAT' ? 'U•POS ทดสอบ' : '', asOf ? `ข้อมูล ${timeText(asOf)}` : ''].filter(Boolean).join(' · ');
   return (
     <div className="branch-units">
       <div>
         {units.count === 0 ? (
           <>
-            ไม่มีรุ่น <strong>{model}</strong> พร้อมขายที่สาขานี้ ให้เช็ครับโอน/สต็อกใน U POS
+            ไม่มีรุ่น <strong>{model}</strong> พร้อมขายที่สาขานี้ ให้เช็ครับโอน/สต็อกใน U•POS
           </>
         ) : (
           <>
@@ -132,10 +132,10 @@ export function BranchUnitsLookup({
     setBusy(true);
     branchUnitsApi(part, { branch: branchCode, target: target === 'UAT' || target === 'PRODUCTION' ? target : null, session: sessionId })
       .then(setAnswer)
-      .catch((err: unknown) => setAnswer({ status: 'unavailable', reason: err instanceof Error ? err.message : 'ถาม U POS ไม่ได้ตอนนี้' }))
+      .catch((err: unknown) => setAnswer({ status: 'unavailable', reason: err instanceof Error ? err.message : 'ถาม U•POS ไม่ได้ตอนนี้' }))
       .finally(() => setBusy(false));
   };
-  const waiting = <BusyOverlay show={busy} text="กำลังดึงรายการ IMEI/SN จาก U POS" />;
+  const waiting = <BusyOverlay show={busy} text="กำลังดึงรายการ IMEI/SN จาก U•POS" />;
   if (answer?.status === 'ok')
     return (
       <>
@@ -164,7 +164,7 @@ export function BranchUnitsLookup({
 
 /**
  * D183: the serials FileMaker left off this order's held bill and why, each with a lookup of what the branch does have of that
- * model, so the shop can swap the box without opening FileMaker. D185: in the shop's words, inside the U POS box.
+ * model, so the shop can swap the box without opening FileMaker. D185: in the shop's words, inside the U•POS box.
  */
 export function SnMissingList({
   fmp,

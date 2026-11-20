@@ -6,7 +6,7 @@ import type { MockSession } from '../../types/session';
 
 /**
  * F13/D105: the order goes back to stock because the wrong unit (or a damaged one) was picked. Since D105 STAFF fills it in (the
- * cashiers work in U POS and tell the staff): which products are wrong, and why; stock sees both on its screen.
+ * cashiers work in U•POS and tell the staff): which products are wrong, and why; stock sees both on its screen.
  */
 interface ReturnToStockFormProps {
   session: MockSession;

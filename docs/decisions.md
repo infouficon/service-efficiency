@@ -2299,3 +2299,21 @@ Owner: "เวลาใส่ผิด ให้ fmp แจ้งกลับว
    - The same FileMaker question asked twice at once is sent once, and each FileMaker has its own queue. The units cache is keyed by FileMaker + UPC + branch. "more" counts FileMaker's raw rows.
    - Push mode `off` still reads the real FileMaker when `SERIAL_CHECK=fmp`, as before D183: the cashier still keys the bill in the real FileMaker.
    - D182 banner: the entry is read from the fresh `index.html`'s module script, the latest check decides (a stale copy mid-deploy no longer leaves it up), and checks do not overlap.
+
+## D184 — The page locks while it waits for FileMaker or the server (2026-11-20)
+
+Owner: "ตอนโหลด ทำให้กดอะไรไม่ได้ ได้ไหม มันทำให้ป้องกันการกดซ้ำหรือคนเข้าใจว่ามันไม่ทำงานได้". The owner chose **the whole screen** (not only the order's buttons, not only "send"), knowing STOCK then waits for each check before scanning the next unit.
+
+1. **What waits.**
+   - On the stock screen, saving a scan and its FileMaker check (D104/D183). The UAT check takes 0.1–0.5 s, or about 6 s after a few quiet minutes (measured 2026-11-20). The screen also waits for the checks of serials already saved when an order opens.
+   - "ส่งให้แคชเชียร์", "เริ่มหา", "แจ้งสินค้าขาด/หมด", the cancel, and the cancel acknowledgement.
+   - The after-send "ดู IMEI/SN รุ่น … ที่มีในสาขา" lookup and its "ถามใหม่", wherever the summary shows them.
+2. **How.** `BusyOverlay` sets `#root` `inert`, so the page below takes no clicks, focus or typing. A full-screen layer shows a spinner and what it waits for, e.g. "กำลังเช็ค 3521… กับ FileMaker…".
+   - The page locks at once, but dims only after 0.3 s, so the usual 0.1 s check does not flash.
+   - The box that had the focus gets it back afterwards.
+   - Overlays stack: the page stays locked until the last one ends.
+3. **The scanner.** A barcode scanner types into the window, so it still reaches SerialScan's listener while the page is locked. A scan fired then is **not saved** and says so, in the overlay and after it: "… ยังไม่ได้บันทึก เพราะยังรอ FileMaker อยู่ · เช็คเสร็จแล้วสแกนเครื่องนี้ใหม่". The camera needs no guard: after a read it waits for "next box", which cannot be tapped while the page is locked.
+4. **Never stuck.**
+   - The screen waits for one FileMaker check for at most 15 s, the server's UAT timeout. A later answer still sets the mark.
+   - Any wait past 20 s adds "รอนานกว่าปกติ … โหลดหน้าใหม่" with a reload button. What was saved stays saved.
+5. **Unchanged.** The check still only informs (D104). Once it answers, "send" works whatever the verdict.

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Search } from 'lucide-react';
+import { BusyOverlay } from '../../components/BusyOverlay';
 import { branchUnitsApi, type BranchUnits, type BranchUnitsAnswer } from '../../services/sessionApi';
 import type { FmpStatus } from '../../types/session';
 import { SN_CODE } from '../admin/FmpPanel';
@@ -72,6 +73,7 @@ export function BranchUnitsList({
 /**
  * D183: a button that asks the FileMaker the bill went to (`target`) what the branch has of one model, then shows the list (or why
  * it cannot). The parent keys it by order, so an answer never shows on another order's summary.
+ * D184: the page is locked while FileMaker answers (up to ~6 s after a quiet spell), so the button is not pressed again.
  */
 export function BranchUnitsLookup({
   part,
@@ -94,14 +96,21 @@ export function BranchUnitsLookup({
       .catch((err: unknown) => setAnswer({ status: 'unavailable', reason: err instanceof Error ? err.message : 'ถาม FileMaker ไม่ได้ตอนนี้' }))
       .finally(() => setBusy(false));
   };
+  const waiting = <BusyOverlay show={busy} text={`กำลังถาม FileMaker ว่าสาขามีรุ่น ${part} อยู่กี่เครื่อง…`} />;
   if (answer?.status === 'ok')
-    return <BranchUnitsList model={answer.model} units={answer} target={answer.target} asOf={answer.asOf} onRefresh={busy ? undefined : ask} />;
+    return (
+      <>
+        <BranchUnitsList model={answer.model} units={answer} target={answer.target} asOf={answer.asOf} onRefresh={busy ? undefined : ask} />
+        {waiting}
+      </>
+    );
   return (
     <span className="branch-units-lookup">
       <button type="button" className="branch-units-more" onClick={ask} disabled={busy}>
         <Search size={12} /> {busy ? 'กำลังถาม FileMaker…' : `ดู IMEI/SN รุ่น ${part} ที่มีในสาขา`}
       </button>
       {answer && <span className="muted"> {answer.reason}</span>}
+      {waiting}
     </span>
   );
 }

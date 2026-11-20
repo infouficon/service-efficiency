@@ -13,6 +13,7 @@ import {
   AlertCircle,
   Plane,
 } from 'lucide-react';
+import { BusyOverlay } from '../../components/BusyOverlay';
 import { Button, Notice, Panel } from '../../components/ui';
 import { FmpPushBanner } from '../admin/FmpPanel';
 import { Summary } from '../session/Summary';
@@ -90,14 +91,21 @@ export function StockWorkspace({
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
+  /** D184: what the page is waiting for from the server (the whole page is locked meanwhile), or null. */
+  const [busy, setBusy] = useState<string | null>(null);
+  const sending = busy !== null;
+
   /** F12: stock confirms it has seen a cancel and brought the goods back; stored on the session, so every device sees it. */
   const handleAcknowledgeCancel = async (session: MockSession) => {
     if (!session.id) return;
     setError('');
+    setBusy('กำลังบันทึก…');
     try {
       onUpdateSession(await acknowledgeStockCancelApi(session.id));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'ยืนยันไม่สำเร็จ');
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -157,12 +165,11 @@ export function StockWorkspace({
     setSuccessMessage('');
   };
 
-  const [sending, setSending] = useState(false);
   const handleAction = async (session: MockSession, action: 'search' | 'found' | 'send') => {
     setError('');
     setSuccessMessage('');
     if (session.id) {
-      setSending(true);
+      setBusy(action === 'send' ? 'กำลังส่งให้แคชเชียร์ (U POS)…' : action === 'search' ? 'กำลังเริ่มหาสินค้า…' : 'กำลังบันทึก…');
       try {
         const updated = await advanceStepApi(session.id, action);
         onUpdateSession(updated);
@@ -174,7 +181,7 @@ export function StockWorkspace({
         setError(msg);
         return;
       } finally {
-        setSending(false);
+        setBusy(null);
       }
     }
     const updated = advance(session, action, previewTime());
@@ -227,6 +234,7 @@ export function StockWorkspace({
       return;
     }
 
+    setBusy('กำลังแจ้ง Staff…');
     try {
       const updated = await reportStockMissingApi(
         session.id,
@@ -245,6 +253,8 @@ export function StockWorkspace({
     } catch (err: unknown) {
       console.error('Failed to report missing stock:', err);
       setError(err instanceof Error ? err.message : 'ไม่สามารถแจ้งสินค้าไม่ครบได้');
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -252,6 +262,7 @@ export function StockWorkspace({
     if (!cancellingSession) return;
     setError('');
     if (cancellingSession.id) {
+      setBusy('กำลังยกเลิกออเดอร์…');
       try {
         const updated = await cancelSessionApi(
           cancellingSession.id,
@@ -267,6 +278,8 @@ export function StockWorkspace({
         setError(msg);
         setCancellingSession(null);
         return;
+      } finally {
+        setBusy(null);
       }
     }
     const updated: MockSession = {
@@ -286,6 +299,7 @@ export function StockWorkspace({
 
   return (
     <div className="stock-workspace">
+      <BusyOverlay show={busy !== null} text={busy ?? ''} />
       <FmpPushBanner />
       <div className="workspace-header-bar">
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

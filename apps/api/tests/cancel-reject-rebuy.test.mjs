@@ -242,7 +242,7 @@ test('any role cancels, stock is told, the cashier can send an order back, a cha
           assert.equal(
             (await reject({ reason: 'หยิบสินค้าผิด' }, 'stock')).status,
             403,
-            'staff (the cashiers work in U POS)',
+            'staff (the cashiers work in U•POS)',
           );
           assert.equal((await reject({})).status, 400, 'a reason is required');
           assert.equal(

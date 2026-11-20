@@ -130,7 +130,7 @@ export interface Category {
   productCount?: number;
 }
 
-/** D130: where an order sent to the cashier goes: the real FileMaker (U POS), nowhere, or the test FileMaker. */
+/** D130: where an order sent to the cashier goes: the real FileMaker (U•POS), nowhere, or the test FileMaker. */
 export type FmpPushMode = 'production' | 'off' | 'uat';
 
 /** Global ADMIN switches (D59, D130). `updatedAt` / `updatedBy` are sent to ADMIN only. */
@@ -258,7 +258,7 @@ export interface MockSession {
   reason?: string;
   otherReason?: string;
   cancelledBy?: string;
-  /** F17 (D60): the bill U POS opened for this order, as U POS reported it: its number and the real time. */
+  /** F17 (D60): the bill U•POS opened for this order, as U•POS reported it: its number and the real time. */
   posBillNo?: string;
   posBillOpenedAt?: string;
   /** D121 / D128: customer requests VAT refund or receipt type */

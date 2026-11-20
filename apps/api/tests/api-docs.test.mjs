@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { cleanup, seedWorld, startApi } from './support.mjs';
 
-test('API docs: all endpoints for ADMIN only; the U POS contract is public (D84)', async (t) => {
+test('API docs: all endpoints for ADMIN only; the U•POS contract is public (D84)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) return;
   const { request } = ctx;

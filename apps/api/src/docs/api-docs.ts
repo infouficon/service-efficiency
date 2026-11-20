@@ -13,7 +13,7 @@ import { PosModule } from '../pos/pos.module';
  *
  * - `/api/docs` (+ `/api/docs-json`): EVERY endpoint, for the team. ADMIN login required (the page is served by the API
  *   itself, so the session cookie of ses.uficon.com is what gets you in). "Try it out" works for GET requests only.
- * - `/api/pos-docs` (+ `/api/pos-docs-json`): only the U POS integration (D60), public like any contract: the endpoints
+ * - `/api/pos-docs` (+ `/api/pos-docs-json`): only the U•POS integration (D60), public like any contract: the endpoints
  *   are useless without the bearer key. "Try it out" works there once the key is entered.
  */
 export function setupApiDocs(app: INestApplication) {
@@ -74,11 +74,11 @@ export function setupApiDocs(app: INestApplication) {
   const pos = SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle('SES ↔ U POS integration API')
+      .setTitle('SES ↔ U•POS integration API')
       .setVersion('1')
       .setDescription(
         [
-          'สัญญา API ระหว่าง SES กับ U POS (D60): ดึงออเดอร์ที่รอเปิดบิล และแจ้งกลับเมื่อเปิดบิลจริง',
+          'สัญญา API ระหว่าง SES กับ U•POS (D60): ดึงออเดอร์ที่รอเปิดบิล และแจ้งกลับเมื่อเปิดบิลจริง',
           '',
           '- Base URL: `https://ses.uficon.com/api` · server ต่อ server · JSON',
           '- `Authorization: Bearer <POS_API_KEY>` (ขอคีย์จากเจ้าของระบบ ห้ามวางในแชต/issue)',
@@ -94,7 +94,7 @@ export function setupApiDocs(app: INestApplication) {
   tagByPath(pos);
   SwaggerModule.setup('pos-docs', app, pos, {
     useGlobalPrefix: true,
-    customSiteTitle: 'SES ↔ U POS API',
+    customSiteTitle: 'SES ↔ U•POS API',
     swaggerOptions: { docExpansion: 'list' },
   });
 }

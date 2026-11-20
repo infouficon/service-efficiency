@@ -28,7 +28,7 @@ import type {
 } from './dto';
 import { EventType, Prisma, WorkflowState } from '@prisma/client';
 
-/** The orders that left stock and wait for the till (U POS); the CASHIER_* states only hold orders from before D105. */
+/** The orders that left stock and wait for the till (U•POS); the CASHIER_* states only hold orders from before D105. */
 const AT_TILL: WorkflowState[] = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'];
 
 const STEPS: Record<
@@ -91,7 +91,7 @@ const STEPS: Record<
     eventType: 'STOCK_SENT_TO_CASHIER',
     requiredRole: 'STOCK',
   },
-  // D105: ADMIN closes a sale U POS did not report (U POS normally completes it with the payment time, D101)
+  // D105: ADMIN closes a sale U•POS did not report (U•POS normally completes it with the payment time, D101)
   complete: {
     from: AT_TILL,
     to: 'COMPLETED',
@@ -526,8 +526,8 @@ export class SessionsService {
   }
 
   /**
-   * F17 (D60): the orders of a branch that have reached the cashier and have no bill yet, with their lines, for U POS to
-   * prefill a bill from. `queue` ("A012") narrows to one queue number. Read-only; the caller is U POS, not a user.
+   * F17 (D60): the orders of a branch that have reached the cashier and have no bill yet, with their lines, for U•POS to
+   * prefill a bill from. `queue` ("A012") narrows to one queue number. Read-only; the caller is U•POS, not a user.
    */
   async posOrders(branchCode: string, queue?: string) {
     const branch = await this.prisma.branch.findFirst({
@@ -565,9 +565,9 @@ export class SessionsService {
   }
 
   /**
-   * F17 (D60): U POS opened the bill of an order. The bill number and its real time are recorded; an order that is still at
+   * F17 (D60): U•POS opened the bill of an order. The bill number and its real time are recorded; an order that is still at
    * the cashier moves on to BILL_OPENED (milestone = the real time, the cashier does not press anything in SES). When the
-   * cashier pressed first, SES's own milestone stays and the U POS bill is added beside it. The same report again changes
+   * cashier pressed first, SES's own milestone stays and the U•POS bill is added beside it. The same report again changes
    * nothing; another bill number for the same order is a conflict.
    *
    * D141: `source` is the FileMaker that reports, when SES can tell (it used its own key). A bill of the test FileMaker never
@@ -1475,7 +1475,7 @@ export class SessionsService {
   }
 
   /**
-   * F13/D105: the order goes back to stock (the wrong item was picked). Since D105 STAFF does it (the cashiers work in U POS and
+   * F13/D105: the order goes back to stock (the wrong item was picked). Since D105 STAFF does it (the cashiers work in U•POS and
    * tell the staff). Allowed from SENT_TO_CASHIER (and the CASHIER_* states of older orders), not once the bill is open. The
    * units FOUND took go back to the shelf, the session is at the stock stage again (SEARCHING) and its stock-found milestone
    * starts over; the first round stays in the events (CASHIER_REJECTED, then a second STOCK_FOUND...).

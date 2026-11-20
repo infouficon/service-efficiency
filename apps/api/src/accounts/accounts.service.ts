@@ -37,14 +37,14 @@ type Tx = Prisma.TransactionClient;
 /** Roles that follow the ERP for accounts created by the ERP import (D54); ADMIN and MANAGER stay manual. */
 export const ERP_MANAGED_ROLES: RoleCode[] = ['STAFF', 'STOCK', 'CASHIER'];
 /**
- * D105: roles SES no longer has a screen for. The cashiers work in U POS: the role stays in the database (old accounts, history)
+ * D105: roles SES no longer has a screen for. The cashiers work in U•POS: the role stays in the database (old accounts, history)
  * but is never shown, given or enough to sign in.
  */
 export const RETIRED_ROLES: RoleCode[] = ['CASHIER'];
 const sesRoles = (account: { roles: { roleCode: RoleCode }[] }) =>
   account.roles.map((r) => r.roleCode).filter((role) => !RETIRED_ROLES.includes(role));
 /** D105: an account with nothing to do in SES any more (only retired roles). */
-export const NO_SES_WORK = 'บัญชีนี้ไม่ได้ใช้ SES แล้ว (แคชเชียร์ทำงานใน U POS)';
+export const NO_SES_WORK = 'บัญชีนี้ไม่ได้ใช้ SES แล้ว (แคชเชียร์ทำงานใน U•POS)';
 const ERP_PASSWORD_MESSAGE =
   'บัญชีนี้ใช้รหัสผ่านเดียวกับ ERP กรุณาเปลี่ยนรหัสผ่านที่ ERP (ระบบซิงก์ทุกวัน 10:00)';
 const queueOf = (
@@ -592,7 +592,7 @@ export class AccountsService {
     if ((lastName?.length ?? 0) > 100) throw bad('lastName', 'ยาวเกิน 100 ตัวอักษร');
     const roles = parseRolesCell(raw.roles);
     if (roles === null) throw bad('roles', 'ใช้ได้เฉพาะ ADMIN, MANAGER, STAFF, STOCK คั่นด้วย ,');
-    const retiredRoleError = () => bad('roles', 'CASHIER ไม่ใช้แล้ว (แคชเชียร์ทำงานใน U POS)');
+    const retiredRoleError = () => bad('roles', 'CASHIER ไม่ใช้แล้ว (แคชเชียร์ทำงานใน U•POS)');
     const active = parseActiveCell(raw.active);
     if (active === null) throw bad('active', 'ใช้ TRUE หรือ FALSE');
     const phone = parsePhoneCell(raw.phone);

@@ -94,7 +94,7 @@ test('STOCK scans the serial number of every unit when it sends the goods to the
       assert.deepEqual(itemOf(detail, skuB).serials.map((x) => x.sn), [snOf(12)]);
     });
 
-    await t.test('the U POS door and the FileMaker message carry them with the UPC (one view for both)', async () => {
+    await t.test('the U•POS door and the FileMaker message carry them with the UPC (one view for both)', async () => {
       const res = await fetch(`${base}/api/integrations/pos/orders?branch=${branches.a.code}`, { headers: { Authorization: `Bearer ${POS_KEY}` } });
       const order = (await res.json()).orders.find((o) => o.reference === first.reference);
       const a = order.items.find((i) => i.partNo === skuA.sku);

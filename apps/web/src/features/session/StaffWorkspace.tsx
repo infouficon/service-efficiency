@@ -330,7 +330,7 @@ export function StaffWorkspace({
     }
   };
 
-  /** F13/D105: the cashier (in U POS) found the wrong unit; STAFF sends the order back to stock with which items and why. */
+  /** F13/D105: the cashier (in U•POS) found the wrong unit; STAFF sends the order back to stock with which items and why. */
   const handleReturnToStock = async (
     reason: string,
     text: string,
@@ -1005,16 +1005,16 @@ export function StaffWorkspace({
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                                 <CreditCard size={16} />
                                 {activeSession.state === 'BILL_OPENED'
-                                  ? `เปิดบิลใน U POS แล้ว${activeSession.posBillNo ? ` (บิล ${activeSession.posBillNo})` : ''} รอชำระเงิน`
-                                  : 'ส่งของถึงแคชเชียร์แล้ว รอเปิดบิลใน U POS'}
+                                  ? `เปิดบิลใน U•POS แล้ว${activeSession.posBillNo ? ` (บิล ${activeSession.posBillNo})` : ''} รอชำระเงิน`
+                                  : 'ส่งของถึงแคชเชียร์แล้ว รอเปิดบิลใน U•POS'}
                               </span>
                             </Notice>
                             <p className="muted">
-                              แคชเชียร์ทำรายการใน U POS ระบบอัปเดตสถานะให้เอง ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ Stock"
+                              แคชเชียร์ทำรายการใน U•POS ระบบอัปเดตสถานะให้เอง ถ้าแคชเชียร์แจ้งว่าหยิบผิด/ชำรุด กด "ส่งกลับ Stock"
                             </p>
                             <Summary session={activeSession} />
                             {(() => {
-                              // D105: the cashier works in U POS and tells the staff; the staff sends the order back
+                              // D105: the cashier works in U•POS and tells the staff; the staff sends the order back
                               const sendBack =
                                 activeSession.state !== 'BILL_OPENED' ? (
                                   <Button variant="secondary" onClick={() => setForm('return')}>

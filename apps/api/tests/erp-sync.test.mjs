@@ -17,7 +17,7 @@ test('every shop-floor position is STAFF + STOCK (D106); no CASHIER; ADMIN/MANAG
   assert.deepEqual(erp.rolesForPosition('Sales Representative (Contract 6 months)'), both);
   assert.deepEqual(erp.rolesForPosition('Sale Supervisor'), both);
   assert.deepEqual(erp.rolesForPosition('Store Manager'), both);
-  assert.deepEqual(erp.rolesForPosition('Cashier'), both, 'the till is U POS (D105); the rest of the work is in SES');
+  assert.deepEqual(erp.rolesForPosition('Cashier'), both, 'the till is U•POS (D105); the rest of the work is in SES');
   assert.deepEqual(erp.rolesForPosition('In Store Stock'), both);
   assert.deepEqual(erp.rolesForPosition('Cashier / Sale'), both);
   assert.deepEqual(erp.rolesForPosition('Technician'), []);

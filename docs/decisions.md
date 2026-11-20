@@ -2333,3 +2333,16 @@ The owner, looking at an order's FileMaker box: it reads too hard for a salesper
    - Units another open order holds are struck through with their queue. Units this order already has read "ออเดอร์นี้", also those scanned after the list was fetched.
    - A free unit can be **tapped**, here or in the list that follows a wrong scan. "ใช้เครื่องนี้?" then shows the number large and asks STOCK to match every digit with the box. Only "ตรงกับกล่อง ใช้เครื่องนี้" saves it, the same way as a scan, with the same checks and lock.
 4. **Not done.** SES does not record that a serial was picked rather than scanned. If the owner wants to see who picks, that needs a column and an API field.
+
+## D186 — The till is written "U•POS" everywhere (2026-11-20)
+
+Owner: "U•POS ทั้งหมดเลย". Every "U POS" a person can read now says "U•POS", like "U•Store". That covers:
+- the web screens and messages
+- the API's messages, e.g. "ADMIN ปิดการส่งเข้า U•POS (FileMaker) อยู่" and "แคชเชียร์ทำงานใน U•POS"
+- the integration docs' titles ("SES ↔ U•POS integration API")
+- code comments, tests, and the living docs (user guide, POS integration, permissions, …)
+
+Not renamed:
+- **`U-POS`**, the actor id stored on events U•POS reports (`actorStaffId`, `metadata.source`). It is data, and old rows keep it. The session log and the audit log show it as "U•POS".
+- Applied migrations and the record of earlier decisions and meetings (this file, `meeting-feedback-2026-10-13.md`, `grilling-backlog.md`), which keep the name used then.
+- Messages already stored, such as a skipped push's reason from before today.

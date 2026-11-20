@@ -113,19 +113,19 @@ const MODE: Record<FmpPushMode, { label: string; tag: string; effect: string }> 
   production: {
     label: 'ส่งจริง',
     tag: 'status-found',
-    effect: 'ออเดอร์ที่ STOCK กด "ส่งให้แคชเชียร์" จะเปิดร่างบิลใน U POS (FileMaker จริง) ทันที',
+    effect: 'ออเดอร์ที่ STOCK กด "ส่งให้แคชเชียร์" จะเปิดร่างบิลใน U•POS (FileMaker จริง) ทันที',
   },
   off: {
     label: 'ปิด',
     tag: 'status-outcome',
     effect:
-      'ไม่ส่งอะไรออกจาก SES: ออเดอร์ที่ส่งแคชเชียร์ระหว่างนี้จะจดไว้ใน log ว่า "ไม่ได้ส่ง" และไม่ถูกส่งตามทีหลัง (แคชเชียร์คีย์บิลเองใน U POS) · คิวที่ค้างจากก่อนปิดจะรอ แล้วส่งต่อเมื่อเปิดกลับ',
+      'ไม่ส่งอะไรออกจาก SES: ออเดอร์ที่ส่งแคชเชียร์ระหว่างนี้จะจดไว้ใน log ว่า "ไม่ได้ส่ง" และไม่ถูกส่งตามทีหลัง (แคชเชียร์คีย์บิลเองใน U•POS) · คิวที่ค้างจากก่อนปิดจะรอ แล้วส่งต่อเมื่อเปิดกลับ',
   },
   uat: {
     label: 'UAT (ทดสอบ)',
     tag: 'status-searching',
     effect:
-      'ออเดอร์ใหม่ไป FileMaker ทดสอบ (FMP_UAT_*) พร้อม test=true ไม่เข้า U POS จริง · ยกเว้นการเอาร่างบิลออก (ส่งกลับ STOCK / ยกเลิก) ของออเดอร์ที่ไปถึงของจริงแล้ว ยังไปที่ของจริง',
+      'ออเดอร์ใหม่ไป FileMaker ทดสอบ (FMP_UAT_*) พร้อม test=true ไม่เข้า U•POS จริง · ยกเว้นการเอาร่างบิลออก (ส่งกลับ STOCK / ยกเลิก) ของออเดอร์ที่ไปถึงของจริงแล้ว ยังไปที่ของจริง',
   },
 };
 const TARGET: Record<string, string> = { PRODUCTION: 'จริง', UAT: 'UAT', NONE: '—' };
@@ -240,7 +240,7 @@ export function FmpPanel() {
         ) : (
           <>
             <div style={{ marginBottom: '1rem' }}>
-              <strong>การส่งเข้า U POS (FileMaker): </strong>
+              <strong>การส่งเข้า U•POS (FileMaker): </strong>
               <span className={`status-tag ${MODE[status.mode.mode].tag}`}>{MODE[status.mode.mode].label}</span>
               {status.mode.updatedBy && (
                 <span className="fine muted">
@@ -290,7 +290,7 @@ export function FmpPanel() {
                       onClick={() => {
                         const mode = askMode;
                         setAskMode(null);
-                        void run(() => saveFmpPushModeApi(mode), `เปลี่ยนการส่งเข้า U POS เป็น "${MODE[mode].label}" แล้ว`);
+                        void run(() => saveFmpPushModeApi(mode), `เปลี่ยนการส่งเข้า U•POS เป็น "${MODE[mode].label}" แล้ว`);
                       }}
                     >
                       ยืนยัน
@@ -674,7 +674,7 @@ function FmpLogLine({ row, open, detail, onToggle }: { row: FmpLogRow; open: boo
 
 /**
  * D130: everybody at the stock screen: a one-line warning while orders sent to the cashier do NOT open a held bill in the real
- * U POS (ADMIN switched the push off, or to the test FileMaker), so the cashier knows to key the bill in by hand.
+ * U•POS (ADMIN switched the push off, or to the test FileMaker), so the cashier knows to key the bill in by hand.
  */
 export function FmpPushBanner() {
   const [mode, setMode] = useState<FmpPushMode | null>(null);
@@ -700,8 +700,8 @@ export function FmpPushBanner() {
     <div style={{ marginBottom: '1rem' }}>
       <Notice error>
         {mode === 'off'
-          ? 'ตอนนี้ ADMIN ปิดการส่งเข้า U POS: กด "ส่งให้แคชเชียร์" แล้ว U POS จะไม่มีร่างบิล แคชเชียร์คีย์บิลเอง'
-          : 'โหมดทดสอบ (UAT): ออเดอร์ไป FileMaker ทดสอบ ไม่เข้า U POS จริง แคชเชียร์คีย์บิลเองถ้าเป็นการขายจริง'}
+          ? 'ตอนนี้ ADMIN ปิดการส่งเข้า U•POS: กด "ส่งให้แคชเชียร์" แล้ว U•POS จะไม่มีร่างบิล แคชเชียร์คีย์บิลเอง'
+          : 'โหมดทดสอบ (UAT): ออเดอร์ไป FileMaker ทดสอบ ไม่เข้า U•POS จริง แคชเชียร์คีย์บิลเองถ้าเป็นการขายจริง'}
       </Notice>
     </div>
   );

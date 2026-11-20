@@ -44,7 +44,7 @@ export function FmpStatusLine({ fmp, children }: { fmp: FmpStatus | null | undef
       {children}
       {line.detail && (
         <details className="fmp-status-detail">
-          <summary>รายละเอียดจาก U POS</summary>
+          <summary>รายละเอียดจาก U•POS</summary>
           {line.detail}
         </details>
       )}
@@ -316,7 +316,7 @@ export function Summary({
             })()}
             {session.fmp && (
               <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
-                <span className="info-item-label">U POS:</span>
+                <span className="info-item-label">U•POS:</span>
                 <div className="info-item-value">
                   <FmpStatusLine fmp={session.fmp}>
                     <SnMissingList key={session.id ?? session.reference} fmp={session.fmp} branchCode={session.branchCode} sessionId={session.id} />
@@ -326,7 +326,7 @@ export function Summary({
             )}
             {session.posBillNo && (
               <div className="info-item-row">
-                <span className="info-item-label">บิลใน U POS:</span>
+                <span className="info-item-label">บิลใน U•POS:</span>
                 <span className="info-item-value">
                   {session.posBillNo}
                   {session.posBillOpenedAt

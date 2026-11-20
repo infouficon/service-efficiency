@@ -59,7 +59,8 @@ export function BusyOverlay({ show, text, note }: { show: boolean; text: string;
       {stage !== 'locked' && (
         <div className="busy-overlay-card">
           <span className="spinner" aria-hidden="true" />
-          <span>{text}</span>
+          <strong>{text}</strong>
+          <span className="busy-overlay-please">กรุณารอสักครู่</span>
           {note && <div className="busy-overlay-note">{note}</div>}
           {stage === 'slow' && (
             <div className="busy-overlay-slow">

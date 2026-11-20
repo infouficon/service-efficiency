@@ -10,6 +10,7 @@ import {
   Tag,
   Share2,
 } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
 import { SnMissingList } from '../stock/BranchUnits';
@@ -29,14 +30,24 @@ interface SummaryProps {
   title?: string;
 }
 
-/** D100: the order's FileMaker side in one line (see `fmpStatusText`). */
-export function FmpStatusLine({ fmp }: { fmp: FmpStatus | null | undefined }) {
+/**
+ * D100: the order's FileMaker side in one line (see `fmpStatusText`). D185: what to do comes first in the shop's words;
+ * `children` (the serials left off the bill) sit in the same box; FileMaker's own message is folded away for ADMIN/the cashier.
+ */
+export function FmpStatusLine({ fmp, children }: { fmp: FmpStatus | null | undefined; children?: ReactNode }) {
   const line = fmpStatusText(fmp);
   if (!line) return null;
   return (
     <div className={`fmp-status fmp-status-${line.tone}`} role={line.tone === 'bad' ? 'alert' : undefined}>
       <strong>{line.text}</strong>
       {line.hint && <div className="fine">{line.hint}</div>}
+      {children}
+      {line.detail && (
+        <details className="fmp-status-detail">
+          <summary>รายละเอียดจาก U POS</summary>
+          {line.detail}
+        </details>
+      )}
     </div>
   );
 }
@@ -305,10 +316,11 @@ export function Summary({
             })()}
             {session.fmp && (
               <div className="info-item-row" style={{ alignItems: 'flex-start' }}>
-                <span className="info-item-label">FileMaker:</span>
+                <span className="info-item-label">U POS:</span>
                 <div className="info-item-value">
-                  <FmpStatusLine fmp={session.fmp} />
-                  <SnMissingList key={session.id ?? session.reference} fmp={session.fmp} branchCode={session.branchCode} sessionId={session.id} />
+                  <FmpStatusLine fmp={session.fmp}>
+                    <SnMissingList key={session.id ?? session.reference} fmp={session.fmp} branchCode={session.branchCode} sessionId={session.id} />
+                  </FmpStatusLine>
                 </div>
               </div>
             )}

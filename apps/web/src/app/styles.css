@@ -5691,6 +5691,10 @@ input[aria-invalid='true'] {
   border-width: 3px;
   margin: 0;
 }
+.busy-overlay-please {
+  color: var(--text-secondary, #4b5563);
+  font-size: 13px;
+}
 .busy-overlay-note {
   color: #b45309;
   font-size: 13px;
@@ -5769,4 +5773,47 @@ input[aria-invalid='true'] {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.fmp-status .sn-missing {
+  font-weight: 400;
+}
+.sn-missing ul {
+  margin: 0;
+  padding-left: 18px;
+}
+/* D185: a unit STOCK can tap to use (after confirming it against the box) */
+.branch-unit.pick {
+  cursor: pointer;
+  font-size: 13px;
+  padding: 3px 8px;
+  border-color: #86efac;
+}
+.branch-unit.pick:hover,
+.branch-unit.pick:focus-visible {
+  background: #dcfce7;
+  border-color: #16a34a;
+}
+.pick-confirm-sn {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  overflow-wrap: anywhere;
+}
+/* D185: FileMaker's own message, folded away under the shop's words */
+.fmp-status-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+.fmp-status-detail summary {
+  cursor: pointer;
 }

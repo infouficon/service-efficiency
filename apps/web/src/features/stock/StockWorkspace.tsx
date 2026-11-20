@@ -99,7 +99,7 @@ export function StockWorkspace({
   const handleAcknowledgeCancel = async (session: MockSession) => {
     if (!session.id) return;
     setError('');
-    setBusy('กำลังบันทึก…');
+    setBusy('กำลังบันทึก');
     try {
       onUpdateSession(await acknowledgeStockCancelApi(session.id));
     } catch (err: unknown) {
@@ -169,7 +169,7 @@ export function StockWorkspace({
     setError('');
     setSuccessMessage('');
     if (session.id) {
-      setBusy(action === 'send' ? 'กำลังส่งให้แคชเชียร์ (U POS)…' : action === 'search' ? 'กำลังเริ่มหาสินค้า…' : 'กำลังบันทึก…');
+      setBusy(action === 'send' ? 'กำลังส่งให้แคชเชียร์ (U POS)' : action === 'search' ? 'กำลังเริ่มหาสินค้า' : 'กำลังบันทึก');
       try {
         const updated = await advanceStepApi(session.id, action);
         onUpdateSession(updated);
@@ -234,7 +234,7 @@ export function StockWorkspace({
       return;
     }
 
-    setBusy('กำลังแจ้ง Staff…');
+    setBusy('กำลังแจ้ง Staff');
     try {
       const updated = await reportStockMissingApi(
         session.id,
@@ -262,7 +262,7 @@ export function StockWorkspace({
     if (!cancellingSession) return;
     setError('');
     if (cancellingSession.id) {
-      setBusy('กำลังยกเลิกออเดอร์…');
+      setBusy('กำลังยกเลิกออเดอร์');
       try {
         const updated = await cancelSessionApi(
           cancellingSession.id,

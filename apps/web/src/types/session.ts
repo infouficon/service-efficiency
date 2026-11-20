@@ -310,6 +310,8 @@ export interface FmpStatus {
   ackMessage: string | null;
   /** D140: why this needs a person, by the API's one rule (the same as Admin's "ออเดอร์ที่ต้องดู"); null = it does not */
   attention?: 'failed' | 'stuck' | 'ack-error' | 'sn-skipped' | null;
+  /** D183: serials FileMaker left off the held bill (its `snCheck`): code SN_NOT_FOUND, SN_WRONG_BRANCH, ... */
+  snMissing?: { sn: string; partNo: string | null; code: string | null; branch: string | null; model: string | null }[];
   at: string;
 }
 

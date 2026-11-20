@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { FmpStatus, MockSession } from '../../types/session';
 import { fmpStatusText } from './fmpStatusText';
+import { SnMissingList } from '../stock/BranchUnits';
 import {
   customerSourceLabel,
   discountTypeLabel,
@@ -307,6 +308,7 @@ export function Summary({
                 <span className="info-item-label">FileMaker:</span>
                 <span className="info-item-value">
                   <FmpStatusLine fmp={session.fmp} />
+                  <SnMissingList fmp={session.fmp} branchCode={session.branchCode} />
                 </span>
               </div>
             )}

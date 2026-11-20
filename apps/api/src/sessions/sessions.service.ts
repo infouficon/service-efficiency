@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
 import { isValidPhone, normalizePhone } from '../common/phone.util';
 import { loadPaymentTypes, orderView } from './order-view';
-import { fmpAttentionKind, FmpService, type FmpTarget } from '../fmp/fmp.service';
+import { fmpAttentionKind, FmpService, type FmpTarget, type SnCheck } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
@@ -409,6 +409,11 @@ export class SessionsService {
               ackStatus: r.ackStatus, // success | error | reported | null (no answer yet)
               ackMessage: r.ackMessage,
               attention: fmpAttentionKind(r), // D140: failed | stuck | ack-error | sn-skipped | null, the same rule as Admin's "ออเดอร์ที่ต้องดู"
+              // D183: the serials FileMaker left off the held bill (D119 snCheck), so the order can show what the branch has instead
+              snMissing: ((r.snCheck as SnCheck[] | null) ?? [])
+                .filter((c) => !c.written)
+                .slice(0, 20)
+                .map((c) => ({ sn: c.sn, partNo: c.partNo, code: c.code, branch: c.branch, model: c.model })),
               at: (r.ackReceivedAt ?? r.sentAt ?? r.createdAt).toISOString(),
             }
           : null,

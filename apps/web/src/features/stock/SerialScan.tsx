@@ -4,6 +4,7 @@ import { Button, Modal, Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
+import { BranchUnitsList } from './BranchUnits';
 import { CameraScan } from './CameraScan';
 import { createWedgeReader, serialKindOf, serialProblem } from './scanning';
 
@@ -17,7 +18,7 @@ type StockCheck = Extract<SerialCheck, { status: 'ok' }> | null;
 /** D104: the little stock mark next to a saved serial. */
 function StockMark({ check }: { check: StockCheck | undefined }) {
   if (!check) return null;
-  const title = 'FileMaker ตอนนี้';
+  const title = check.target === 'UAT' ? 'FileMaker UAT (ทดสอบ) ตอนนี้' : 'FileMaker ตอนนี้';
   if (check.verdict === 'here')
     return (
       <span className="fmp-mark ok" title={`${title}: ready ที่สาขานี้`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -426,6 +427,10 @@ export function SerialScan({
                   ? 'SN นี้เป็นรุ่นอื่น: หยิบผิด → ลบแล้วสแกนเครื่องที่ถูกรุ่น'
                   : 'ตาม FileMaker เครื่องนี้ยังไม่ ready ที่สาขานี้: หยิบผิด → ลบแล้วสแกนเครื่องอื่น · เครื่องโอนมายังไม่รับโอน → แจ้งรับโอนใน FileMaker'}
               </span>
+            )}
+            {/* D183: what this branch does have of the model, so the right box can be found */}
+            {warned?.model && warned.branchUnits && (
+              <BranchUnitsList model={warned.model} units={warned.branchUnits} target={warned.target} asOf={warned.asOf} />
             )}
           </div>
         );

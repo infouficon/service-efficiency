@@ -2317,3 +2317,19 @@ Owner: "ตอนโหลด ทำให้กดอะไรไม่ได�
    - The screen waits for one FileMaker check for at most 15 s, the server's UAT timeout. A later answer still sets the mark.
    - Any wait past 20 s adds "รอนานกว่าปกติ … โหลดหน้าใหม่" with a reload button. What was saved stays saved.
 5. **Unchanged.** The check still only informs (D104). Once it answers, "send" works whatever the verdict.
+
+## D185 — Plain words for the U POS box; "can't find it?" picks a unit only after STOCK checks the box (2026-11-20)
+
+The owner, looking at an order's FileMaker box: it reads too hard for a salesperson ("CREATED_SN_LATER saleID … (0 รายการ) … not found in stock · … ข้าม 1 เครื่อง · ลูกค้าใหม่ …"). The lock screen's "กำลังเช็ค … กับ FileMaker…" looked odd. They asked whether STOCK could look up the branch's units without typing. They chose: **scanning the box stays the way**. The list is the way out when STOCK is stuck, and a unit picked from it is confirmed against the box again.
+
+1. **The U POS box** (label "U POS:", was "FileMaker:"). `fmpStatusText` now gives:
+   - `text`: what happened, e.g. "ส่งเข้า U POS แล้ว บิลพักครบ 2 รายการ" or "ส่งเข้า U POS แล้ว แต่ยังขาด 1 เครื่องในบิล" (the count is `snMissing`)
+   - `hint`: what to do
+   - `detail`: FileMaker's own message (codes, saleID, the script's notes for the cashier). It is folded under "รายละเอียดจาก U POS", there for ADMIN and the cashier and out of the salesperson's way.
+
+   The test FileMaker reads "[ระบบทดสอบ]". The serials left off the bill now sit in the same box, in the shop's words: "359837344056363 (รุ่น MJRU4ZP/A): ไม่พบเครื่องนี้ในสต็อก". ADMIN's FMP panel keeps its short codes.
+2. **The lock screen** (D184) reads "กำลังตรวจสอบ IMEI/SN กับ U POS" / "กำลังบันทึก IMEI/SN" / "กำลังดึงรายการ IMEI/SN จาก U POS", then "กรุณารอสักครู่". No serial number is shown.
+3. **"หาไม่เจอ? ดู IMEI รุ่นนี้ที่มีในสาขา".** A small button under each product's scan box, so STOCK can look before any wrong scan. It uses the same query as D183 (the FileMaker of ADMIN's push mode, STOCK's own branch).
+   - Units another open order holds are struck through with their queue. Units this order already has read "ออเดอร์นี้", also those scanned after the list was fetched.
+   - A free unit can be **tapped**, here or in the list that follows a wrong scan. "ใช้เครื่องนี้?" then shows the number large and asks STOCK to match every digit with the box. Only "ตรงกับกล่อง ใช้เครื่องนี้" saves it, the same way as a scan, with the same checks and lock.
+4. **Not done.** SES does not record that a serial was picked rather than scanned. If the owner wants to see who picks, that needs a column and an API field.

@@ -2242,22 +2242,24 @@ Owner instruction via `/grill-me`: "เมื่อกดเลือก accesso
 4. **Database Migration:**
    - Migration `202611190004_widen_session_accessory_name` widens `SessionAccessory.accessoryName` from `VARCHAR(64)` to `VARCHAR(191)` to safely store full Apple accessory names and SKU codes.
 
-## D156 — Pure Dynamic Accessories Catalog & Full-Width Single Button (2026-11-19)
+## D157 — Standard Glass Display Specification Separation from Color (2026-11-20)
 
-Owner instruction via `/grill-me`: "หากแสดงแค่ 1 ปุ่มก้ให้ยาวเต็มกรอบ และลบส่วน Accessories ที่ hardcode ไว้ออก".
+Owner instruction via `/grill-me`: "มีสีเกินมา with standard glass Starlight และ with standard glass - Midnight ซึ่งเป็นส่วนของจอภาพ แต่ในสีดันมีติดมา". (Same implementation as D181 on develop). Amends D145 and D150.
 
-1. **Remove Hardcoded Accessories Fallback:**
-   - Previously, `extractAccessoryGroups` in `SelectionEditor.tsx` merged the hardcoded constant `accessories` from `constants/options.ts` (e.g. `'Software'`, `'Protection'`, `'Case'`).
-   - This caused duplicate or obsolete category names (such as "Software" alongside real catalog product "Software & Care") to appear in the Accessories list.
-   - Removed the hardcoded fallback from `SelectionEditor.tsx`. Accessory groups are now strictly derived from real active products (`GET /products`) belonging to accessory categories (or `Category.isAccessory: true`), alongside any keys already selected in the session.
-   - When no accessories match or the catalog is empty, a clean descriptive empty state is shown ("ไม่มีรายการอุปกรณ์เสริมในขณะนี้" or search empty state).
-2. **Responsive Model Button Sizing (Accessories):**
-   - Model buttons use `flex: 1 1 auto` (`minWidth: 0`, `boxSizing: border-box`).
-   - If an item is the only one in a row (e.g. because of long text such as "iPad Case for iPad Air 11-inch" or only 1 model in the group), it automatically stretches to fill 100% of the row width without leaving awkward empty gaps on the right.
-   - If 2 or 3 shorter model options fit on the same row, they share the row width side-by-side naturally.
-   - When selected, a checkmark (`✓`) is shown alongside the model name.
-   - SKU options continue to render full-width (100%) rows.
-   - Manual selection invariant (D147) is preserved: staff still explicitly tap the button to select the model and pick the SKU.
+1. **Context & Problem:**
+   - Raw ERP product color data in Warroom occasionally contains `"with standard glass Starlight"` or `"with standard glass - Midnight"`.
+   - `parseColorField` in `warroom-sync.service.ts` previously only parsed and stripped `"nano-texture glass"`, leaving `"with standard glass"` embedded in the color attribute.
+   - This caused color options to show up as `"with standard glass Starlight"` and `"with standard glass - Midnight"` instead of clean colors (`"Starlight"`, `"Midnight"`), and prevented proper color swatch resolution.
+2. **Standard Glass Parsing & Separation:**
+   - Updated `parseColorField` in `apps/api/src/warroom/warroom-sync.service.ts` to detect and strip `/\b(?:with\s+)?standard(?:\s+glass)?\b/gi` in addition to nano-texture.
+   - Sets `display: 'Standard Glass'` and strips punctuation, returning clean colors (`"Starlight"`, `"Midnight"`).
+   - In `buildCatalog`, if a product model has no Nano-texture Glass SKUs, `display: 'Standard Glass'` is omitted from `item.attributes` (per D150), so staff are not forced to select an obvious single-choice glass step.
+   - When a model does have Nano-texture Glass SKUs, peer SKUs retain `display: 'Standard Glass'`, enabling the 2-way glass selection step.
+3. **Defense-in-Depth Sanitization in Frontend:**
+   - In `apps/web/src/features/session/catalog.ts` (`getSkuAttribute`), added a safety sanitizer for `color` to strip any lingering `with standard glass` / `with nano-texture glass` tokens if stale client caches exist.
+4. **Sync Version Bump:**
+   - Bumped `CATALOG_RULES_VERSION` from 10 to 11 in `warroom-sync.service.ts` to trigger automatic re-processing and attribute refresh across all branches.
+
 
 
 

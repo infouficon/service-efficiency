@@ -1,14 +1,26 @@
 /** The branch catalog as the product pickers use it (SkuPicker, D107): types, the API shape, stock rules, the model list. */
 
-/** Get the attribute value for a spec key from a SKU (D142) */
+/** Get the attribute value for a spec key from a SKU (D142, D157) */
 export function getSkuAttribute(s: CatalogSku, key: string): string {
+  let val = '';
   if (s.attributes && typeof s.attributes[key] === 'string' && s.attributes[key].trim()) {
-    return s.attributes[key].trim();
+    val = s.attributes[key].trim();
+  } else if (key === 'color') {
+    val = s.color?.trim() || '';
+  } else if (key === 'storage') {
+    val = s.storage?.trim() || '';
+  } else if (key === 'memory') {
+    val = s.memory?.trim() || '';
   }
-  if (key === 'color') return s.color?.trim() || '';
-  if (key === 'storage') return s.storage?.trim() || '';
-  if (key === 'memory') return s.memory?.trim() || '';
-  return '';
+  if (key === 'color' && val) {
+    // D157: Clean any leaked glass specifications like "with standard glass"
+    const cleaned = val
+      .replace(/\b(?:with\s+)?(?:standard|nano-?texture)(?:\s+glass)?\b/gi, '')
+      .replace(/^[-–·:/\s]+|[-–·:/\s]+$/g, '')
+      .trim();
+    return cleaned || val;
+  }
+  return val;
 }
 
 /** D149: Canonical Mac family classification types */

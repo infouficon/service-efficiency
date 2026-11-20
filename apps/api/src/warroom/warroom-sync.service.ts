@@ -269,11 +269,16 @@ export function parseColorField(rawColor: string | null): ParsedColorInfo {
   let display: string | null = null;
   let storage: string | null = null;
 
-  // 1. Detect and strip "with nano-texture glass" / "nano-texture glass"
+  // 1. Detect and strip display glass: "with nano-texture glass" or "with standard glass"
   if (/\bnano-?texture(?:\s+glass)?\b/i.test(text)) {
     display = 'Nano-texture Glass';
     text = text
       .replace(/\b(?:with\s+)?nano-?texture(?:\s+glass)?\b/gi, '')
+      .trim();
+  } else if (/\bstandard(?:\s+glass)?\b/i.test(text)) {
+    display = 'Standard Glass';
+    text = text
+      .replace(/\b(?:with\s+)?standard(?:\s+glass)?\b/gi, '')
       .trim();
   }
 
@@ -829,6 +834,11 @@ export function buildCatalog(rows: WarroomRow[]): {
       if (!item.attributes.display) {
         item.attributes.display = 'Standard Glass';
       }
+    } else if (item.attributes?.display === 'Standard Glass') {
+      delete item.attributes.display;
+      if (Object.keys(item.attributes).length === 0) {
+        item.attributes = null;
+      }
     }
   }
   return {
@@ -964,7 +974,7 @@ export async function peekSnapshot(url: string): Promise<Peek> {
  * handled (and corrects, re-files and updates what the old rules made) without anybody pressing "ซิงก์ตอนนี้". Raise it
  * whenever `mapCategory`, `buildCatalog` or the helpers they use change what an item looks like.
  */
-export const CATALOG_RULES_VERSION = 10;
+export const CATALOG_RULES_VERSION = 11;
 
 /**
  * Short stable fingerprint of what stock_mv holds: a change that does not move max(snapshot_at) (units sold) still

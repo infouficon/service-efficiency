@@ -2271,3 +2271,12 @@ Owner instruction via `/grill-me`: "มีสีเกินมา with standard
 
 
 
+
+## D182 — Tell STAFF when a new version is out; confirm errors in Thai (2026-11-20)
+
+Owner, after a shop screen showed `Discount type selection is required before confirmation` on an order whose page had no discount picker at all.
+
+1. **Why:** the tab had been open since before D146 shipped. Its old screens never asked for discount type or customer source, but the new API refused to confirm without them. STAFF could not fix it from that page, and the English message did not say what to do.
+2. **New-version banner (web):** `components/NewVersionBanner.tsx`, mounted in `main.tsx`. It compares the entry script this tab loaded (`/assets/index-<hash>-g2.js`) with the one in a fresh `index.html`, fetched `no-store`. The check runs when the tab comes back into view or gets focus, and every 3 minutes. If they differ, a sticky banner appears: "มีเวอร์ชันใหม่ของระบบ … [โหลดหน้าใหม่]". It never reloads on its own, because STAFF may be halfway through an order (selection edits are saved as they are made). The banner is hidden on paper. In `vite dev` there is no built entry, so the check does nothing.
+3. **Confirm errors in Thai (API):** `assertConfirmable` (D141) now says which field is missing and to press "กลับไปแก้ไข". For discount type and customer source (D146) it also says to reload first if the field is not on screen. The status code (400) is unchanged.
+4. **Numbering:** D182 because develop already uses up to D181. Next free on develop is D183.

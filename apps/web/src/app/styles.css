@@ -5621,3 +5621,35 @@ input[aria-invalid='true'] {
   color: var(--primary-dark, #065f5b);
 }
 
+
+/* D182: a new build is out; this tab still runs the old one */
+.new-version-banner {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  background: #fffbeb;
+  border-bottom: 1px solid #fde68a;
+  color: #92400e;
+  font-size: 14px;
+}
+.new-version-banner button {
+  border: 1px solid #d97706;
+  background: #d97706;
+  color: #fff;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+@media print {
+  .new-version-banner {
+    display: none !important;
+  }
+}

@@ -1198,23 +1198,23 @@ export class SessionsService {
     payments: { method: string; cardType: string | null; installmentMonths: number | null }[];
   }) {
     if (!session.phone || !isValidPhone(session.phone)) {
-      throw new BadRequestException('Valid customer phone number is required to confirm purchase');
+      throw new BadRequestException('ยังไม่มีเบอร์โทรลูกค้าที่ถูกต้อง กรุณากรอกเบอร์โทรก่อนยืนยัน');
     }
 
     if (session.items.length === 0) {
-      throw new BadRequestException('A main product selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกสินค้าหลัก กรุณากด "กลับไปแก้ไข" แล้วเลือกสินค้า');
     }
 
     if (!session.receiptType) {
-      throw new BadRequestException('Receipt type selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกประเภทใบเสร็จ กรุณากด "กลับไปแก้ไข" แล้วเลือกประเภทใบเสร็จ');
     }
 
     if (!session.discountType) {
-      throw new BadRequestException('Discount type selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกประเภทส่วนลด กรุณากด "กลับไปแก้ไข" แล้วเลือกประเภทส่วนลด (ถ้าไม่เห็นช่องนี้ ให้โหลดหน้าใหม่ก่อน)');
     }
 
     if (!session.customerSource) {
-      throw new BadRequestException('Customer source selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกว่าลูกค้ารู้จักร้านจากไหน กรุณากด "กลับไปแก้ไข" แล้วเลือก (ถ้าไม่เห็นช่องนี้ ให้โหลดหน้าใหม่ก่อน)');
     }
 
     await this.assertCardDetails(session.payments);

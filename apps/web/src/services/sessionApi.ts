@@ -577,21 +577,44 @@ export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
   return api<AuditLogItem[]>(`/admin/audit-logs?limit=${encodeURIComponent(limit)}`);
 }
 
-/** D104: one scanned serial against FileMaker live (only with `SERIAL_CHECK=fmp`; off by default since D111). */
+/** D183: the units of one model FileMaker has ready in one branch; `taken` = the queue of another open SES order holding it. */
+export interface BranchUnits {
+  count: number;
+  more: boolean;
+  units: { sn: string; taken: string | null }[];
+}
+
+/**
+ * D104: one scanned serial against FileMaker live. D183: the FileMaker orders go to (always on while that is the test FileMaker;
+ * the real one only with `SERIAL_CHECK=fmp`); not ready here = also what the branch has of that model.
+ */
 export type SerialCheck =
   | { status: 'off' | 'unavailable'; reason: string }
   | {
       status: 'ok';
       source: 'fmp';
+      target?: 'PRODUCTION' | 'UAT';
       asOf: string | null;
       sn: string;
       verdict: 'here' | 'not-ready' | 'other-branch' | 'not-in-stock' | 'other-model';
       branchCode?: string | null;
       branchName?: string | null;
       stockStatus?: string;
+      model?: string;
+      branchUnits?: BranchUnits;
     };
 
 export async function serialCheckApi(sn: string, part?: string): Promise<SerialCheck> {
   const query = new URLSearchParams(part ? { sn, part } : { sn });
   return api<SerialCheck>(`/stock/serial-check?${query}`);
+}
+
+export type BranchUnitsAnswer =
+  | { status: 'off' | 'unavailable'; reason: string }
+  | ({ status: 'ok'; source: 'fmp'; target: 'PRODUCTION' | 'UAT'; asOf: string; model: string; branchCode: string } & BranchUnits);
+
+/** D183: what FileMaker has ready of one model in a branch (an ADMIN names the branch; everyone else gets their own). */
+export async function branchUnitsApi(part: string, branch?: string): Promise<BranchUnitsAnswer> {
+  const query = new URLSearchParams(branch ? { part, branch } : { part });
+  return api<BranchUnitsAnswer>(`/stock/branch-units?${query}`);
 }

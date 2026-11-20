@@ -126,5 +126,12 @@ export class StockSerialController {
     if (!sn) throw new BadRequestException('ต้องระบุ sn');
     return this.serials.check(user, sn, part, branch);
   }
+
+  /** D183: the units of one model FileMaker has ready in the branch (`GET /api/stock/branch-units?part=…[&branch=<code>, ADMIN]`). */
+  @Get('branch-units')
+  async branchUnits(@Req() req: Request, @Query('part') part?: string, @Query('branch') branch?: string) {
+    const user = await this.accounts.authenticate(req);
+    return this.serials.branchUnits(user, part, branch);
+  }
 }
 

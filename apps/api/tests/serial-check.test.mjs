@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { after, test } from 'node:test';
-import { cleanup, seedCatalog, seedWorld, startApi } from './support.mjs';
+import { cleanup, seedCatalog, seedWorld, setCategory, startApi } from './support.mjs';
 
 process.env.WARROOM_SYNC_MINUTES = '0'; // no background warroom sync while this test runs
 process.env.ERP_SYNC_TIMES = ''; // no scheduled ERP import against the fake below
@@ -13,9 +13,11 @@ let fail = false;
 let fmpRows = [];
 const fake = createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
-  seen.push({ entity: url.pathname.split('/').pop(), filter: url.searchParams.get('$filter'), select: url.searchParams.get('$select'), top: url.searchParams.get('$top') });
+  seen.push({ path: url.pathname, entity: url.pathname.split('/').pop(), filter: url.searchParams.get('$filter'), select: url.searchParams.get('$select'), top: url.searchParams.get('$top') });
   if (fail) return res.writeHead(500).end('{}');
-  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ value: fmpRows }));
+  // `fmpRows` is either the rows or a function of the request (one answer for a serial, another for a model's units)
+  const rows = typeof fmpRows === 'function' ? fmpRows(url) : fmpRows;
+  res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ value: rows }));
 });
 await new Promise((resolve) => fake.listen(0, '127.0.0.1', resolve));
 after(() => new Promise((resolve) => fake.close(resolve)));
@@ -76,9 +78,13 @@ test('one scanned serial: off by default (FileMaker checks at send), FileMaker l
       await db.productSku.update({ where: { id: sku.id }, data: { upc: '190000000001' } });
       fmpRows = [{ product_sn: sn(5), BranchStore_id: here + 1, status: 'ready', product_upc: '190000000001' }];
       const moved = (await ask({ sn: sn(5), part: sku.sku })).data;
-      assert.deepEqual([moved.source, moved.verdict, moved.branchCode], ['fmp', 'other-branch', branches.b.code]);
-      const call = seen.at(-1);
+      assert.deepEqual([moved.source, moved.target, moved.verdict, moved.branchCode], ['fmp', 'PRODUCTION', 'other-branch', branches.b.code]);
+      const [call, units] = seen.slice(-2);
       assert.deepEqual([call.entity, call.filter, call.select, call.top], ['ProductStore_detail', `product_sn eq '${sn(5)}'`, 'product_sn,BranchStore_id,status,product_upc', '3']);
+      // D183: not ready here, so the branch's ready units of the model are asked too (by the catalog UPC and the branch's ERP id)
+      assert.deepEqual([units.entity, units.filter, units.select, units.top], ['ProductStore_detail', `product_upc eq '190000000001' and BranchStore_id eq ${here} and status eq 'ready'`, 'product_sn', '201']);
+      assert.equal(moved.model, sku.sku);
+      assert.deepEqual(moved.branchUnits, { count: 0, more: false, units: [] }, 'the scanned unit itself is never offered');
       fmpRows = [{ product_sn: sn(6), BranchStore_id: here, status: 'ready', product_upc: '199999999999' }];
       assert.equal((await ask({ sn: sn(6), part: sku.sku })).data.verdict, 'other-model', 'another barcode than the catalog has');
       const before = seen.length;
@@ -93,6 +99,65 @@ test('one scanned serial: off by default (FileMaker checks at send), FileMaker l
       assert.match(paused.reason, /พักการตรวจ 10 นาที/);
       assert.equal(seen.length - before, 1, 'nothing sent while paused');
       delete process.env.SERIAL_CHECK;
+    });
+
+    await t.test('D183: while orders go to the test FileMaker, the check asks it (no SERIAL_CHECK needed) and lists the branch units', async () => {
+      delete process.env.SERIAL_CHECK;
+      const port = fake.address().port;
+      Object.assign(process.env, { FMP_UAT_HOST: `http://127.0.0.1:${port}/`, FMP_UAT_DATABASE: 'UF UAT', FMP_UAT_USER: 'uat-reader', FMP_UAT_PASSWORD: 'test-only' });
+      const prior = await db.setting.findUnique({ where: { name: 'fmpPushMode' } });
+      await db.setting.upsert({ where: { name: 'fmpPushMode' }, update: { value: 'uat' }, create: { name: 'fmpPushMode', value: 'uat' } });
+      try {
+        const here = (await db.branch.findUnique({ where: { id: branches.a.id } })).erpBranchId;
+        await setCategory(ctx, [sku], 'Mac'); // serials with letters
+        // an open order of this branch already holds one of the ready units (D92)
+        const app = (path, method, body, who) => request(path, method, body, cookies[who]);
+        const created = await app('/sessions', 'POST', { phone: '0999900977' }, 'staff');
+        const id = created.data.id;
+        await app(`/sessions/${id}/selection`, 'PUT', { items: [{ skuId: sku.id, quantity: 1 }], accessories: [], payments: ['Cash'], ontop: [], points: [], receiptType: 'SIMPLIFIED', discountType: 'GENERAL', customerSource: 'WALK_IN' }, 'staff');
+        assert.equal((await app(`/sessions/${id}/confirm`, 'POST', undefined, 'staff')).status, 201);
+        await app(`/sessions/${id}/step`, 'POST', { action: 'search' }, 'stock');
+        const order = (await app(`/sessions/${id}`, 'GET', undefined, 'stock')).data;
+        assert.equal((await app(`/sessions/${id}/serials`, 'POST', { itemId: order.items[0].id, sn: sn(11) }, 'stock')).status, 201);
+
+        fmpRows = (url) =>
+          (url.searchParams.get('$filter') ?? '').startsWith('product_sn')
+            ? []
+            : [{ product_sn: sn(12) }, { product_sn: sn(11) }, { product_sn: sn(10) }];
+        const before = seen.length;
+        const wrong = (await ask({ sn: sn(9), part: sku.sku })).data;
+        assert.deepEqual([wrong.status, wrong.target, wrong.verdict, wrong.model], ['ok', 'UAT', 'not-in-stock', sku.sku], JSON.stringify(wrong));
+        assert.ok(seen.slice(before).every((call) => call.path === '/fmi/odata/v4/UF%20UAT/ProductStore_detail'), 'the test FileMaker, not the ERP');
+        assert.deepEqual(wrong.branchUnits, {
+          count: 3,
+          more: false,
+          units: [
+            { sn: sn(10), taken: null },
+            { sn: sn(11), taken: order.queueNo === null ? order.reference : String(order.queueNo).padStart(3, '0') },
+            { sn: sn(12), taken: null },
+          ],
+        });
+
+        // the same list for a serial FileMaker left off a held bill; an ADMIN names the branch, others get their own
+        const listed = await request(`/stock/branch-units?${new URLSearchParams({ part: sku.sku })}`, 'GET', undefined, cookies.staff);
+        assert.equal(listed.status, 200, JSON.stringify(listed.data));
+        assert.deepEqual([listed.data.status, listed.data.target, listed.data.model, listed.data.branchCode, listed.data.count], ['ok', 'UAT', sku.sku, branches.a.code, 3]);
+        assert.equal((await request('/stock/branch-units', 'GET', undefined, cookies.staff)).status, 400, 'part is required');
+        assert.equal((await request(`/stock/branch-units?part=${encodeURIComponent(sku.sku)}`, 'GET', undefined, cookies.manager)).status, 403);
+        assert.ok(here, 'the branch has an ERP id');
+
+        // the real FileMaker again: off without SERIAL_CHECK=fmp, and the test FileMaker is not asked
+        await db.setting.update({ where: { name: 'fmpPushMode' }, data: { value: 'production' } });
+        const quiet = seen.length;
+        assert.equal((await ask({ sn: sn(13), part: sku.sku })).data.status, 'off');
+        assert.equal((await request(`/stock/branch-units?part=${encodeURIComponent(sku.sku)}`, 'GET', undefined, cookies.staff)).data.status, 'off');
+        assert.equal(seen.length, quiet);
+      } finally {
+        if (prior) await db.setting.update({ where: { name: 'fmpPushMode' }, data: { value: prior.value } });
+        else await db.setting.deleteMany({ where: { name: 'fmpPushMode' } });
+        for (const key of ['FMP_UAT_HOST', 'FMP_UAT_DATABASE', 'FMP_UAT_USER', 'FMP_UAT_PASSWORD']) delete process.env[key];
+        fmpRows = [];
+      }
     });
   } finally {
     await cleanup(ctx, world);

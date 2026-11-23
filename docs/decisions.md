@@ -3030,3 +3030,17 @@ Not renamed:
 - **`U-POS`**, the actor id stored on events U•POS reports (`actorStaffId`, `metadata.source`). It is data, and old rows keep it. The session log and the audit log show it as "U•POS".
 - Applied migrations and the record of earlier decisions and meetings (this file, `meeting-feedback-2026-10-13.md`, `grilling-backlog.md`), which keep the name used then.
 - Messages already stored, such as a skipped push's reason from before today.
+
+## D187 — Instant Scroll-to-Top on Step and Stage Transitions (2026-11-23)
+
+Staff reported: "เวลาเปลี่ยน step เลื่อนกลับมาที่บนสุด บางทีเลื่อนอยู่ล่างสุด แต่พอไปที่ step ถัดไปหน้าจอกลับอยู่ด้านล่าง ทั้งที่ควรเริ่มที่บนสุด"
+
+When moving across workflow stages (e.g. from selecting products/accessories scrolled to the bottom to the review/confirmation screen, returning to edit, or between customer survey steps), the screen could remain scrolled down due to:
+1. `scrollIntoView({ block: 'nearest' })` failing to bring the top of the container into view if elements were considered partially visible.
+2. In mobile viewport or desktop panels, `overflow-y: auto` is on `main` and `.staff-main-panel`, so `window.scrollTo` alone does not scroll the panel.
+3. Step transitions (survey responses, review step toggling) were not comprehensively triggering the scroll reset effect.
+
+Decision:
+1. **Instant scroll (`behavior: 'instant'`):** Scroll resets immediately to `top: 0` without smooth animation to avoid disorienting staff or delaying interaction.
+2. **Multi-container reset:** Automatically resets `scrollTop = 0` on `window`, `document.documentElement`, `document.body`, `main`, `.staff-main-panel`, `.staff-layout`, and `.staff-workspace`.
+3. **Step & stage trigger:** Tracks `currentStepIndex`, `form`, session state, survey completion, and active session switches, executing both immediately and via `requestAnimationFrame`/`setTimeout(50ms)` to ensure newly mounted DOM content and layout reflows start at the top. Also directly hooked into review ("ถัดไป") and back ("กลับไปแก้ไข") button actions.

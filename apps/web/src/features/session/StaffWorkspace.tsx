@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   User as UserIcon,
@@ -250,24 +250,73 @@ export function StaffWorkspace({
 
   const progressContainerRef = useRef<HTMLOListElement>(null);
 
-  // on a phone the list and the order take turns: opening an order (or a new walk-in) starts at the top of the page
-  useEffect(() => {
-    document.querySelector('main')?.scrollTo({ top: 0 });
-  }, [activeSessionRef]);
+  const currentStepIndex = progressIndex(activeSession, form === 'review');
 
-  // Auto-scroll to progress stepper or top on stage change, form change, or session switch
-  useEffect(() => {
-    if (activeSessionRef) {
-      if (progressContainerRef.current) {
-        progressContainerRef.current.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest',
-        });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+  const scrollToTop = useCallback(() => {
+    if (typeof window === 'undefined') return;
+
+    // 1. Reset window and root document scroll immediately
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) {
+      document.documentElement.scrollTop = 0;
+    }
+    if (document.body) {
+      document.body.scrollTop = 0;
+    }
+
+    // 2. Reset scroll on specific overflow containers (main, staff panel, workspace)
+    const scrollContainers = document.querySelectorAll<HTMLElement>(
+      'main, .staff-main-panel, .staff-layout, .staff-workspace, .modal-body',
+    );
+    scrollContainers.forEach((el) => {
+      if (el && typeof el.scrollTo === 'function') {
+        el.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      }
+      if (el) {
+        el.scrollTop = 0;
+      }
+    });
+
+    // 3. Ensure progress stepper / panel header aligns to top
+    const topAnchor = document.querySelector<HTMLElement>(
+      '.mobile-stepper, .progress, .staff-main-panel',
+    );
+    if (topAnchor && typeof topAnchor.scrollIntoView === 'function') {
+      try {
+        topAnchor.scrollIntoView({ block: 'start', behavior: 'instant' });
+      } catch {
+        // ignore if unsupported
       }
     }
-  }, [activeSessionRef, activeSession?.state, activeSession?.confirmed, form]);
+  }, []);
+
+  // D187: Auto-scroll instantly to top on step, stage, form change, or session switch
+  useEffect(() => {
+    if (activeSessionRef) {
+      scrollToTop();
+      // Execute on next tick / animation frame to catch layout reflow and newly mounted child views
+      const rafId = requestAnimationFrame(() => {
+        scrollToTop();
+      });
+      const timerId = setTimeout(() => {
+        scrollToTop();
+      }, 50);
+      return () => {
+        cancelAnimationFrame(rafId);
+        clearTimeout(timerId);
+      };
+    }
+  }, [
+    activeSessionRef,
+    currentStepIndex,
+    form,
+    activeSession?.state,
+    activeSession?.confirmed,
+    activeSession?.recommendationsReviewed,
+    activeSession?.currentAppleDevices?.length,
+    activeSession?.phone,
+    scrollToTop,
+  ]);
 
   /** The customer keeps what is left (D40 ACCEPT_PARTIAL): the server drops the missing items and the session moves on to FOUND. */
   const handleCustomerAcceptPartial = async (session: MockSession) => {
@@ -1046,7 +1095,7 @@ export function StaffWorkspace({
 
         <div className="staff-main-panel">
           {(() => {
-            const pIndex = progressIndex(activeSession, form === 'review');
+            const pIndex = currentStepIndex;
             return (
               <>
                 {/* D135: Mobile segmented stepper */}
@@ -2405,7 +2454,10 @@ export function StaffWorkspace({
                               >
                                 <Button
                                   variant="secondary"
-                                  onClick={() => setForm('normal')}
+                                  onClick={() => {
+                                    setForm('normal');
+                                    scrollToTop();
+                                  }}
                                 >
                                   <span
                                     style={{
@@ -2470,7 +2522,10 @@ export function StaffWorkspace({
                                 >
                                   <Button
                                     variant="secondary"
-                                    onClick={() => setForm('normal')}
+                                    onClick={() => {
+                                      setForm('normal');
+                                      scrollToTop();
+                                    }}
                                     style={{ flex: 1, minHeight: '44px' }}
                                   >
                                     <span
@@ -2514,7 +2569,10 @@ export function StaffWorkspace({
                             <SelectionEditor
                               value={activeSession.selection}
                               onChange={handleUpdateSelection}
-                              onReview={() => setForm('review')}
+                              onReview={() => {
+                                setForm('review');
+                                scrollToTop();
+                              }}
                             />
                           ))
                         )}

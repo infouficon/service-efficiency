@@ -2346,3 +2346,19 @@ Not renamed:
 - **`U-POS`**, the actor id stored on events U•POS reports (`actorStaffId`, `metadata.source`). It is data, and old rows keep it. The session log and the audit log show it as "U•POS".
 - Applied migrations and the record of earlier decisions and meetings (this file, `meeting-feedback-2026-10-13.md`, `grilling-backlog.md`), which keep the name used then.
 - Messages already stored, such as a skipped push's reason from before today.
+
+## D187 — Require at Least One Payment Method on Selection and Confirmation (2026-11-23)
+
+Staff reported: "เปลี่ยนให้ payment บังคับเลือกอย่างน้อย 1"
+
+Previously, `payments` was optional during product selection (the legend displayed "(ไม่บังคับ)"), allowing staff to review and confirm orders without picking any payment method. Although split payment is supported, orders must declare how the customer intends to pay.
+
+Decisions:
+1. **Multi-select retained:** Staff can select one or multiple payment methods (e.g. Cash + Transfer, or Cash + Credit Card) for split payments.
+2. **At least 1 required:**
+   - Frontend validation (`paymentsAreValid`) requires `payments.length > 0` before staff can advance to "ตรวจสอบรายการ" (Review).
+   - The fieldset legend reflects `Payment (จำเป็น · เลือกอย่างน้อย 1 ช่องทาง)`.
+   - If no payment is selected, a notice prompts "กรุณาเลือกช่องทางการชำระเงินอย่างน้อย 1 ช่องทาง" and disables the review button.
+   - If Full Credit Card or 0% Credit Card is chosen, card details remain enforced as per D127.
+3. **Backend API enforcement:** In `assertConfirmable` (`sessions.service.ts`), `session.payments` must not be empty; attempting to confirm an order without payment rejects with `ยังไม่ได้เลือกช่องทางการชำระเงิน กรุณากด "กลับไปแก้ไข" แล้วเลือกช่องทางการชำระเงิน`.
+4. **No pre-selection:** New orders leave payment methods unchecked by default so staff intentionally confirm the customer's intended payment method.

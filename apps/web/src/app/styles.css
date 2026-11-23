@@ -5127,6 +5127,9 @@ input[aria-invalid='true'] {
   font-weight: 500;
   color: var(--text-muted);
 }
+.required {
+  color: #ef4444;
+}
 .choice-group-title {
   margin: 12px 0 6px;
   font-size: 12px;

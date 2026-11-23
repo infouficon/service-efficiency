@@ -1222,6 +1222,10 @@ export class SessionsService {
       throw new BadRequestException('ยังไม่ได้เลือกว่าลูกค้ารู้จักร้านจากไหน กรุณากด "กลับไปแก้ไข" แล้วเลือก (ถ้าไม่เห็นช่องนี้ ให้โหลดหน้าใหม่ก่อน)');
     }
 
+    if (!session.payments || session.payments.length === 0) {
+      throw new BadRequestException('ยังไม่ได้เลือกช่องทางการชำระเงิน กรุณากด "กลับไปแก้ไข" แล้วเลือกช่องทางการชำระเงิน (ถ้าไม่เห็นช่องนี้ ให้โหลดหน้าใหม่ก่อน)');
+    }
+
     await this.assertCardDetails(session.payments);
   }
 

@@ -1465,7 +1465,8 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          Payment <small className="legend-note">(ไม่บังคับ)</small>
+          Payment{' '}
+          <span className="required">*</span>
         </legend>
         {otherPayments.length > 0 && <p className="choice-group-title">ช่องทางหลัก</p>}
         {renderPaymentChoices(mainPayments)}
@@ -1655,7 +1656,8 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ประเภทใบเสร็จ <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+          ประเภทใบเสร็จ{' '}
+          <span className="required">*</span>
         </legend>
         <div
           role="radiogroup"
@@ -1709,7 +1711,8 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ประเภทส่วนลด <small className="legend-note">(จำเป็น · เลือก 1 อย่าง)</small>
+          ประเภทส่วนลด{' '}
+          <span className="required">*</span>
         </legend>
         <div
           role="radiogroup"
@@ -1753,7 +1756,7 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          เอกสารภาษีเพิ่มเติม / VAT Refund <small className="legend-note">(ไม่บังคับ)</small>
+          เอกสารภาษีเพิ่มเติม / VAT Refund
         </legend>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
           <label
@@ -1789,7 +1792,8 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ลูกค้ามาจากช่องทางใด <small className="legend-note">(จำเป็น · เลือก 1 ช่องทาง)</small>
+          ลูกค้ามาจากช่องทางใด {' '}
+          <span className="required">*</span>
         </legend>
         <div
           role="radiogroup"
@@ -1833,11 +1837,6 @@ export function SelectionEditor({
           })}
         </div>
       </fieldset>
-      {value.items.length > 0 && !paymentsValid && (
-        <Notice error>
-          กรุณาเลือกประเภทบัตร (และจำนวนเดือนผ่อนสำหรับ 0% Credit Card) ให้ครบถ้วนก่อนตรวจสอบรายการ
-        </Notice>
-      )}
       <div className="actions">
         <Button disabled={reviewDisabled} onClick={onReview}>
           <span

@@ -254,13 +254,15 @@ export function quantitiesAreValid(
 }
 
 /**
- * D127: Validates that if Full Credit Card or 0% Credit Card is chosen,
+ * D127, D188: Validates that at least one payment method is selected,
+ * and if Full Credit Card or 0% Credit Card is chosen,
  * card type (and installment months for 0%) is provided.
  */
 export function paymentsAreValid(
   payments: string[],
   paymentDetails?: { method: string; cardType?: string | null; installmentMonths?: number | null }[],
 ): boolean {
+  if (!payments || payments.length === 0) return false;
   if (payments.includes('Full Credit Card')) {
     const detail = paymentDetails?.find((d) => d.method === 'Full Credit Card');
     if (!detail?.cardType) return false;

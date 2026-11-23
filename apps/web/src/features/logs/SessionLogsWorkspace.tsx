@@ -45,7 +45,7 @@ import { advanceStepApi, fetchSurveyQuestionsApi } from '../../services/sessionA
 interface SessionLogsWorkspaceProps {
   user: MockUser;
   sessions: MockSession[];
-  /** D105: ADMIN closes a sale U POS did not report. */
+  /** D105: ADMIN closes a sale U•POS did not report. */
   onUpdateSession?: (updated: MockSession) => void;
 }
 
@@ -504,12 +504,12 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
       },
       {
         key: 'posBillNo',
-        label: 'เลขบิลใน U POS',
+        label: 'เลขบิลใน U•POS',
         getValue: (s) => s.posBillNo || '',
       },
       {
         key: 'posBillOpenedAt',
-        label: 'เวลาเปิดบิลจริงใน U POS',
+        label: 'เวลาเปิดบิลจริงใน U•POS',
         getValue: (s) => formatTimestampForExport(s.posBillOpenedAt),
       },
       {
@@ -1064,7 +1064,7 @@ export function SessionLogsWorkspace({
 }: SessionLogsWorkspaceProps) {
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState('');
-  /** D105: the till is U POS; when it never reports the payment, ADMIN closes the sale here (step `complete`). */
+  /** D105: the till is U•POS; when it never reports the payment, ADMIN closes the sale here (step `complete`). */
   const closeSale = async (session: MockSession) => {
     if (!session.id) return;
     setClosing(true);
@@ -1577,7 +1577,7 @@ export function SessionLogsWorkspace({
                             {evt.eventType}
                           </span>
                           <span>
-                            โดย Staff: <strong>{evt.actorStaffId}</strong>
+                            โดย Staff: <strong>{evt.actorStaffId === 'U-POS' ? 'U•POS' : evt.actorStaffId}</strong>
                           </span>
                           <span>· {date}</span>
                         </div>
@@ -1720,10 +1720,10 @@ export function SessionLogsWorkspace({
                 ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'].includes(selectedSession.state) && (
                   <div style={{ marginTop: '12px' }}>
                     <Notice>
-                      ออเดอร์นี้รอ U POS ถ้า U POS ไม่ได้แจ้งการชำระเงินมา ADMIN ปิดการขายแทนได้ (บันทึกเวลาตอนกด)
+                      ออเดอร์นี้รอ U•POS ถ้า U•POS ไม่ได้แจ้งการชำระเงินมา ADMIN ปิดการขายแทนได้ (บันทึกเวลาตอนกด)
                     </Notice>
                     <Button variant="secondary" disabled={closing} onClick={() => closeSale(selectedSession)}>
-                      {closing ? 'กำลังปิดการขาย…' : 'ปิดการขาย (แทน U POS)'}
+                      {closing ? 'กำลังปิดการขาย…' : 'ปิดการขาย (แทน U•POS)'}
                     </Button>
                     {closeError && <Notice error>{closeError}</Notice>}
                   </div>

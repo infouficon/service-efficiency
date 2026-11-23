@@ -206,7 +206,7 @@ test('staff export and import: everything stored, all or nothing, same rules as 
         [{ branchCode: branches.b.code }, /ERP/],
         [{ active: 'FALSE' }, /ERP/],
         [{ roles: 'STOCK' }, /ERP/],
-        [{ roles: 'CASHIER' }, /U POS/], // D105
+        [{ roles: 'CASHIER' }, /U•POS/], // D105
       ]) {
         const res = await post([{ staffId: id('erp'), ...change }], true);
         assert.equal(res.data.rows[0].action, 'error', JSON.stringify(change));

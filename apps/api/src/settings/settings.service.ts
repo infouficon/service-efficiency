@@ -10,7 +10,7 @@ const STOCK_UNLIMITED = 'stockUnlimited';
 const FMP_PUSH_MODE = 'fmpPushMode';
 
 /**
- * D130: where SES sends an order when STOCK sends it to the cashier. `production` = the real FileMaker (U POS opens a held bill),
+ * D130: where SES sends an order when STOCK sends it to the cashier. `production` = the real FileMaker (U•POS opens a held bill),
  * `off` = nothing leaves SES (the message is only written to the log), `uat` = the test FileMaker set by `FMP_UAT_*`.
  */
 export const FMP_PUSH_MODES = ['production', 'off', 'uat'] as const;

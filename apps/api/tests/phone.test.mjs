@@ -165,7 +165,7 @@ test('D146: DISCOUNT_TYPES and CUSTOMER_SOURCES DTO constants are defined and or
     },
     new Map(),
   );
-  // D146: Kept internal to SES, not sent to FMP / U POS orderView
+  // D146: Kept internal to SES, not sent to FMP / U•POS orderView
   assert.equal(view.discountType, undefined);
   assert.equal(view.customerSource, undefined);
 });

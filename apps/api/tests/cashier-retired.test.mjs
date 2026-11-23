@@ -11,7 +11,7 @@ test('the ERP import never gives CASHIER: a cashier position works the floor and
   assert.deepEqual(rolesForPosition('Technician'), []);
 });
 
-test('the cashiers work in U POS: a cashier-only account cannot use SES, the role is never shown or given (D105)', async (t) => {
+test('the cashiers work in U•POS: a cashier-only account cannot use SES, the role is never shown or given (D105)', async (t) => {
   const ctx = await startApi(t);
   if (!ctx) return;
   const { db, request } = ctx;
@@ -25,7 +25,7 @@ test('the cashiers work in U POS: a cashier-only account cannot use SES, the rol
       assert.equal((await request('/auth/login', 'POST', { staffId: staffIds.cashier, password: 'wrong-password' })).status, 401);
       const right = await request('/auth/login', 'POST', { staffId: staffIds.cashier, password: PASSWORD });
       assert.equal(right.status, 403);
-      assert.match(right.data.message, /U POS/);
+      assert.match(right.data.message, /U•POS/);
     });
 
     await t.test('an account with CASHIER and STAFF keeps STAFF; CASHIER is not shown', async () => {

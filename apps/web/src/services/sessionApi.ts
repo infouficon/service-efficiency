@@ -762,12 +762,23 @@ export async function fetchAuditLogsApi(limit = 200): Promise<AuditLogItem[]> {
   );
 }
 
-/** D104: one scanned serial against FileMaker live (only with `SERIAL_CHECK=fmp`; off by default since D111). */
+/** D183: the units of one model FileMaker has ready in one branch; `taken` = which open SES order holds it ("ออเดอร์นี้", "คิว 012", ...). */
+export interface BranchUnits {
+  count: number;
+  more: boolean;
+  units: { sn: string; taken: string | null }[];
+}
+
+/**
+ * D104: one scanned serial against FileMaker live. D183: the FileMaker orders go to (always on while that is the test FileMaker;
+ * the real one only with `SERIAL_CHECK=fmp`); not ready here = also what the branch has of that model.
+ */
 export type SerialCheck =
   | { status: 'off' | 'unavailable'; reason: string }
   | {
       status: 'ok';
       source: 'fmp';
+      target?: 'PRODUCTION' | 'UAT';
       asOf: string | null;
       sn: string;
       verdict:
@@ -775,13 +786,20 @@ export type SerialCheck =
       branchCode?: string | null;
       branchName?: string | null;
       stockStatus?: string;
+      model?: string;
+      branchUnits?: BranchUnits;
     };
 
 export async function serialCheckApi(
   sn: string,
   part?: string,
+  session?: string,
 ): Promise<SerialCheck> {
-  const query = new URLSearchParams(part ? { sn, part } : { sn });
+  const query = new URLSearchParams({
+    sn,
+    ...(part ? { part } : {}),
+    ...(session ? { session } : {}),
+  });
   return api<SerialCheck>(`/stock/serial-check?${query}`);
 }
 
@@ -868,4 +886,34 @@ export async function fetchSurveyResponsesApi(query: {
   if (query.limit) params.set('limit', String(query.limit));
   const qs = params.toString() ? `?${params.toString()}` : '';
   return api<SurveyResponseItem[]>(`/surveys/responses${qs}`);
+}
+
+export type BranchUnitsAnswer =
+  | { status: 'off' | 'unavailable'; reason: string }
+  | ({
+      status: 'ok';
+      source: 'fmp';
+      target: 'PRODUCTION' | 'UAT';
+      asOf: string;
+      model: string;
+      branchCode: string;
+    } & BranchUnits);
+
+/**
+ * D183: what a FileMaker has ready of one model in a branch: `target` = the FileMaker the bill went to, `session` = the order looking
+ * (its own units say so). An ADMIN names the branch; everyone else gets their own.
+ */
+export async function branchUnitsApi(
+  part: string,
+  opts: {
+    branch?: string | null;
+    target?: 'PRODUCTION' | 'UAT' | null;
+    session?: string | null;
+  } = {},
+): Promise<BranchUnitsAnswer> {
+  const query = new URLSearchParams({ part });
+  if (opts.branch) query.set('branch', opts.branch);
+  if (opts.target) query.set('target', opts.target);
+  if (opts.session) query.set('session', opts.session);
+  return api<BranchUnitsAnswer>(`/stock/branch-units?${query}`);
 }

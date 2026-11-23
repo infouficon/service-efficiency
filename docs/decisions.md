@@ -2906,22 +2906,25 @@ Owner instruction via `/grill-me`: "เมื่อกดเลือก accesso
 4. **Database Migration:**
    - Migration `202611190004_widen_session_accessory_name` widens `SessionAccessory.accessoryName` from `VARCHAR(64)` to `VARCHAR(191)` to safely store full Apple accessory names and SKU codes.
 
-## D156 — Pure Dynamic Accessories Catalog & Full-Width Single Button (2026-11-19)
+## D157 — Standard Glass Display Specification Separation from Color (2026-11-20)
 
-Owner instruction via `/grill-me`: "หากแสดงแค่ 1 ปุ่มก้ให้ยาวเต็มกรอบ และลบส่วน Accessories ที่ hardcode ไว้ออก".
+Owner instruction via `/grill-me`: "มีสีเกินมา with standard glass Starlight และ with standard glass - Midnight ซึ่งเป็นส่วนของจอภาพ แต่ในสีดันมีติดมา". (Same implementation as D181 on develop). Amends D145 and D150.
 
-1. **Remove Hardcoded Accessories Fallback:**
-   - Previously, `extractAccessoryGroups` in `SelectionEditor.tsx` merged the hardcoded constant `accessories` from `constants/options.ts` (e.g. `'Software'`, `'Protection'`, `'Case'`).
-   - This caused duplicate or obsolete category names (such as "Software" alongside real catalog product "Software & Care") to appear in the Accessories list.
-   - Removed the hardcoded fallback from `SelectionEditor.tsx`. Accessory groups are now strictly derived from real active products (`GET /products`) belonging to accessory categories (or `Category.isAccessory: true`), alongside any keys already selected in the session.
-   - When no accessories match or the catalog is empty, a clean descriptive empty state is shown ("ไม่มีรายการอุปกรณ์เสริมในขณะนี้" or search empty state).
-2. **Responsive Model Button Sizing (Accessories):**
-   - Model buttons use `flex: 1 1 auto` (`minWidth: 0`, `boxSizing: border-box`).
-   - If an item is the only one in a row (e.g. because of long text such as "iPad Case for iPad Air 11-inch" or only 1 model in the group), it automatically stretches to fill 100% of the row width without leaving awkward empty gaps on the right.
-   - If 2 or 3 shorter model options fit on the same row, they share the row width side-by-side naturally.
-   - When selected, a checkmark (`✓`) is shown alongside the model name.
-   - SKU options continue to render full-width (100%) rows.
-   - Manual selection invariant (D147) is preserved: staff still explicitly tap the button to select the model and pick the SKU.
+1. **Context & Problem:**
+   - Raw ERP product color data in Warroom occasionally contains `"with standard glass Starlight"` or `"with standard glass - Midnight"`.
+   - `parseColorField` in `warroom-sync.service.ts` previously only parsed and stripped `"nano-texture glass"`, leaving `"with standard glass"` embedded in the color attribute.
+   - This caused color options to show up as `"with standard glass Starlight"` and `"with standard glass - Midnight"` instead of clean colors (`"Starlight"`, `"Midnight"`), and prevented proper color swatch resolution.
+2. **Standard Glass Parsing & Separation:**
+   - Updated `parseColorField` in `apps/api/src/warroom/warroom-sync.service.ts` to detect and strip `/\b(?:with\s+)?standard(?:\s+glass)?\b/gi` in addition to nano-texture.
+   - Sets `display: 'Standard Glass'` and strips punctuation, returning clean colors (`"Starlight"`, `"Midnight"`).
+   - In `buildCatalog`, if a product model has no Nano-texture Glass SKUs, `display: 'Standard Glass'` is omitted from `item.attributes` (per D150), so staff are not forced to select an obvious single-choice glass step.
+   - When a model does have Nano-texture Glass SKUs, peer SKUs retain `display: 'Standard Glass'`, enabling the 2-way glass selection step.
+3. **Color Palette Management & Defense-in-Depth Sanitization:**
+   - In `apps/api/src/colors/colors.service.ts` (`ColorsService.list` and `getColorMap`), colors from existing SKUs and `ProductColor` are automatically normalized via `colorOf()`. Any legacy `"with standard glass - Midnight"` is counted under `"Midnight"` and no longer appears as a separate unassigned color in the Admin Color Palette panel.
+   - Added migration `202611200001_clean_standard_glass_color` to update existing MySQL database rows (`ProductSku.color`, `ProductSku.attributes`, and delete redundant `ProductColor` entries).
+   - In `apps/web/src/features/session/catalog.ts` (`toCatalog` and `getSkuAttribute`), added a safety sanitizer for `color` to strip any lingering `with standard glass` / `with nano-texture glass` tokens if stale client caches exist.
+4. **Sync Version Bump:**
+   - Bumped `CATALOG_RULES_VERSION` from 10 to 11 in `warroom-sync.service.ts` to trigger automatic re-processing and attribute refresh across all branches.
 
 ## D181 — Standard Glass Display Specification Separation from Color (2026-11-20)
 
@@ -2951,3 +2954,79 @@ Owner instruction via `/grill-me`: "มีสีเกินมา with standard
 
 
 
+
+
+## D182 — Tell STAFF when a new version is out; confirm errors in Thai (2026-11-20)
+
+Owner, after a shop screen showed `Discount type selection is required before confirmation` on an order whose page had no discount picker at all.
+
+1. **Why:** the tab had been open since before D146 shipped. Its old screens never asked for discount type or customer source, but the new API refused to confirm without them. STAFF could not fix it from that page, and the English message did not say what to do.
+2. **New-version banner (web):** `components/NewVersionBanner.tsx`, mounted in `main.tsx`. It compares the entry script this tab loaded (`/assets/index-<hash>-g2.js`) with the one in a fresh `index.html`, fetched `no-store`. The check runs when the tab comes back into view or gets focus, and every 3 minutes. If they differ, a sticky banner appears: "มีเวอร์ชันใหม่ของระบบ … [โหลดหน้าใหม่]". It never reloads on its own, because STAFF may be halfway through an order (selection edits are saved as they are made). The banner is hidden on paper. In `vite dev` there is no built entry, so the check does nothing.
+3. **Confirm errors in Thai (API):** `assertConfirmable` (D141) now says which field is missing and to press "กลับไปแก้ไข". For discount type and customer source (D146) it also says to reload first if the field is not on screen. The status code (400) is unchanged.
+4. **Numbering:** D182 because develop already uses up to D181. Next free on develop is D183.
+
+## D183 — A wrong serial shows what the branch really has of that model, from the FileMaker orders go to (2026-11-20)
+
+Owner: "เวลาใส่ผิด ให้ fmp แจ้งกลับว่า stock model รุ่น MJXQ4ZP/A มีสินค้าทั้งหมด xx ชิ้น แต่ไม่พบ imei นี้ แล้วแสดง imei จริงตอนนี้ … ในสต็อกสาขานั้นจริงๆ". The owner chose: show it both at scan time and after sending; source = FileMaker live (not warroom).
+
+1. **Which FileMaker.** The one orders go to (ADMIN's switch, D130). While that is the test FileMaker (`uat`), the D104 check is **always on**: SES reads the UAT copy over OData with the `FMP_UAT_*` settings it already sends with. The copy carries no shop traffic, and its answer is what its `ses` script will do (measured 2026-11-20: a model's units in one branch took 6 s cold and 0.2 s warm; by serial 0.15 s). For the real FileMaker the check still needs `SERIAL_CHECK=fmp`, which waits for KoB to index `ProductStore_detail::product_sn` and `product_upc` (D104: 15–30 s without them). Guards stay per FileMaker: one request at a time, a 10-minute pause after a failure, the real one never asked around warroom's pulls. Timeout is 5 s for the real one and 15 s for UAT.
+2. **At scan time (stock screen).** When a scanned serial is not ready here (not in stock, another branch, not ready, another model), the answer also carries `model` and `branchUnits` = FileMaker's ready units of that part in this branch. The part is matched by its UPC in SES's catalog and the branch by its ERP id: `product_upc eq … and BranchStore_id eq … and status eq 'ready'`, at most 200, cached for a minute. The screen shows "รุ่น MJXQ4ZP/A ที่สาขานี้ FileMaker มี ready 13 เครื่อง" and the serials. A unit another open SES order already holds is struck through with its queue, because it cannot be used again (D92). The scanned serial itself is never listed. It still only informs: nothing waits for it.
+3. **After sending.** The order's FMP status now carries `snMissing` (the serials FileMaker's `snCheck` left off the held bill, D119, at most 20). The order summary lists them with the reason. A button "ดู IMEI/SN รุ่น … ที่มีในสาขา" calls `GET /api/stock/branch-units?part=…[&branch=<code>, ADMIN]` (STOCK, STAFF, ADMIN; others get their own branch) for the same list.
+4. **Not done.** FileMaker's `ses` script is unchanged (KoB owns it). It cannot list a model's units quickly without the index.
+5. **Review fixes (Codex, same day).**
+   - Listing a model's units on the **real** FileMaker needs its own switch, `SERIAL_CHECK_UNITS=fmp`. An index on `product_sn` (enough for `SERIAL_CHECK=fmp`) does not make the `product_upc` query cheap.
+   - The after-send lookup asks the FileMaker the **bill** went to (`target=UAT|PRODUCTION` from the order's FMP status), not ADMIN's switch at that moment. The answer is keyed by order, has "ถามใหม่", and never shows on another order.
+   - Labels for units held by an open SES order:
+     - "ออเดอร์นี้": the order asking, sent as `session`, only compared
+     - "คิว 012": another order of this branch
+     - "ออเดอร์สาขาอื่น": another branch, whose queue is not shown
+   - The same FileMaker question asked twice at once is sent once, and each FileMaker has its own queue. The units cache is keyed by FileMaker + UPC + branch. "more" counts FileMaker's raw rows.
+   - Push mode `off` still reads the real FileMaker when `SERIAL_CHECK=fmp`, as before D183: the cashier still keys the bill in the real FileMaker.
+   - D182 banner: the entry is read from the fresh `index.html`'s module script, the latest check decides (a stale copy mid-deploy no longer leaves it up), and checks do not overlap.
+
+## D184 — The page locks while it waits for FileMaker or the server (2026-11-20)
+
+Owner: "ตอนโหลด ทำให้กดอะไรไม่ได้ ได้ไหม มันทำให้ป้องกันการกดซ้ำหรือคนเข้าใจว่ามันไม่ทำงานได้". The owner chose **the whole screen** (not only the order's buttons, not only "send"), knowing STOCK then waits for each check before scanning the next unit.
+
+1. **What waits.**
+   - On the stock screen, saving a scan and its FileMaker check (D104/D183). The UAT check takes 0.1–0.5 s, or about 6 s after a few quiet minutes (measured 2026-11-20). The screen also waits for the checks of serials already saved when an order opens.
+   - "ส่งให้แคชเชียร์", "เริ่มหา", "แจ้งสินค้าขาด/หมด", the cancel, and the cancel acknowledgement.
+   - The after-send "ดู IMEI/SN รุ่น … ที่มีในสาขา" lookup and its "ถามใหม่", wherever the summary shows them.
+2. **How.** `BusyOverlay` sets `#root` `inert`, so the page below takes no clicks, focus or typing. A full-screen layer shows a spinner and what it waits for, e.g. "กำลังเช็ค 3521… กับ FileMaker…".
+   - The page locks at once, but dims only after 0.3 s, so the usual 0.1 s check does not flash.
+   - The box that had the focus gets it back afterwards.
+   - Overlays stack: the page stays locked until the last one ends.
+3. **The scanner.** A barcode scanner types into the window, so it still reaches SerialScan's listener while the page is locked. A scan fired then is **not saved** and says so, in the overlay and after it: "… ยังไม่ได้บันทึก เพราะยังรอ FileMaker อยู่ · เช็คเสร็จแล้วสแกนเครื่องนี้ใหม่". The camera needs no guard: after a read it waits for "next box", which cannot be tapped while the page is locked.
+4. **Never stuck.**
+   - The screen waits for one FileMaker check for at most 15 s, the server's UAT timeout. A later answer still sets the mark.
+   - Any wait past 20 s adds "รอนานกว่าปกติ … โหลดหน้าใหม่" with a reload button. What was saved stays saved.
+5. **Unchanged.** The check still only informs (D104). Once it answers, "send" works whatever the verdict.
+
+## D185 — Plain words for the U POS box; "can't find it?" picks a unit only after STOCK checks the box (2026-11-20)
+
+The owner, looking at an order's FileMaker box: it reads too hard for a salesperson ("CREATED_SN_LATER saleID … (0 รายการ) … not found in stock · … ข้าม 1 เครื่อง · ลูกค้าใหม่ …"). The lock screen's "กำลังเช็ค … กับ FileMaker…" looked odd. They asked whether STOCK could look up the branch's units without typing. They chose: **scanning the box stays the way**. The list is the way out when STOCK is stuck, and a unit picked from it is confirmed against the box again.
+
+1. **The U POS box** (label "U POS:", was "FileMaker:"). `fmpStatusText` now gives:
+   - `text`: what happened, e.g. "ส่งเข้า U POS แล้ว บิลพักครบ 2 รายการ" or "ส่งเข้า U POS แล้ว แต่ยังขาด 1 เครื่องในบิล" (the count is `snMissing`)
+   - `hint`: what to do
+   - `detail`: FileMaker's own message (codes, saleID, the script's notes for the cashier). It is folded under "รายละเอียดจาก U POS", there for ADMIN and the cashier and out of the salesperson's way.
+
+   The test FileMaker reads "[ระบบทดสอบ]". The serials left off the bill now sit in the same box, in the shop's words: "359837344056363 (รุ่น MJRU4ZP/A): ไม่พบเครื่องนี้ในสต็อก". ADMIN's FMP panel keeps its short codes.
+2. **The lock screen** (D184) reads "กำลังตรวจสอบ IMEI/SN กับ U POS" / "กำลังบันทึก IMEI/SN" / "กำลังดึงรายการ IMEI/SN จาก U POS", then "กรุณารอสักครู่". No serial number is shown.
+3. **"หาไม่เจอ? ดู IMEI รุ่นนี้ที่มีในสาขา".** A small button under each product's scan box, so STOCK can look before any wrong scan. It uses the same query as D183 (the FileMaker of ADMIN's push mode, STOCK's own branch).
+   - Units another open order holds are struck through with their queue. Units this order already has read "ออเดอร์นี้", also those scanned after the list was fetched.
+   - A free unit can be **tapped**, here or in the list that follows a wrong scan. "ใช้เครื่องนี้?" then shows the number large and asks STOCK to match every digit with the box. Only "ตรงกับกล่อง ใช้เครื่องนี้" saves it, the same way as a scan, with the same checks and lock.
+4. **Not done.** SES does not record that a serial was picked rather than scanned. If the owner wants to see who picks, that needs a column and an API field.
+
+## D186 — The till is written "U•POS" everywhere (2026-11-20)
+
+Owner: "U•POS ทั้งหมดเลย". Every "U POS" a person can read now says "U•POS", like "U•Store". That covers:
+- the web screens and messages
+- the API's messages, e.g. "ADMIN ปิดการส่งเข้า U•POS (FileMaker) อยู่" and "แคชเชียร์ทำงานใน U•POS"
+- the integration docs' titles ("SES ↔ U•POS integration API")
+- code comments, tests, and the living docs (user guide, POS integration, permissions, …)
+
+Not renamed:
+- **`U-POS`**, the actor id stored on events U•POS reports (`actorStaffId`, `metadata.source`). It is data, and old rows keep it. The session log and the audit log show it as "U•POS".
+- Applied migrations and the record of earlier decisions and meetings (this file, `meeting-feedback-2026-10-13.md`, `grilling-backlog.md`), which keep the name used then.
+- Messages already stored, such as a skipped push's reason from before today.

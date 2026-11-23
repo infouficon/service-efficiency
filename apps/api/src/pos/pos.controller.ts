@@ -29,7 +29,7 @@ import { SessionsService } from '../sessions/sessions.service';
 import { PosBillDto } from './dto';
 
 /**
- * The key U POS sends as `Authorization: Bearer <key>` (D60), set in the API's environment as `POS_API_KEY`. Without a key
+ * The key U•POS sends as `Authorization: Bearer <key>` (D60), set in the API's environment as `POS_API_KEY`. Without a key
  * (or with a short one) the integration does not exist: the routes answer 404. The key is compared in constant time.
  *
  * D141: the test FileMaker (ADMIN's switch on UAT, D130) may have its own key, `POS_UAT_API_KEY`. Then SES knows which FileMaker
@@ -59,7 +59,7 @@ export class PosKeyGuard implements CanActivate {
 }
 
 /**
- * Server-to-server door for U POS (`infouficon/UFPOS`, D60, F17): it reads the orders waiting for a bill at a branch so
+ * Server-to-server door for U•POS (`infouficon/UFPOS`, D60, F17): it reads the orders waiting for a bill at a branch so
  * the cashier does not retype them, and reports the bill it opened so SES records the real time. No cookie, no CSRF
  * guard: the bearer key is the only credential (see docs/agents/pos-integration.md).
  */
@@ -113,9 +113,9 @@ export class PosController {
     return this.sessions.posOrders(branch.trim(), queue?.trim());
   }
 
-  /** U POS opened the bill of an order: records its number and real time, and moves the order on to BILL_OPENED. */
+  /** U•POS opened the bill of an order: records its number and real time, and moves the order on to BILL_OPENED. */
   @ApiOperation({
-    summary: 'Report the bill U POS opened',
+    summary: 'Report the bill U•POS opened',
     description:
       'Idempotent: the same reference + billNo again returns 201 with the same body. An order at the cashier moves to BILL_OPENED with billOpenedAt = openedAt; if the cashier pressed first in SES, SES keeps its own time and stores the bill number and time beside it. Retry until a 2xx.',
   })

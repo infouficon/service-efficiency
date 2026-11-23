@@ -27,7 +27,7 @@ export interface ManagedBranch {
   registrationUrl?: string | null;
   erpBranchId?: number | null;
 }
-/** The roles an account can be given. D105: no CASHIER (the cashiers work in U POS; old accounts keep it in the database). */
+/** The roles an account can be given. D105: no CASHIER (the cashiers work in U•POS; old accounts keep it in the database). */
 export const accountRoles: Role[] = [
   'ADMIN',
   'MANAGER',

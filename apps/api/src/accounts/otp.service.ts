@@ -68,7 +68,7 @@ export class OtpService {
       account.active &&
       this.reachable(account) &&
       (!account.branch || account.branch.active) &&
-      // D105: no code for an account SES has no screen for (the cashiers work in U POS)
+      // D105: no code for an account SES has no screen for (the cashiers work in U•POS)
       account.roles.some((r) => !RETIRED_ROLES.includes(r.roleCode));
     if (!eligible) return { ok: true };
 

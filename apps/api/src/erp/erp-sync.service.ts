@@ -56,7 +56,7 @@ const NO_LINE_UFHR_NOTE =
  */
 export const POSITION_ROLE_RULES: { pattern: RegExp; roles: RoleCode[] }[] = [
   // D106 (owner, 2026-11-05): every shop-floor position works both the floor and the stock room in SES: STAFF + STOCK.
-  // A cashier does the till in U POS (D105) and the rest in SES like everyone else; CASHIER is never given.
+  // A cashier does the till in U•POS (D105) and the rest in SES like everyone else; CASHIER is never given.
   { pattern: /sale/i, roles: ['STAFF', 'STOCK'] },
   { pattern: /store\s*manager/i, roles: ['STAFF', 'STOCK'] },
   { pattern: /cashier/i, roles: ['STAFF', 'STOCK'] },

@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AlertCircle, Camera, Check, X } from 'lucide-react';
+import { BusyOverlay } from '../../components/BusyOverlay';
 import { Button, Modal, Notice } from '../../components/ui';
 import type { MockSession, SelectionItem } from '../../types/session';
 import { addSerialApi, removeSerialApi, serialCheckApi, type SerialCheck } from '../../services/sessionApi';
 import { itemName, serialsLeft } from '../session/workflow';
+import { BranchUnitsList, BranchUnitsLookup } from './BranchUnits';
 import { CameraScan } from './CameraScan';
 import { createWedgeReader, serialKindOf, serialProblem } from './scanning';
+
+/** D184: the screen waits for one FileMaker check at most this long (the server gives UAT 15 s); a late answer still sets the mark. */
+const CHECK_WAIT_MS = 15_000;
+
+/** D184: a page under a BusyOverlay is inert; a barcode scanner still types into the window, so its scans are refused then. */
+const pageLocked = () => document.getElementById('root')?.inert === true;
 
 /** The camera needs a secure page and a browser that can reach it. */
 const canUseCamera = () => typeof navigator !== 'undefined' && Boolean(navigator.mediaDevices?.getUserMedia);
@@ -17,7 +25,7 @@ type StockCheck = Extract<SerialCheck, { status: 'ok' }> | null;
 /** D104: the little stock mark next to a saved serial. */
 function StockMark({ check }: { check: StockCheck | undefined }) {
   if (!check) return null;
-  const title = 'FileMaker ตอนนี้';
+  const title = check.target === 'UAT' ? 'FileMaker UAT (ทดสอบ) ตอนนี้' : 'FileMaker ตอนนี้';
   if (check.verdict === 'here')
     return (
       <span className="fmp-mark ok" title={`${title}: ready ที่สาขานี้`} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -47,7 +55,11 @@ function StockMark({ check }: { check: StockCheck | undefined }) {
  * (the unit is in no other open order, no repeat, not more than the quantity).
  * D111: there is no "found" tick any more (D102 is gone): a main product is found when all its units are scanned, and "send" needs that.
  * D104: with `SERIAL_CHECK=fmp` every saved serial is checked against FileMaker (ready here / another branch / not ready / another
- * model / not in stock); it only informs, nothing waits for it. D111: off by default; FileMaker checks the serials when STOCK sends.
+ * model / not in stock); the answer only informs. D111: off by default; FileMaker checks the serials when STOCK sends.
+ * D184: while a scan is being saved or checked, the whole page is locked (BusyOverlay) until the answer is back, so nothing is
+ * pressed twice and STOCK sees it is working. A scan fired at the locked page is not saved and says so: scan it again after.
+ * D185: scanning the box stays the way. When STOCK cannot find the unit, "หาไม่เจอ?" under the box lists what U•POS has ready of
+ * that model here; a unit tapped there (or in the list after a wrong scan) is only used after STOCK confirms it matches the box.
  * D108: the phone camera can read the label (📷 on each product), and a barcode scanner works without tapping a box first: a
  * scan typed while nothing editable has the focus goes to the first product with units left.
  */
@@ -71,8 +83,13 @@ export function SerialScan({
   const [queued, setQueued] = useState<Scan[]>([]);
   const [removing, setRemoving] = useState(false);
   const [checks, setChecks] = useState<Record<string, StockCheck>>({});
+  /** D184: serials whose FileMaker check is still out (a serial can be in twice: once per check) */
+  const [checking, setChecking] = useState<string[]>([]);
   const [cameraFor, setCameraFor] = useState<string | null>(null);
-  const [allDone, setAllDone] = useState('');
+  /** a scan that went nowhere: every unit is scanned already, or the page was locked (D184) */
+  const [notice, setNotice] = useState('');
+  /** D185: a unit tapped in a branch list, waiting for STOCK to confirm it matches the box in hand */
+  const [picking, setPicking] = useState<{ item: SelectionItem; sn: string; codeLabel: string } | null>(null);
   const [showGuideModal, setShowGuideModal] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
@@ -96,11 +113,26 @@ export function SerialScan({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, focusKey]);
 
-  /** D104: asks about one serial; "off", "unavailable" or a failure only mean no mark. */
+  /** D104: asks about one serial; "off", "unavailable" or a failure only mean no mark. D184: the page waits for it (CHECK_WAIT_MS at most). */
   const checkSerial = (part: string, sn: string) => {
-    serialCheckApi(sn, part)
+    setChecking((current) => [...current, sn]);
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      setChecking((current) => {
+        const at = current.indexOf(sn);
+        return at < 0 ? current : [...current.slice(0, at), ...current.slice(at + 1)];
+      });
+    };
+    const giveUp = window.setTimeout(finish, CHECK_WAIT_MS);
+    serialCheckApi(sn, part, session.id)
       .then((answer) => setChecks((current) => ({ ...current, [sn]: answer.status === 'ok' ? answer : null })))
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        window.clearTimeout(giveUp);
+        finish();
+      });
   };
 
   // the serials already saved when the panel opens (scanned at the shelf, now at the hand-over) get their mark too
@@ -157,6 +189,7 @@ export function SerialScan({
     setQueued(queue.current);
     setValues((current) => ({ ...current, [itemId]: '' }));
     setProblems((current) => ({ ...current, [itemId]: '' }));
+    setNotice('');
     // this product is done: the scanner goes on with the next one
     if (left(item) - 1 <= 0) {
       const next = firstOpen(itemId);
@@ -169,12 +202,17 @@ export function SerialScan({
   const scanAnywhere = useRef<(text: string) => void>(() => undefined);
   useEffect(() => {
     scanAnywhere.current = (text: string) => {
-      const target = items.find((item) => item.id === firstOpen());
-      if (!target) {
-        setAllDone(`${text.trim().toUpperCase()}: ทุกเครื่องในออเดอร์นี้สแกนครบแล้ว`);
+      const sn = text.trim().toUpperCase();
+      if (pageLocked()) {
+        setNotice(`${sn} ยังไม่ได้บันทึก: รอตรวจสอบเสร็จก่อน แล้วสแกนเครื่องนี้ใหม่`);
         return;
       }
-      setAllDone('');
+      const target = items.find((item) => item.id === firstOpen());
+      if (!target) {
+        setNotice(`${sn}: ทุกเครื่องในออเดอร์นี้สแกนครบแล้ว`);
+        return;
+      }
+      setNotice('');
       submit(target, text);
     };
   });
@@ -208,6 +246,10 @@ export function SerialScan({
 
   const total = items.reduce((sum, item) => sum + item.quantity, 0);
   const saved = items.reduce((sum, item) => sum + Math.min(item.quantity, item.serials?.length ?? 0), 0);
+  // D184: what the locked page is waiting for
+  const waitingFor = queued.length ? 'กำลังบันทึก IMEI/SN' : checking.length ? 'กำลังตรวจสอบ IMEI/SN กับ U•POS' : '';
+  // D185: serials this order has (saved or on their way), so a branch list never offers them again
+  const used = [...session.selection.items.flatMap((one) => (one.serials ?? []).map((serial) => serial.sn)), ...queued.map((scan) => scan.sn)];
 
   return (
     <div className="stock-note-section serial-scan" ref={rootRef}>
@@ -311,7 +353,32 @@ export function SerialScan({
           </div>
         </div>
       </Modal>
-      {allDone && <span className="serial-scan-problem">{allDone}</span>}
+      <BusyOverlay show={Boolean(waitingFor)} text={waitingFor} note={notice || undefined} />
+      <Modal isOpen={picking !== null} onClose={() => setPicking(null)} title="ใช้เครื่องนี้?" maxWidth="420px">
+        {picking && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '14px', lineHeight: 1.5 }}>
+            <div className="pick-confirm-sn">{picking.sn}</div>
+            <div>
+              เทียบเลขนี้กับเลข {picking.codeLabel} บนกล่องที่หยิบมาให้ตรงทุกหลักก่อนยืนยัน
+              <div className="muted fine">ถ้าไม่ตรง เลขในบิลจะไม่ตรงกับเครื่องที่ส่งให้ลูกค้า</div>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <Button variant="secondary" onClick={() => setPicking(null)}>
+                ยกเลิก
+              </Button>
+              <Button
+                onClick={() => {
+                  submit(picking.item, picking.sn);
+                  setPicking(null);
+                }}
+              >
+                ตรงกับกล่อง ใช้เครื่องนี้
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+      {notice && <span className="serial-scan-problem">{notice}</span>}
       {items.map((item) => {
         const itemId = item.id as string;
         const remaining = left(item);
@@ -423,9 +490,33 @@ export function SerialScan({
               // D104: FileMaker's `ses` script would refuse (v2) or leave out (v3.1) such a unit
               <span className="serial-pending">
                 {warned.verdict === 'other-model'
-                  ? 'SN นี้เป็นรุ่นอื่น: หยิบผิด → ลบแล้วสแกนเครื่องที่ถูกรุ่น'
-                  : 'ตาม FileMaker เครื่องนี้ยังไม่ ready ที่สาขานี้: หยิบผิด → ลบแล้วสแกนเครื่องอื่น · เครื่องโอนมายังไม่รับโอน → แจ้งรับโอนใน FileMaker'}
+                  ? 'เครื่องนี้เป็นรุ่นอื่น: กด × แล้วสแกนเครื่องที่ถูกรุ่น'
+                  : 'U•POS ไม่พบเครื่องนี้พร้อมขายที่สาขานี้: ถ้าหยิบผิด กด × แล้วสแกนเครื่องอื่น · ถ้าเป็นเครื่องที่โอนมา ให้รับโอนใน U•POS ก่อน'}
               </span>
+            )}
+            {/* D183: what this branch does have of the model, so the right box can be found; D185: tap one to use it */}
+            {warned?.model && warned.branchUnits ? (
+              <BranchUnitsList
+                model={warned.model}
+                units={warned.branchUnits}
+                target={warned.target}
+                asOf={warned.asOf}
+                used={used}
+                onPick={remaining > 0 ? (sn) => setPicking({ item, sn, codeLabel }) : undefined}
+              />
+            ) : (
+              remaining > 0 &&
+              item.product.sku && (
+                // D185: the way out when the box cannot be found or its label will not scan; scanning stays the first way
+                <BranchUnitsLookup
+                  part={item.product.sku}
+                  branchCode={session.branchCode}
+                  sessionId={session.id}
+                  label={`หาไม่เจอ? ดู ${codeLabel} รุ่นนี้ที่มีในสาขา`}
+                  used={used}
+                  onPick={(sn) => setPicking({ item, sn, codeLabel })}
+                />
+              )
             )}
           </div>
         );

@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { bangkokDay, formatQueue, QueueService } from '../queue/queue.service';
 import { isValidPhone, normalizePhone } from '../common/phone.util';
 import { loadPaymentTypes, orderView } from './order-view';
-import { fmpAttentionKind, FmpService, type FmpTarget } from '../fmp/fmp.service';
+import { fmpAttentionKind, FmpService, type FmpTarget, type SnCheck } from '../fmp/fmp.service';
 import { SettingsService } from '../settings/settings.service';
 import type {
   AdvanceStepDto,
@@ -28,7 +28,7 @@ import type {
 } from './dto';
 import { EventType, Prisma, WorkflowState } from '@prisma/client';
 
-/** The orders that left stock and wait for the till (U POS); the CASHIER_* states only hold orders from before D105. */
+/** The orders that left stock and wait for the till (U•POS); the CASHIER_* states only hold orders from before D105. */
 const AT_TILL: WorkflowState[] = ['SENT_TO_CASHIER', 'CASHIER_RECEIVED', 'CASHIER_SCAN', 'BILL_OPENED'];
 
 const STEPS: Record<
@@ -91,7 +91,7 @@ const STEPS: Record<
     eventType: 'STOCK_SENT_TO_CASHIER',
     requiredRole: 'STOCK',
   },
-  // D105: ADMIN closes a sale U POS did not report (U POS normally completes it with the payment time, D101)
+  // D105: ADMIN closes a sale U•POS did not report (U•POS normally completes it with the payment time, D101)
   complete: {
     from: AT_TILL,
     to: 'COMPLETED',
@@ -410,6 +410,11 @@ export class SessionsService {
               ackStatus: r.ackStatus, // success | error | reported | null (no answer yet)
               ackMessage: r.ackMessage,
               attention: fmpAttentionKind(r), // D140: failed | stuck | ack-error | sn-skipped | null, the same rule as Admin's "ออเดอร์ที่ต้องดู"
+              // D183: the serials FileMaker left off the held bill (D119 snCheck), so the order can show what the branch has instead
+              snMissing: ((r.snCheck as SnCheck[] | null) ?? [])
+                .filter((c) => !c.written)
+                .slice(0, 20)
+                .map((c) => ({ sn: c.sn, partNo: c.partNo, code: c.code, branch: c.branch, model: c.model })),
               at: (r.ackReceivedAt ?? r.sentAt ?? r.createdAt).toISOString(),
             }
           : null,
@@ -583,8 +588,8 @@ export class SessionsService {
   }
 
   /**
-   * F17 (D60): the orders of a branch that have reached the cashier and have no bill yet, with their lines, for U POS to
-   * prefill a bill from. `queue` ("A012") narrows to one queue number. Read-only; the caller is U POS, not a user.
+   * F17 (D60): the orders of a branch that have reached the cashier and have no bill yet, with their lines, for U•POS to
+   * prefill a bill from. `queue` ("A012") narrows to one queue number. Read-only; the caller is U•POS, not a user.
    */
   async posOrders(branchCode: string, queue?: string) {
     const branch = await this.prisma.branch.findFirst({
@@ -622,9 +627,9 @@ export class SessionsService {
   }
 
   /**
-   * F17 (D60): U POS opened the bill of an order. The bill number and its real time are recorded; an order that is still at
+   * F17 (D60): U•POS opened the bill of an order. The bill number and its real time are recorded; an order that is still at
    * the cashier moves on to BILL_OPENED (milestone = the real time, the cashier does not press anything in SES). When the
-   * cashier pressed first, SES's own milestone stays and the U POS bill is added beside it. The same report again changes
+   * cashier pressed first, SES's own milestone stays and the U•POS bill is added beside it. The same report again changes
    * nothing; another bill number for the same order is a conflict.
    *
    * D141: `source` is the FileMaker that reports, when SES can tell (it used its own key). A bill of the test FileMaker never
@@ -1324,23 +1329,23 @@ export class SessionsService {
     payments: { method: string; cardType: string | null; installmentMonths: number | null }[];
   }) {
     if (!session.phone || !isValidPhone(session.phone)) {
-      throw new BadRequestException('Valid customer phone number is required to confirm purchase');
+      throw new BadRequestException('ยังไม่มีเบอร์โทรลูกค้าที่ถูกต้อง กรุณากรอกเบอร์โทรก่อนยืนยัน');
     }
 
     if (session.items.length === 0) {
-      throw new BadRequestException('A main product selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกสินค้าหลัก กรุณากด "กลับไปแก้ไข" แล้วเลือกสินค้า');
     }
 
     if (!session.receiptType) {
-      throw new BadRequestException('Receipt type selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกประเภทใบเสร็จ กรุณากด "กลับไปแก้ไข" แล้วเลือกประเภทใบเสร็จ');
     }
 
     if (!session.discountType) {
-      throw new BadRequestException('Discount type selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกประเภทส่วนลด กรุณากด "กลับไปแก้ไข" แล้วเลือกประเภทส่วนลด (ถ้าไม่เห็นช่องนี้ ให้โหลดหน้าใหม่ก่อน)');
     }
 
     if (!session.customerSource) {
-      throw new BadRequestException('Customer source selection is required before confirmation');
+      throw new BadRequestException('ยังไม่ได้เลือกว่าลูกค้ารู้จักร้านจากไหน กรุณากด "กลับไปแก้ไข" แล้วเลือก (ถ้าไม่เห็นช่องนี้ ให้โหลดหน้าใหม่ก่อน)');
     }
 
     await this.assertCardDetails(session.payments);
@@ -1596,7 +1601,7 @@ export class SessionsService {
   }
 
   /**
-   * F13/D105: the order goes back to stock (the wrong item was picked). Since D105 STAFF does it (the cashiers work in U POS and
+   * F13/D105: the order goes back to stock (the wrong item was picked). Since D105 STAFF does it (the cashiers work in U•POS and
    * tell the staff). Allowed from SENT_TO_CASHIER (and the CASHIER_* states of older orders), not once the bill is open. The
    * units FOUND took go back to the shelf, the session is at the stock stage again (SEARCHING) and its stock-found milestone
    * starts over; the first round stays in the events (CASHIER_REJECTED, then a second STOCK_FOUND...).

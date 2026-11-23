@@ -90,9 +90,23 @@ export function toCatalog(data: unknown): CatalogProduct[] {
     const models: CatalogModel[] = [];
     for (const m of p.models ?? []) {
       if (!m.active) continue;
-      const skus = (m.skus ?? []).filter(
-        (s) => s.active && s.branchActive !== false,
-      );
+      const skus = (m.skus ?? [])
+        .filter((s) => s.active && s.branchActive !== false)
+        .map((s) => {
+          const colorClean = s.color ? getSkuAttribute(s, 'color') : s.color;
+          let attributes = s.attributes;
+          if (attributes && attributes.color) {
+            attributes = {
+              ...attributes,
+              color: getSkuAttribute(s, 'color') || attributes.color,
+            };
+          }
+          return {
+            ...s,
+            color: colorClean,
+            attributes,
+          };
+        });
       if (skus.length > 0)
         models.push({
           id: m.id,

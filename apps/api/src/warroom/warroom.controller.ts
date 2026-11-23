@@ -121,10 +121,29 @@ export class StockSerialController {
   ) {}
 
   @Get('serial-check')
-  async serialCheck(@Req() req: Request, @Query('sn') sn?: string, @Query('part') part?: string, @Query('branch') branch?: string) {
+  async serialCheck(
+    @Req() req: Request,
+    @Query('sn') sn?: string,
+    @Query('part') part?: string,
+    @Query('branch') branch?: string,
+    @Query('session') session?: string,
+  ) {
     const user = await this.accounts.authenticate(req);
     if (!sn) throw new BadRequestException('ต้องระบุ sn');
-    return this.serials.check(user, sn, part, branch);
+    return this.serials.check(user, sn, part, branch, session);
+  }
+
+  /** D183: the units of one model a FileMaker has ready in the branch (`GET /api/stock/branch-units?part=…[&target=][&session=][&branch=, ADMIN]`). */
+  @Get('branch-units')
+  async branchUnits(
+    @Req() req: Request,
+    @Query('part') part?: string,
+    @Query('branch') branch?: string,
+    @Query('target') target?: string,
+    @Query('session') session?: string,
+  ) {
+    const user = await this.accounts.authenticate(req);
+    return this.serials.branchUnits(user, part, branch, target, session);
   }
 }
 

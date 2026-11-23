@@ -132,7 +132,7 @@ export interface Category {
   productCount?: number;
 }
 
-/** D130: where an order sent to the cashier goes: the real FileMaker (U POS), nowhere, or the test FileMaker. */
+/** D130: where an order sent to the cashier goes: the real FileMaker (U•POS), nowhere, or the test FileMaker. */
 export type FmpPushMode = 'production' | 'off' | 'uat';
 
 /** Global ADMIN switches (D59, D130). `updatedAt` / `updatedBy` are sent to ADMIN only. */
@@ -260,7 +260,7 @@ export interface MockSession {
   reason?: string;
   otherReason?: string;
   cancelledBy?: string;
-  /** F17 (D60): the bill U POS opened for this order, as U POS reported it: its number and the real time. */
+  /** F17 (D60): the bill U•POS opened for this order, as U•POS reported it: its number and the real time. */
   posBillNo?: string;
   posBillOpenedAt?: string;
   /** D121 / D128: customer requests VAT refund or receipt type */
@@ -358,5 +358,7 @@ export interface FmpStatus {
   ackMessage: string | null;
   /** D140: why this needs a person, by the API's one rule (the same as Admin's "ออเดอร์ที่ต้องดู"); null = it does not */
   attention?: 'failed' | 'stuck' | 'ack-error' | 'sn-skipped' | null;
+  /** D183: serials FileMaker left off the held bill (its `snCheck`): code SN_NOT_FOUND, SN_WRONG_BRANCH, ... */
+  snMissing?: { sn: string; partNo: string | null; code: string | null; branch: string | null; model: string | null }[];
   at: string;
 }

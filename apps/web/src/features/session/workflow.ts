@@ -187,7 +187,7 @@ const STATE_LABELS: Record<WorkflowState, string> = {
   STOCK_REQUESTED: 'รอคลัง',
   SEARCHING: 'คลังกำลังหา',
   FOUND: 'คลังพบแล้ว',
-  SENT_TO_CASHIER: 'รอ U POS',
+  SENT_TO_CASHIER: 'รอ U•POS',
   CASHIER_RECEIVED: 'ที่แคชเชียร์',
   CASHIER_SCAN: 'ที่แคชเชียร์',
   BILL_OPENED: 'เปิดบิลแล้ว',

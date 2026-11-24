@@ -360,7 +360,7 @@ model Category {
 model ProductColor {
   id        String   @id @default(uuid()) @db.VarChar(36)
   name      String   @unique @db.VarChar(64)
-  hexCode   String   @db.VarChar(16)
+  hexCode   String   @db.VarChar(512)
   createdAt DateTime @default(now()) @db.DateTime(3)
   updatedAt DateTime @updatedAt @db.DateTime(3)
 }

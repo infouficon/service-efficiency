@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Check, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Check, Plus, RefreshCw } from 'lucide-react';
 import type { CatalogProduct, CatalogModel, CatalogSku } from './catalog';
 import type { Category, CategoryAttributeSpec } from '../../types/session';
 import { formatAccessoryItemName, getSkuAttribute, isOutOfStock } from './catalog';
@@ -33,7 +33,6 @@ export function AccessoryCategoryPicker({
   const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
-  const [lastAddedKey, setLastAddedKey] = useState<string>('');
   const [modelSearch, setModelSearch] = useState<string>('');
 
   const isIPadCaseGroup = category.name.trim().toLowerCase().includes('ipad case');
@@ -397,7 +396,6 @@ export function AccessoryCategoryPicker({
     stepIndex: number,
     specKey: string,
     optionVal: string,
-    candidatesForStep: CatalogSku[],
   ) => {
     const nextValues: Record<string, string> = {};
     for (let i = 0; i < stepIndex; i++) {
@@ -408,29 +406,10 @@ export function AccessoryCategoryPicker({
     }
     nextValues[specKey] = optionVal;
     setSelectedValues(nextValues);
-
-    // Filter candidates with this selection
-    const remainingAfter = candidatesForStep.filter(
-      (s) => getSkuAttribute(s, specKey) === optionVal,
-    );
-
-    // If this is the last step and resolves to 1 SKU, automatically add to cart!
-    const isLastStep = stepIndex === steps.length - 1;
-    if (isLastStep && remainingAfter.length === 1) {
-      const chosenSku = remainingAfter[0];
-      const modelForSku =
-        activeModel ||
-        allModels.find((m) => m.skus.some((s) => s.id === chosenSku.id)) ||
-        allModels[0];
-      const itemKey = formatAccessoryItemName(modelForSku, chosenSku);
-      onAddAccessory(itemKey);
-      setLastAddedKey(itemKey);
-    }
   };
 
   const handleResetForNext = () => {
     setSelectedValues({});
-    setLastAddedKey('');
   };
 
   const shownModels = useMemo(() => {
@@ -496,12 +475,10 @@ export function AccessoryCategoryPicker({
       {/* For iPad Case: Sub-group indicator and change button */}
       {isIPadCaseGroup && ipadSubGroup && (
         <div
+          className="spec-config-header"
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: '10px',
-            paddingBottom: '8px',
+            padding: '14px 18px',
+            background: 'var(--bg-subtle, #f8fafc)',
             borderBottom: '1px solid var(--border-color, #e2e8f0)',
           }}
         >
@@ -512,7 +489,7 @@ export function AccessoryCategoryPicker({
                 fontWeight: 600,
                 color: 'var(--primary-dark, #0d3b39)',
                 background: 'rgba(10, 186, 181, 0.12)',
-                padding: '3px 10px',
+                padding: '4px 12px',
                 borderRadius: '6px',
               }}
             >
@@ -526,7 +503,6 @@ export function AccessoryCategoryPicker({
               setIpadSubGroup(null);
               setSelectedModelId('');
               setSelectedValues({});
-              setLastAddedKey('');
             }}
           >
             เปลี่ยนประเภท
@@ -595,7 +571,6 @@ export function AccessoryCategoryPicker({
             onClick={() => {
               setSelectedModelId('');
               setSelectedValues({});
-              setLastAddedKey('');
               setModelSearch('');
             }}
           >
@@ -619,14 +594,7 @@ export function AccessoryCategoryPicker({
           return (
             <div key={st.spec.key} className="spec-config-section">
               <div className="spec-config-section-label">
-                <span>
-                  {st.spec.label}{' '}
-                  {isLast && isColor && (
-                    <small style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
-                      (กดเพื่อเพิ่มลงรายการ)
-                    </small>
-                  )}
-                </span>
+                <span>{st.spec.label}</span>
                 {st.selectedValue && (
                   <span className="spec-config-selected-val"> - {st.selectedValue}</span>
                 )}
@@ -641,6 +609,9 @@ export function AccessoryCategoryPicker({
                     const outOfStock = matchingSkus.every((s) => isOutOfStock(s));
                     const hex = colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
                     const isSelected = st.selectedValue === opt;
+                    const isImg =
+                      typeof hex === 'string' &&
+                      (/^https?:\/\/.+/i.test(hex) || /^data:image\/.+/i.test(hex));
 
                     return (
                       <button
@@ -648,19 +619,65 @@ export function AccessoryCategoryPicker({
                         key={opt}
                         disabled={outOfStock}
                         className={`spec-swatch-btn ${isSelected ? 'selected' : ''}`}
-                        onClick={() =>
-                          handleSelectOption(idx, st.spec.key, opt, st.candidatesForStep)
-                        }
+                        onClick={() => handleSelectOption(idx, st.spec.key, opt)}
                         title={`${opt}${outOfStock ? ' · สินค้าหมด' : ''}`}
                       >
                         {isSelected && <span className="spec-swatch-ring" />}
                         <span
                           className="spec-swatch-circle"
                           style={{
-                            backgroundColor: hex,
+                            backgroundColor: isImg ? 'transparent' : hex,
+                            backgroundImage: isImg ? `url("${hex}")` : undefined,
+                            backgroundSize: 'cover',
+                            backgroundPosition: 'center',
+                            backgroundRepeat: 'no-repeat',
                             opacity: outOfStock ? 0.35 : 1,
                           }}
                         />
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : st.spec.key === 'wattage' ? (
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))',
+                    gap: '8px',
+                  }}
+                >
+                  {st.options.map((opt) => {
+                    const matchingSkus = st.candidatesForStep.filter(
+                      (s) => getSkuAttribute(s, st.spec.key) === opt,
+                    );
+                    const outOfStock = matchingSkus.every((s) => isOutOfStock(s));
+                    const isSelected = st.selectedValue === opt;
+
+                    return (
+                      <button
+                        key={opt}
+                        type="button"
+                        disabled={outOfStock}
+                        className={`spec-option-card ${isSelected ? 'selected' : ''}`}
+                        onClick={() => handleSelectOption(idx, st.spec.key, opt)}
+                        style={{
+                          padding: '10px 8px',
+                          textAlign: 'center',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          minHeight: '46px',
+                        }}
+                      >
+                        <span className="spec-option-title" style={{ fontSize: '13.5px', fontWeight: 600 }}>
+                          {opt}
+                        </span>
+                        {outOfStock && (
+                          <span className="spec-option-sub out-of-stock" style={{ fontSize: '10px' }}>
+                            สินค้าหมด
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -680,9 +697,7 @@ export function AccessoryCategoryPicker({
                         type="button"
                         disabled={outOfStock}
                         className={`spec-option-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() =>
-                          handleSelectOption(idx, st.spec.key, opt, st.candidatesForStep)
-                        }
+                        onClick={() => handleSelectOption(idx, st.spec.key, opt)}
                       >
                         <span className="spec-option-title">{opt}</span>
                         {outOfStock && (
@@ -699,14 +714,89 @@ export function AccessoryCategoryPicker({
           );
         })}
 
+      {/* If steps are configured and exactly 1 candidate SKU matches, show the item card */}
+      {activeModel && steps.length > 0 && allStepsCompleted && candidates.length === 1 && (() => {
+        const chosenSku = candidates[0];
+        const itemKey = formatAccessoryItemName(activeModel, chosenSku);
+        const inCartQty = Number(cartAccessories[itemKey]) || 0;
+        const outOfStock = isOutOfStock(chosenSku);
+
+        return (
+          <div
+            style={{
+              marginTop: '14px',
+              padding: '14px 16px',
+              borderRadius: '10px',
+              background: inCartQty > 0 ? 'var(--primary-subtle, #f0fdf4)' : '#ffffff',
+              border: `1.5px solid ${inCartQty > 0 ? 'var(--primary, #0abab5)' : 'var(--border-color, #e2e8f0)'}`,
+              boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
+                {chosenSku.name || activeModel.name}
+              </div>
+              <div className="fine muted" style={{ fontSize: '12px', marginTop: '2px' }}>
+                {chosenSku.sku}
+              </div>
+              {inCartQty > 0 && (
+                <div style={{ marginTop: '4px' }}>
+                  <span
+                    style={{
+                      fontSize: '11.5px',
+                      fontWeight: 700,
+                      color: '#007d79',
+                      background: 'rgba(10, 186, 181, 0.15)',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                    }}
+                  >
+                    ในรายการที่เลือก ({inCartQty} ชิ้น)
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              disabled={outOfStock}
+              onClick={() => {
+                onAddAccessory(itemKey);
+              }}
+              style={{
+                background: outOfStock ? '#9ca3af' : 'var(--primary, #0abab5)',
+                color: '#ffffff',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '8px 18px',
+                fontSize: '13.5px',
+                fontWeight: 600,
+                cursor: outOfStock ? 'not-allowed' : 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                flexShrink: 0,
+              }}
+            >
+              <Plus size={16} />
+              {outOfStock ? 'สินค้าหมด' : inCartQty > 0 ? `ในรายการ (${inCartQty}) +` : '+ เพิ่ม'}
+            </button>
+          </div>
+        );
+      })()}
+
       {/* Direct SKU list fallback when:
           1. Model has no steps (e.g. Cables, Earbud, Lifestyle, Pencil, etc.)
           2. OR steps are completed and multiple candidate SKUs match
       */}
-      {activeModel && (steps.length === 0 || (allStepsCompleted && candidates.length > 0)) && (
+      {activeModel && (steps.length === 0 || (allStepsCompleted && candidates.length > 1)) && (
         <div className="spec-config-section">
           <div className="spec-config-section-label">
-            <span>เลือกสินค้า (กดเพื่อเพิ่มลงรายการ)</span>
+            <span>เลือกสินค้า ({candidates.length > 0 ? `${candidates.length} รายการ` : 'กดเพื่อเพิ่ม'})</span>
           </div>
           <div style={{ display: 'grid', gap: '8px' }}>
             {(steps.length === 0 ? activeModel.skus : candidates).map((sku) => {
@@ -721,7 +811,6 @@ export function AccessoryCategoryPicker({
                   disabled={outOfStock}
                   onClick={() => {
                     onAddAccessory(itemKey);
-                    setLastAddedKey(itemKey);
                   }}
                   style={{
                     display: 'flex',
@@ -752,14 +841,14 @@ export function AccessoryCategoryPicker({
                           fontWeight: 700,
                           color: '#007d79',
                           background: 'rgba(10, 186, 181, 0.15)',
-                          padding: '3px 8px',
+                          padding: '3px 10px',
                           borderRadius: '12px',
                         }}
                       >
                         ในรายการ ({inCartQty}) +
                       </span>
                     ) : (
-                      <span style={{ fontSize: '12px', color: 'var(--primary, #0abab5)', fontWeight: 600 }}>
+                      <span style={{ fontSize: '12.5px', color: 'var(--primary, #0abab5)', fontWeight: 600 }}>
                         + เพิ่ม
                       </span>
                     )}
@@ -768,60 +857,6 @@ export function AccessoryCategoryPicker({
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* Confirmation feedback banner when an item was added */}
-      {lastAddedKey && (
-        <div
-          style={{
-            padding: '12px 18px',
-            background: 'var(--primary-subtle, #e8f7f6)',
-            borderTop: '1px solid var(--primary-border, #bbf7d0)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '8px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span
-              style={{
-                width: '22px',
-                height: '22px',
-                borderRadius: '50%',
-                background: 'var(--primary, #0abab5)',
-                color: '#ffffff',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Check size={14} />
-            </span>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--primary-dark, #0d3b39)' }}>
-              เพิ่มในรายการเรียบร้อย ({Number(cartAccessories[lastAddedKey]) || 1} ชิ้น)
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleResetForNext}
-            style={{
-              border: '1px solid var(--primary, #0abab5)',
-              background: '#ffffff',
-              color: 'var(--primary, #0abab5)',
-              borderRadius: '6px',
-              padding: '4px 10px',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '4px',
-            }}
-          >
-            <RefreshCw size={12} /> เลือกชิ้นอื่นต่อ
-          </button>
         </div>
       )}
     </div>

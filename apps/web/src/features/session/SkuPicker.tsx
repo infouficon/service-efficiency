@@ -386,6 +386,10 @@ export function SkuPicker({
                       const hex = colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
                       const isSelected = st.selectedValue === opt;
 
+                      const isImg =
+                        typeof hex === 'string' &&
+                        (/^https?:\/\/.+/i.test(hex) || /^data:image\/.+/i.test(hex));
+
                       return (
                         <button
                           type="button"
@@ -399,7 +403,11 @@ export function SkuPicker({
                           <span
                             className="spec-swatch-circle"
                             style={{
-                              backgroundColor: hex,
+                              backgroundColor: isImg ? 'transparent' : hex,
+                              backgroundImage: isImg ? `url("${hex}")` : undefined,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                              backgroundRepeat: 'no-repeat',
                               opacity: stockInfo.outOfStock ? 0.35 : 1,
                             }}
                           />

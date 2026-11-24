@@ -590,7 +590,7 @@ export function App({
             <LogOut size={16} />
             <span>ออกจากระบบ</span>
           </button>
-          <div className="sidebar-version-tag">v{APP_VERSION}</div>
+          <div className="sidebar-version-tag">v{APP_VERSION.replace(/^v/, '')}</div>
         </div>
       </aside>
 

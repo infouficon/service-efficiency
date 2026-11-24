@@ -22,7 +22,8 @@
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "dev": "npm run dev --workspace=@service-efficiency/web",
-    "build": "npm run build:web && npm run build:api"
+    "build": "npm run build:web && npm run build:api",
+    "bump:version": "node scripts/bump-version.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.0",

@@ -2234,7 +2234,7 @@ Owner instruction via `/grill-me`: "เมื่อกดเลือก accesso
    - When an accessory product contains catalog models and SKUs (such as `iPhone Case for iPhone 13`, `iPhone Case for iPhone 14 Pro`):
      - Displays model selection chips (when more than 1 model exists).
      - Renders all variant SKUs under the active model with their descriptive name, color, SKU part number, and live stock indicator.
-     - Staff can click "+ เพิ่ม" to add the SKU or adjust quantity with the stepper (`−`, input, `+`).
+     - Staff can click "+" to add the SKU or adjust quantity with the stepper (`−`, input, `+`).
      - Multiple SKUs under the same or different accessory groups can be selected simultaneously.
 3. **Selected Accessories Card & Accurate Part Number Naming:**
    - Selected accessories are pinned in a dedicated summary card at the top of the Accessories section, showing the full descriptive name and quantity stepper with a direct delete (✕) button.
@@ -2433,4 +2433,67 @@ Decisions:
 6. **Watch Accessories Unified 4-Step Flow:**
    - Combines all Watch Accessories models into a single unified model so staff immediately steps through:
      `ขนาดตัวเรือน` (caseSize) > `สายนาฬิกา` (band) > `ขนาดสาย (Band Size)` (bandSize) > `สี` (color).
+
+## D190 — Auto-versioning Git Hook, Explicit Accessory Add Button, & Image URL Color Palette with SKU Hover Tooltips (2026-11-24)
+
+Staff and Admin requested:
+1. Version auto-updates every time code is pushed.
+2. Replace "เลือกชิ้นอื่นต่อ" with explicit "เพิ่มสินค้า" button to confirm adding configured item to "รายการที่เลือก" of Accessories.
+3. Color Palette: support image URLs in the Hex Code field so external image textures can be used as color swatches.
+4. Color Palette: hovering over the "จำนวน SKU" tag displays a floating popover listing all SKUs associated with that color.
+
+Decisions:
+1. **Auto-updating Version on Push / Build:**
+   - Created `scripts/update-version.mjs` which reads git commit count and short hash (`1.0.<commit_count>-<short_hash>`) and writes `apps/web/src/version.ts`.
+   - Wired into `.git/hooks/pre-push` and `apps/web/package.json` (`prebuild` hook) to ensure the version is refreshed before builds and pushes.
+2. **Explicit "เพิ่มสินค้า" Workflow:**
+   - Instead of immediately auto-adding an accessory upon selecting the last attribute, staff reviews their selected specifications and clicks a prominent **"เพิ่มสินค้า"** (+1) button.
+   - For direct SKU lists (e.g. Cables, Earbuds), items display a clear `+ เพิ่มสินค้า` action.
+   - The feedback banner confirms the addition and provides `เพิ่มสินค้า (+1)` and `เลือกแบบอื่น` actions.
+3. **Image URL Support in Color Palette:**
+   - Widened `ProductColor.hexCode` from `VarChar(16)` to `VarChar(512)` in `apps/api/prisma/schema.prisma` and applied migration `202611240001_widen_product_color_hex_code`.
+   - `UpsertColorDto` accepts either a standard hex color (`#RRGGBB`) or an image URL (`http://`, `https://`, `data:image/`).
+   - Color swatch renderers in `ColorsPanel`, `AccessoryCategoryPicker`, and `SkuPicker` display image textures (`backgroundSize: cover`, `backgroundPosition: center`) when given a URL.
+4. **Color Palette SKU Hover Tooltip:**
+   - `ColorsService.list()` selects `{ sku, name }` for all SKUs and returns `skus: ColorSkuInfoDto[]`.
+   - `ColorsPanel` renders `SkuHoverCell`, displaying a floating popover when hovering over `N SKU` with the list of SKU part numbers and product names.
+
+## D191 — Direct Accessory Addition, Compact Charger Wattage Grid, & iPad Sub-Group Header Spacing (2026-11-24)
+
+Staff and Owner requested:
+1. "หาก มีปุ่ม เพิ่ม แล้ว ไม่ต้องมี/กด เพิ่มสินค้า เพื่อเพิ่มสินค้าอีก": When a `+ เพิ่ม` button is present on an accessory card or direct SKU list, clicking it adds the item directly to the cart. Do not display a duplicate/confusing bottom feedback banner requiring another "เพิ่มสินค้า" press.
+2. "Charging Device > Wall Charger > จำนวนวัตต์ ที่แสดงต่อบรรทัด ได้หลายอัน เพื่อให้กระทัด แต่ทุกกล่องขนาดเท่ากัน": In Wall Charger, display wattage options in a compact multi-item per row grid where each button has identical dimensions.
+3. "ส่วน ประเภท และ ปุ่ม เปลี่ยนประเภท ให้มีกาเว้นห่างจากกรอบด้วย": Provide proper spacing and padding between the iPad Case sub-group bar (`[ iPad Keyboard Case ]` and `[ เปลี่ยนประเภท ]`) and the outer card borders.
+
+Decisions:
+1. **Direct Add Action without Redundant Bottom Banner:**
+   - Removed the bottom confirmation banner and its duplicate `+ เพิ่มสินค้า` button.
+   - For candidate matches that resolve to a single SKU, a dedicated action row renders with `+ เพิ่ม` (or `ในรายการ (X) +`). Clicking it immediately adds the item to `cartAccessories` and updates the count in place.
+   - Direct SKU list items retain their individual `+ เพิ่ม` / `ในรายการ (X) +` action buttons with immediate cart updates.
+2. **Compact Uniform Wattage Grid:**
+   - For `st.spec.key === 'wattage'` in `AccessoryCategoryPicker`, the options render in a CSS grid (`gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))'`, `gap: 8px`, `minHeight: 46px`) with centered labels. All wattage boxes maintain uniform size and alignment across rows.
+3. **iPad Sub-Group Header Spacing:**
+   - Restructured the sub-group indicator row in `AccessoryCategoryPicker` to use `.spec-config-header` with `padding: 14px 18px`, a subtle background tint (`var(--bg-subtle, #f8fafc)`), and a bottom border. This ensures clear visual separation and comfortable margin from the outer `.spec-config-box` border.
+
+## D192 — Incremental Patch Versioning via version.json and Pre-commit Hook (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+"ส่วนของ version เป็นการเพิ่ม version ไปเรื่อยๆ เช่น 1.0.0 เป็น 1.0.1"
+Supersedes the git-hash based version string format from D190 (`1.0.<commit_count>-<hash>`).
+
+Decisions:
+1. **Semantic Incremental Version Source:**
+   - Stored in root `version.json` with baseline format `{"version": "1.0.0"}`.
+   - Versioning strictly follows sequential patch increments: `1.0.0` -> `1.0.1` -> `1.0.2` ...
+2. **Version Bump Tooling:**
+   - Created `scripts/bump-version.mjs` which reads `version.json`, increments the patch component by +1, updates `version.json`, and generates `apps/web/src/version.ts`.
+   - Updated `scripts/update-version.mjs` to synchronize `apps/web/src/version.ts` with `version.json` during build without incrementing, preventing unintended version jumps during local testing or CI.
+3. **Automated Pre-commit Hook:**
+   - Installed `.git/hooks/pre-commit` hook to automatically invoke `scripts/bump-version.mjs` and stage `version.json` and `apps/web/src/version.ts` on each commit.
+   - Developers work normally with `git commit` and `git push` without encountering git ref-lock conflicts.
+4. **Sidebar Display:**
+   - Displays `v1.0.0`, `v1.0.1`, etc. in the navigation sidebar footer (`.sidebar-version-tag`).
+
+
+
 

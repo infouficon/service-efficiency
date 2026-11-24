@@ -29,11 +29,14 @@ export function AccessoryCategoryPicker({
   cartAccessories,
   onAddAccessory,
 }: AccessoryCategoryPickerProps) {
+  const [ipadSubGroup, setIpadSubGroup] = useState<'case' | 'keyboard' | null>(null);
   const [selectedModelId, setSelectedModelId] = useState<string>('');
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const [lastAddedKey, setLastAddedKey] = useState<string>('');
   const [modelSearch, setModelSearch] = useState<string>('');
+
+  const isIPadCaseGroup = category.name.trim().toLowerCase().includes('ipad case');
 
   // Collect all models across the products in this category, with custom grouping for special categories
   const allModels = useMemo<CatalogModel[]>(() => {
@@ -50,7 +53,42 @@ export function AccessoryCategoryPicker({
 
     const groupNameLower = category.name.trim().toLowerCase();
 
-    // 1. Wallet & Lanyards: Wallet vs Lanyards
+    // 0. Watch Accessories: combine all SKUs into 1 unified model so staff goes straight to 4 steps (D188)
+    if (groupNameLower.includes('watch')) {
+      return [{ id: 'model-watch-accessories', name: 'Watch Accessories', skus: allSkus }];
+    }
+
+    // 1. Pencil: if only 1 model "Pencil", expand child SKUs into models so staff picks pencil type directly
+    if (groupNameLower.includes('pencil')) {
+      if (list.length === 1 && /^pencil$/i.test(list[0].name.trim()) && allSkus.length > 1) {
+        return allSkus.map((s) => ({
+          id: s.id,
+          name: s.name || 'Apple Pencil',
+          skus: [s],
+        }));
+      }
+    }
+
+    // 2. iPad Case: filter models/skus by ipadSubGroup (case vs keyboard)
+    if (groupNameLower.includes('ipad case') && ipadSubGroup) {
+      const isKeyboard = ipadSubGroup === 'keyboard';
+      const filteredModels: CatalogModel[] = [];
+      for (const m of list) {
+        const matchingSkus = (m.skus || []).filter((s) => {
+          const isK = /keyboard/i.test(s.name || '') || /keyboard/i.test(s.sku || '');
+          return isKeyboard ? isK : !isK;
+        });
+        if (matchingSkus.length > 0) {
+          filteredModels.push({
+            ...m,
+            skus: matchingSkus,
+          });
+        }
+      }
+      return filteredModels;
+    }
+
+    // 3. Wallet & Lanyards: Wallet vs Lanyards
     if (groupNameLower.includes('wallet') || groupNameLower.includes('lanyard')) {
       const walletSkus = allSkus.filter((s) => /wallet/i.test(s.name || ''));
       const lanyardSkus = allSkus.filter((s) => /strap|lanyard|crossbody|wrist/i.test(s.name || ''));
@@ -64,7 +102,7 @@ export function AccessoryCategoryPicker({
       if (result.length > 0) return result;
     }
 
-    // 2. Mice & Keyboards: Mouse, Magic Keyboard, Trackpad
+    // 4. Mice & Keyboards: Mouse, Magic Keyboard, Trackpad
     if (groupNameLower.includes('mice') || groupNameLower.includes('keyboard')) {
       const mouseSkus = allSkus.filter((s) => /mouse/i.test(s.name || ''));
       const keyboardSkus = allSkus.filter((s) => /keyboard/i.test(s.name || ''));
@@ -82,7 +120,7 @@ export function AccessoryCategoryPicker({
       if (result.length > 0) return result;
     }
 
-    // 3. Device Protectors for Apple Devices: AirTag Case vs Remote Case
+    // 5. Device Protectors for Apple Devices: AirTag Case vs Remote Case
     if (groupNameLower.includes('device protector') || groupNameLower.includes('protector')) {
       const airtagSkus = allSkus.filter((s) => /airtag/i.test(s.name || ''));
       const remoteSkus = allSkus.filter((s) => /remote/i.test(s.name || ''));
@@ -96,10 +134,14 @@ export function AccessoryCategoryPicker({
       if (result.length > 0) return result;
     }
 
-    // 4. Charging Device: Wall Charger vs Wireless Charger
+    // 6. Charging Device: Wall Charger vs Wireless Charger
     if (groupNameLower.includes('charge') || groupNameLower.includes('charging')) {
       const wallSkus = allSkus.filter((s) => /\b\d+w\b|wall|power\s*adapter/i.test(s.name || ''));
-      const wirelessSkus = allSkus.filter((s) => /magsafe|wireless|qi\b|duo|charger(?!\s*cable)/i.test(s.name || '') && !/\b\d+w\b|power\s*adapter/i.test(s.name || ''));
+      const wirelessSkus = allSkus.filter(
+        (s) =>
+          /magsafe|wireless|qi\b|duo|charger(?!\s*cable)/i.test(s.name || '') &&
+          !/\b\d+w\b|power\s*adapter/i.test(s.name || ''),
+      );
       const result: CatalogModel[] = [];
       if (wallSkus.length > 0) {
         result.push({ id: 'model-wall-charger', name: 'Wall Charger', skus: wallSkus });
@@ -110,7 +152,7 @@ export function AccessoryCategoryPicker({
       if (result.length > 0) return result;
     }
 
-    // 5. Default model list deduplicated by name
+    // 7. Default model list deduplicated by name
     const map = new Map<string, CatalogModel>();
     for (const m of list) {
       let name = m.name.trim();
@@ -130,7 +172,7 @@ export function AccessoryCategoryPicker({
       }
     }
     return Array.from(map.values());
-  }, [products, category.name]);
+  }, [products, category.name, ipadSubGroup]);
 
   // Load color map for swatch buttons
   useEffect(() => {
@@ -147,23 +189,25 @@ export function AccessoryCategoryPicker({
 
   // Pre-select model from main cart device if applicable and not yet chosen
   useEffect(() => {
-    if (selectedModelId || allModels.length <= 1) return;
+    if (selectedModelId || allModels.length === 0) return;
 
     const catLower = category.name.toLowerCase();
     if (defaultIPhoneModel && catLower.includes('iphone')) {
-      const match = allModels.find((m) =>
-        m.name.toLowerCase().includes(defaultIPhoneModel.toLowerCase()) ||
-        defaultIPhoneModel.toLowerCase().includes(m.name.toLowerCase()),
+      const match = allModels.find(
+        (m) =>
+          m.name.toLowerCase().includes(defaultIPhoneModel.toLowerCase()) ||
+          defaultIPhoneModel.toLowerCase().includes(m.name.toLowerCase()),
       );
       if (match) setSelectedModelId(match.id);
     } else if (defaultIPadModel && catLower.includes('ipad')) {
-      const match = allModels.find((m) =>
-        m.name.toLowerCase().includes(defaultIPadModel.toLowerCase()) ||
-        defaultIPadModel.toLowerCase().includes(m.name.toLowerCase()),
+      const match = allModels.find(
+        (m) =>
+          m.name.toLowerCase().includes(defaultIPadModel.toLowerCase()) ||
+          defaultIPadModel.toLowerCase().includes(m.name.toLowerCase()),
       );
       if (match) setSelectedModelId(match.id);
     }
-  }, [allModels, category.name, defaultIPhoneModel, defaultIPadModel, selectedModelId]);
+  }, [allModels, category.name, defaultIPhoneModel, defaultIPadModel, selectedModelId, ipadSubGroup]);
 
   const activeModel = useMemo(() => {
     if (allModels.length === 1) return allModels[0];
@@ -175,7 +219,7 @@ export function AccessoryCategoryPicker({
     const groupNameLower = category.name.trim().toLowerCase();
     const activeModelNameLower = activeModel?.name.trim().toLowerCase() || '';
 
-    // 1. NO COLOR groups: Cables & Connectors, Charging Device, Earbud, Headphones and Speakers, Lifestyle & Gadgets
+    // 1. NO COLOR groups: Cables & Connectors, Charging Device, Earbud, Headphones and Speakers, Lifestyle & Gadgets, Pencil, Software & Care
     const isNoColorGroup =
       groupNameLower.includes('cable') ||
       groupNameLower.includes('connector') ||
@@ -185,33 +229,40 @@ export function AccessoryCategoryPicker({
       groupNameLower.includes('headphone') ||
       groupNameLower.includes('speaker') ||
       groupNameLower.includes('lifestyle') ||
-      groupNameLower.includes('gadget');
-
-    // Models explicitly marked as "ไม่ต้องแก้" (direct item list with add button)
-    const isDirectModel =
+      groupNameLower.includes('gadget') ||
+      groupNameLower.includes('pencil') ||
+      groupNameLower.includes('software') ||
+      groupNameLower.includes('care') ||
       activeModelNameLower === 'mouse' ||
       activeModelNameLower === 'trackpad' ||
       activeModelNameLower === 'remote case' ||
-      activeModelNameLower === 'wireless charger';
+      activeModelNameLower.includes('pencil tip');
 
-    if (isDirectModel) {
-      return [];
-    }
-
+    // Direct items with NO steps (select items inside directly)
     if (
       groupNameLower.includes('cable') ||
       groupNameLower.includes('connector') ||
       groupNameLower.includes('earbud') ||
       groupNameLower.includes('headphone') ||
       groupNameLower.includes('speaker') ||
-      groupNameLower.includes('lifestyle')
+      groupNameLower.includes('lifestyle') ||
+      groupNameLower.includes('gadget') ||
+      groupNameLower.includes('pencil') ||
+      groupNameLower.includes('software') ||
+      groupNameLower.includes('care') ||
+      activeModelNameLower === 'mouse' ||
+      activeModelNameLower === 'trackpad' ||
+      activeModelNameLower === 'remote case' ||
+      activeModelNameLower.includes('pencil tip')
     ) {
       return [];
     }
 
-    // Charging Device -> Wall Charger: only wattage
+    // Charging Device: both Wall Charger and Wireless Charger split by wattage first (D188) - NO COLOR!
     if (groupNameLower.includes('charge') || groupNameLower.includes('charging')) {
-      if (activeModelNameLower.includes('wall')) {
+      const skus = activeModel ? activeModel.skus : allModels.flatMap((m) => m.skus);
+      const hasWattage = skus.some((s) => Boolean(getSkuAttribute(s, 'wattage')));
+      if (hasWattage) {
         return [{ key: 'wattage', label: 'จำนวนวัตต์', required: true }];
       }
       return [];
@@ -230,10 +281,7 @@ export function AccessoryCategoryPicker({
     // Wallet & Lanyards
     if (groupNameLower.includes('wallet') || groupNameLower.includes('lanyard')) {
       if (activeModelNameLower.includes('wallet')) {
-        return [
-          { key: 'type', label: 'ประเภทกระเป๋า', required: true },
-          { key: 'color', label: 'สี', required: true },
-        ];
+        return [{ key: 'color', label: 'สี', required: true }];
       }
       if (activeModelNameLower.includes('lanyard') || activeModelNameLower.includes('strap')) {
         return [
@@ -261,7 +309,7 @@ export function AccessoryCategoryPicker({
       ];
     }
 
-    // iPhone Case: ประเภท > สี
+    // iPhone Case: ประเภทเคส > สี
     if (groupNameLower.includes('iphone case') || groupNameLower.startsWith('iphone')) {
       return [
         { key: 'caseType', label: 'ประเภทเคส', required: true },
@@ -270,10 +318,9 @@ export function AccessoryCategoryPicker({
     }
 
     // iPad Case & Keyboard
-    if (groupNameLower.includes('ipad case')) {
-      if (activeModelNameLower.includes('keyboard')) {
+    if (groupNameLower.includes('ipad case') || groupNameLower.startsWith('ipad')) {
+      if (ipadSubGroup === 'keyboard' || activeModelNameLower.includes('keyboard')) {
         return [
-          { key: 'type', label: 'ประเภท', required: true },
           { key: 'language', label: 'ภาษาแป้นพิมพ์', required: true },
           { key: 'color', label: 'สี', required: true },
         ];
@@ -303,7 +350,7 @@ export function AccessoryCategoryPicker({
       fallback.push({ key: 'color', label: 'สี', required: true });
     }
     return fallback;
-  }, [category.attributes, category.name, activeModel, allModels]);
+  }, [category.attributes, category.name, activeModel, allModels, ipadSubGroup]);
 
   // Compute steps and remaining SKUs based on current selections
   const { steps, candidates } = useMemo(() => {
@@ -367,11 +414,14 @@ export function AccessoryCategoryPicker({
       (s) => getSkuAttribute(s, specKey) === optionVal,
     );
 
-    // If this is the last step or resolves to 1 SKU, automatically add to cart!
+    // If this is the last step and resolves to 1 SKU, automatically add to cart!
     const isLastStep = stepIndex === steps.length - 1;
-    if (isLastStep && remainingAfter.length > 0) {
+    if (isLastStep && remainingAfter.length === 1) {
       const chosenSku = remainingAfter[0];
-      const modelForSku = activeModel || allModels.find((m) => m.skus.some((s) => s.id === chosenSku.id)) || allModels[0];
+      const modelForSku =
+        activeModel ||
+        allModels.find((m) => m.skus.some((s) => s.id === chosenSku.id)) ||
+        allModels[0];
       const itemKey = formatAccessoryItemName(modelForSku, chosenSku);
       onAddAccessory(itemKey);
       setLastAddedKey(itemKey);
@@ -391,6 +441,45 @@ export function AccessoryCategoryPicker({
 
   const isModelTwoCols = shownModels.length === 2 && shownModels.every((m) => m.name.length <= 18);
 
+  // If iPad Case group and user hasn't selected sub-group (iPad Case vs iPad Keyboard Case), show choice first
+  if (isIPadCaseGroup && !ipadSubGroup) {
+    return (
+      <div className="spec-config-box" style={{ marginTop: '8px' }}>
+        <div className="spec-config-section">
+          <div className="spec-config-section-label">
+            <span>เลือกประเภท ({category.name})</span>
+          </div>
+          <div className="spec-card-grid cols-2">
+            <button
+              type="button"
+              className="spec-option-card"
+              onClick={() => {
+                setIpadSubGroup('case');
+                setSelectedModelId('');
+                setSelectedValues({});
+              }}
+            >
+              <span className="spec-option-title">iPad Case</span>
+              <span className="spec-option-sub">เคสสำหรับ iPad</span>
+            </button>
+            <button
+              type="button"
+              className="spec-option-card"
+              onClick={() => {
+                setIpadSubGroup('keyboard');
+                setSelectedModelId('');
+                setSelectedValues({});
+              }}
+            >
+              <span className="spec-option-title">iPad Keyboard Case</span>
+              <span className="spec-option-sub">เคสคีย์บอร์ด Magic Keyboard</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (allModels.length === 0) {
     return (
       <p className="muted fine" style={{ padding: '8px 0', margin: 0 }}>
@@ -399,8 +488,52 @@ export function AccessoryCategoryPicker({
     );
   }
 
+  const allStepsCompleted =
+    steps.length > 0 && steps.every((st) => Boolean(st.selectedValue));
+
   return (
     <div className="spec-config-box" style={{ marginTop: '8px' }}>
+      {/* For iPad Case: Sub-group indicator and change button */}
+      {isIPadCaseGroup && ipadSubGroup && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '10px',
+            paddingBottom: '8px',
+            borderBottom: '1px solid var(--border-color, #e2e8f0)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span
+              style={{
+                fontSize: '12.5px',
+                fontWeight: 600,
+                color: 'var(--primary-dark, #0d3b39)',
+                background: 'rgba(10, 186, 181, 0.12)',
+                padding: '3px 10px',
+                borderRadius: '6px',
+              }}
+            >
+              {ipadSubGroup === 'keyboard' ? 'iPad Keyboard Case' : 'iPad Case'}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="picked-model-change"
+            onClick={() => {
+              setIpadSubGroup(null);
+              setSelectedModelId('');
+              setSelectedValues({});
+              setLastAddedKey('');
+            }}
+          >
+            เปลี่ยนประเภท
+          </button>
+        </div>
+      )}
+
       {/* Step 1: Model Selection (if multiple models exist and none active yet) */}
       {allModels.length > 1 && !activeModel && (
         <div className="spec-config-section">
@@ -487,7 +620,12 @@ export function AccessoryCategoryPicker({
             <div key={st.spec.key} className="spec-config-section">
               <div className="spec-config-section-label">
                 <span>
-                  {st.spec.label} {isLast && <small style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(กดเพื่อเพิ่มลงรายการ)</small>}
+                  {st.spec.label}{' '}
+                  {isLast && isColor && (
+                    <small style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                      (กดเพื่อเพิ่มลงรายการ)
+                    </small>
+                  )}
                 </span>
                 {st.selectedValue && (
                   <span className="spec-config-selected-val"> - {st.selectedValue}</span>
@@ -561,14 +699,17 @@ export function AccessoryCategoryPicker({
           );
         })}
 
-      {/* Direct SKU list fallback if model has only SKUs without steps */}
-      {activeModel && steps.length === 0 && (
+      {/* Direct SKU list fallback when:
+          1. Model has no steps (e.g. Cables, Earbud, Lifestyle, Pencil, etc.)
+          2. OR steps are completed and multiple candidate SKUs match
+      */}
+      {activeModel && (steps.length === 0 || (allStepsCompleted && candidates.length > 0)) && (
         <div className="spec-config-section">
           <div className="spec-config-section-label">
             <span>เลือกสินค้า (กดเพื่อเพิ่มลงรายการ)</span>
           </div>
           <div style={{ display: 'grid', gap: '8px' }}>
-            {activeModel.skus.map((sku) => {
+            {(steps.length === 0 ? activeModel.skus : candidates).map((sku) => {
               const itemKey = formatAccessoryItemName(activeModel, sku);
               const inCartQty = Number(cartAccessories[itemKey]) || 0;
               const outOfStock = isOutOfStock(sku);

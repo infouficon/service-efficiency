@@ -2405,3 +2405,32 @@ Owner, on the step left after D183: "ช่วยเข้า fmp แล้ว�
 3. **Switched on.** `SERIAL_CHECK=fmp` and `SERIAL_CHECK_UNITS=fmp` are set on the api app in Coolify (restarted 09:38). They act when ADMIN's push switch is "production" (or "off"). It is `uat` today, which already asks the test FileMaker. One exception acts now: the after-send lookup of an order whose bill went to the real U•POS asks the real one.
 4. **Open risk: shop hours.** The slow answers of 2026-11-05 came under shop load, not from a missing index. The D104 guards stay unchanged: one request at a time, 5 s, no retry, a 10-minute pause after a failure, and nothing around warroom's pulls. So at worst one slow query reaches the server every 10 minutes. Watch the api's `SerialCheck` log lines in the first shop hours after the push switch goes to "production". If they time out, remove `SERIAL_CHECK_UNITS` first (the serial check stays), then `SERIAL_CHECK`, and restart.
 5. **Also:** the two "off" reasons a user can see now say U•POS instead of FileMaker and drop the setting names ("ยังไม่เปิดการดูรายการเครื่องจาก U•POS จริง").
+
+## D189 — Accessories Configuration Flow Refinements & Version Indicator (2026-11-24)
+
+User requested:
+- Version display in bottom-left sidebar footer
+- Remove color selection from Cables & Connectors, Earbud (AirPods Pro 2nd Gen same as 3rd Gen), Headphones and Speakers, Lifestyle & Gadgets (Pencil Tips), Pencil, Software & Care
+- Both Wall Charger and Wireless Charger divide by wattage (จำนวนวัตต์) first, without any color step
+- iPad Case split into `iPad Case` vs `iPad Keyboard Case` prior to model selection
+- Wallet & Lanyards: ensure Wrist Strap has color selection restored
+- Watch Accessories: strict order of ขนาดตัวเรือน (caseSize) > สาย (band) > ขนาดสาย Band Size (bandSize: S/M, M/L) > สี (color)
+
+Decisions:
+1. **Sidebar Version Indicator:** Added `sidebar-version-tag` (`v1.0.0`) at the bottom of the navigation sidebar footer (`App.tsx` and `styles.css`), sourced from `apps/web/src/version.ts`.
+2. **Strict Zero-Color Categories:**
+   - `Cables & Connectors`, `Charging Device`, `Earbud`, `Headphones and Speakers`, `Lifestyle & Gadgets`, `Pencil`, `Software & Care`, `Mouse`, `Trackpad`, `Remote Case`, and `Pencil Tips` strictly have zero color options. Items are added directly.
+   - For `Earbud`, AirPods Pro 2nd Gen follows the same behavior as AirPods Pro 3rd Gen (direct selection without color swatches).
+3. **Charger Wattage Flow:**
+   - Both `Wall Charger` and `Wireless Charger` under `Charging Device` divide by wattage (`จำนวนวัตต์`) first when wattage specs are present, and list items directly for selection without any color step.
+4. **iPad Case Two-Tier Hierarchy:**
+   - Opening `iPad Case` presents a top-level selection between `[ iPad Case ]` and `[ iPad Keyboard Case ]`.
+   - `iPad Case`: Filters to standard non-keyboard cases, defaulting to cart's iPad model if present. Steps: `caseType` (ประเภทเคส) > `color` (สี).
+   - `iPad Keyboard Case`: Filters to Magic Keyboard cases, defaulting to cart's iPad model if present. Steps: `language` (ภาษาแป้นพิมพ์: Thai / US English) > `color` (สี).
+   - Staff can switch sub-group with "เปลี่ยนประเภท" and switch model with "เปลี่ยนรุ่น".
+5. **Wallet & Lanyards Color Extraction:**
+   - Enhanced `getSkuAttribute(s, 'color')` to detect color from bracket, parentheses, hyphenated suffixes, and standard color keywords, ensuring `Wrist Strap` and `Crossbody Strap` reliably present color swatches.
+6. **Watch Accessories Unified 4-Step Flow:**
+   - Combines all Watch Accessories models into a single unified model so staff immediately steps through:
+     `ขนาดตัวเรือน` (caseSize) > `สายนาฬิกา` (band) > `ขนาดสาย (Band Size)` (bandSize) > `สี` (color).
+

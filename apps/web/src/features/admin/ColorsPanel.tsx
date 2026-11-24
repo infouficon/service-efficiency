@@ -32,7 +32,13 @@ export function isValidColorOrUrl(val: string): boolean {
   );
 }
 
-function SkuHoverCell({ item }: { item: ColorItem }) {
+function SkuHoverCell({
+  item,
+  onManage,
+}: {
+  item: ColorItem;
+  onManage: () => void;
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -41,21 +47,29 @@ function SkuHoverCell({ item }: { item: ColorItem }) {
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
     >
-      <span
+      <button
+        type="button"
         className="status-tag"
+        onClick={onManage}
+        title="คลิกเพื่อจัดการ / ผูก SKU กับสีนี้"
         style={{
           fontSize: '0.8rem',
-          padding: '3px 9px',
+          padding: '4px 10px',
           background: item.skuCount > 0 ? '#e0f2fe' : '#f3f4f6',
           color: item.skuCount > 0 ? '#0369a1' : '#6b7280',
-          cursor: item.skuCount > 0 ? 'help' : 'default',
+          cursor: 'pointer',
           fontWeight: 600,
           borderRadius: '12px',
+          border: '1px solid transparent',
           transition: 'all 0.15s ease',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '4px',
         }}
       >
-        {item.skuCount} SKU
-      </span>
+        <span>{item.skuCount} SKU</span>
+        <span style={{ fontSize: '10px', color: '#0284c7' }}>⚙</span>
+      </button>
 
       {open && item.skuCount > 0 && item.skus && item.skus.length > 0 && (
         <div
@@ -84,9 +98,15 @@ function SkuHoverCell({ item }: { item: ColorItem }) {
               marginBottom: '6px',
               borderBottom: '1px solid #f1f5f9',
               paddingBottom: '4px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
             }}
           >
-            รายการสินค้าสี &ldquo;{item.name}&rdquo; ({item.skus.length} SKU)
+            <span>รายการสินค้าสี &ldquo;{item.name}&rdquo; ({item.skus.length} SKU)</span>
+            <small style={{ color: '#0284c7', cursor: 'pointer' }} onClick={onManage}>
+              จัดการ
+            </small>
           </div>
           <div style={{ display: 'grid', gap: '6px' }}>
             {item.skus.map((s, idx) => (
@@ -129,6 +149,18 @@ export function ColorsPanel() {
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [newColorName, setNewColorName] = useState('');
   const [newColorHex, setNewColorHex] = useState('#000000');
+
+  // Modal to manage SKUs of a color
+  const [managingColor, setManagingColor] = useState<ColorItem | null>(null);
+  const [skuSearchQuery, setSkuSearchQuery] = useState('');
+  const [skuSearchResults, setSkuSearchResults] = useState<{ sku: string; name: string; color: string | null }[]>([]);
+  const [searchingSkus, setSearchingSkus] = useState(false);
+  const [reassignColorMap, setReassignColorMap] = useState<Record<string, string>>({});
+
+  // Modal to delete a color (with migrate or unbind option)
+  const [deletingColor, setDeletingColor] = useState<ColorItem | null>(null);
+  const [deleteMode, setDeleteMode] = useState<'migrate' | 'unbind'>('migrate');
+  const [targetMigrateColor, setTargetMigrateColor] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -210,14 +242,85 @@ export function ColorsPanel() {
     }
   };
 
-  const handleDeleteColor = async (item: ColorItem) => {
-    if (!item.id) return;
-    if (!confirm(`ต้องการยกเลิกรหัสสีของ "${item.name}" หรือไม่?`)) return;
+  const handleSearchSkus = async (q: string) => {
+    setSkuSearchQuery(q);
+    if (!q.trim()) {
+      setSkuSearchResults([]);
+      return;
+    }
+    setSearchingSkus(true);
+    try {
+      const results = await api<{ sku: string; name: string; color: string | null }[]>(
+        `/colors/search-skus?q=${encodeURIComponent(q.trim())}`,
+      );
+      setSkuSearchResults(results || []);
+    } catch {
+      setSkuSearchResults([]);
+    } finally {
+      setSearchingSkus(false);
+    }
+  };
 
+  const handleBindSku = async (sku: string, colorName: string | null) => {
     setBusy(true);
     try {
-      await api(`/colors/${item.id}`, 'DELETE');
-      toast.success(`ลบรหัสสีของ "${item.name}" เรียบร้อย`);
+      await api('/colors/bind-sku', 'POST', { sku, colorName });
+      toast.success(
+        colorName
+          ? `ผูก SKU ${sku} เข้ากับสี "${colorName}" เรียบร้อย`
+          : `ปลดสีออกจาก SKU ${sku} เรียบร้อย`,
+      );
+      await load();
+      if (managingColor) {
+        const updatedList = await api<ColorItem[]>('/colors');
+        const updatedManaging = updatedList.find((c) => c.name === managingColor.name);
+        setManagingColor(updatedManaging || null);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'ดำเนินการไม่สำเร็จ');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeleteColor = (item: ColorItem) => {
+    setDeletingColor(item);
+    setDeleteMode('migrate');
+    const firstOther = colors.find((c) => c.name !== item.name)?.name || '';
+    setTargetMigrateColor(firstOther);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingColor) return;
+    setBusy(true);
+    try {
+      if (deletingColor.skuCount > 0) {
+        if (deleteMode === 'migrate') {
+          if (!targetMigrateColor) {
+            toast.error('กรุณาเลือกสีปลายทางที่จะย้าย SKU ไป');
+            setBusy(false);
+            return;
+          }
+          await api('/colors/migrate-skus', 'POST', {
+            fromColor: deletingColor.name,
+            toColor: targetMigrateColor,
+          });
+          toast.success(
+            `ย้ายสินค้า ${deletingColor.skuCount} SKU ไปยังสี "${targetMigrateColor}" เรียบร้อย`,
+          );
+        } else {
+          await api('/colors/migrate-skus', 'POST', {
+            fromColor: deletingColor.name,
+            toColor: null,
+          });
+          toast.success(`ปลดสีออกจาก ${deletingColor.skuCount} SKU เรียบร้อย`);
+        }
+      }
+      if (deletingColor.id) {
+        await api(`/colors/${deletingColor.id}`, 'DELETE');
+      }
+      toast.success(`ลบสี "${deletingColor.name}" เรียบร้อย`);
+      setDeletingColor(null);
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'ลบไม่สำเร็จ');
@@ -424,7 +527,7 @@ export function ColorsPanel() {
 
                     {/* SKU COUNT WITH HOVER TOOLTIP */}
                     <td style={{ padding: '8px' }}>
-                      <SkuHoverCell item={c} />
+                      <SkuHoverCell item={c} onManage={() => setManagingColor(c)} />
                     </td>
 
                     {/* HEX CODE PICKER + INPUT */}
@@ -484,13 +587,13 @@ export function ColorsPanel() {
                           <Check size={14} />
                           บันทึก
                         </Button>
-                        {c.id && (
+                        {(c.id || c.skuCount > 0) && (
                           <Button
                             variant="secondary"
                             size="sm"
                             disabled={busy}
                             onClick={() => void handleDeleteColor(c)}
-                            title="ยกเลิกรหัสสีนี้"
+                            title={c.skuCount > 0 ? 'ลบหรือย้ายสินค้าของสีนี้' : 'ลบรหัสสีนี้'}
                           >
                             <Trash2 size={14} color="#ef4444" />
                           </Button>
@@ -592,6 +695,305 @@ export function ColorsPanel() {
               </Button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* MODAL TO MANAGE SKUS BOUND TO A COLOR */}
+      {managingColor && (
+        <Modal
+          title={`จัดการสินค้าที่ผูกกับสี "${managingColor.name}"`}
+          isOpen={Boolean(managingColor)}
+          onClose={() => {
+            setManagingColor(null);
+            setSkuSearchQuery('');
+            setSkuSearchResults([]);
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <p className="muted" style={{ margin: 0, fontSize: '0.9rem' }}>
+              สินค้าที่มีสีนี้จะมีจุดเลือกสี (Swatch) ในระบบเป็นรหัสสีของ &ldquo;{managingColor.name}&rdquo;
+            </p>
+
+            {/* SECTION 1: SEARCH & BIND MORE SKUS */}
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: '8px',
+                padding: '12px',
+              }}
+            >
+              <label style={{ fontWeight: 600, fontSize: '0.9rem', display: 'block', marginBottom: '6px' }}>
+                + ผูก SKU เพิ่มเติมเข้ากับสีนี้
+              </label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  placeholder="พิมพ์รหัส SKU หรือชื่อสินค้า เช่น MHYC3, Leather, Silicone..."
+                  value={skuSearchQuery}
+                  onChange={(e) => void handleSearchSkus(e.target.value)}
+                  style={{ flex: 1, fontSize: '13px' }}
+                />
+              </div>
+
+              {searchingSkus && <p className="fine muted" style={{ marginTop: '6px' }}>กำลังค้นหา SKU...</p>}
+
+              {skuSearchResults.length > 0 && (
+                <div
+                  style={{
+                    marginTop: '8px',
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    background: '#ffffff',
+                  }}
+                >
+                  {skuSearchResults.map((res) => {
+                    const isAlreadyBound = managingColor.skus?.some((s) => s.sku === res.sku);
+                    return (
+                      <div
+                        key={res.sku}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '8px 10px',
+                          borderBottom: '1px solid #f1f5f9',
+                          fontSize: '12px',
+                        }}
+                      >
+                        <div style={{ minWidth: 0, flex: 1, marginRight: '8px' }}>
+                          <strong style={{ fontFamily: 'monospace', color: '#0f766e' }}>{res.sku}</strong>
+                          <div style={{ color: '#475569' }}>{res.name}</div>
+                          {res.color && (
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                              (สีปัจจุบัน: {res.color})
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          disabled={busy || isAlreadyBound}
+                          onClick={() => void handleBindSku(res.sku, managingColor.name)}
+                        >
+                          {isAlreadyBound ? 'ผูกอยู่แล้ว' : '+ ผูกสีนี้'}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 2: CURRENT BOUND SKUS */}
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '8px' }}>
+                รายการสินค้าที่ผูกอยู่ปัจจุบัน ({managingColor.skus?.length || 0} SKU)
+              </div>
+              {!managingColor.skus || managingColor.skus.length === 0 ? (
+                <p className="muted fine" style={{ fontStyle: 'italic', padding: '8px 0' }}>
+                  ยังไม่มีสินค้าผูกกับสีนี้
+                </p>
+              ) : (
+                <div style={{ maxHeight: '280px', overflowY: 'auto', display: 'grid', gap: '8px' }}>
+                  {managingColor.skus.map((s) => (
+                    <div
+                      key={s.sku}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        border: '1px solid #e2e8f0',
+                        background: '#ffffff',
+                        gap: '8px',
+                      }}
+                    >
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0f766e', fontSize: '12px' }}>
+                          {s.sku}
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#334155', wordBreak: 'break-word' }}>
+                          {s.name}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        <select
+                          value={reassignColorMap[s.sku] || ''}
+                          onChange={(e) =>
+                            setReassignColorMap((prev) => ({ ...prev, [s.sku]: e.target.value }))
+                          }
+                          style={{ fontSize: '12px', padding: '4px 6px', maxWidth: '120px' }}
+                        >
+                          <option value="">ย้ายไปสี...</option>
+                          {colors
+                            .filter((c) => c.name !== managingColor.name)
+                            .map((c) => (
+                              <option key={c.name} value={c.name}>
+                                {c.name}
+                              </option>
+                            ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          disabled={busy || !reassignColorMap[s.sku]}
+                          onClick={() => void handleBindSku(s.sku, reassignColorMap[s.sku])}
+                          title="ย้ายสินค้าไปยังสีที่เลือก"
+                        >
+                          ย้าย
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => void handleBindSku(s.sku, null)}
+                          title="ปลดสีออกจากสินค้านี้"
+                          style={{ color: '#dc2626' }}
+                        >
+                          ปลดออก
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="actions" style={{ marginTop: '8px' }}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setManagingColor(null);
+                  setSkuSearchQuery('');
+                  setSkuSearchResults([]);
+                }}
+              >
+                ปิด
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* MODAL TO CONFIRM DELETION OR MIGRATION */}
+      {deletingColor && (
+        <Modal
+          title={`ลบสี "${deletingColor.name}"`}
+          isOpen={Boolean(deletingColor)}
+          onClose={() => setDeletingColor(null)}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {deletingColor.skuCount > 0 ? (
+              <>
+                <p style={{ margin: 0, fontSize: '0.95rem', color: '#b91c1c', fontWeight: 600 }}>
+                  สี &ldquo;{deletingColor.name}&rdquo; มีสินค้าผูกอยู่ {deletingColor.skuCount} SKU
+                </p>
+                <p className="muted" style={{ margin: 0, fontSize: '0.88rem' }}>
+                  กรุณาเลือกวิธีการจัดการสินค้าที่เคยผูกอยู่กับสีนี้:
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '4px' }}>
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1.5px solid ${deleteMode === 'migrate' ? 'var(--primary)' : '#e2e8f0'}`,
+                      background: deleteMode === 'migrate' ? 'var(--primary-subtle)' : '#ffffff',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="deleteMode"
+                      checked={deleteMode === 'migrate'}
+                      onChange={() => setDeleteMode('migrate')}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <strong>ย้าย SKU ทั้งหมดไปรวมกับสีอื่น</strong>
+                      <div className="fine muted" style={{ marginBottom: '6px' }}>
+                        เช่น ย้ายจาก {deletingColor.name} ไปยัง Citrus
+                      </div>
+                      {deleteMode === 'migrate' && (
+                        <select
+                          value={targetMigrateColor}
+                          onChange={(e) => setTargetMigrateColor(e.target.value)}
+                          style={{ width: '100%', fontSize: '13px', padding: '6px 8px' }}
+                        >
+                          <option value="">-- เลือกสีปลายทาง --</option>
+                          {colors
+                            .filter((c) => c.name !== deletingColor.name)
+                            .map((c) => (
+                              <option key={c.name} value={c.name}>
+                                {c.name} ({c.skuCount} SKU)
+                              </option>
+                            ))}
+                        </select>
+                      )}
+                    </div>
+                  </label>
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      padding: '10px 12px',
+                      borderRadius: '8px',
+                      border: `1.5px solid ${deleteMode === 'unbind' ? 'var(--primary)' : '#e2e8f0'}`,
+                      background: deleteMode === 'unbind' ? 'var(--primary-subtle)' : '#ffffff',
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="deleteMode"
+                      checked={deleteMode === 'unbind'}
+                      onChange={() => setDeleteMode('unbind')}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <div>
+                      <strong>ปลดสีออกจาก SKU ทั้งหมด (ลบสีนี้ทิ้ง)</strong>
+                      <div className="fine muted">
+                        สินค้าทั้ง {deletingColor.skuCount} SKU จะไม่มีสีนี้ติดอยู่ และสีนี้จะไม่ปรากฏในระบบอีก
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </>
+            ) : (
+              <p style={{ margin: 0 }}>
+                ต้องการลบการตั้งค่าสี &ldquo;{deletingColor.name}&rdquo; หรือไม่?
+              </p>
+            )}
+
+            <div className="actions" style={{ marginTop: '1rem' }}>
+              <Button
+                variant="primary"
+                disabled={
+                  busy ||
+                  (deletingColor.skuCount > 0 &&
+                    deleteMode === 'migrate' &&
+                    !targetMigrateColor)
+                }
+                onClick={() => void handleConfirmDelete()}
+                style={{ background: '#dc2626', borderColor: '#dc2626' }}
+              >
+                {busy ? 'กำลังดำเนินการ…' : 'ยืนยันการลบ'}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => setDeletingColor(null)}
+              >
+                ยกเลิก
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
     </Panel>

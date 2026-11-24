@@ -2554,6 +2554,43 @@ Decisions:
    - **Item Replacement Selection (`ChangeItemModal.tsx`):** Replaced default blue radio styling with system theme `.custom-radio-card`.
    - **Discount Type (`SelectionEditor.tsx`):** Standardized active border to 2px `var(--primary, #0abab5)` and background to `var(--primary-subtle, #e8f7f6)`.
 
+## D196 — Color Palette Garbage Filter & Manual SKU-to-Color Management (2026-11-24)
+
+Staff and Admin reported via `/grill-me`:
+"Thai , S/M , M/L , C Power Adapter , THA , FAE , Large , Natural , Touch Surface , (Late 2024) , inch , M , XL , 4 Pack , 512GB , C Cable , C Digital AV Multiport Adapter , C to 3.5 mm Headphone Jack Adapter , C to Lightning Cable , C to SD Card Reader , Demo , in, M4, 2025) , Late 2022 , 1 Pack , 256GB, 4 pack, A16, C , C Charge Cable, C to Apple Pencil Adapter, C to Lightning Adapter, C to Magsafe 3 Cable, C to USB Adapter, C VGA Multiport Adapter, C Woven Charge Cable, C, Left, CI/AR, INT, C, Right, CI/AR, INT, C), C) to Thunderbolt 2 Adapter, Citrus Eng เป็น Citrus, in MacBook Pro, inch MacBook Air ไม่ใช่สี และอีกหลายอย่าง ให้สามารถจัดการส่วนนี้ด้วยได้ไหม เช่น เพิ่มและผูก sku เอง ลบ อันที่ไม่ใช่เองได้และผูกเอง"
+
+Decisions:
+1. **Automated Non-Color Filter (`isNonColor`):**
+   - Implemented in both backend (`colors.service.ts`) and frontend (`catalog.ts`).
+   - Automatically filters out band sizes (S/M, M/L, Large), capacities (256GB, 512GB), wattages, pack counts (4 Pack), layout/region codes (Thai, THA, ENG, INT), hardware accessories (Cables, Adapters, Multiports), chipset/year tags (M4, A16, Late 2024), and stray leftovers.
+   - Normalizes color names (e.g. `Citrus Eng` -> `Citrus`).
+2. **Permanent SKU Color Binding (`colorOverride` on ProductSku):**
+   - Added `colorOverride Boolean @default(false)` column to `ProductSku`.
+   - When Admin manually binds or reassigns a SKU to a color, `colorOverride` is set to `true`.
+   - ERP Warroom sync respects `colorOverride` and does not overwrite manually bound colors.
+3. **Admin SKU Management & Migration UI (`ColorsPanel.tsx`):**
+   - Added SKU Management modal allowing Admin to view, bind new SKUs, or transfer SKUs to other colors.
+   - When deleting a color with bound SKUs, Admin can choose to migrate all SKUs to another color (e.g. `Citrus Eng` -> `Citrus`) or unbind all SKUs.
+
+
+Staff and Owner requested via `/grill-me`:
+"เปลี่ยน Radio จุดอื่นๆ ที่เป็น จุด ให้ตอนเลือก แสดงจุดแบบนี้ด้วย
+เส้นขอบเมื่อถูกเลือก (Selected Border): ปรับเป็นสีหลักของเว็บ var(--primary, #0abab5) หนา 2px เด่นชัด
+พื้นหลังเมื่อถูกเลือก (Selected Background): ปรับเป็นสีเขียวอ่อนนุ่มนวล var(--primary-subtle, #e8f7f6)
+จุดวงกลมวิทยุ (Radio Dot): ขอบและจุดวงกลมด้านในเปลี่ยนเป็นสี var(--primary, #0abab5)
+หัวข้อเมื่อถูกเลือก: เปลี่ยนเป็นสีเขียวเข้ม var(--primary-dark, #0d3b39)
+ปุ่มช่องทางย่อย (Chips): เมื่อถูกเลือกจะใช้พื้นหลังสี var(--primary, #0abab5) ตัวหนังสือสีขาว พร้อมเงาสีเขียวมิ้นต์กลมกลืนกับทั้งระบบ"
+
+Decisions:
+1. **Unified Custom Radio Classes (`styles.css`):**
+   - Introduced `.custom-radio-card`, `.custom-radio-circle`, `.custom-radio-dot`, `.custom-radio-title`, and `.custom-radio-subtext`.
+   - Selected state: 2px border `var(--primary, #0abab5)`, background `var(--primary-subtle, #e8f7f6)`, inner dot `var(--primary, #0abab5)`, and title text `var(--primary-dark, #0d3b39)`.
+2. **Applied Across All Radio Components:**
+   - **Receipt Type (`SelectionEditor.tsx`):** Replaced native `<input type="radio">` with `.custom-radio-card` and `.custom-radio-dot`.
+   - **Cancellation & Outcome Reasons (`ReasonForm.tsx`):** Upgraded reason options to use `.custom-radio-card` with clean dots and active highlight.
+   - **Item Replacement Selection (`ChangeItemModal.tsx`):** Replaced default blue radio styling with system theme `.custom-radio-card`.
+   - **Discount Type (`SelectionEditor.tsx`):** Standardized active border to 2px `var(--primary, #0abab5)` and background to `var(--primary-subtle, #e8f7f6)`.
+
 
 
 

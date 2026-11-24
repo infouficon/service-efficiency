@@ -1,17 +1,91 @@
 /** The branch catalog as the product pickers use it (SkuPicker, D107): types, the API shape, stock rules, the model list. */
 
-/** Get the attribute value for a spec key from a SKU (D142, D157) */
+/** Get the attribute value for a spec key from a SKU (D142, D157, D188) */
 export function getSkuAttribute(s: CatalogSku, key: string): string {
   let val = '';
   if (s.attributes && typeof s.attributes[key] === 'string' && s.attributes[key].trim()) {
     val = s.attributes[key].trim();
   } else if (key === 'color') {
     val = s.color?.trim() || '';
+    if (!val && s.name) {
+      const parts = s.name.split('-');
+      if (parts.length > 1) {
+        val = parts[parts.length - 1].replace(/\([^)]*\)/g, '').trim();
+      }
+    }
   } else if (key === 'storage') {
     val = s.storage?.trim() || '';
   } else if (key === 'memory') {
     val = s.memory?.trim() || '';
+  } else if (key === 'caseSize') {
+    const raw = (s as unknown as Record<string, unknown>).caseSize;
+    if (typeof raw === 'string') val = raw.trim();
+    if (!val && s.name) {
+      const m = s.name.match(/\b(38|40|41|42|44|45|46|49)\s*mm\b/i);
+      if (m) val = `${m[1]}mm`;
+    }
+  } else if (key === 'band') {
+    const raw = (s as unknown as Record<string, unknown>).band;
+    if (typeof raw === 'string') val = raw.trim();
+    if (!val && s.name) {
+      if (/braided\s*solo\s*loop/i.test(s.name)) val = 'Braided Solo Loop';
+      else if (/solo\s*loop/i.test(s.name)) val = 'Solo Loop';
+      else if (/sport\s*loop/i.test(s.name)) val = 'Sport Loop';
+      else if (/sport\s*band/i.test(s.name)) val = 'Sport Band';
+      else if (/milanese\s*loop/i.test(s.name)) val = 'Milanese Loop';
+      else if (/alpine\s*loop/i.test(s.name)) val = 'Alpine Loop';
+      else if (/trail\s*loop/i.test(s.name)) val = 'Trail Loop';
+      else if (/ocean\s*band/i.test(s.name)) val = 'Ocean Band';
+      else if (/link\s*bracelet/i.test(s.name)) val = 'Link Bracelet';
+      else if (/magnetic\s*link/i.test(s.name)) val = 'Magnetic Link';
+      else if (/modern\s*buckle/i.test(s.name)) val = 'Modern Buckle';
+    }
+  } else if (key === 'bandSize') {
+    const raw = (s as unknown as Record<string, unknown>).bandSize;
+    if (typeof raw === 'string') val = raw.trim();
+    if (!val && s.name) {
+      const sm = s.name.match(/\b(S\/M|M\/L)\b/i);
+      if (sm) val = sm[1].toUpperCase();
+      else {
+        const sz = s.name.match(/\bSize\s*(\d{1,2})\b/i);
+        if (sz) val = `Size ${sz[1]}`;
+      }
+    }
+  } else if (key === 'wattage') {
+    const raw = (s as unknown as Record<string, unknown>).wattage;
+    if (typeof raw === 'string') val = raw.trim();
+    if (!val && s.name) {
+      const w = s.name.match(/\b(\d+)\s*W\b/i);
+      if (w) val = `${w[1]}W`;
+    }
+  } else if (key === 'touchId') {
+    if (s.name) {
+      val = /touch\s*id/i.test(s.name) ? 'มี Touch ID' : 'ไม่มี Touch ID';
+    }
+  } else if (key === 'numericKeypad') {
+    if (s.name) {
+      val = /numeric\s*keypad/i.test(s.name) ? 'มี Numeric Keypad' : 'ไม่มี Numeric Keypad';
+    }
+  } else if (key === 'language') {
+    if (s.name) {
+      val = /thai/i.test(s.name) ? 'Thai' : (/us|english/i.test(s.name) ? 'US English' : '');
+    }
+  } else if (key === 'caseType' || key === 'type') {
+    if (s.name) {
+      if (/silicone(?:\s*case)?/i.test(s.name)) val = 'Silicone Case with MagSafe';
+      else if (/clear(?:\s*case)?/i.test(s.name)) val = 'Clear Case with MagSafe';
+      else if (/finewoven(?:\s*case)?/i.test(s.name)) val = 'FineWoven Case with MagSafe';
+      else if (/leather(?:\s*case)?/i.test(s.name)) val = 'Leather Case';
+      else if (/smart\s*folio/i.test(s.name)) val = 'Smart Folio';
+      else if (/magic\s*keyboard/i.test(s.name)) val = 'Magic Keyboard';
+      else if (/key\s*ring/i.test(s.name)) val = 'Key Ring';
+      else if (/loop/i.test(s.name)) val = 'Loop';
+      else if (/crossbody/i.test(s.name)) val = 'Crossbody Strap';
+      else if (/wrist/i.test(s.name)) val = 'Wrist Strap';
+      else if (/wallet/i.test(s.name)) val = 'Wallet';
+    }
   }
+
   if (key === 'color' && val) {
     // D157: Clean any leaked glass specifications like "with standard glass"
     const cleaned = val

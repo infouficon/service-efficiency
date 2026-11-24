@@ -12,6 +12,7 @@ import batteryIcon from '../../assets/category-icons/battery.png';
 import {
   ArrowRight,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   CreditCard,
   Pencil,
@@ -69,6 +70,7 @@ import {
   fetchPaymentMethodsApi,
   fetchProductsApi,
 } from '../../services/sessionApi';
+import { AccessoryCategoryPicker } from './AccessoryCategoryPicker';
 
 /** Product pictures of the category tiles (Icons8, see D79 for the licence); a category without one gets a plain icon. */
 const CATEGORY_PICTURES: Record<string, string> = {
@@ -277,6 +279,90 @@ export function SelectionEditor({
     () => selectedAccessoryEntries.reduce((sum, [, qty]) => sum + (Number(qty) || 0), 0),
     [selectedAccessoryEntries],
   );
+
+  const defaultIPhoneModel = useMemo(() => {
+    const item = value.items.find((i) => i.product.category?.toLowerCase().includes('iphone'));
+    return item?.product.product || item?.product.model || '';
+  }, [value.items]);
+
+  const defaultIPadModel = useMemo(() => {
+    const item = value.items.find((i) => i.product.category?.toLowerCase().includes('ipad'));
+    return item?.product.product || item?.product.model || '';
+  }, [value.items]);
+
+  // D188: Fully dynamic accessory categories from database (Admin configured, zero hardcoding)
+  const accessoryCategories = useMemo<Category[]>(() => {
+    if (categoryList && categoryList.length > 0) {
+      return categoryList
+        .filter((c) => c.isAccessory && c.active)
+        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+    }
+    return Array.from(accessoryCategoryNames).map((name, idx) => ({
+      id: `cat-${name}`,
+      name,
+      active: true,
+      position: idx,
+      isAccessory: true,
+      erpManaged: false,
+    }));
+  }, [categoryList, accessoryCategoryNames]);
+
+  const displayedAccessoryCategories = useMemo(() => {
+    const q = accessorySearch.trim().toLowerCase();
+    return accessoryCategories
+      .map((cat) => {
+        // Products whose category matches cat.name (case-insensitive)
+        const catProducts =
+          catalog?.filter(
+            (p) =>
+              p.category.trim().toLowerCase() === cat.name.trim().toLowerCase() ||
+              (cat.name.toLowerCase() === 'accessories' && accessoryCategoryNames.has(p.category)),
+          ) || [];
+
+        if (!q) {
+          return { category: cat, products: catProducts };
+        }
+
+        const catMatches = cat.name.toLowerCase().includes(q);
+        const matchedProducts = catProducts.filter((p) => {
+          if (catMatches) return true;
+          if (p.name.toLowerCase().includes(q)) return true;
+          for (const m of p.models || []) {
+            if (m.name.toLowerCase().includes(q)) return true;
+            for (const s of m.skus || []) {
+              if (
+                s.sku.toLowerCase().includes(q) ||
+                s.name?.toLowerCase().includes(q) ||
+                s.color?.toLowerCase().includes(q)
+              ) {
+                return true;
+              }
+            }
+          }
+          return false;
+        });
+
+        return { category: cat, products: matchedProducts };
+      })
+      .filter((entry) => entry.products.length > 0);
+  }, [accessoryCategories, catalog, accessoryCategoryNames, accessorySearch]);
+
+  useEffect(() => {
+    if (accessorySearch.trim() && displayedAccessoryCategories.length > 0) {
+      setExpandedGroup(displayedAccessoryCategories[0].category.id);
+    }
+  }, [accessorySearch, displayedAccessoryCategories]);
+
+  const handleAddAccessory = (itemKey: string) => {
+    const inCartQty = Number(value.accessories[itemKey]) || 0;
+    onChange({
+      ...value,
+      accessories: {
+        ...value.accessories,
+        [itemKey]: String(inCartQty + 1),
+      },
+    });
+  };
 
   const displayedAccessories = useMemo(() => {
     const q = accessorySearch.trim().toLowerCase();
@@ -993,7 +1079,7 @@ export function SelectionEditor({
           )}
         </div>
 
-        {displayedAccessories.length === 0 ? (
+        {displayedAccessoryCategories.length === 0 ? (
           <p
             className="muted"
             style={{
@@ -1003,54 +1089,64 @@ export function SelectionEditor({
             }}
           >
             {accessorySearch.trim()
-              ? `ไม่พบอุปกรณ์เสริมที่ตรงกับ "${accessorySearch}"`
+              ? `ไม่พบหมวดหมู่อุปกรณ์เสริมที่ตรงกับ "${accessorySearch}"`
               : 'ไม่มีรายการอุปกรณ์เสริมในขณะนี้'}
           </p>
         ) : (
           <div
             className="accessory-list"
             style={
-              displayedAccessories.length > 8
-                ? { maxHeight: '480px', overflowY: 'auto', paddingRight: '4px' }
+              displayedAccessoryCategories.length > 6
+                ? { maxHeight: '560px', overflowY: 'auto', paddingRight: '4px' }
                 : undefined
             }
           >
-            {displayedAccessories.map((groupName) => {
-              const product = catalog?.find(
-                (p) =>
-                  accessoryCategoryNames.has(p.category) &&
-                  p.name.trim().toLowerCase() === groupName.trim().toLowerCase(),
+            {displayedAccessoryCategories.map(({ category: cat, products: catProducts }) => {
+              const isExpanded = expandedGroup === cat.id;
+              const groupCartCount = selectedAccessoryEntries
+                .filter(([k]) => catProducts.some((p) => isAccessoryFromProduct(p, k)))
+                .reduce((sum, [, q]) => sum + (Number(q) || 0), 0);
+
+              const totalSkuCount = catProducts.reduce(
+                (sum, p) =>
+                  sum +
+                  (p.models?.reduce(
+                    (mSum, m) => mSum + (m.skus?.length || 0),
+                    0,
+                  ) || 0),
+                0,
               );
-              const hasCatalogDetails = Boolean(
-                product && product.models && product.models.length > 0,
-              );
-              const isExpanded = expandedGroup === groupName;
-              const groupSelectedCount = product
-                ? selectedAccessoryEntries
-                    .filter(([k]) => isAccessoryFromProduct(product, k))
-                    .reduce((sum, [, q]) => sum + (Number(q) || 0), 0)
-                : Number(value.accessories[groupName]) || 0;
 
               return (
                 <div
-                  className={`accessory-item${isExpanded ? ' expanded' : ''}${groupSelectedCount > 0 ? ' selected' : ''}`}
-                  key={groupName}
-                  style={{ padding: '10px 12px' }}
+                  className={`accessory-item${isExpanded ? ' expanded' : ''}${groupCartCount > 0 ? ' selected' : ''}`}
+                  key={cat.id}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    marginBottom: '8px',
+                  }}
                 >
                   <div
                     className="accessory-row"
-                    style={{ cursor: 'pointer' }}
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
                     onClick={() =>
-                      setExpandedGroup(isExpanded ? null : groupName)
+                      setExpandedGroup(isExpanded ? null : cat.id)
                     }
                   >
                     <div
                       style={{
                         display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        width: '100%',
-                        gap: '8px',
+                        flexDirection: 'column',
+                        gap: '2px',
+                        flex: 1,
+                        minWidth: 0,
                       }}
                     >
                       <div
@@ -1058,19 +1154,17 @@ export function SelectionEditor({
                           display: 'flex',
                           alignItems: 'center',
                           gap: '8px',
-                          flex: 1,
-                          minWidth: 0,
                         }}
                       >
                         <strong
                           style={{
-                            fontSize: '13.5px',
+                            fontSize: '14.5px',
                             color: 'var(--text-primary)',
                           }}
                         >
-                          {groupName}
+                          {cat.name}
                         </strong>
-                        {groupSelectedCount > 0 && (
+                        {groupCartCount > 0 && (
                           <span
                             style={{
                               fontSize: '11px',
@@ -1081,343 +1175,36 @@ export function SelectionEditor({
                               borderRadius: '12px',
                             }}
                           >
-                            เลือกแล้ว {groupSelectedCount} ชิ้น
+                            เลือกแล้ว {groupCartCount} ชิ้น
                           </span>
                         )}
                       </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          color: 'var(--text-muted)',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {hasCatalogDetails && product && (
-                          <span style={{ fontSize: '12px' }}>
-                            {product.models.length} รุ่น
-                          </span>
-                        )}
-                        {isExpanded ? (
-                          <ChevronUp size={16} />
-                        ) : (
-                          <ChevronDown size={16} />
-                        )}
-                      </div>
+                      <span className="fine muted" style={{ fontSize: '12px' }}>
+                        {catProducts.length > 0 ? `${catProducts.length} รุ่นสินค้า · ` : ''}{totalSkuCount} รายการ
+                      </span>
                     </div>
-                  </div>
-
-                  {/* Expanded details */}
-                  {isExpanded && (
-                    <div
+                    <span
                       style={{
-                        marginTop: '10px',
-                        paddingTop: '10px',
-                        borderTop: '1px solid #eef2f6',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '10px',
+                        fontSize: '14px',
+                        color: 'var(--text-muted, #737373)',
+                        transform: isExpanded ? 'rotate(90deg)' : 'none',
+                        transition: 'transform 0.2s ease',
+                        display: 'inline-flex',
                       }}
                     >
-                      {hasCatalogDetails && product ? (
-                        <>
-                          {/* Step 1: Model Selection (Manual selection: must be clicked explicitly, D147) */}
-                          <div>
-                            <label
-                              style={{
-                                display: 'block',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                color: 'var(--text-secondary)',
-                                marginBottom: '6px',
-                              }}
-                            >
-                              เลือกรุ่นสินค้า:
-                            </label>
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: '6px',
-                                width: '100%',
-                              }}
-                            >
-                              {product.models.map((m) => {
-                                const isCurrentModel =
-                                  selectedModelPerGroup[groupName] === m.id;
-                                return (
-                                  <button
-                                    key={m.id}
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedModelPerGroup((prev) => ({
-                                        ...prev,
-                                        [groupName]: m.id,
-                                      }));
-                                    }}
-                                    style={{
-                                      flex: '1 1 auto',
-                                      minWidth: '0',
-                                      boxSizing: 'border-box',
-                                      padding: '8px 12px',
-                                      borderRadius: '6px',
-                                      border: `1.5px solid ${isCurrentModel ? 'var(--primary, #0abab5)' : '#d4e0d9'}`,
-                                      background: isCurrentModel
-                                        ? 'var(--primary-subtle, #e8f7f6)'
-                                        : '#ffffff',
-                                      color: isCurrentModel
-                                        ? 'var(--primary-dark, #0d3b39)'
-                                        : 'var(--text-primary)',
-                                      fontSize: '12.5px',
-                                      fontWeight: isCurrentModel ? 600 : 400,
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      gap: '8px',
-                                    }}
-                                  >
-                                    <span>{m.name}</span>
-                                    {isCurrentModel && (
-                                      <span
-                                        style={{
-                                          fontSize: '12px',
-                                          color: 'var(--primary, #0abab5)',
-                                          fontWeight: 700,
-                                        }}
-                                      >
-                                        ✓
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
+                      <ChevronRight size={18} />
+                    </span>
+                  </div>
 
-                          {/* Step 2: SKUs under selected model (Clicking a SKU automatically adds +1) */}
-                          {(() => {
-                            const selectedModelId =
-                              selectedModelPerGroup[groupName];
-                            const activeModel = product.models.find(
-                              (m) => m.id === selectedModelId,
-                            );
-
-                            if (!activeModel) {
-                              return (
-                                <p
-                                  className="fine muted"
-                                  style={{ margin: '4px 0 0 0' }}
-                                >
-                                  กรุณากดเลือกรุ่นสินค้าด้านบนเพื่อดูตัวเลือกสเปก / สี
-                                </p>
-                              );
-                            }
-
-                            return (
-                              <div>
-                                <label
-                                  style={{
-                                    display: 'block',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    color: 'var(--text-secondary)',
-                                    marginBottom: '6px',
-                                  }}
-                                >
-                                  เลือกสเปก / สี / SKU (กดเพื่อเพิ่มลงรายการ):
-                                </label>
-                                <div style={{ display: 'grid', gap: '6px', width: '100%' }}>
-                                  {activeModel.skus.map((sku) => {
-                                    const itemKey = formatAccessoryItemName(
-                                      activeModel,
-                                      sku,
-                                    );
-                                    const inCartQty =
-                                      Number(value.accessories[itemKey]) || 0;
-                                    const outOfStock = isOutOfStock(sku);
-                                    const isSingleSku = activeModel.skus.length === 1;
-
-                                    return (
-                                      <button
-                                        key={sku.id}
-                                        type="button"
-                                        disabled={outOfStock}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onChange({
-                                            ...value,
-                                            accessories: {
-                                              ...value.accessories,
-                                              [itemKey]: String(inCartQty + 1),
-                                            },
-                                          });
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          width: '100%',
-                                          boxSizing: 'border-box',
-                                          padding: isSingleSku ? '10px 14px' : '8px 12px',
-                                          borderRadius: '6px',
-                                          border: `1.5px solid ${inCartQty > 0 ? 'var(--primary-border, #0abab5)' : '#d4e0d9'}`,
-                                          background: inCartQty > 0
-                                            ? 'var(--primary-subtle, #f0fdf4)'
-                                            : '#ffffff',
-                                          cursor: outOfStock
-                                            ? 'not-allowed'
-                                            : 'pointer',
-                                          opacity: outOfStock ? 0.6 : 1,
-                                          textAlign: 'left',
-                                          gap: '10px',
-                                        }}
-                                      >
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div
-                                            style={{
-                                              fontSize: '13px',
-                                              fontWeight: inCartQty > 0 ? 600 : 500,
-                                              color: 'var(--text-primary)',
-                                              lineHeight: 1.35,
-                                              wordBreak: 'break-word',
-                                            }}
-                                          >
-                                            {sku.name || activeModel.name}
-                                          </div>
-                                          <div
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '6px',
-                                              marginTop: '2px',
-                                              fontSize: '11px',
-                                              color: 'var(--text-muted)',
-                                              flexWrap: 'wrap',
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontFamily:
-                                                  'ui-monospace, monospace',
-                                              }}
-                                            >
-                                              {sku.sku}
-                                            </span>
-                                            {sku.color && (
-                                              <span>· สี {getSkuAttribute(sku, 'color') || sku.color}</span>
-                                            )}
-                                            {typeof sku.stock === 'number' &&
-                                              !isUnlimited(sku) && (
-                                                <span
-                                                  style={{
-                                                    color: outOfStock
-                                                      ? '#dc2626'
-                                                      : '#15803d',
-                                                    fontWeight: 500,
-                                                  }}
-                                                >
-                                                  ·{' '}
-                                                  {outOfStock
-                                                    ? 'สินค้าหมด'
-                                                    : `คงเหลือ ${sku.stock}`}
-                                                </span>
-                                              )}
-                                          </div>
-                                        </div>
-
-                                        {inCartQty > 0 && (
-                                          <span
-                                            style={{
-                                              fontSize: '11.5px',
-                                              fontWeight: 600,
-                                              color: '#0abab5',
-                                              background:
-                                                'rgba(10, 186, 181, 0.12)',
-                                              padding: '2px 8px',
-                                              borderRadius: '12px',
-                                              flexShrink: 0,
-                                            }}
-                                          >
-                                            X {inCartQty}
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </>
-                      ) : (
-                        /* Fallback generic accessory: Click to add +1 without checkbox */
-                        <div>
-                          <label
-                            style={{
-                              display: 'block',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              color: 'var(--text-secondary)',
-                              marginBottom: '6px',
-                            }}
-                          >
-                            กดเพื่อเพิ่มรายการนี้:
-                          </label>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const inCartQty =
-                                Number(value.accessories[groupName]) || 0;
-                              onChange({
-                                ...value,
-                                accessories: {
-                                  ...value.accessories,
-                                  [groupName]: String(inCartQty + 1),
-                                },
-                              });
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              width: '100%',
-                              padding: '10px 14px',
-                              borderRadius: '6px',
-                              border: `1.5px solid ${groupSelectedCount > 0 ? 'var(--primary-border, #0abab5)' : '#d4e0d9'}`,
-                              background: groupSelectedCount > 0
-                                ? 'var(--primary-subtle, #f0fdf4)'
-                                : '#ffffff',
-                              cursor: 'pointer',
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              color: 'var(--text-primary)',
-                              textAlign: 'left',
-                            }}
-                          >
-                            <span>{groupName}</span>
-                            {groupSelectedCount > 0 && (
-                              <span
-                                style={{
-                                  fontSize: '11.5px',
-                                  fontWeight: 600,
-                                  color: '#0abab5',
-                                  background: 'rgba(10, 186, 181, 0.12)',
-                                  padding: '2px 8px',
-                                  borderRadius: '12px',
-                                }}
-                              >
-                                เลือกแล้ว {groupSelectedCount} ชิ้น
-                              </span>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                  {isExpanded && (
+                    <AccessoryCategoryPicker
+                      category={cat}
+                      products={catProducts}
+                      defaultIPhoneModel={defaultIPhoneModel}
+                      defaultIPadModel={defaultIPadModel}
+                      cartAccessories={value.accessories}
+                      onAddAccessory={handleAddAccessory}
+                    />
                   )}
                 </div>
               );

@@ -23,20 +23,24 @@ export function ReasonForm({
     >
       <fieldset>
         <legend>เลือกเหตุผล</legend>
-        {options.map((option) => (
-          <label className="reason" key={option}>
-            <input
-              type="radio"
-              name="reason"
-              checked={reason === option}
-              onChange={() => {
+        {options.map((option) => {
+          const selected = reason === option;
+          return (
+            <div
+              key={option}
+              className={`custom-radio-card ${selected ? 'selected' : ''}`}
+              onClick={() => {
                 setReason(option);
                 setText('');
               }}
-            />
-            {option}
-          </label>
-        ))}
+            >
+              <div className="custom-radio-circle">
+                {selected && <div className="custom-radio-dot" />}
+              </div>
+              <span className="custom-radio-title">{option}</span>
+            </div>
+          );
+        })}
       </fieldset>
       {reason === 'อื่น ๆ' && (
         <label>

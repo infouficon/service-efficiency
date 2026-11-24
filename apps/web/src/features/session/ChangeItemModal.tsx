@@ -168,41 +168,29 @@ export function ChangeItemModal({
               const isSelected = item.product.id === selectedItemId;
               const name = `${item.product.product || ''} ${item.product.model || ''}`.trim() || item.product.sku;
               return (
-                <label
+                <div
                   key={item.product.id}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    border: `1.5px solid ${isSelected ? '#2563eb' : '#e5e7eb'}`,
-                    background: isSelected ? '#eff6ff' : '#ffffff',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
+                  className={`custom-radio-card ${isSelected ? 'selected' : ''}`}
+                  onClick={() => setSelectedItemId(item.product.id)}
+                  style={{ marginBottom: 0 }}
                 >
-                  <input
-                    type="radio"
-                    name="oldItemRadio"
-                    checked={isSelected}
-                    onChange={() => setSelectedItemId(item.product.id)}
-                    style={{ cursor: 'pointer' }}
-                  />
+                  <div className="custom-radio-circle">
+                    {isSelected && <div className="custom-radio-dot" />}
+                  </div>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                     <span style={{ color: '#4b5563' }}>
                       <CategoryIcon category={item.product.category} size={16} />
                     </span>
                     <span>
-                      <strong style={{ display: 'block', color: '#111827' }}>
+                      <strong className="custom-radio-title" style={{ display: 'block' }}>
                         {name}
                       </strong>
-                      <small style={{ color: '#6b7280' }}>
+                      <small className="custom-radio-subtext" style={{ display: 'block' }}>
                         รหัส SKU: {item.product.sku} (จำนวน: {item.quantity} ชิ้น)
                       </small>
                     </span>
                   </span>
-                </label>
+                </div>
               );
             })}
           </div>

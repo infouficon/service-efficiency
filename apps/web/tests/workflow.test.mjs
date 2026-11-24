@@ -661,6 +661,7 @@ test('D146: discountType and customerSource validation (both required before con
   assert.equal(customerSourceIsValid(null), false);
   assert.equal(customerSourceIsValid(undefined), false);
   assert.equal(customerSourceIsValid('WALK_IN'), true);
+  assert.equal(customerSourceIsValid('STORE_PICKUP'), true);
   assert.equal(customerSourceIsValid('WEBSITE'), true);
   assert.equal(customerSourceIsValid('FACEBOOK'), true);
   assert.equal(customerSourceIsValid('INSTAGRAM'), true);
@@ -672,9 +673,12 @@ test('D146: discountType and customerSource validation (both required before con
   assert.equal(customerSourceIsValid('EVENT_BOOTH'), true);
   assert.equal(customerSourceIsValid('FLYER_PRINT'), true);
   assert.equal(customerSourceIsValid('RETURNING_CUSTOMER'), true);
-  assert.equal(customerSourceIsValid('OTHER'), false);
+  assert.equal(customerSourceIsValid('OTHER'), true);
+  assert.equal(customerSourceIsValid('UNKNOWN'), false);
 
   assert.equal(customerSourceLabel('WALK_IN'), 'Walk-in');
+  assert.equal(customerSourceLabel('STORE_PICKUP'), 'Store Pickup');
+  assert.equal(customerSourceLabel('OTHER'), 'อื่น ๆ');
   assert.equal(customerSourceLabel('WEBSITE'), 'Website UFicon');
   assert.equal(customerSourceLabel('FACEBOOK'), 'Facebook');
   assert.equal(customerSourceLabel('LINE_OA'), 'LINE / LINE OA');

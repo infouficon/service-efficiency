@@ -607,7 +607,7 @@ export function AccessoryCategoryPicker({
         <div
           className="spec-config-header"
           style={{
-            padding: '14px 18px',
+            padding: '16px 20px',
             background: 'var(--bg-subtle, #f8fafc)',
             borderBottom: '1px solid var(--border-color, #e2e8f0)',
           }}
@@ -797,7 +797,7 @@ export function AccessoryCategoryPicker({
                 <div
                   style={{
                     display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))',
                     gap: '8px',
                   }}
                 >

@@ -2509,6 +2509,53 @@ Decisions:
    - Renders a prominent full-width action button at the bottom: `+ เพิ่มสินค้า` (or `เพิ่มแล้ว (X ชิ้น)` when in cart).
    - Direct item lists without steps (e.g. Cables & Connectors, Earbuds) continue to display item rows with individual add buttons.
 
+## D194 — Hierarchical Customer Acquisition Channel Survey UI & Store Pickup (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+"ส่วน ลูกค้ามาจากช่องทางใด * แก้ไขให้เป็นรูปแบบแบบในภาพ โดยที่รายละเอียดภายในอื่นๆ จะแสดงต่อเมื่อ กด อื่นๆ แล้ว"
+- Walk-in
+- Store Pickup
+- อื่นๆ และให้เลือกรายละเอียดภายใน (10 รายการย่อย: Facebook, Instagram, TikTok, LINE / LINE OA, ค้นหาใน Google, Influencer / KOL, เพื่อนหรือคนรู้จักแนะนำ, งานอีเวนต์ / บูธ / ออกร้าน, ใบปลิว / สื่อสิ่งพิมพ์, เป็นลูกค้าเก่า / เคยใช้บริการแล้ว)
+
+Decisions:
+1. **Schema, STORE_PICKUP & OTHER Enum:**
+   - Added `STORE_PICKUP` and `OTHER` to `CustomerSource` enum in Prisma schema and migration `202611240002_add_store_pickup_customer_source`.
+   - Updated backend DTO `CUSTOMER_SOURCES` (14 total values) and tests.
+2. **Hierarchical 3-Card Layout:**
+   - Reorganized the flat grid in `SelectionEditor.tsx` into 3 stacked rounded cards matching the reference design:
+     - **Walk-in**: "ลูกค้าเข้ามาซื้อสินค้าหรือใช้บริการที่หน้าร้าน"
+     - **Store Pickup**: "ลูกค้าสั่งซื้อผ่านเว็บไซต์และเข้ามารับสินค้าที่หน้าร้าน"
+     - **อื่น ๆ**: "รู้จักผ่านโซเชียล ป้ายโฆษณา หรือช่องทางออนไลน์อื่น"
+   - Single-select mutually exclusive radio behavior adhering to web theme color (`#0abab5`).
+   - Section header updated to "ลูกค้ามาใช้บริการผ่านช่องทางไหน *" with subtext "ตอบครั้งเดียว ระบบจะเติมให้ทุก survey ของลูกค้าคนนี้".
+3. **Expandable Sub-options under "อื่น ๆ":**
+   - Clicking "อื่น ๆ" card immediately selects "อื่น ๆ" (`OTHER`), highlights the card with radio dot, and reveals the sub-channel selector ("ระบุช่องทาง") rendering 10 pill/chip buttons.
+   - If staff clicks a specific chip (e.g. `Facebook`, `TikTok`), `customerSource` is updated to that specific enum (`FACEBOOK`, `TIKTOK`, etc.).
+   - If staff leaves it as "อื่น ๆ", `OTHER` is stored, satisfying validation without blocking order review.
+   - Selecting "Walk-in" or "Store Pickup" switches selection and collapses "อื่น ๆ".
+
+## D195 — System-Wide Custom Radio Cards & Dot Design Harmonization (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+"เปลี่ยน Radio จุดอื่นๆ ที่เป็น จุด ให้ตอนเลือก แสดงจุดแบบนี้ด้วย
+เส้นขอบเมื่อถูกเลือก (Selected Border): ปรับเป็นสีหลักของเว็บ var(--primary, #0abab5) หนา 2px เด่นชัด
+พื้นหลังเมื่อถูกเลือก (Selected Background): ปรับเป็นสีเขียวอ่อนนุ่มนวล var(--primary-subtle, #e8f7f6)
+จุดวงกลมวิทยุ (Radio Dot): ขอบและจุดวงกลมด้านในเปลี่ยนเป็นสี var(--primary, #0abab5)
+หัวข้อเมื่อถูกเลือก: เปลี่ยนเป็นสีเขียวเข้ม var(--primary-dark, #0d3b39)
+ปุ่มช่องทางย่อย (Chips): เมื่อถูกเลือกจะใช้พื้นหลังสี var(--primary, #0abab5) ตัวหนังสือสีขาว พร้อมเงาสีเขียวมิ้นต์กลมกลืนกับทั้งระบบ"
+
+Decisions:
+1. **Unified Custom Radio Classes (`styles.css`):**
+   - Introduced `.custom-radio-card`, `.custom-radio-circle`, `.custom-radio-dot`, `.custom-radio-title`, and `.custom-radio-subtext`.
+   - Selected state: 2px border `var(--primary, #0abab5)`, background `var(--primary-subtle, #e8f7f6)`, inner dot `var(--primary, #0abab5)`, and title text `var(--primary-dark, #0d3b39)`.
+2. **Applied Across All Radio Components:**
+   - **Receipt Type (`SelectionEditor.tsx`):** Replaced native `<input type="radio">` with `.custom-radio-card` and `.custom-radio-dot`.
+   - **Cancellation & Outcome Reasons (`ReasonForm.tsx`):** Upgraded reason options to use `.custom-radio-card` with clean dots and active highlight.
+   - **Item Replacement Selection (`ChangeItemModal.tsx`):** Replaced default blue radio styling with system theme `.custom-radio-card`.
+   - **Discount Type (`SelectionEditor.tsx`):** Standardized active border to 2px `var(--primary, #0abab5)` and background to `var(--primary-subtle, #e8f7f6)`.
+
+
+
 
 
 

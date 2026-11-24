@@ -36,6 +36,8 @@ export type DiscountTypeValue = (typeof DISCOUNT_TYPES)[number];
 
 export const CUSTOMER_SOURCES = [
   'WALK_IN',
+  'STORE_PICKUP',
+  'OTHER',
   'WEBSITE',
   'FACEBOOK',
   'INSTAGRAM',

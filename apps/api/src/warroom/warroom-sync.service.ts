@@ -1269,6 +1269,7 @@ export class WarroomSyncService
         erpManaged: true,
         name: true,
         color: true,
+        colorOverride: true,
         storage: true,
         memory: true,
         upc: true,
@@ -1553,7 +1554,7 @@ export class WarroomSyncService
   private async upsertCatalog(
     create: CatalogItem[],
     update: CatalogItem[],
-    skuByCode: Map<string, { id: string }>,
+    skuByCode: Map<string, { id: string; colorOverride?: boolean }>,
     move: CatalogItem[] = [],
   ): Promise<{
     created: number;
@@ -1640,7 +1641,7 @@ export class WarroomSyncService
         where: { id: sku.id },
         data: {
           name: item.skuName,
-          color: item.color,
+          ...(sku.colorOverride ? {} : { color: item.color }),
           storage: item.storage,
           memory: item.memory,
           attributes: item.attributes ? (item.attributes as Prisma.InputJsonValue) : Prisma.JsonNull,

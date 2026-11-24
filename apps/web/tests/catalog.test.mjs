@@ -187,3 +187,80 @@ test('formatAccessoryItemName and isAccessoryFromProduct: format descriptive nam
   assert.equal(isAccessoryFromProduct(product, name2), true);
   assert.equal(isAccessoryFromProduct(product, 'USB-C to Lightning Cable'), false);
 });
+
+test('D196: isNonColor filters out sizes, wattages, languages, adapters, chips, and non-colors', async () => {
+  const { isNonColor, getSkuAttribute } = await import('../src/features/session/catalog.ts');
+  const nonColors = [
+    'Thai',
+    'S/M',
+    'M/L',
+    'C Power Adapter',
+    'THA',
+    'FAE',
+    'Large',
+    'Touch Surface',
+    '(Late 2024)',
+    'inch',
+    'M',
+    'XL',
+    '4 Pack',
+    '512GB',
+    'C Cable',
+    'C Digital AV Multiport Adapter',
+    'C to 3.5 mm Headphone Jack Adapter',
+    'C to Lightning Cable',
+    'C to SD Card Reader',
+    'Demo',
+    'in',
+    'M4',
+    '2025)',
+    'Late 2022',
+    '1 Pack',
+    '256GB',
+    '4 pack',
+    'A16',
+    'C',
+    'C Charge Cable',
+    'C to Apple Pencil Adapter',
+    'C to Lightning Adapter',
+    'C to Magsafe 3 Cable',
+    'C to USB Adapter',
+    'C VGA Multiport Adapter',
+    'C Woven Charge Cable',
+    'C, Left',
+    'CI/AR',
+    'INT',
+    'C, Right',
+    'C)',
+    'C) to Thunderbolt 2 Adapter',
+    'in MacBook Pro',
+    'inch MacBook Air',
+  ];
+
+  for (const item of nonColors) {
+    assert.equal(isNonColor(item), true, `Expected "${item}" to be detected as non-color`);
+  }
+
+  // Real colors should pass
+  assert.equal(isNonColor('Midnight'), false);
+  assert.equal(isNonColor('Starlight'), false);
+  assert.equal(isNonColor('Saddle Brown'), false);
+  assert.equal(isNonColor('Citrus'), false);
+  assert.equal(isNonColor('Space Black'), false);
+
+  // getSkuAttribute does not return non-colors
+  const skuWithThai = {
+    id: 's-thai',
+    sku: 'TEST/TH',
+    name: 'Apple 20W USB-C Power Adapter - Thai',
+  };
+  assert.equal(getSkuAttribute(skuWithThai, 'color'), '');
+
+  // getSkuAttribute normalizes "Citrus Eng" to "Citrus"
+  const skuCitrus = {
+    id: 's-citrus',
+    sku: 'TEST/CIT',
+    name: 'Apple Silicone Case - Citrus Eng',
+  };
+  assert.equal(getSkuAttribute(skuCitrus, 'color'), 'Citrus');
+});

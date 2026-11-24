@@ -25,3 +25,31 @@ export class UpsertColorDto {
   @MaxLength(512)
   hexCode!: string;
 }
+
+export class BindSkuDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  sku!: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : null,
+  )
+  colorName?: string | null;
+}
+
+export class MigrateSkusDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  fromColor!: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : null,
+  )
+  toColor?: string | null;
+}

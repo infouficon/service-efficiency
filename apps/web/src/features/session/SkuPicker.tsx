@@ -58,7 +58,7 @@ const getAppleFallbackHex = (name: string): string | null => {
 };
 
 const isTwoColumns = (options: string[]) =>
-  options.length <= 2 && options.every((opt) => opt.length <= 16);
+  options.length === 2 && options.every((opt) => opt.length <= 16);
 
 /** "wi-fi", "WiFi" and "wifi" are the same to someone typing on a phone. */
 const searchable = (text: string) => text.toLowerCase().replaceAll('-', '');
@@ -439,6 +439,10 @@ export function SkuPicker({
                       const isSelected = st.selectedValue === opt;
                       const hex = resolveColorHex(opt);
 
+                      const isImg =
+                        typeof hex === 'string' &&
+                        (/^https?:\/\/.+/i.test(hex) || /^data:image\/.+/i.test(hex));
+
                       return (
                         <button
                           type="button"
@@ -454,7 +458,11 @@ export function SkuPicker({
                           <span
                             className="spec-swatch-circle"
                             style={{
-                              backgroundColor: hex,
+                              backgroundColor: isImg ? 'transparent' : hex,
+                              backgroundImage: isImg ? `url("${hex}")` : undefined,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                              backgroundRepeat: 'no-repeat',
                               opacity: !allowOutOfStock && stockInfo.outOfStock ? 0.35 : 1,
                             }}
                           />

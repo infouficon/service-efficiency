@@ -166,6 +166,8 @@ export type DiscountType = 'GENERAL' | 'ENTERPRISE' | 'EDU' | 'UNIDAYS' | 'MED';
 
 export type CustomerSource =
   | 'WALK_IN'
+  | 'STORE_PICKUP'
+  | 'OTHER'
   | 'WEBSITE'
   | 'FACEBOOK'
   | 'INSTAGRAM'

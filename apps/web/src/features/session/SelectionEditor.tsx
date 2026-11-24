@@ -39,7 +39,7 @@ import type {
 import { MultiSelect, Button, Modal, Notice } from '../../components/ui';
 import {
   addItem,
-  CUSTOMER_SOURCE_OPTIONS,
+  CUSTOMER_SOURCE_SUB_OPTIONS,
   customerSourceIsValid,
   DISCOUNT_TYPE_OPTIONS,
   discountTypeIsValid,
@@ -58,7 +58,6 @@ import {
 } from './workflow';
 import { SkuPicker } from './SkuPicker';
 import {
-  extractAccessoryGroups,
   formatAccessoryItemName,
   formatPrice,
   getSkuAttribute,
@@ -78,6 +77,7 @@ import {
   fetchPaymentMethodsApi,
   fetchProductsApi,
 } from '../../services/sessionApi';
+import { AccessoryCategoryPicker } from './AccessoryCategoryPicker';
 
 /** Product pictures of the category tiles (Icons8, see D79 for the licence); a category without one gets a plain icon. */
 const CATEGORY_PICTURES: Record<string, string> = {
@@ -200,6 +200,21 @@ export function SelectionEditor({
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [selectedModelPerGroup, setSelectedModelPerGroup] = useState<Record<string, string>>({});
 
+  const isOtherSource = Boolean(
+    value.customerSource &&
+    value.customerSource !== 'WALK_IN' &&
+    value.customerSource !== 'STORE_PICKUP',
+  );
+  const [otherExpanded, setOtherExpanded] = useState<boolean>(isOtherSource);
+
+  useEffect(() => {
+    if (isOtherSource) {
+      setOtherExpanded(true);
+    } else if (value.customerSource === 'WALK_IN' || value.customerSource === 'STORE_PICKUP') {
+      setOtherExpanded(false);
+    }
+  }, [isOtherSource, value.customerSource]);
+
   useEffect(() => {
     let active = true;
     fetchProductsApi()
@@ -262,17 +277,6 @@ export function SelectionEditor({
     return new Set(['Accessories']);
   }, [categoryList]);
 
-  const realAccessories = useMemo<string[]>(
-    () =>
-      extractAccessoryGroups(
-        catalog,
-        accessoryCategoryNames,
-        [],
-        Object.keys(value.accessories),
-      ),
-    [catalog, accessoryCategoryNames, value.accessories],
-  );
-
   const selectedAccessoryEntries = useMemo(
     () => Object.entries(value.accessories).filter(([, qty]) => Number(qty) > 0),
     [value.accessories],
@@ -283,18 +287,91 @@ export function SelectionEditor({
     [selectedAccessoryEntries],
   );
 
-  const displayedAccessories = useMemo(() => {
+  const defaultIPhoneModel = useMemo(() => {
+    const item = value.items.find((i) => i.product.category?.toLowerCase().includes('iphone'));
+    return item?.product.product || item?.product.model || '';
+  }, [value.items]);
+
+  const defaultIPadModel = useMemo(() => {
+    const item = value.items.find((i) => i.product.category?.toLowerCase().includes('ipad'));
+    return item?.product.product || item?.product.model || '';
+  }, [value.items]);
+
+  // D188: Extract accessory groups directly from catalog products marked as accessory (Image 2)
+  const accessoryGroups = useMemo(() => {
+    if (!catalog || catalog.length === 0) return [];
+
+    const map = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        category?: Category;
+        products: CatalogProduct[];
+      }
+    >();
+
+    for (const p of catalog) {
+      const isAccy =
+        accessoryCategoryNames.has(p.category) ||
+        p.category.toLowerCase().includes('accy') ||
+        p.category.toLowerCase().includes('accessories');
+      if (!isAccy) continue;
+
+      const groupName = p.name.trim();
+      if (!groupName) continue;
+
+      const key = groupName.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.products.push(p);
+      } else {
+        const matchingCat = categoryList?.find(
+          (c) =>
+            c.name.trim().toLowerCase() === key ||
+            (key.startsWith('ipad case') && c.name.toLowerCase().startsWith('ipad case')),
+        );
+        map.set(key, {
+          id: p.id,
+          name: groupName,
+          category: matchingCat ? { ...matchingCat, name: groupName } : undefined,
+          products: [p],
+        });
+      }
+    }
+
+    const list = Array.from(map.values()).map((g) => {
+      const modelNames = new Set<string>();
+      let skusCount = 0;
+      for (const prod of g.products) {
+        for (const m of prod.models || []) {
+          modelNames.add(m.name.trim().toLowerCase());
+          skusCount += m.skus?.length || 0;
+        }
+      }
+      return {
+        ...g,
+        modelsCount: modelNames.size,
+        skusCount,
+      };
+    });
+
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }, [catalog, accessoryCategoryNames, categoryList]);
+
+  const displayedAccessoryGroups = useMemo(() => {
     const q = accessorySearch.trim().toLowerCase();
-    if (!q) return realAccessories;
-    return realAccessories.filter((name) => {
-      if (name.toLowerCase().includes(q)) return true;
-      const product = catalog?.find(
-        (p) => accessoryCategoryNames.has(p.category) && p.name.trim().toLowerCase() === name.trim().toLowerCase(),
-      );
-      if (product) {
-        for (const m of product.models) {
+    if (!q) return accessoryGroups;
+
+    return accessoryGroups.filter((g) => {
+      // 1. Group name matches
+      if (g.name.toLowerCase().includes(q)) return true;
+
+      // 2. Models or SKUs match
+      for (const prod of g.products) {
+        for (const m of prod.models || []) {
           if (m.name.toLowerCase().includes(q)) return true;
-          for (const s of m.skus) {
+          for (const s of m.skus || []) {
             if (
               s.sku.toLowerCase().includes(q) ||
               s.name?.toLowerCase().includes(q) ||
@@ -307,7 +384,24 @@ export function SelectionEditor({
       }
       return false;
     });
-  }, [realAccessories, catalog, accessoryCategoryNames, accessorySearch]);
+  }, [accessoryGroups, accessorySearch]);
+
+  useEffect(() => {
+    if (accessorySearch.trim() && displayedAccessoryGroups.length > 0) {
+      setExpandedGroup(displayedAccessoryGroups[0].id);
+    }
+  }, [accessorySearch, displayedAccessoryGroups]);
+
+  const handleAddAccessory = (itemKey: string) => {
+    const inCartQty = Number(value.accessories[itemKey]) || 0;
+    onChange({
+      ...value,
+      accessories: {
+        ...value.accessories,
+        [itemKey]: String(inCartQty + 1),
+      },
+    });
+  };
 
   const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
   const categorySectionRef = useRef<HTMLDivElement>(null);
@@ -1100,7 +1194,7 @@ export function SelectionEditor({
           )}
         </div>
 
-        {displayedAccessories.length === 0 ? (
+        {displayedAccessoryGroups.length === 0 ? (
           <p
             className="muted"
             style={{
@@ -1110,421 +1204,120 @@ export function SelectionEditor({
             }}
           >
             {accessorySearch.trim()
-              ? `ไม่พบอุปกรณ์เสริมที่ตรงกับ "${accessorySearch}"`
+              ? `ไม่พบหมวดหมู่อุปกรณ์เสริมที่ตรงกับ "${accessorySearch}"`
               : 'ไม่มีรายการอุปกรณ์เสริมในขณะนี้'}
           </p>
         ) : (
           <div
             className="accessory-list"
             style={
-              displayedAccessories.length > 8
-                ? { maxHeight: '480px', overflowY: 'auto', paddingRight: '4px' }
+              displayedAccessoryGroups.length > 6
+                ? { maxHeight: '560px', overflowY: 'auto', paddingRight: '4px' }
                 : undefined
             }
           >
-            {displayedAccessories.map((groupName) => {
-              const product = catalog?.find(
-                (p) =>
-                  accessoryCategoryNames.has(p.category) &&
-                  p.name.trim().toLowerCase() === groupName.trim().toLowerCase(),
-              );
-              const hasCatalogDetails = Boolean(
-                product && product.models && product.models.length > 0,
-              );
-              const isExpanded = expandedGroup === groupName;
-              const groupSelectedCount = product
-                ? selectedAccessoryEntries
-                    .filter(([k]) => isAccessoryFromProduct(product, k))
-                    .reduce((sum, [, q]) => sum + (Number(q) || 0), 0)
-                : Number(value.accessories[groupName]) || 0;
+            {displayedAccessoryGroups.map((group) => {
+              const isExpanded = expandedGroup === group.id;
+              const groupCartCount = selectedAccessoryEntries
+                .filter(([k]) => group.products.some((p) => isAccessoryFromProduct(p, k)))
+                .reduce((sum, [, q]) => sum + (Number(q) || 0), 0);
 
               return (
                 <div
-                  className={`accessory-item${isExpanded ? ' expanded' : ''}${groupSelectedCount > 0 ? ' selected' : ''}`}
-                  key={groupName}
-                  style={{ padding: '10px 12px' }}
+                  className={`accessory-item${isExpanded ? ' expanded' : ''}${groupCartCount > 0 ? ' selected' : ''}`}
+                  key={group.id}
+                  style={{
+                    padding: '12px 14px',
+                    borderRadius: '10px',
+                    marginBottom: '8px',
+                  }}
                 >
                   <div
                     className="accessory-row"
-                    style={{ cursor: 'pointer' }}
+                    style={{
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
                     onClick={() =>
-                      setExpandedGroup(isExpanded ? null : groupName)
+                      setExpandedGroup(isExpanded ? null : group.id)
                     }
                   >
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
-                        width: '100%',
                         gap: '8px',
+                        minWidth: 0,
                       }}
                     >
-                      <div
+                      <strong
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
-                          flex: 1,
-                          minWidth: 0,
+                          fontSize: '14.5px',
+                          color: 'var(--text-primary)',
                         }}
                       >
-                        <strong
+                        {group.name}
+                      </strong>
+                      {groupCartCount > 0 && (
+                        <span
                           style={{
-                            fontSize: '13.5px',
-                            color: 'var(--text-primary)',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: '#0abab5',
+                            background: 'rgba(10, 186, 181, 0.12)',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
                           }}
                         >
-                          {groupName}
-                        </strong>
-                        {groupSelectedCount > 0 && (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: '#0abab5',
-                              background: 'rgba(10, 186, 181, 0.12)',
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                            }}
-                          >
-                            เลือกแล้ว {groupSelectedCount} ชิ้น
-                          </span>
-                        )}
-                      </div>
-                      <div
+                          เลือกแล้ว {groupCartCount}
+                        </span>
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <span className="fine muted" style={{ fontSize: '13px' }}>
+                        {group.modelsCount} รุ่น
+                      </span>
+                      <span
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          color: 'var(--text-muted)',
-                          flexShrink: 0,
+                          fontSize: '14px',
+                          color: 'var(--text-muted, #737373)',
+                          transform: isExpanded ? 'rotate(180deg)' : 'none',
+                          transition: 'transform 0.2s ease',
+                          display: 'inline-flex',
                         }}
                       >
-                        {hasCatalogDetails && product && (
-                          <span style={{ fontSize: '12px' }}>
-                            {product.models.length} รุ่น
-                          </span>
-                        )}
-                        {isExpanded ? (
-                          <ChevronUp size={16} />
-                        ) : (
-                          <ChevronDown size={16} />
-                        )}
-                      </div>
+                        <ChevronDown size={18} />
+                      </span>
                     </div>
                   </div>
 
-                  {/* Expanded details */}
                   {isExpanded && (
-                    <div
-                      style={{
-                        marginTop: '10px',
-                        paddingTop: '10px',
-                        borderTop: '1px solid #eef2f6',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '10px',
+                    <AccessoryCategoryPicker
+                      category={{
+                        id: group.category?.id || group.id,
+                        name: group.name,
+                        active: true,
+                        position: group.category?.position ?? 0,
+                        isAccessory: true,
+                        erpManaged: group.category?.erpManaged ?? false,
+                        attributes: group.category?.attributes,
                       }}
-                    >
-                      {hasCatalogDetails && product ? (
-                        <>
-                          {/* Step 1: Model Selection (Manual selection: must be clicked explicitly, D147) */}
-                          <div>
-                            <label
-                              style={{
-                                display: 'block',
-                                fontSize: '12px',
-                                fontWeight: 600,
-                                color: 'var(--text-secondary)',
-                                marginBottom: '6px',
-                              }}
-                            >
-                              เลือกรุ่นสินค้า:
-                            </label>
-                            <div
-                              style={{
-                                display: 'flex',
-                                flexWrap: 'wrap',
-                                gap: '6px',
-                                width: '100%',
-                              }}
-                            >
-                              {product.models.map((m) => {
-                                const isCurrentModel =
-                                  selectedModelPerGroup[groupName] === m.id;
-                                return (
-                                  <button
-                                    key={m.id}
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSelectedModelPerGroup((prev) => ({
-                                        ...prev,
-                                        [groupName]: m.id,
-                                      }));
-                                    }}
-                                    style={{
-                                      flex: '1 1 auto',
-                                      minWidth: '0',
-                                      boxSizing: 'border-box',
-                                      padding: '8px 12px',
-                                      borderRadius: '6px',
-                                      border: `1.5px solid ${isCurrentModel ? 'var(--primary, #0abab5)' : '#d4e0d9'}`,
-                                      background: isCurrentModel
-                                        ? 'var(--primary-subtle, #e8f7f6)'
-                                        : '#ffffff',
-                                      color: isCurrentModel
-                                        ? 'var(--primary-dark, #0d3b39)'
-                                        : 'var(--text-primary)',
-                                      fontSize: '12.5px',
-                                      fontWeight: isCurrentModel ? 600 : 400,
-                                      cursor: 'pointer',
-                                      textAlign: 'left',
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      justifyContent: 'space-between',
-                                      gap: '8px',
-                                    }}
-                                  >
-                                    <span>{m.name}</span>
-                                    {isCurrentModel && (
-                                      <span
-                                        style={{
-                                          fontSize: '12px',
-                                          color: 'var(--primary, #0abab5)',
-                                          fontWeight: 700,
-                                        }}
-                                      >
-                                        ✓
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Step 2: SKUs under selected model (Clicking a SKU automatically adds +1) */}
-                          {(() => {
-                            const selectedModelId =
-                              selectedModelPerGroup[groupName];
-                            const activeModel = product.models.find(
-                              (m) => m.id === selectedModelId,
-                            );
-
-                            if (!activeModel) {
-                              return (
-                                <p
-                                  className="fine muted"
-                                  style={{ margin: '4px 0 0 0' }}
-                                >
-                                  กรุณากดเลือกรุ่นสินค้าด้านบนเพื่อดูตัวเลือกสเปก / สี
-                                </p>
-                              );
-                            }
-
-                            return (
-                              <div>
-                                <label
-                                  style={{
-                                    display: 'block',
-                                    fontSize: '12px',
-                                    fontWeight: 600,
-                                    color: 'var(--text-secondary)',
-                                    marginBottom: '6px',
-                                  }}
-                                >
-                                  เลือกสเปก / สี / SKU (กดเพื่อเพิ่มลงรายการ):
-                                </label>
-                                <div style={{ display: 'grid', gap: '6px', width: '100%' }}>
-                                  {activeModel.skus.map((sku) => {
-                                    const itemKey = formatAccessoryItemName(
-                                      activeModel,
-                                      sku,
-                                    );
-                                    const inCartQty =
-                                      Number(value.accessories[itemKey]) || 0;
-                                    const outOfStock = isOutOfStock(sku);
-                                    const isSingleSku = activeModel.skus.length === 1;
-
-                                    return (
-                                      <button
-                                        key={sku.id}
-                                        type="button"
-                                        disabled={outOfStock}
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          onChange({
-                                            ...value,
-                                            accessories: {
-                                              ...value.accessories,
-                                              [itemKey]: String(inCartQty + 1),
-                                            },
-                                          });
-                                        }}
-                                        style={{
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          justifyContent: 'space-between',
-                                          width: '100%',
-                                          boxSizing: 'border-box',
-                                          padding: isSingleSku ? '10px 14px' : '8px 12px',
-                                          borderRadius: '6px',
-                                          border: `1.5px solid ${inCartQty > 0 ? 'var(--primary-border, #0abab5)' : '#d4e0d9'}`,
-                                          background: inCartQty > 0
-                                            ? 'var(--primary-subtle, #f0fdf4)'
-                                            : '#ffffff',
-                                          cursor: outOfStock
-                                            ? 'not-allowed'
-                                            : 'pointer',
-                                          opacity: outOfStock ? 0.6 : 1,
-                                          textAlign: 'left',
-                                          gap: '10px',
-                                        }}
-                                      >
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div
-                                            style={{
-                                              fontSize: '13px',
-                                              fontWeight: inCartQty > 0 ? 600 : 500,
-                                              color: 'var(--text-primary)',
-                                              lineHeight: 1.35,
-                                              wordBreak: 'break-word',
-                                            }}
-                                          >
-                                            {sku.name || activeModel.name}
-                                          </div>
-                                          <div
-                                            style={{
-                                              display: 'flex',
-                                              alignItems: 'center',
-                                              gap: '6px',
-                                              marginTop: '2px',
-                                              fontSize: '11px',
-                                              color: 'var(--text-muted)',
-                                              flexWrap: 'wrap',
-                                            }}
-                                          >
-                                            <span
-                                              style={{
-                                                fontFamily:
-                                                  'ui-monospace, monospace',
-                                              }}
-                                            >
-                                              {sku.sku}
-                                            </span>
-                                            {sku.color && (
-                                              <span>· สี {getSkuAttribute(sku, 'color') || sku.color}</span>
-                                            )}
-                                            {typeof sku.stock === 'number' &&
-                                              !isUnlimited(sku) && (
-                                                <span
-                                                  style={{
-                                                    color: outOfStock
-                                                      ? '#dc2626'
-                                                      : '#15803d',
-                                                    fontWeight: 500,
-                                                  }}
-                                                >
-                                                  ·{' '}
-                                                  {outOfStock
-                                                    ? 'สินค้าหมด'
-                                                    : `คงเหลือ ${sku.stock}`}
-                                                </span>
-                                              )}
-                                          </div>
-                                        </div>
-
-                                        {inCartQty > 0 && (
-                                          <span
-                                            style={{
-                                              fontSize: '11.5px',
-                                              fontWeight: 600,
-                                              color: '#0abab5',
-                                              background:
-                                                'rgba(10, 186, 181, 0.12)',
-                                              padding: '2px 8px',
-                                              borderRadius: '12px',
-                                              flexShrink: 0,
-                                            }}
-                                          >
-                                            X {inCartQty}
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </>
-                      ) : (
-                        /* Fallback generic accessory: Click to add +1 without checkbox */
-                        <div>
-                          <label
-                            style={{
-                              display: 'block',
-                              fontSize: '12px',
-                              fontWeight: 600,
-                              color: 'var(--text-secondary)',
-                              marginBottom: '6px',
-                            }}
-                          >
-                            กดเพื่อเพิ่มรายการนี้:
-                          </label>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const inCartQty =
-                                Number(value.accessories[groupName]) || 0;
-                              onChange({
-                                ...value,
-                                accessories: {
-                                  ...value.accessories,
-                                  [groupName]: String(inCartQty + 1),
-                                },
-                              });
-                            }}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'space-between',
-                              width: '100%',
-                              padding: '10px 14px',
-                              borderRadius: '6px',
-                              border: `1.5px solid ${groupSelectedCount > 0 ? 'var(--primary-border, #0abab5)' : '#d4e0d9'}`,
-                              background: groupSelectedCount > 0
-                                ? 'var(--primary-subtle, #f0fdf4)'
-                                : '#ffffff',
-                              cursor: 'pointer',
-                              fontSize: '13px',
-                              fontWeight: 600,
-                              color: 'var(--text-primary)',
-                              textAlign: 'left',
-                            }}
-                          >
-                            <span>{groupName}</span>
-                            {groupSelectedCount > 0 && (
-                              <span
-                                style={{
-                                  fontSize: '11.5px',
-                                  fontWeight: 600,
-                                  color: '#0abab5',
-                                  background: 'rgba(10, 186, 181, 0.12)',
-                                  padding: '2px 8px',
-                                  borderRadius: '12px',
-                                }}
-                              >
-                                เลือกแล้ว {groupSelectedCount} ชิ้น
-                              </span>
-                            )}
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      products={group.products}
+                      defaultIPhoneModel={defaultIPhoneModel}
+                      defaultIPadModel={defaultIPadModel}
+                      cartAccessories={value.accessories}
+                      onAddAccessory={handleAddAccessory}
+                    />
                   )}
                 </div>
               );
@@ -1790,67 +1583,29 @@ export function SelectionEditor({
           {RECEIPT_TYPE_OPTIONS.map((opt) => {
             const selected = value.receiptType === opt.value;
             return (
-              <label
+              <div
                 key={opt.value}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  border: `1px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
-                  borderRadius: '8px',
-                  background: selected
-                    ? 'var(--primary-subtle)'
-                    : 'var(--bg-surface)',
-                  cursor: 'pointer',
-                  transition:
-                    'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
-                  userSelect: 'none',
-                }}
+                className={`custom-radio-card ${selected ? 'selected' : ''}`}
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    receiptType: opt.value,
+                    taxInvoice: opt.isTaxInvoice,
+                  })
+                }
               >
-                <input
-                  type="radio"
-                  name="receiptType"
-                  value={opt.value}
-                  checked={selected}
-                  onChange={() =>
-                    onChange({
-                      ...value,
-                      receiptType: opt.value,
-                      taxInvoice: opt.isTaxInvoice,
-                    })
-                  }
-                  style={{
-                    width: '18px',
-                    height: '18px',
-                    margin: 0,
-                    cursor: 'pointer',
-                    accentColor: 'var(--primary)',
-                  }}
-                />
+                <div className="custom-radio-circle">
+                  {selected && <div className="custom-radio-dot" />}
+                </div>
                 <div>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontWeight: 600,
-                      fontSize: '14px',
-                      color: 'var(--text-primary)',
-                    }}
-                  >
+                  <span className="custom-radio-title" style={{ display: 'block' }}>
                     {opt.label}
                   </span>
-                  <span
-                    style={{
-                      display: 'block',
-                      fontSize: '12px',
-                      color: 'var(--text-secondary)',
-                      marginTop: '2px',
-                    }}
-                  >
+                  <span className="custom-radio-subtext" style={{ display: 'block' }}>
                     {opt.description}
                   </span>
                 </div>
-              </label>
+              </div>
             );
           })}
         </div>
@@ -1882,10 +1637,10 @@ export function SelectionEditor({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '10px 14px',
-                  border: `1.5px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
+                  border: `${selected ? '2px' : '1.5px'} solid ${selected ? 'var(--primary, #0abab5)' : 'var(--border-color, #e2e8f0)'}`,
                   borderRadius: '8px',
-                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
-                  color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
+                  background: selected ? 'var(--primary-subtle, #e8f7f6)' : 'var(--bg-surface, #ffffff)',
+                  color: selected ? 'var(--primary-dark, #0d3b39)' : 'var(--text-primary)',
                   fontWeight: selected ? 600 : 500,
                   fontSize: '14px',
                   cursor: 'pointer',
@@ -1902,8 +1657,7 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          เอกสารภาษีเพิ่มเติม / VAT Refund{' '}
-          <small className="legend-note">(ไม่บังคับ)</small>
+          เอกสารภาษีเพิ่มเติม / VAT Refund
         </legend>
         <div
           style={{
@@ -1971,49 +1725,121 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ลูกค้ามาจากช่องทางใด{' '}
-          <span className="required">*</span>
+          ลูกค้ามาใช้บริการผ่านช่องทางไหน <span className="required">*</span>
         </legend>
+        <p
+          className="fine muted"
+          style={{ margin: '2px 0 12px 0', fontSize: '13px', color: '#64748b' }}
+        >
+          ตอบครั้งเดียว ระบบจะเติมให้ทุก survey ของลูกค้าคนนี้
+        </p>
+
         <div
           role="radiogroup"
-          aria-label="ลูกค้ามาจากช่องทางใด"
-          className="customer-source-grid"
+          aria-label="ลูกค้ามาใช้บริการผ่านช่องทางไหน"
+          className="customer-channel-stack"
         >
-          {CUSTOMER_SOURCE_OPTIONS.map((opt) => {
-            const selected = value.customerSource === opt.value;
-            return (
-              <label
-                key={opt.value}
-                className={`customer-source-card ${selected ? 'selected' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name="customerSource"
-                  value={opt.value}
-                  checked={selected}
-                  onChange={() => onChange({ ...value, customerSource: opt.value })}
-                  style={{
-                    width: '18px',
-                    height: '18px',
-                    margin: 0,
-                    cursor: 'pointer',
-                    accentColor: 'var(--primary)',
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: '13.5px',
-                    fontWeight: selected ? 600 : 500,
-                    color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
-                    lineHeight: 1.35,
-                  }}
-                >
-                  {opt.label}
-                </span>
-              </label>
-            );
-          })}
+          {/* 1. Walk-in */}
+          <div
+            className={`customer-channel-card ${value.customerSource === 'WALK_IN' ? 'selected' : ''}`}
+            onClick={() => {
+              setOtherExpanded(false);
+              onChange({ ...value, customerSource: 'WALK_IN' });
+            }}
+          >
+            <div className="customer-channel-row">
+              <div className="customer-channel-radio">
+                {value.customerSource === 'WALK_IN' && (
+                  <div className="customer-channel-radio-dot" />
+                )}
+              </div>
+              <div>
+                <div className="customer-channel-title">Walk-in</div>
+                <div className="customer-channel-subtext">
+                  ลูกค้าเข้ามาซื้อสินค้าหรือใช้บริการที่หน้าร้าน
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Store Pickup */}
+          <div
+            className={`customer-channel-card ${value.customerSource === 'STORE_PICKUP' ? 'selected' : ''}`}
+            onClick={() => {
+              setOtherExpanded(false);
+              onChange({ ...value, customerSource: 'STORE_PICKUP' });
+            }}
+          >
+            <div className="customer-channel-row">
+              <div className="customer-channel-radio">
+                {value.customerSource === 'STORE_PICKUP' && (
+                  <div className="customer-channel-radio-dot" />
+                )}
+              </div>
+              <div>
+                <div className="customer-channel-title">Store Pickup</div>
+                <div className="customer-channel-subtext">
+                  ลูกค้าสั่งซื้อผ่านเว็บไซต์และเข้ามารับสินค้าที่หน้าร้าน
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. อื่น ๆ */}
+          <div
+            className={`customer-channel-card ${otherExpanded || isOtherSource ? 'selected' : ''}`}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('.customer-channel-chip')) {
+                return;
+              }
+              setOtherExpanded(true);
+              if (
+                value.customerSource === 'WALK_IN' ||
+                value.customerSource === 'STORE_PICKUP' ||
+                !value.customerSource
+              ) {
+                onChange({ ...value, customerSource: 'OTHER' });
+              }
+            }}
+          >
+            <div className="customer-channel-row">
+              <div className="customer-channel-radio">
+                {(otherExpanded || isOtherSource) && (
+                  <div className="customer-channel-radio-dot" />
+                )}
+              </div>
+              <div>
+                <div className="customer-channel-title">อื่น ๆ</div>
+                <div className="customer-channel-subtext">
+                  รู้จักผ่านโซเชียล ป้ายโฆษณา หรือช่องทางออนไลน์อื่น
+                </div>
+              </div>
+            </div>
+
+            {otherExpanded && (
+              <div className="customer-channel-sub-section">
+                <div className="customer-channel-sub-label">ระบุช่องทาง</div>
+                <div className="customer-channel-chips">
+                  {CUSTOMER_SOURCE_SUB_OPTIONS.map((sub) => {
+                    const isSelected = value.customerSource === sub.value;
+                    return (
+                      <button
+                        key={sub.value}
+                        type="button"
+                        className={`customer-channel-chip ${isSelected ? 'selected' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onChange({ ...value, customerSource: sub.value });
+                        }}
+                      >
+                        {sub.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </fieldset>
       {hasPayments && !paymentsValid && (

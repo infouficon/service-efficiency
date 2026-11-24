@@ -109,7 +109,7 @@ export class WarroomController {
 }
 
 /**
- * D104: one scanned serial against the stock data (warroom by default, FileMaker live once it has an index on product_sn; see
+ * D104: one scanned serial against the stock data (FileMaker live with `SERIAL_CHECK=fmp`, the test FileMaker always; see
  * SerialCheckService). `GET /api/stock/serial-check?sn=…[&part=…][&branch=<code>, ADMIN]`. Answers 200 with `status: off |
  * unavailable` when it cannot check; it never blocks a step.
  */

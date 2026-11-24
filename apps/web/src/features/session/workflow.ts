@@ -290,13 +290,15 @@ export function quantitiesAreValid(
 }
 
 /**
- * D127: Validates that if Full Credit Card or 0% Credit Card is chosen,
+ * D127, D188: Validates that at least one payment method is selected,
+ * and if Full Credit Card or 0% Credit Card is chosen,
  * card type (and installment months for 0%) is provided.
  */
 export function paymentsAreValid(
   payments: string[],
   paymentDetails?: { method: string; cardType?: string | null; installmentMonths?: number | null }[],
 ): boolean {
+  if (!payments || payments.length === 0) return false;
   if (payments.includes('Full Credit Card')) {
     const detail = paymentDetails?.find((d) => d.method === 'Full Credit Card');
     if (!detail?.cardType) return false;
@@ -416,9 +418,29 @@ export function discountTypeLabel(discountType?: DiscountType | null): string | 
   return matched ? matched.label : null;
 }
 
-export const CUSTOMER_SOURCE_OPTIONS: { value: CustomerSource; label: string }[] = [
-  { value: 'WALK_IN', label: 'Walk-in' },
-  { value: 'WEBSITE', label: 'Website UFicon' },
+export const CUSTOMER_SOURCE_MAIN_OPTIONS: {
+  id: 'WALK_IN' | 'STORE_PICKUP' | 'OTHER';
+  label: string;
+  subtext: string;
+}[] = [
+  {
+    id: 'WALK_IN',
+    label: 'Walk-in',
+    subtext: 'ลูกค้าเข้ามาซื้อสินค้าหรือใช้บริการที่หน้าร้าน',
+  },
+  {
+    id: 'STORE_PICKUP',
+    label: 'Store Pickup',
+    subtext: 'ลูกค้าสั่งซื้อผ่านเว็บไซต์และเข้ามารับสินค้าที่หน้าร้าน',
+  },
+  {
+    id: 'OTHER',
+    label: 'อื่น ๆ',
+    subtext: 'รู้จักผ่านโซเชียล ป้ายโฆษณา หรือช่องทางออนไลน์อื่น',
+  },
+];
+
+export const CUSTOMER_SOURCE_SUB_OPTIONS: { value: CustomerSource; label: string }[] = [
   { value: 'FACEBOOK', label: 'Facebook' },
   { value: 'INSTAGRAM', label: 'Instagram' },
   { value: 'TIKTOK', label: 'TikTok' },
@@ -431,9 +453,19 @@ export const CUSTOMER_SOURCE_OPTIONS: { value: CustomerSource; label: string }[]
   { value: 'RETURNING_CUSTOMER', label: 'เป็นลูกค้าเก่า / เคยใช้บริการแล้ว' },
 ];
 
+export const CUSTOMER_SOURCE_OPTIONS: { value: CustomerSource; label: string }[] = [
+  { value: 'WALK_IN', label: 'Walk-in' },
+  { value: 'STORE_PICKUP', label: 'Store Pickup' },
+  { value: 'OTHER', label: 'อื่น ๆ' },
+  ...CUSTOMER_SOURCE_SUB_OPTIONS,
+  { value: 'WEBSITE', label: 'Website UFicon' },
+];
+
 export function customerSourceIsValid(source?: CustomerSource | null): boolean {
   return (
     source === 'WALK_IN' ||
+    source === 'STORE_PICKUP' ||
+    source === 'OTHER' ||
     source === 'WEBSITE' ||
     source === 'FACEBOOK' ||
     source === 'INSTAGRAM' ||

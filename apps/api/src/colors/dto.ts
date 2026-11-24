@@ -15,9 +15,13 @@ export class UpsertColorDto {
   )
   @IsString()
   @IsNotEmpty()
-  @Matches(/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/, {
-    message: 'hexCode must be a valid hex color starting with # (e.g. #000000 or #FFF)',
-  })
-  @MaxLength(16)
+  @Matches(
+    /^(?:#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|https?:\/\/.+|data:image\/.+)$/,
+    {
+      message:
+        'hexCode must be a valid hex color starting with # or an image URL (http/https/data:image)',
+    },
+  )
+  @MaxLength(512)
   hexCode!: string;
 }

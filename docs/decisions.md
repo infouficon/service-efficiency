@@ -2898,7 +2898,7 @@ Owner instruction via `/grill-me`: "เมื่อกดเลือก accesso
    - When an accessory product contains catalog models and SKUs (such as `iPhone Case for iPhone 13`, `iPhone Case for iPhone 14 Pro`):
      - Displays model selection chips (when more than 1 model exists).
      - Renders all variant SKUs under the active model with their descriptive name, color, SKU part number, and live stock indicator.
-     - Staff can click "+ เพิ่ม" to add the SKU or adjust quantity with the stepper (`−`, input, `+`).
+     - Staff can click "+" to add the SKU or adjust quantity with the stepper (`−`, input, `+`).
      - Multiple SKUs under the same or different accessory groups can be selected simultaneously.
 3. **Selected Accessories Card & Accurate Part Number Naming:**
    - Selected accessories are pinned in a dedicated summary card at the top of the Accessories section, showing the full descriptive name and quantity stepper with a direct delete (✕) button.
@@ -3031,7 +3031,214 @@ Not renamed:
 - Applied migrations and the record of earlier decisions and meetings (this file, `meeting-feedback-2026-10-13.md`, `grilling-backlog.md`), which keep the name used then.
 - Messages already stored, such as a skipped push's reason from before today.
 
-## D187 — Instant Scroll-to-Top on Step and Stage Transitions (2026-11-23)
+## D187 — Require at Least One Payment Method on Selection and Confirmation (2026-11-23)
+
+Staff reported: "เปลี่ยนให้ payment บังคับเลือกอย่างน้อย 1"
+
+Previously, `payments` was optional during product selection (the legend displayed "(ไม่บังคับ)"), allowing staff to review and confirm orders without picking any payment method. Although split payment is supported, orders must declare how the customer intends to pay.
+
+Decisions:
+1. **Multi-select retained:** Staff can select one or multiple payment methods (e.g. Cash + Transfer, or Cash + Credit Card) for split payments.
+2. **At least 1 required:**
+   - Frontend validation (`paymentsAreValid`) requires `payments.length > 0` before staff can advance to "ตรวจสอบรายการ" (Review).
+   - The fieldset legend reflects `Payment (จำเป็น · เลือกอย่างน้อย 1 ช่องทาง)`.
+   - If no payment is selected, a notice prompts "กรุณาเลือกช่องทางการชำระเงินอย่างน้อย 1 ช่องทาง" and disables the review button.
+   - If Full Credit Card or 0% Credit Card is chosen, card details remain enforced as per D127.
+3. **Backend API enforcement:** In `assertConfirmable` (`sessions.service.ts`), `session.payments` must not be empty; attempting to confirm an order without payment rejects with `ยังไม่ได้เลือกช่องทางการชำระเงิน กรุณากด "กลับไปแก้ไข" แล้วเลือกช่องทางการชำระเงิน`.
+4. **No pre-selection:** New orders leave payment methods unchecked by default so staff intentionally confirm the customer's intended payment method.
+
+## D188 — Dynamic Admin-Configurable Accessory Categories & Specs Configurator (2026-11-23)
+
+Staff and Admin requested: "ไม่ต้อง hardcode ไว้ ให้เป็นการเพิ่มเข้าไปและ admin สามารถมาแก้ไขได้เหมือนสินค้าหลัก", "หากแสดงแค่ 1 ปุ่มก้ให้ยาวเต็มกรอบ และลบส่วน Accessories ที่ hardcode ไว้ออก", and "ต้องการแบ่งแยกออกมาแบบรูป 2".
+
+Previously, accessory groups were either hardcoded, flat, or lumped into a single giant "Accessories" accordion. Option buttons also shrunk awkwardly to text width.
+
+Decisions:
+1. **Product-Level Accordion Groups (Image 2 Alignment):**
+   - Accessories are organized by their catalog product names (`Cables & Connectors`, `Charging Device`, `Device Protectors for Apple Devices`, `Earbud`, `Headphones and Speakers`, `iPad Case`, `iPhone Case`, `Lifestyle & Gadgets`, `Mice & Keyboards`, `Watch Accessories`, etc.) rather than lumped into a single "Accessories" header.
+   - Each accordion header clearly shows the group name on the left and the model count (`{modelsCount} รุ่น`) with a rotating chevron on the right.
+   - **Comprehensive Search:** The search input (`ค้นหาอุปกรณ์เสริม เช่น iPhone Case, Cable, Adapter..`) filters across group names, model names, and SKU names/colors, auto-expanding the first matched group.
+2. **Customized Group Branching & Spec Rules:**
+   - **No Color Step:** `Cables & Connectors`, `Charging Device`, `Earbud`, `Headphones and Speakers`, and `Lifestyle & Gadgets` do not divide by color (items add directly without color swatches).
+   - **Charging Device:** Sub-models `Wall Charger` (spec: `wattage` only, no color) and `Wireless Charger` (direct items with add button).
+   - **Watch Accessories:** `caseSize` (ขนาดตัวเรือน) > `band` (สายนาฬิกา) > `bandSize` (ขนาดสาย S/M, M/L) > `color` (สี).
+   - **Wallet & Lanyards:** Sub-models `Wallet` (`FineWoven Wallet with MagSafe` > `color`) vs `Lanyards` (`Crossbody Strap` / `Wrist Strap` > `color`).
+   - **Pencil:** Directly presents Pencil models/SKUs without a redundant "Pencil" model selector.
+   - **Mice & Keyboards:** Sub-models `Mouse` (direct items), `Magic Keyboard` (`touchId` > `numericKeypad` > `language` > `color`), and `Trackpad` (direct items).
+   - **iPhone Case:** iPhone model (default to cart's iPhone if present) > `caseType` > `color`.
+   - **iPad Case & Keyboard:** iPad Case (`caseType` > `color`) and Magic Keyboard for iPad (`type` > `language` > `color`), both defaulting to cart's iPad if present.
+   - **Device Protectors for Apple Devices:** Sub-models `AirTag Case` (`type` > `color`) and `Remote Case` (direct items).
+3. **Apple Store-style Step-by-Step Configurator (`AccessoryCategoryPicker`):**
+   - **Full-width and Grid Alignment:** When an option step has only 1 choice, it spans 100% full width (`cols-1`). Two short choices render in equal 50/50 columns (`cols-2`).
+   - **Single-model Auto-Select:** If a group has only 1 model (such as `Earbud` or `Headphones and Speakers`), it skips the redundant model picker and goes straight to the options.
+   - **Deduplication:** Models with duplicate or differing casing from ERP (e.g. `APPLE Care for Apple Watch` vs `Apple Care for Apple Watch`) are merged cleanly by normalized name.
+   - **Smart Model Search:** Groups with more than 6 models (such as `iPad Case` with 17 models) provide a model search filter input for instant filtering.
+   - **Smart Cart Pre-selection:** If a device (iPhone or iPad) exists in the cart, compatible accessory cases automatically pre-select that model, while allowing staff to click "เปลี่ยนรุ่น" at any time.
+4. **Instant Add to Cart:**
+   - Clicking the final spec (e.g. Color) automatically adds the accessory item (+1) with clear badge feedback and immediate cart updates.
+
+## D189 — The real U•POS serial check is on: the index was there all along (2026-11-24)
+
+Owner, on the step left after D183: "ช่วยเข้า fmp แล้วทำให้ผมหน่อย ใน prod" (index `ProductStore_detail::product_sn` / `product_upc`, measure, switch on).
+
+1. **No index to make.** The prod UFService design copy (Save a Copy as XML, 2026-11-12) has `product_sn`, `product_upc`, `status` and `BranchStore_id` of `ProductStore_detail` indexed "All", last changed 2026-09-22 by KoB. So D104's reading of the 2026-11-05 measurement was wrong: those queries (30 s at 14:04, 15 s at 15:47) ran in shop hours with the index already in place. Nothing was changed in FileMaker.
+2. **Measured on prod, 2026-11-24 09:37 (before the shops open), one query at a time:**
+   - by serial: 2.38 s for the first request (new connection), then 0.02 s
+   - ready units of MJXQ4ZP/A at ISTA: 0.10 s (5 units)
+   - SES's own `SerialCheckService` against PRODUCTION: units 2.4 s (fresh process), a serial at another branch 0.06 s ("other-branch", with that branch's 4 units)
+3. **Switched on.** `SERIAL_CHECK=fmp` and `SERIAL_CHECK_UNITS=fmp` are set on the api app in Coolify (restarted 09:38). They act when ADMIN's push switch is "production" (or "off"). It is `uat` today, which already asks the test FileMaker. One exception acts now: the after-send lookup of an order whose bill went to the real U•POS asks the real one.
+4. **Open risk: shop hours.** The slow answers of 2026-11-05 came under shop load, not from a missing index. The D104 guards stay unchanged: one request at a time, 5 s, no retry, a 10-minute pause after a failure, and nothing around warroom's pulls. So at worst one slow query reaches the server every 10 minutes. Watch the api's `SerialCheck` log lines in the first shop hours after the push switch goes to "production". If they time out, remove `SERIAL_CHECK_UNITS` first (the serial check stays), then `SERIAL_CHECK`, and restart.
+5. **Also:** the two "off" reasons a user can see now say U•POS instead of FileMaker and drop the setting names ("ยังไม่เปิดการดูรายการเครื่องจาก U•POS จริง").
+
+## D189 — Accessories Configuration Flow Refinements & Version Indicator (2026-11-24)
+
+User requested:
+- Version display in bottom-left sidebar footer
+- Remove color selection from Cables & Connectors, Earbud (AirPods Pro 2nd Gen same as 3rd Gen), Headphones and Speakers, Lifestyle & Gadgets (Pencil Tips), Pencil, Software & Care
+- Both Wall Charger and Wireless Charger divide by wattage (จำนวนวัตต์) first, without any color step
+- iPad Case split into `iPad Case` vs `iPad Keyboard Case` prior to model selection
+- Wallet & Lanyards: ensure Wrist Strap has color selection restored
+- Watch Accessories: strict order of ขนาดตัวเรือน (caseSize) > สาย (band) > ขนาดสาย Band Size (bandSize: S/M, M/L) > สี (color)
+
+Decisions:
+1. **Sidebar Version Indicator:** Added `sidebar-version-tag` (`v1.0.0`) at the bottom of the navigation sidebar footer (`App.tsx` and `styles.css`), sourced from `apps/web/src/version.ts`.
+2. **Strict Zero-Color Categories:**
+   - `Cables & Connectors`, `Charging Device`, `Earbud`, `Headphones and Speakers`, `Lifestyle & Gadgets`, `Pencil`, `Software & Care`, `Mouse`, `Trackpad`, `Remote Case`, and `Pencil Tips` strictly have zero color options. Items are added directly.
+   - For `Earbud`, AirPods Pro 2nd Gen follows the same behavior as AirPods Pro 3rd Gen (direct selection without color swatches).
+3. **Charger Wattage Flow:**
+   - Both `Wall Charger` and `Wireless Charger` under `Charging Device` divide by wattage (`จำนวนวัตต์`) first when wattage specs are present, and list items directly for selection without any color step.
+4. **iPad Case Two-Tier Hierarchy:**
+   - Opening `iPad Case` presents a top-level selection between `[ iPad Case ]` and `[ iPad Keyboard Case ]`.
+   - `iPad Case`: Filters to standard non-keyboard cases, defaulting to cart's iPad model if present. Steps: `caseType` (ประเภทเคส) > `color` (สี).
+   - `iPad Keyboard Case`: Filters to Magic Keyboard cases, defaulting to cart's iPad model if present. Steps: `language` (ภาษาแป้นพิมพ์: Thai / US English) > `color` (สี).
+   - Staff can switch sub-group with "เปลี่ยนประเภท" and switch model with "เปลี่ยนรุ่น".
+5. **Wallet & Lanyards Color Extraction:**
+   - Enhanced `getSkuAttribute(s, 'color')` to detect color from bracket, parentheses, hyphenated suffixes, and standard color keywords, ensuring `Wrist Strap` and `Crossbody Strap` reliably present color swatches.
+6. **Watch Accessories Unified 4-Step Flow:**
+   - Combines all Watch Accessories models into a single unified model so staff immediately steps through:
+     `ขนาดตัวเรือน` (caseSize) > `สายนาฬิกา` (band) > `ขนาดสาย (Band Size)` (bandSize) > `สี` (color).
+
+## D190 — Auto-versioning Git Hook, Explicit Accessory Add Button, & Image URL Color Palette with SKU Hover Tooltips (2026-11-24)
+
+Staff and Admin requested:
+1. Version auto-updates every time code is pushed.
+2. Replace "เลือกชิ้นอื่นต่อ" with explicit "เพิ่มสินค้า" button to confirm adding configured item to "รายการที่เลือก" of Accessories.
+3. Color Palette: support image URLs in the Hex Code field so external image textures can be used as color swatches.
+4. Color Palette: hovering over the "จำนวน SKU" tag displays a floating popover listing all SKUs associated with that color.
+
+Decisions:
+1. **Auto-updating Version on Push / Build:**
+   - Created `scripts/update-version.mjs` which reads git commit count and short hash (`1.0.<commit_count>-<short_hash>`) and writes `apps/web/src/version.ts`.
+   - Wired into `.git/hooks/pre-push` and `apps/web/package.json` (`prebuild` hook) to ensure the version is refreshed before builds and pushes.
+2. **Explicit "เพิ่มสินค้า" Workflow:**
+   - Instead of immediately auto-adding an accessory upon selecting the last attribute, staff reviews their selected specifications and clicks a prominent **"เพิ่มสินค้า"** (+1) button.
+   - For direct SKU lists (e.g. Cables, Earbuds), items display a clear `+ เพิ่มสินค้า` action.
+   - The feedback banner confirms the addition and provides `เพิ่มสินค้า (+1)` and `เลือกแบบอื่น` actions.
+3. **Image URL Support in Color Palette:**
+   - Widened `ProductColor.hexCode` from `VarChar(16)` to `VarChar(512)` in `apps/api/prisma/schema.prisma` and applied migration `202611240001_widen_product_color_hex_code`.
+   - `UpsertColorDto` accepts either a standard hex color (`#RRGGBB`) or an image URL (`http://`, `https://`, `data:image/`).
+   - Color swatch renderers in `ColorsPanel`, `AccessoryCategoryPicker`, and `SkuPicker` display image textures (`backgroundSize: cover`, `backgroundPosition: center`) when given a URL.
+4. **Color Palette SKU Hover Tooltip:**
+   - `ColorsService.list()` selects `{ sku, name }` for all SKUs and returns `skus: ColorSkuInfoDto[]`.
+   - `ColorsPanel` renders `SkuHoverCell`, displaying a floating popover when hovering over `N SKU` with the list of SKU part numbers and product names.
+
+## D191 — Direct Accessory Addition, Compact Charger Wattage Grid, & iPad Sub-Group Header Spacing (2026-11-24)
+
+Staff and Owner requested:
+1. "หาก มีปุ่ม เพิ่ม แล้ว ไม่ต้องมี/กด เพิ่มสินค้า เพื่อเพิ่มสินค้าอีก": When a `+` button is present on an accessory card or direct SKU list, clicking it adds the item directly to the cart. Do not display a duplicate/confusing bottom feedback banner requiring another "เพิ่มสินค้า" press.
+2. "Charging Device > Wall Charger > จำนวนวัตต์ ที่แสดงต่อบรรทัด ได้หลายอัน เพื่อให้กระทัด แต่ทุกกล่องขนาดเท่ากัน": In Wall Charger, display wattage options in a compact multi-item per row grid where each button has identical dimensions.
+3. "ส่วน ประเภท และ ปุ่ม เปลี่ยนประเภท ให้มีกาเว้นห่างจากกรอบด้วย": Provide proper spacing and padding between the iPad Case sub-group bar (`[ iPad Keyboard Case ]` and `[ เปลี่ยนประเภท ]`) and the outer card borders.
+
+Decisions:
+1. **Direct Add Action without Redundant Bottom Banner:**
+   - Removed the bottom confirmation banner and its duplicate `+ เพิ่มสินค้า` button.
+   - For candidate matches that resolve to a single SKU, a dedicated action row renders with `+` (or `ในรายการ (X)`). Clicking it immediately adds the item to `cartAccessories` and updates the count in place.
+   - Direct SKU list items retain their individual `+` / `ในรายการ (X)` action buttons with immediate cart updates.
+2. **Compact Uniform Wattage Grid:**
+   - For `st.spec.key === 'wattage'` in `AccessoryCategoryPicker`, the options render in a CSS grid (`gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))'`, `gap: 8px`, `minHeight: 46px`) with centered labels. All wattage boxes maintain uniform size and alignment across rows.
+3. **iPad Sub-Group Header Spacing:**
+   - Restructured the sub-group indicator row in `AccessoryCategoryPicker` to use `.spec-config-header` with `padding: 14px 18px`, a subtle background tint (`var(--bg-subtle, #f8fafc)`), and a bottom border. This ensures clear visual separation and comfortable margin from the outer `.spec-config-box` border.
+
+## D192 — Incremental Patch Versioning via version.json and Pre-commit Hook (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+"ส่วนของ version เป็นการเพิ่ม version ไปเรื่อยๆ เช่น 1.0.0 เป็น 1.0.1"
+Supersedes the git-hash based version string format from D190 (`1.0.<commit_count>-<hash>`).
+
+Decisions:
+1. **Semantic Incremental Version Source:**
+   - Stored in root `version.json` with baseline format `{"version": "1.0.0"}`.
+   - Versioning strictly follows sequential patch increments: `1.0.0` -> `1.0.1` -> `1.0.2` ...
+2. **Version Bump Tooling:**
+   - Created `scripts/bump-version.mjs` which reads `version.json`, increments the patch component by +1, updates `version.json`, and generates `apps/web/src/version.ts`.
+   - Updated `scripts/update-version.mjs` to synchronize `apps/web/src/version.ts` with `version.json` during build without incrementing, preventing unintended version jumps during local testing or CI.
+3. **Automated Pre-commit Hook:**
+   - Installed `.git/hooks/pre-commit` hook to automatically invoke `scripts/bump-version.mjs` and stage `version.json` and `apps/web/src/version.ts` on each commit.
+   - Developers work normally with `git commit` and `git push` without encountering git ref-lock conflicts.
+4. **Sidebar Display:**
+   - Displays `v1.0.0`, `v1.0.1`, etc. in the navigation sidebar footer (`.sidebar-version-tag`).
+
+## D193 — Compact Wattage Grid Matching & Direct Bottom "+ เพิ่มสินค้า" Button (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+1. "ทำไมจำนวนวัตต์ ยังคงแสดงอย่างละบรรทัด": Ensure wattage options strictly render in a compact multi-button per row grid (3-4 buttons per row) even when data keys or labels vary.
+2. "ไม่ต้องแสดง รายการสรุป(เลือกสินค้า)ด้านล่างเพิ่มเพื่อให้กดเลือก หากจบที่ สี เพิ่มปุ่ม เพิ่มสินค้า ด้านล่างไปก่อน": When attribute configuration reaches the final step (e.g. Color), do not render an extra intermediate SKU summary card or "เลือกสินค้า" section. Instead, render a prominent "+ เพิ่มสินค้า" button at the bottom of the card.
+
+Decisions:
+1. **Resilient Wattage Grid Detection:**
+   - Evaluates `isWattage` matching `st.spec.key.includes('watt')`, `st.spec.label.includes('วัตต์')`, or options conforming to `/^\d+\s*w$/i`.
+   - Renders in `repeat(auto-fill, minmax(78px, 1fr))` grid with uniform `minHeight: 46px` and centered labels.
+2. **Clean Bottom "+ เพิ่มสินค้า" Button:**
+   - When configured steps resolve to 1 candidate SKU (`allStepsCompleted && candidates.length === 1`), removes the SKU info summary card.
+   - Renders a prominent full-width action button at the bottom: `+ เพิ่มสินค้า` (or `เพิ่มแล้ว (X ชิ้น)` when in cart).
+   - Direct item lists without steps (e.g. Cables & Connectors, Earbuds) continue to display item rows with individual add buttons.
+
+## D194 — Hierarchical Customer Acquisition Channel Survey UI & Store Pickup (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+"ส่วน ลูกค้ามาจากช่องทางใด * แก้ไขให้เป็นรูปแบบแบบในภาพ โดยที่รายละเอียดภายในอื่นๆ จะแสดงต่อเมื่อ กด อื่นๆ แล้ว"
+- Walk-in
+- Store Pickup
+- อื่นๆ และให้เลือกรายละเอียดภายใน (10 รายการย่อย: Facebook, Instagram, TikTok, LINE / LINE OA, ค้นหาใน Google, Influencer / KOL, เพื่อนหรือคนรู้จักแนะนำ, งานอีเวนต์ / บูธ / ออกร้าน, ใบปลิว / สื่อสิ่งพิมพ์, เป็นลูกค้าเก่า / เคยใช้บริการแล้ว)
+
+Decisions:
+1. **Schema, STORE_PICKUP & OTHER Enum:**
+   - Added `STORE_PICKUP` and `OTHER` to `CustomerSource` enum in Prisma schema and migration `202611240002_add_store_pickup_customer_source`.
+   - Updated backend DTO `CUSTOMER_SOURCES` (14 total values) and tests.
+2. **Hierarchical 3-Card Layout:**
+   - Reorganized the flat grid in `SelectionEditor.tsx` into 3 stacked rounded cards matching the reference design:
+     - **Walk-in**: "ลูกค้าเข้ามาซื้อสินค้าหรือใช้บริการที่หน้าร้าน"
+     - **Store Pickup**: "ลูกค้าสั่งซื้อผ่านเว็บไซต์และเข้ามารับสินค้าที่หน้าร้าน"
+     - **อื่น ๆ**: "รู้จักผ่านโซเชียล ป้ายโฆษณา หรือช่องทางออนไลน์อื่น"
+   - Single-select mutually exclusive radio behavior adhering to web theme color (`#0abab5`).
+   - Section header updated to "ลูกค้ามาใช้บริการผ่านช่องทางไหน *" with subtext "ตอบครั้งเดียว ระบบจะเติมให้ทุก survey ของลูกค้าคนนี้".
+3. **Expandable Sub-options under "อื่น ๆ":**
+   - Clicking "อื่น ๆ" card immediately selects "อื่น ๆ" (`OTHER`), highlights the card with radio dot, and reveals the sub-channel selector ("ระบุช่องทาง") rendering 10 pill/chip buttons.
+   - If staff clicks a specific chip (e.g. `Facebook`, `TikTok`), `customerSource` is updated to that specific enum (`FACEBOOK`, `TIKTOK`, etc.).
+   - If staff leaves it as "อื่น ๆ", `OTHER` is stored, satisfying validation without blocking order review.
+   - Selecting "Walk-in" or "Store Pickup" switches selection and collapses "อื่น ๆ".
+
+## D195 — System-Wide Custom Radio Cards & Dot Design Harmonization (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+"เปลี่ยน Radio จุดอื่นๆ ที่เป็น จุด ให้ตอนเลือก แสดงจุดแบบนี้ด้วย
+เส้นขอบเมื่อถูกเลือก (Selected Border): ปรับเป็นสีหลักของเว็บ var(--primary, #0abab5) หนา 2px เด่นชัด
+พื้นหลังเมื่อถูกเลือก (Selected Background): ปรับเป็นสีเขียวอ่อนนุ่มนวล var(--primary-subtle, #e8f7f6)
+จุดวงกลมวิทยุ (Radio Dot): ขอบและจุดวงกลมด้านในเปลี่ยนเป็นสี var(--primary, #0abab5)
+หัวข้อเมื่อถูกเลือก: เปลี่ยนเป็นสีเขียวเข้ม var(--primary-dark, #0d3b39)
+ปุ่มช่องทางย่อย (Chips): เมื่อถูกเลือกจะใช้พื้นหลังสี var(--primary, #0abab5) ตัวหนังสือสีขาว พร้อมเงาสีเขียวมิ้นต์กลมกลืนกับทั้งระบบ"
+
+Decisions:
+1. **Unified Custom Radio Classes (`styles.css`):**
+   - Introduced `.custom-radio-card`, `.custom-radio-circle`, `.custom-radio-dot`, `.custom-radio-title`, and `.custom-radio-subtext`.
+   - Selected state: 2px border `var(--primary, #0abab5)`, background `var(--primary-subtle, #e8f7f6)`, inner dot `var(--primary, #0abab5)`, and title text `var(--primary-dark, #0d3b39)`.
+2. **Applied Across All Radio Components:**
+   - **Receipt Type (`SelectionEditor.tsx`):** Replaced native `<input type="radio">` with `.custom-radio-card` and `.custom-radio-dot`.
+   - **Cancellation & Outcome Reasons (`ReasonForm.tsx`):** Upgraded reason options to use `.custom-radio-card` with clean dots and active highlight.
+   - **Item Replacement Selection (`ChangeItemModal.tsx`):** Replaced default blue radio styling with system theme `.custom-radio-card`.
+   - **Discount Type (`SelectionEditor.tsx`):** Standardized active border to 2px `var(--primary, #0abab5)` and background to `var(--primary-subtle, #e8f7f6)`.
+
+## D196 — Instant Scroll-to-Top on Step and Stage Transitions (2026-11-23)
 
 Staff reported: "เวลาเปลี่ยน step เลื่อนกลับมาที่บนสุด บางทีเลื่อนอยู่ล่างสุด แต่พอไปที่ step ถัดไปหน้าจอกลับอยู่ด้านล่าง ทั้งที่ควรเริ่มที่บนสุด"
 

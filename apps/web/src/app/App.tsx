@@ -29,6 +29,7 @@ import { Button, Notice } from '../components/ui';
 import type { AppView, MockSession, MockUser } from '../types/session';
 import type { Account } from '../types/accounts';
 import { StaffWorkspace } from '../features/session/StaffWorkspace';
+import { APP_VERSION } from '../version';
 import { StockWorkspace } from '../features/stock/StockWorkspace';
 import { SurveyWorkspace } from '../features/survey/SurveyWorkspace';
 import { ProductWorkspace } from '../features/products/ProductWorkspace';
@@ -651,6 +652,7 @@ export function App({
             <LogOut size={16} />
             <span>ออกจากระบบ</span>
           </button>
+          <div className="sidebar-version-tag">v{APP_VERSION.replace(/^v/, '')}</div>
         </div>
       </aside>
 

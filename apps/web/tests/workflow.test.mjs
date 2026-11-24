@@ -51,7 +51,7 @@ const fixture = () => ({
     ontop: [],
     points: [],
     burnPoints: [],
-    payments: [],
+    payments: ['Cash'],
     receiptType: 'SIMPLIFIED',
     discountType: 'GENERAL',
     customerSource: 'WALK_IN',
@@ -689,6 +689,7 @@ test('D146: discountType and customerSource validation (both required before con
   assert.equal(customerSourceIsValid(null), false);
   assert.equal(customerSourceIsValid(undefined), false);
   assert.equal(customerSourceIsValid('WALK_IN'), true);
+  assert.equal(customerSourceIsValid('STORE_PICKUP'), true);
   assert.equal(customerSourceIsValid('WEBSITE'), true);
   assert.equal(customerSourceIsValid('FACEBOOK'), true);
   assert.equal(customerSourceIsValid('INSTAGRAM'), true);
@@ -700,9 +701,12 @@ test('D146: discountType and customerSource validation (both required before con
   assert.equal(customerSourceIsValid('EVENT_BOOTH'), true);
   assert.equal(customerSourceIsValid('FLYER_PRINT'), true);
   assert.equal(customerSourceIsValid('RETURNING_CUSTOMER'), true);
-  assert.equal(customerSourceIsValid('OTHER'), false);
+  assert.equal(customerSourceIsValid('OTHER'), true);
+  assert.equal(customerSourceIsValid('UNKNOWN'), false);
 
   assert.equal(customerSourceLabel('WALK_IN'), 'Walk-in');
+  assert.equal(customerSourceLabel('STORE_PICKUP'), 'Store Pickup');
+  assert.equal(customerSourceLabel('OTHER'), 'อื่น ๆ');
   assert.equal(customerSourceLabel('WEBSITE'), 'Website UFicon');
   assert.equal(customerSourceLabel('FACEBOOK'), 'Facebook');
   assert.equal(customerSourceLabel('LINE_OA'), 'LINE / LINE OA');
@@ -758,10 +762,11 @@ test('D146: discountType and customerSource validation (both required before con
   assert.equal(confirmed.selection.customerSource, 'FACEBOOK');
 });
 
-test('D127: credit card payment validation (card type required for Full CC, card type and months required for 0% CC)', () => {
-  // Other payments or empty do not require credit card details
-  assert.equal(paymentsAreValid([]), true);
+test('D127, D188: credit card payment validation (card type required for Full CC, card type and months required for 0% CC, at least 1 payment required)', () => {
+  // Empty payments is now invalid (D188)
+  assert.equal(paymentsAreValid([]), false);
   assert.equal(paymentsAreValid(['Cash', 'Transfer']), true);
+  assert.equal(paymentsAreValid(['Cash']), true);
 
   // Full Credit Card requires cardType
   assert.equal(paymentsAreValid(['Full Credit Card']), false);
@@ -798,6 +803,22 @@ test('D127: credit card payment validation (card type required for Full CC, card
       ],
     ),
     true,
+  );
+
+  // confirmSelection enforces payment validation (D188)
+  const missingPaymentSession = {
+    ...fixture(),
+    state: 'PRODUCT_SELECTION',
+    phone: '0812345678',
+    selection: {
+      ...fixture().selection,
+      payments: [],
+    },
+  };
+  assert.equal(
+    confirmSelection(missingPaymentSession, '10:00').state,
+    'PRODUCT_SELECTION',
+    'missing payment prevents confirmation',
   );
 
   // confirmSelection enforces credit card validation

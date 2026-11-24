@@ -2,11 +2,17 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { colorOf } from '../warroom/warroom-sync.service';
 
+export interface ColorSkuInfoDto {
+  sku: string;
+  name: string;
+}
+
 export interface ColorItemDto {
   id: string | null;
   name: string;
   hexCode: string;
   skuCount: number;
+  skus?: ColorSkuInfoDto[];
 }
 
 @Injectable()
@@ -21,15 +27,17 @@ export class ColorsService {
 
     const skus = await this.prisma.productSku.findMany({
       where: { color: { not: null } },
-      select: { color: true },
+      select: { sku: true, name: true, color: true },
     });
 
-    const skuCounts = new Map<string, number>();
+    const skuMap = new Map<string, ColorSkuInfoDto[]>();
     for (const s of skus) {
       if (s.color && s.color.trim()) {
         const raw = s.color.trim();
         const c = colorOf(raw) || raw;
-        skuCounts.set(c, (skuCounts.get(c) ?? 0) + 1);
+        const list = skuMap.get(c) ?? [];
+        list.push({ sku: s.sku, name: s.name || '' });
+        skuMap.set(c, list);
       }
     }
 
@@ -41,14 +49,16 @@ export class ColorsService {
       }
     }
 
-    const allNames = new Set<string>([...definedMap.keys(), ...skuCounts.keys()]);
+    const allNames = new Set<string>([...definedMap.keys(), ...skuMap.keys()]);
     const result: ColorItemDto[] = Array.from(allNames).map((name) => {
       const def = definedMap.get(name);
+      const skuList = skuMap.get(name) ?? [];
       return {
         id: def?.id ?? null,
         name,
         hexCode: def?.hexCode ?? '',
-        skuCount: skuCounts.get(name) ?? 0,
+        skuCount: skuList.length,
+        skus: skuList,
       };
     });
 

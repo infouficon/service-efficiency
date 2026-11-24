@@ -4,11 +4,113 @@ import { Button, Modal, Notice, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { api } from '../../services/api';
 
+export interface ColorSkuInfo {
+  sku: string;
+  name: string;
+}
+
 export interface ColorItem {
   id: string | null;
   name: string;
   hexCode: string;
   skuCount: number;
+  skus?: ColorSkuInfo[];
+}
+
+export function isImageUrl(val: string): boolean {
+  if (!val) return false;
+  const trimmed = val.trim();
+  return /^https?:\/\/.+/i.test(trimmed) || /^data:image\/.+/i.test(trimmed);
+}
+
+export function isValidColorOrUrl(val: string): boolean {
+  if (!val) return false;
+  const trimmed = val.trim();
+  return (
+    /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(trimmed) ||
+    isImageUrl(trimmed)
+  );
+}
+
+function SkuHoverCell({ item }: { item: ColorItem }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      style={{ position: 'relative', display: 'inline-block' }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span
+        className="status-tag"
+        style={{
+          fontSize: '0.8rem',
+          padding: '3px 9px',
+          background: item.skuCount > 0 ? '#e0f2fe' : '#f3f4f6',
+          color: item.skuCount > 0 ? '#0369a1' : '#6b7280',
+          cursor: item.skuCount > 0 ? 'help' : 'default',
+          fontWeight: 600,
+          borderRadius: '12px',
+          transition: 'all 0.15s ease',
+        }}
+      >
+        {item.skuCount} SKU
+      </span>
+
+      {open && item.skuCount > 0 && item.skus && item.skus.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            left: '0',
+            top: 'calc(100% + 6px)',
+            zIndex: 100,
+            background: '#ffffff',
+            border: '1px solid var(--border-color, #cbd5e1)',
+            borderRadius: '8px',
+            boxShadow:
+              '0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            padding: '10px 12px',
+            minWidth: '280px',
+            maxWidth: '380px',
+            maxHeight: '260px',
+            overflowY: 'auto',
+          }}
+        >
+          <div
+            style={{
+              fontSize: '12px',
+              fontWeight: 700,
+              color: 'var(--text-primary, #1e293b)',
+              marginBottom: '6px',
+              borderBottom: '1px solid #f1f5f9',
+              paddingBottom: '4px',
+            }}
+          >
+            รายการสินค้าสี &ldquo;{item.name}&rdquo; ({item.skus.length} SKU)
+          </div>
+          <div style={{ display: 'grid', gap: '6px' }}>
+            {item.skus.map((s, idx) => (
+              <div
+                key={idx}
+                style={{
+                  fontSize: '11.5px',
+                  lineHeight: '1.35',
+                  padding: '4px 6px',
+                  borderRadius: '4px',
+                  background: '#f8fafc',
+                }}
+              >
+                <div style={{ fontFamily: 'monospace', fontWeight: 600, color: '#0f766e' }}>
+                  {s.sku}
+                </div>
+                <div style={{ color: '#475569' }}>{s.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ColorsPanel() {
@@ -80,20 +182,20 @@ export function ColorsPanel() {
   };
 
   const handleSaveColor = async (name: string) => {
-    const hex = (draftHex[name] || '').trim();
-    if (!hex) {
-      toast.error('กรุณาระบุรหัสสี เช่น #1C1C1E');
+    const val = (draftHex[name] || '').trim();
+    if (!val) {
+      toast.error('กรุณาระบุรหัสสี เช่น #1C1C1E หรือ Image URL');
       return;
     }
-    if (!/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(hex)) {
-      toast.error('รหัสสีต้องขึ้นต้นด้วย # และเป็นเลขฐาน 16 (เช่น #FFFFFF หรือ #000)');
+    if (!isValidColorOrUrl(val)) {
+      toast.error('รหัสสีต้องขึ้นต้นด้วย # (เลขฐาน 16) หรือเป็น URL รูปภาพ (http/https/data:image)');
       return;
     }
 
     setBusy(true);
     try {
-      await api('/colors', 'POST', { name, hexCode: hex });
-      toast.success(`บันทึกสี "${name}" (${hex}) เรียบร้อย`);
+      await api('/colors', 'POST', { name, hexCode: val });
+      toast.success(`บันทึกสี "${name}" เรียบร้อย`);
       await load();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'บันทึกสีไม่สำเร็จ');
@@ -121,19 +223,19 @@ export function ColorsPanel() {
   const handleCreateNewColor = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = newColorName.trim();
-    const hex = newColorHex.trim();
+    const val = newColorHex.trim();
     if (!name) {
       toast.error('กรุณาระบุชื่อสี');
       return;
     }
-    if (!/^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(hex)) {
-      toast.error('รหัสสีไม่ถูกต้อง');
+    if (!isValidColorOrUrl(val)) {
+      toast.error('รหัสสีไม่ถูกต้อง ต้องเป็น #RRGGBB หรือ URL รูปภาพ');
       return;
     }
 
     setBusy(true);
     try {
-      await api('/colors', 'POST', { name, hexCode: hex });
+      await api('/colors', 'POST', { name, hexCode: val });
       toast.success(`เพิ่มสี "${name}" เรียบร้อย`);
       setAddModalOpen(false);
       setNewColorName('');
@@ -268,7 +370,7 @@ export function ColorsPanel() {
                 <th style={{ width: '48px', padding: '10px 8px' }}>สี</th>
                 <th style={{ padding: '10px 8px' }}>ชื่อสี (Color Name)</th>
                 <th style={{ padding: '10px 8px', width: '120px' }}>จำนวน SKU</th>
-                <th style={{ padding: '10px 8px', width: '220px' }}>รหัสสี (Hex Code)</th>
+                <th style={{ padding: '10px 8px', minWidth: '240px' }}>รหัสสี (Hex Code) หรือ Image URL</th>
                 <th style={{ padding: '10px 8px', width: '120px', textAlign: 'right' }}>จัดการ</th>
               </tr>
             </thead>
@@ -276,8 +378,9 @@ export function ColorsPanel() {
               {filteredColors.map((c) => {
                 const currentDraft = draftHex[c.name] ?? c.hexCode ?? '';
                 const isModified = currentDraft !== (c.hexCode ?? '');
-                const validHex = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(currentDraft);
-                const previewColor = validHex ? currentDraft : '#e5e7eb';
+                const isImg = isImageUrl(currentDraft);
+                const valid = isValidColorOrUrl(currentDraft);
+                const previewColor = !isImg && valid ? currentDraft : '#e5e7eb';
 
                 return (
                   <tr
@@ -292,15 +395,19 @@ export function ColorsPanel() {
                       <span
                         style={{
                           display: 'inline-block',
-                          width: '26px',
-                          height: '26px',
+                          width: '28px',
+                          height: '28px',
                           borderRadius: '50%',
                           backgroundColor: previewColor,
+                          backgroundImage: isImg ? `url("${currentDraft}")` : undefined,
+                          backgroundSize: 'cover',
+                          backgroundPosition: 'center',
+                          backgroundRepeat: 'no-repeat',
                           border: '1px solid rgba(0, 0, 0, 0.2)',
                           boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
                           verticalAlign: 'middle',
                         }}
-                        title={validHex ? currentDraft : 'ยังไม่กำหนดรหัสสี'}
+                        title={valid ? (isImg ? `รูปภาพสี: ${currentDraft}` : currentDraft) : 'ยังไม่กำหนดรหัสสี'}
                       />
                     </td>
 
@@ -309,51 +416,50 @@ export function ColorsPanel() {
                       <strong>{c.name}</strong>
                     </td>
 
-                    {/* SKU COUNT */}
+                    {/* SKU COUNT WITH HOVER TOOLTIP */}
                     <td style={{ padding: '8px' }}>
-                      <span
-                        className="status-tag"
-                        style={{
-                          fontSize: '0.8rem',
-                          padding: '2px 8px',
-                          background: '#f3f4f6',
-                          color: '#4b5563',
-                        }}
-                      >
-                        {c.skuCount} SKU
-                      </span>
+                      <SkuHoverCell item={c} />
                     </td>
 
                     {/* HEX CODE PICKER + INPUT */}
                     <td style={{ padding: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <input
-                          type="color"
-                          disabled={busy}
-                          value={validHex ? currentDraft.slice(0, 7) : '#000000'}
-                          onChange={(e) => handleHexChange(c.name, e.target.value.toUpperCase())}
-                          style={{
-                            width: '32px',
-                            height: '32px',
-                            padding: '0',
-                            border: '1px solid var(--border-color, #ccc)',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                          }}
-                          title="เลือกสีจากจานสี"
-                        />
+                        {!isImg && (
+                          <input
+                            type="color"
+                            disabled={busy}
+                            value={valid && !isImg ? currentDraft.slice(0, 7) : '#000000'}
+                            onChange={(e) => handleHexChange(c.name, e.target.value.toUpperCase())}
+                            style={{
+                              width: '32px',
+                              height: '32px',
+                              padding: '0',
+                              border: '1px solid var(--border-color, #ccc)',
+                              borderRadius: '4px',
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                            title="เลือกสีจากจานสี"
+                          />
+                        )}
                         <input
                           type="text"
                           disabled={busy}
-                          placeholder="#000000"
-                          maxLength={9}
+                          placeholder="#000000 หรือ URL รูปภาพ"
                           value={currentDraft}
-                          onChange={(e) => handleHexChange(c.name, e.target.value.toUpperCase())}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            handleHexChange(
+                              c.name,
+                              val.startsWith('http') || val.startsWith('data:') ? val : val.toUpperCase(),
+                            );
+                          }}
                           style={{
-                            width: '95px',
-                            fontFamily: 'monospace',
+                            width: '100%',
+                            minWidth: '160px',
+                            fontFamily: isImg ? 'inherit' : 'monospace',
                             fontSize: '0.85rem',
-                            padding: '4px 6px',
+                            padding: '4px 8px',
                           }}
                         />
                       </div>
@@ -365,7 +471,7 @@ export function ColorsPanel() {
                         <Button
                           variant={isModified ? 'primary' : 'secondary'}
                           size="sm"
-                          disabled={busy || !isModified || !validHex}
+                          disabled={busy || !isModified || !valid}
                           onClick={() => void handleSaveColor(c.name)}
                           title="บันทึกรหัสสี"
                         >
@@ -417,27 +523,32 @@ export function ColorsPanel() {
               </label>
 
               <label>
-                รหัสสี (Hex Code)
+                รหัสสี (Hex Code) หรือ Image URL
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                  <input
-                    type="color"
-                    value={newColorHex.slice(0, 7)}
-                    onChange={(e) => setNewColorHex(e.target.value.toUpperCase())}
-                    style={{
-                      width: '40px',
-                      height: '36px',
-                      padding: 0,
-                      borderRadius: '4px',
-                      cursor: 'pointer',
-                    }}
-                  />
+                  {!isImageUrl(newColorHex) && (
+                    <input
+                      type="color"
+                      value={newColorHex.startsWith('#') ? newColorHex.slice(0, 7) : '#000000'}
+                      onChange={(e) => setNewColorHex(e.target.value.toUpperCase())}
+                      style={{
+                        width: '40px',
+                        height: '36px',
+                        padding: 0,
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
                   <input
                     required
-                    maxLength={9}
-                    placeholder="#1C1C1E"
+                    placeholder="#1C1C1E หรือ https://.../image.png"
                     value={newColorHex}
-                    onChange={(e) => setNewColorHex(e.target.value.toUpperCase())}
-                    style={{ fontFamily: 'monospace', flex: 1 }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewColorHex(val.startsWith('http') || val.startsWith('data:') ? val : val.toUpperCase());
+                    }}
+                    style={{ fontFamily: isImageUrl(newColorHex) ? 'inherit' : 'monospace', flex: 1 }}
                   />
                 </div>
               </label>
@@ -446,10 +557,13 @@ export function ColorsPanel() {
                 <span
                   style={{
                     display: 'inline-block',
-                    width: '32px',
-                    height: '32px',
+                    width: '34px',
+                    height: '34px',
                     borderRadius: '50%',
-                    backgroundColor: newColorHex,
+                    backgroundColor: !isImageUrl(newColorHex) && isValidColorOrUrl(newColorHex) ? newColorHex : '#e5e7eb',
+                    backgroundImage: isImageUrl(newColorHex) ? `url("${newColorHex}")` : undefined,
+                    backgroundSize: 'cover',
+                    backgroundPosition: 'center',
                     border: '1px solid rgba(0,0,0,0.2)',
                   }}
                 />

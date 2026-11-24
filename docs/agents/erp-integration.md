@@ -211,8 +211,9 @@ in warroom: it is one small table, and putting ERP passwords into warroom's data
 **Serial check (D104, 2026-11-05; D111, 2026-11-09).** Off by default: FileMaker's `ses` script checks the serials when STOCK sends (the
 one check; the warroom lookup D104 started with is gone, its picture was hours old). A live FileMaker mode (`SERIAL_CHECK=fmp`) asks
 `GET /ProductStore_detail?$filter=product_sn eq '<sn>'&$select=product_sn,BranchStore_id,status,product_upc&$top=3`, the only `$filter` SES
-would send, and only once `product_sn` is indexed: without the index that query did not answer in 30 s (2026-11-05 14:04), and a UPC +
-`status eq 'ready'` filter did not answer in 15 s (15:47). Guards: one request at a time, 5 s, no retry, a 10-minute pause after a failure,
+would send. That query did not answer in 30 s (2026-11-05 14:04), and a UPC + `status eq 'ready'` filter did not answer in 15 s (15:47),
+in shop hours. D189 (2026-11-24): the fields had been indexed since 2026-09-22, off-peak the same queries take 0.02 s and 0.1 s, and
+`SERIAL_CHECK=fmp` / `SERIAL_CHECK_UNITS=fmp` are set in prod. Guards: one request at a time, 5 s, no retry, a 10-minute pause after a failure,
 a one-minute cache per serial, nothing from 5 minutes before to 30 after each warroom pull (`SERIAL_CHECK_QUIET`).
 
 **Pull.** Branch: `GET /branch?$select=branch_id,branch_code,branch_name,branch_tel,branch_group,status,Branch_regist` (45 rows, ~0.1 s), keep `iStudio`/`U-Store` (D115: staff of group `HO` also get accounts, on the SES branch coded `HO`; Huawei Store, iMedic and no-group people stay out). `Branch_regist` (the branch's customer registration page) fills an empty `Branch.registrationUrl` (D114); the table also has `Branch_URL` (FileMaker WebDirect), `Branch_feedback`, `TV_URL` and a per-branch `line_token` that SES never reads.

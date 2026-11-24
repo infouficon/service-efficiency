@@ -84,12 +84,13 @@ export function uatOdataConfig(config: ConfigService): ErpConfig | null {
  * sending never wait for it. One serial per question, nothing else.
  *
  * Source (`SERIAL_CHECK`): `off` (default since D111: FileMaker's `ses` script, run when STOCK sends, is the one check; warroom is
- * no longer asked, its picture was hours old). `fmp` asks the ERP's OData live for the one serial; only once FileMaker has an index
- * on `ProductStore_detail::product_sn` (without it one such query did not answer in 30 s, 2026-11-05), and even then one request at
- * a time, 5 s, no retry, a 10-minute pause after a failure, never around warroom's pulls.
+ * no longer asked, its picture was hours old). `fmp` asks the ERP's OData live for the one serial: one request at a time, 5 s, no
+ * retry, a 10-minute pause after a failure, never around warroom's pulls. D189: on in prod since 2026-11-24. `product_sn` and
+ * `product_upc` have been indexed since 2026-09-22; off-peak a serial takes 0.02 s and a model's units in a branch 0.1 s. The slow
+ * answers of 2026-11-05 (30 s at 14:04) came in shop hours with the index already there, so the guards stay.
  *
  * D183: the check asks the FileMaker orders go to (ADMIN's switch, D130). While that is the test FileMaker (`uat`) it is always on:
- * the UAT copy carries no shop traffic, so the answer matches what its `ses` script will do. For the real FileMaker it still needs
+ * the UAT copy carries no shop traffic, so the answer matches what its `ses` script will do. For the real FileMaker it needs
  * `SERIAL_CHECK=fmp`. When the unit is not ready here, the answer also lists what the branch does have of that model (`branchUnits`),
  * and `GET /api/stock/branch-units` gives the same list for a serial FileMaker left off a held bill.
  */
@@ -116,8 +117,8 @@ export class SerialCheckService {
 
   /**
    * D183: listing a model's units in a branch (by `product_upc`). Always for the test FileMaker; for the real one only with
-   * `SERIAL_CHECK_UNITS=fmp`, a switch of its own: an index on `product_sn` (enough for `SERIAL_CHECK=fmp`) does not make this
-   * query cheap, and the shops sell on that server.
+   * `SERIAL_CHECK_UNITS=fmp`, a switch of its own, so it can be turned off without stopping the serial check: it reads more rows,
+   * and the shops sell on that server.
    */
   private unitsAllowed(src: Source): boolean {
     return src.target === 'UAT' || (this.config.get<string>('SERIAL_CHECK_UNITS') ?? '').trim().toLowerCase() === 'fmp';
@@ -133,7 +134,7 @@ export class SerialCheckService {
       if (!cfg) return { off: 'ยังไม่ได้ตั้งค่า FileMaker UAT (FMP_UAT_*)' };
       return { target: 'UAT', cfg, timeoutMs: UAT_TIMEOUT_MS, quiet: false };
     }
-    if (!this.enabled()) return { off: 'ไม่ได้เปิดการตรวจ SN กับ FileMaker (FileMaker ตรวจตอนส่ง)' };
+    if (!this.enabled()) return { off: 'ไม่ได้เปิดการตรวจ IMEI/SN กับ U•POS จริง (U•POS ตรวจตอนส่ง)' };
     const cfg = erpConfigFrom(this.config);
     if (!cfg) return { off: 'ยังไม่ได้ตั้งค่า ERP (ERP_ODATA_*)' };
     return { target: 'PRODUCTION', cfg, timeoutMs: FMP_TIMEOUT_MS, quiet: true };
@@ -220,7 +221,7 @@ export class SerialCheckService {
     const src = await this.source(targetRaw);
     if ('off' in src) return { status: 'off', reason: src.off };
     if (!this.unitsAllowed(src))
-      return { status: 'off', reason: 'ยังไม่เปิดการค้นเครื่องตามรุ่นใน FileMaker จริง (SERIAL_CHECK_UNITS=fmp หลังทำ index product_upc)' };
+      return { status: 'off', reason: 'ยังไม่เปิดการดูรายการเครื่องจาก U•POS จริง' };
     try {
       const units = await this.unitsOf(src, part, branch, undefined, sessionId);
       if (!units) return { status: 'unavailable', reason: 'รุ่นนี้ยังไม่มีบาร์โค้ด (UPC) ใน SES หรือสาขานี้ยังไม่ผูกกับ ERP' };
@@ -297,7 +298,7 @@ export class SerialCheckService {
     return hit && Date.now() - hit.at < CACHE_MS ? hit : null;
   }
 
-  /** FileMaker live (only with an index on product_sn): one serial, four columns, under every ERP guard. */
+  /** FileMaker live: one serial, four columns, under every ERP guard. */
   private async fromFmp(src: Source, sn: string) {
     const key = `${src.target}:${sn}`;
     const hit = this.cached(key);

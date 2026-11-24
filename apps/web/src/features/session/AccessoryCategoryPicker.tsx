@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Check, Plus, RefreshCw } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import type { CatalogProduct, CatalogModel, CatalogSku } from './catalog';
 import type { Category, CategoryAttributeSpec } from '../../types/session';
-import { formatAccessoryItemName, getSkuAttribute, isOutOfStock } from './catalog';
+import {
+  formatAccessoryItemName,
+  getSkuAttribute,
+  isOutOfStock,
+} from './catalog';
 import { api } from '../../services/api';
 
 const isColorSpec = (spec: CategoryAttributeSpec) =>
@@ -29,13 +33,21 @@ export function AccessoryCategoryPicker({
   cartAccessories,
   onAddAccessory,
 }: AccessoryCategoryPickerProps) {
-  const [ipadSubGroup, setIpadSubGroup] = useState<'case' | 'keyboard' | null>(null);
+  const [ipadSubGroup, setIpadSubGroup] = useState<'case' | 'keyboard' | null>(
+    null,
+  );
   const [selectedModelId, setSelectedModelId] = useState<string>('');
-  const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
+  const [selectedValues, setSelectedValues] = useState<Record<string, string>>(
+    {},
+  );
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const [modelSearch, setModelSearch] = useState<string>('');
+  const [modelSelectionChanged, setModelSelectionChanged] = useState(false);
 
-  const isIPadCaseGroup = category.name.trim().toLowerCase().includes('ipad case');
+  const isIPadCaseGroup = category.name
+    .trim()
+    .toLowerCase()
+    .includes('ipad case');
 
   // Collect all models across the products in this category, with custom grouping for special categories
   const allModels = useMemo<CatalogModel[]>(() => {
@@ -54,12 +66,22 @@ export function AccessoryCategoryPicker({
 
     // 0. Watch Accessories: combine all SKUs into 1 unified model so staff goes straight to 4 steps (D188)
     if (groupNameLower.includes('watch')) {
-      return [{ id: 'model-watch-accessories', name: 'Watch Accessories', skus: allSkus }];
+      return [
+        {
+          id: 'model-watch-accessories',
+          name: 'Watch Accessories',
+          skus: allSkus,
+        },
+      ];
     }
 
     // 1. Pencil: if only 1 model "Pencil", expand child SKUs into models so staff picks pencil type directly
     if (groupNameLower.includes('pencil')) {
-      if (list.length === 1 && /^pencil$/i.test(list[0].name.trim()) && allSkus.length > 1) {
+      if (
+        list.length === 1 &&
+        /^pencil$/i.test(list[0].name.trim()) &&
+        allSkus.length > 1
+      ) {
         return allSkus.map((s) => ({
           id: s.id,
           name: s.name || 'Apple Pencil',
@@ -74,7 +96,8 @@ export function AccessoryCategoryPicker({
       const filteredModels: CatalogModel[] = [];
       for (const m of list) {
         const matchingSkus = (m.skus || []).filter((s) => {
-          const isK = /keyboard/i.test(s.name || '') || /keyboard/i.test(s.sku || '');
+          const isK =
+            /keyboard/i.test(s.name || '') || /keyboard/i.test(s.sku || '');
           return isKeyboard ? isK : !isK;
         });
         if (matchingSkus.length > 0) {
@@ -88,54 +111,94 @@ export function AccessoryCategoryPicker({
     }
 
     // 3. Wallet & Lanyards: Wallet vs Lanyards
-    if (groupNameLower.includes('wallet') || groupNameLower.includes('lanyard')) {
+    if (
+      groupNameLower.includes('wallet') ||
+      groupNameLower.includes('lanyard')
+    ) {
       const walletSkus = allSkus.filter((s) => /wallet/i.test(s.name || ''));
-      const lanyardSkus = allSkus.filter((s) => /strap|lanyard|crossbody|wrist/i.test(s.name || ''));
+      const lanyardSkus = allSkus.filter((s) =>
+        /strap|lanyard|crossbody|wrist/i.test(s.name || ''),
+      );
       const result: CatalogModel[] = [];
       if (walletSkus.length > 0) {
         result.push({ id: 'model-wallet', name: 'Wallet', skus: walletSkus });
       }
       if (lanyardSkus.length > 0) {
-        result.push({ id: 'model-lanyards', name: 'Lanyards', skus: lanyardSkus });
+        result.push({
+          id: 'model-lanyards',
+          name: 'Lanyards',
+          skus: lanyardSkus,
+        });
       }
       if (result.length > 0) return result;
     }
 
     // 4. Mice & Keyboards: Mouse, Magic Keyboard, Trackpad
-    if (groupNameLower.includes('mice') || groupNameLower.includes('keyboard')) {
+    if (
+      groupNameLower.includes('mice') ||
+      groupNameLower.includes('keyboard')
+    ) {
       const mouseSkus = allSkus.filter((s) => /mouse/i.test(s.name || ''));
-      const keyboardSkus = allSkus.filter((s) => /keyboard/i.test(s.name || ''));
-      const trackpadSkus = allSkus.filter((s) => /trackpad/i.test(s.name || ''));
+      const keyboardSkus = allSkus.filter((s) =>
+        /keyboard/i.test(s.name || ''),
+      );
+      const trackpadSkus = allSkus.filter((s) =>
+        /trackpad/i.test(s.name || ''),
+      );
       const result: CatalogModel[] = [];
       if (mouseSkus.length > 0) {
         result.push({ id: 'model-mouse', name: 'Mouse', skus: mouseSkus });
       }
       if (keyboardSkus.length > 0) {
-        result.push({ id: 'model-magic-keyboard', name: 'Magic Keyboard', skus: keyboardSkus });
+        result.push({
+          id: 'model-magic-keyboard',
+          name: 'Magic Keyboard',
+          skus: keyboardSkus,
+        });
       }
       if (trackpadSkus.length > 0) {
-        result.push({ id: 'model-trackpad', name: 'Trackpad', skus: trackpadSkus });
+        result.push({
+          id: 'model-trackpad',
+          name: 'Trackpad',
+          skus: trackpadSkus,
+        });
       }
       if (result.length > 0) return result;
     }
 
     // 5. Device Protectors for Apple Devices: AirTag Case vs Remote Case
-    if (groupNameLower.includes('device protector') || groupNameLower.includes('protector')) {
+    if (
+      groupNameLower.includes('device protector') ||
+      groupNameLower.includes('protector')
+    ) {
       const airtagSkus = allSkus.filter((s) => /airtag/i.test(s.name || ''));
       const remoteSkus = allSkus.filter((s) => /remote/i.test(s.name || ''));
       const result: CatalogModel[] = [];
       if (airtagSkus.length > 0) {
-        result.push({ id: 'model-airtag-case', name: 'AirTag Case', skus: airtagSkus });
+        result.push({
+          id: 'model-airtag-case',
+          name: 'AirTag Case',
+          skus: airtagSkus,
+        });
       }
       if (remoteSkus.length > 0) {
-        result.push({ id: 'model-remote-case', name: 'Remote Case', skus: remoteSkus });
+        result.push({
+          id: 'model-remote-case',
+          name: 'Remote Case',
+          skus: remoteSkus,
+        });
       }
       if (result.length > 0) return result;
     }
 
     // 6. Charging Device: Wall Charger vs Wireless Charger
-    if (groupNameLower.includes('charge') || groupNameLower.includes('charging')) {
-      const wallSkus = allSkus.filter((s) => /\b\d+w\b|wall|power\s*adapter/i.test(s.name || ''));
+    if (
+      groupNameLower.includes('charge') ||
+      groupNameLower.includes('charging')
+    ) {
+      const wallSkus = allSkus.filter((s) =>
+        /\b\d+w\b|wall|power\s*adapter/i.test(s.name || ''),
+      );
       const wirelessSkus = allSkus.filter(
         (s) =>
           /magsafe|wireless|qi\b|duo|charger(?!\s*cable)/i.test(s.name || '') &&
@@ -143,10 +206,18 @@ export function AccessoryCategoryPicker({
       );
       const result: CatalogModel[] = [];
       if (wallSkus.length > 0) {
-        result.push({ id: 'model-wall-charger', name: 'Wall Charger', skus: wallSkus });
+        result.push({
+          id: 'model-wall-charger',
+          name: 'Wall Charger',
+          skus: wallSkus,
+        });
       }
       if (wirelessSkus.length > 0) {
-        result.push({ id: 'model-wireless-charger', name: 'Wireless Charger', skus: wirelessSkus });
+        result.push({
+          id: 'model-wireless-charger',
+          name: 'Wireless Charger',
+          skus: wirelessSkus,
+        });
       }
       if (result.length > 0) return result;
     }
@@ -186,32 +257,37 @@ export function AccessoryCategoryPicker({
     };
   }, []);
 
-  // Pre-select model from main cart device if applicable and not yet chosen
-  useEffect(() => {
-    if (selectedModelId || allModels.length === 0) return;
-
-    const catLower = category.name.toLowerCase();
-    if (defaultIPhoneModel && catLower.includes('iphone')) {
-      const match = allModels.find(
-        (m) =>
-          m.name.toLowerCase().includes(defaultIPhoneModel.toLowerCase()) ||
-          defaultIPhoneModel.toLowerCase().includes(m.name.toLowerCase()),
-      );
-      if (match) setSelectedModelId(match.id);
-    } else if (defaultIPadModel && catLower.includes('ipad')) {
-      const match = allModels.find(
-        (m) =>
-          m.name.toLowerCase().includes(defaultIPadModel.toLowerCase()) ||
-          defaultIPadModel.toLowerCase().includes(m.name.toLowerCase()),
-      );
-      if (match) setSelectedModelId(match.id);
-    }
-  }, [allModels, category.name, defaultIPhoneModel, defaultIPadModel, selectedModelId, ipadSubGroup]);
-
   const activeModel = useMemo(() => {
     if (allModels.length === 1) return allModels[0];
-    return allModels.find((m) => m.id === selectedModelId) || null;
-  }, [allModels, selectedModelId]);
+    if (selectedModelId)
+      return allModels.find((m) => m.id === selectedModelId) || null;
+    if (!modelSelectionChanged) {
+      const catLower = category.name.toLowerCase();
+      const defaultModel =
+        defaultIPhoneModel && catLower.includes('iphone')
+          ? defaultIPhoneModel
+          : defaultIPadModel && catLower.includes('ipad')
+            ? defaultIPadModel
+            : '';
+      if (defaultModel) {
+        return (
+          allModels.find(
+            (m) =>
+              m.name.toLowerCase().includes(defaultModel.toLowerCase()) ||
+              defaultModel.toLowerCase().includes(m.name.toLowerCase()),
+          ) || null
+        );
+      }
+    }
+    return null;
+  }, [
+    allModels,
+    selectedModelId,
+    modelSelectionChanged,
+    category.name,
+    defaultIPhoneModel,
+    defaultIPadModel,
+  ]);
 
   // Specification steps customized by business rules (D188)
   const specs = useMemo<CategoryAttributeSpec[]>(() => {
@@ -258,9 +334,16 @@ export function AccessoryCategoryPicker({
     }
 
     // Charging Device: both Wall Charger and Wireless Charger split by wattage first (D188) - NO COLOR!
-    if (groupNameLower.includes('charge') || groupNameLower.includes('charging')) {
-      const skus = activeModel ? activeModel.skus : allModels.flatMap((m) => m.skus);
-      const hasWattage = skus.some((s) => Boolean(getSkuAttribute(s, 'wattage')));
+    if (
+      groupNameLower.includes('charge') ||
+      groupNameLower.includes('charging')
+    ) {
+      const skus = activeModel
+        ? activeModel.skus
+        : allModels.flatMap((m) => m.skus);
+      const hasWattage = skus.some((s) =>
+        Boolean(getSkuAttribute(s, 'wattage')),
+      );
       if (hasWattage) {
         return [{ key: 'wattage', label: 'จำนวนวัตต์', required: true }];
       }
@@ -278,11 +361,17 @@ export function AccessoryCategoryPicker({
     }
 
     // Wallet & Lanyards
-    if (groupNameLower.includes('wallet') || groupNameLower.includes('lanyard')) {
+    if (
+      groupNameLower.includes('wallet') ||
+      groupNameLower.includes('lanyard')
+    ) {
       if (activeModelNameLower.includes('wallet')) {
         return [{ key: 'color', label: 'สี', required: true }];
       }
-      if (activeModelNameLower.includes('lanyard') || activeModelNameLower.includes('strap')) {
+      if (
+        activeModelNameLower.includes('lanyard') ||
+        activeModelNameLower.includes('strap')
+      ) {
         return [
           { key: 'type', label: 'ประเภทสาย', required: true },
           { key: 'color', label: 'สี', required: true },
@@ -309,7 +398,10 @@ export function AccessoryCategoryPicker({
     }
 
     // iPhone Case: ประเภทเคส > สี
-    if (groupNameLower.includes('iphone case') || groupNameLower.startsWith('iphone')) {
+    if (
+      groupNameLower.includes('iphone case') ||
+      groupNameLower.startsWith('iphone')
+    ) {
       return [
         { key: 'caseType', label: 'ประเภทเคส', required: true },
         { key: 'color', label: 'สี', required: true },
@@ -317,8 +409,14 @@ export function AccessoryCategoryPicker({
     }
 
     // iPad Case & Keyboard
-    if (groupNameLower.includes('ipad case') || groupNameLower.startsWith('ipad')) {
-      if (ipadSubGroup === 'keyboard' || activeModelNameLower.includes('keyboard')) {
+    if (
+      groupNameLower.includes('ipad case') ||
+      groupNameLower.startsWith('ipad')
+    ) {
+      if (
+        ipadSubGroup === 'keyboard' ||
+        activeModelNameLower.includes('keyboard')
+      ) {
         return [
           { key: 'language', label: 'ภาษาแป้นพิมพ์', required: true },
           { key: 'color', label: 'สี', required: true },
@@ -340,16 +438,29 @@ export function AccessoryCategoryPicker({
 
     // Fallback for any other category
     const fallback: CategoryAttributeSpec[] = [];
-    const skus = activeModel ? activeModel.skus : allModels.flatMap((m) => m.skus);
-    const distinctTypes = distinct(skus.map((s) => getSkuAttribute(s, 'type')).filter(Boolean));
+    const skus = activeModel
+      ? activeModel.skus
+      : allModels.flatMap((m) => m.skus);
+    const distinctTypes = distinct(
+      skus.map((s) => getSkuAttribute(s, 'type')).filter(Boolean),
+    );
     if (distinctTypes.length > 1) {
       fallback.push({ key: 'type', label: 'ประเภท', required: true });
     }
-    if (!isNoColorGroup && skus.some((s) => s.color || getSkuAttribute(s, 'color'))) {
+    if (
+      !isNoColorGroup &&
+      skus.some((s) => s.color || getSkuAttribute(s, 'color'))
+    ) {
       fallback.push({ key: 'color', label: 'สี', required: true });
     }
     return fallback;
-  }, [category.attributes, category.name, activeModel, allModels, ipadSubGroup]);
+  }, [
+    category.attributes,
+    category.name,
+    activeModel,
+    allModels,
+    ipadSubGroup,
+  ]);
 
   // Compute steps and remaining SKUs based on current selections
   const { steps, candidates } = useMemo(() => {
@@ -408,17 +519,14 @@ export function AccessoryCategoryPicker({
     setSelectedValues(nextValues);
   };
 
-  const handleResetForNext = () => {
-    setSelectedValues({});
-  };
-
   const shownModels = useMemo(() => {
     const q = modelSearch.trim().toLowerCase();
     if (!q) return allModels;
     return allModels.filter((m) => m.name.toLowerCase().includes(q));
   }, [allModels, modelSearch]);
 
-  const isModelTwoCols = shownModels.length === 2 && shownModels.every((m) => m.name.length <= 18);
+  const isModelTwoCols =
+    shownModels.length === 2 && shownModels.every((m) => m.name.length <= 18);
 
   // If iPad Case group and user hasn't selected sub-group (iPad Case vs iPad Keyboard Case), show choice first
   if (isIPadCaseGroup && !ipadSubGroup) {
@@ -436,6 +544,7 @@ export function AccessoryCategoryPicker({
                 setIpadSubGroup('case');
                 setSelectedModelId('');
                 setSelectedValues({});
+                setModelSelectionChanged(true);
               }}
             >
               <span className="spec-option-title">iPad Case</span>
@@ -448,10 +557,13 @@ export function AccessoryCategoryPicker({
                 setIpadSubGroup('keyboard');
                 setSelectedModelId('');
                 setSelectedValues({});
+                setModelSelectionChanged(true);
               }}
             >
               <span className="spec-option-title">iPad Keyboard Case</span>
-              <span className="spec-option-sub">เคสคีย์บอร์ด Magic Keyboard</span>
+              <span className="spec-option-sub">
+                เคสคีย์บอร์ด Magic Keyboard
+              </span>
             </button>
           </div>
         </div>
@@ -469,6 +581,24 @@ export function AccessoryCategoryPicker({
 
   const allStepsCompleted =
     steps.length > 0 && steps.every((st) => Boolean(st.selectedValue));
+
+  const singleResolvedSku =
+    activeModel &&
+    steps.length > 0 &&
+    allStepsCompleted &&
+    candidates.length === 1
+      ? candidates[0]
+      : null;
+  const singleItemKey =
+    singleResolvedSku && activeModel
+      ? formatAccessoryItemName(activeModel, singleResolvedSku)
+      : '';
+  const singleInCartQty = singleItemKey
+    ? Number(cartAccessories[singleItemKey]) || 0
+    : 0;
+  const singleOutOfStock = singleResolvedSku
+    ? isOutOfStock(singleResolvedSku)
+    : false;
 
   return (
     <div className="spec-config-box" style={{ marginTop: '8px' }}>
@@ -503,6 +633,7 @@ export function AccessoryCategoryPicker({
               setIpadSubGroup(null);
               setSelectedModelId('');
               setSelectedValues({});
+              setModelSelectionChanged(true);
             }}
           >
             เปลี่ยนประเภท
@@ -534,7 +665,9 @@ export function AccessoryCategoryPicker({
               />
             </div>
           )}
-          <div className={`spec-card-grid ${isModelTwoCols ? 'cols-2' : 'cols-1'}`}>
+          <div
+            className={`spec-card-grid ${isModelTwoCols ? 'cols-2' : 'cols-1'}`}
+          >
             {shownModels.map((m) => (
               <button
                 key={m.id}
@@ -544,6 +677,7 @@ export function AccessoryCategoryPicker({
                   setSelectedModelId(m.id);
                   setSelectedValues({});
                   setModelSearch('');
+                  setModelSelectionChanged(true);
                 }}
               >
                 <span className="spec-option-title">{m.name}</span>
@@ -552,7 +686,10 @@ export function AccessoryCategoryPicker({
             ))}
           </div>
           {shownModels.length === 0 && (
-            <p className="fine muted" style={{ textAlign: 'center', padding: '8px 0' }}>
+            <p
+              className="fine muted"
+              style={{ textAlign: 'center', padding: '8px 0' }}
+            >
               ไม่พบรุ่นสินค้าที่ตรงกับคำค้นหา
             </p>
           )}
@@ -572,6 +709,7 @@ export function AccessoryCategoryPicker({
               setSelectedModelId('');
               setSelectedValues({});
               setModelSearch('');
+              setModelSelectionChanged(true);
             }}
           >
             เปลี่ยนรุ่น
@@ -588,15 +726,24 @@ export function AccessoryCategoryPicker({
           if (!prevStepsDone) return null;
 
           const isColor = isColorSpec(st.spec);
-          const isLast = idx === steps.length - 1;
-          const isStepTwoCols = st.options.length === 2 && st.options.every((opt) => opt.length <= 16);
+          const isWattage =
+            st.spec.key.toLowerCase().includes('watt') ||
+            st.spec.label.includes('วัตต์') ||
+            (st.options.length > 0 &&
+              st.options.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+          const isStepTwoCols =
+            st.options.length === 2 &&
+            st.options.every((opt) => opt.length <= 16);
 
           return (
             <div key={st.spec.key} className="spec-config-section">
               <div className="spec-config-section-label">
                 <span>{st.spec.label}</span>
                 {st.selectedValue && (
-                  <span className="spec-config-selected-val"> - {st.selectedValue}</span>
+                  <span className="spec-config-selected-val">
+                    {' '}
+                    - {st.selectedValue}
+                  </span>
                 )}
               </div>
 
@@ -606,12 +753,16 @@ export function AccessoryCategoryPicker({
                     const matchingSkus = st.candidatesForStep.filter(
                       (s) => getSkuAttribute(s, st.spec.key) === opt,
                     );
-                    const outOfStock = matchingSkus.every((s) => isOutOfStock(s));
-                    const hex = colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
+                    const outOfStock = matchingSkus.every((s) =>
+                      isOutOfStock(s),
+                    );
+                    const hex =
+                      colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
                     const isSelected = st.selectedValue === opt;
                     const isImg =
                       typeof hex === 'string' &&
-                      (/^https?:\/\/.+/i.test(hex) || /^data:image\/.+/i.test(hex));
+                      (/^https?:\/\/.+/i.test(hex) ||
+                        /^data:image\/.+/i.test(hex));
 
                     return (
                       <button
@@ -619,7 +770,9 @@ export function AccessoryCategoryPicker({
                         key={opt}
                         disabled={outOfStock}
                         className={`spec-swatch-btn ${isSelected ? 'selected' : ''}`}
-                        onClick={() => handleSelectOption(idx, st.spec.key, opt)}
+                        onClick={() =>
+                          handleSelectOption(idx, st.spec.key, opt)
+                        }
                         title={`${opt}${outOfStock ? ' · สินค้าหมด' : ''}`}
                       >
                         {isSelected && <span className="spec-swatch-ring" />}
@@ -627,7 +780,9 @@ export function AccessoryCategoryPicker({
                           className="spec-swatch-circle"
                           style={{
                             backgroundColor: isImg ? 'transparent' : hex,
-                            backgroundImage: isImg ? `url("${hex}")` : undefined,
+                            backgroundImage: isImg
+                              ? `url("${hex}")`
+                              : undefined,
                             backgroundSize: 'cover',
                             backgroundPosition: 'center',
                             backgroundRepeat: 'no-repeat',
@@ -638,7 +793,7 @@ export function AccessoryCategoryPicker({
                     );
                   })}
                 </div>
-              ) : st.spec.key === 'wattage' ? (
+              ) : isWattage ? (
                 <div
                   style={{
                     display: 'grid',
@@ -650,7 +805,9 @@ export function AccessoryCategoryPicker({
                     const matchingSkus = st.candidatesForStep.filter(
                       (s) => getSkuAttribute(s, st.spec.key) === opt,
                     );
-                    const outOfStock = matchingSkus.every((s) => isOutOfStock(s));
+                    const outOfStock = matchingSkus.every((s) =>
+                      isOutOfStock(s),
+                    );
                     const isSelected = st.selectedValue === opt;
 
                     return (
@@ -659,7 +816,9 @@ export function AccessoryCategoryPicker({
                         type="button"
                         disabled={outOfStock}
                         className={`spec-option-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() => handleSelectOption(idx, st.spec.key, opt)}
+                        onClick={() =>
+                          handleSelectOption(idx, st.spec.key, opt)
+                        }
                         style={{
                           padding: '10px 8px',
                           textAlign: 'center',
@@ -670,11 +829,17 @@ export function AccessoryCategoryPicker({
                           minHeight: '46px',
                         }}
                       >
-                        <span className="spec-option-title" style={{ fontSize: '13.5px', fontWeight: 600 }}>
+                        <span
+                          className="spec-option-title"
+                          style={{ fontSize: '13.5px', fontWeight: 600 }}
+                        >
                           {opt}
                         </span>
                         {outOfStock && (
-                          <span className="spec-option-sub out-of-stock" style={{ fontSize: '10px' }}>
+                          <span
+                            className="spec-option-sub out-of-stock"
+                            style={{ fontSize: '10px' }}
+                          >
                             สินค้าหมด
                           </span>
                         )}
@@ -683,12 +848,16 @@ export function AccessoryCategoryPicker({
                   })}
                 </div>
               ) : (
-                <div className={`spec-card-grid ${isStepTwoCols ? 'cols-2' : 'cols-1'}`}>
+                <div
+                  className={`spec-card-grid ${isStepTwoCols ? 'cols-2' : 'cols-1'}`}
+                >
                   {st.options.map((opt) => {
                     const matchingSkus = st.candidatesForStep.filter(
                       (s) => getSkuAttribute(s, st.spec.key) === opt,
                     );
-                    const outOfStock = matchingSkus.every((s) => isOutOfStock(s));
+                    const outOfStock = matchingSkus.every((s) =>
+                      isOutOfStock(s),
+                    );
                     const isSelected = st.selectedValue === opt;
 
                     return (
@@ -697,7 +866,9 @@ export function AccessoryCategoryPicker({
                         type="button"
                         disabled={outOfStock}
                         className={`spec-option-card ${isSelected ? 'selected' : ''}`}
-                        onClick={() => handleSelectOption(idx, st.spec.key, opt)}
+                        onClick={() =>
+                          handleSelectOption(idx, st.spec.key, opt)
+                        }
                       >
                         <span className="spec-option-title">{opt}</span>
                         {outOfStock && (
@@ -714,151 +885,157 @@ export function AccessoryCategoryPicker({
           );
         })}
 
-      {/* If steps are configured and exactly 1 candidate SKU matches, show the item card */}
-      {activeModel && steps.length > 0 && allStepsCompleted && candidates.length === 1 && (() => {
-        const chosenSku = candidates[0];
-        const itemKey = formatAccessoryItemName(activeModel, chosenSku);
-        const inCartQty = Number(cartAccessories[itemKey]) || 0;
-        const outOfStock = isOutOfStock(chosenSku);
-
-        return (
-          <div
+      {/* If steps are configured and completed, show single prominent "+ เพิ่มสินค้า" button at bottom without redundant SKU card */}
+      {singleResolvedSku && (
+        <div
+          style={{
+            padding: '16px 20px',
+            borderTop: '1px solid var(--border-color, #f1f5f9)',
+            background: '#ffffff',
+          }}
+        >
+          <button
+            type="button"
+            disabled={singleOutOfStock}
+            onClick={() => {
+              onAddAccessory(singleItemKey);
+            }}
             style={{
-              marginTop: '14px',
-              padding: '14px 16px',
+              width: '100%',
+              padding: '12px 20px',
               borderRadius: '10px',
-              background: inCartQty > 0 ? 'var(--primary-subtle, #f0fdf4)' : '#ffffff',
-              border: `1.5px solid ${inCartQty > 0 ? 'var(--primary, #0abab5)' : 'var(--border-color, #e2e8f0)'}`,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+              background: singleOutOfStock
+                ? '#9ca3af'
+                : singleInCartQty > 0
+                  ? '#007d79'
+                  : 'var(--primary, #0abab5)',
+              color: '#ffffff',
+              border: 'none',
+              fontSize: '15px',
+              fontWeight: 600,
+              cursor: singleOutOfStock ? 'not-allowed' : 'pointer',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '12px',
+              justifyContent: 'center',
+              gap: '8px',
+              boxShadow: singleOutOfStock
+                ? 'none'
+                : '0 2px 8px rgba(10, 186, 181, 0.25)',
+              transition: 'all 0.15s ease',
             }}
           >
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {chosenSku.name || activeModel.name}
-              </div>
-              <div className="fine muted" style={{ fontSize: '12px', marginTop: '2px' }}>
-                {chosenSku.sku}
-              </div>
-              {inCartQty > 0 && (
-                <div style={{ marginTop: '4px' }}>
-                  <span
-                    style={{
-                      fontSize: '11.5px',
-                      fontWeight: 700,
-                      color: '#007d79',
-                      background: 'rgba(10, 186, 181, 0.15)',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                    }}
-                  >
-                    ในรายการที่เลือก ({inCartQty} ชิ้น)
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <button
-              type="button"
-              disabled={outOfStock}
-              onClick={() => {
-                onAddAccessory(itemKey);
-              }}
-              style={{
-                background: outOfStock ? '#9ca3af' : 'var(--primary, #0abab5)',
-                color: '#ffffff',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '8px 18px',
-                fontSize: '13.5px',
-                fontWeight: 600,
-                cursor: outOfStock ? 'not-allowed' : 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '6px',
-                flexShrink: 0,
-              }}
-            >
-              <Plus size={16} />
-              {outOfStock ? 'สินค้าหมด' : inCartQty > 0 ? `ในรายการ (${inCartQty}) +` : '+ เพิ่ม'}
-            </button>
-          </div>
-        );
-      })()}
+            <Plus size={18} />
+            {singleOutOfStock
+              ? 'สินค้าหมด'
+              : singleInCartQty > 0
+                ? `เพิ่มแล้ว (${singleInCartQty} ชิ้น) +`
+                : '+ เพิ่มสินค้า'}
+          </button>
+        </div>
+      )}
 
       {/* Direct SKU list fallback when:
           1. Model has no steps (e.g. Cables, Earbud, Lifestyle, Pencil, etc.)
           2. OR steps are completed and multiple candidate SKUs match
       */}
-      {activeModel && (steps.length === 0 || (allStepsCompleted && candidates.length > 1)) && (
-        <div className="spec-config-section">
-          <div className="spec-config-section-label">
-            <span>เลือกสินค้า ({candidates.length > 0 ? `${candidates.length} รายการ` : 'กดเพื่อเพิ่ม'})</span>
-          </div>
-          <div style={{ display: 'grid', gap: '8px' }}>
-            {(steps.length === 0 ? activeModel.skus : candidates).map((sku) => {
-              const itemKey = formatAccessoryItemName(activeModel, sku);
-              const inCartQty = Number(cartAccessories[itemKey]) || 0;
-              const outOfStock = isOutOfStock(sku);
+      {activeModel &&
+        (steps.length === 0 ||
+          (allStepsCompleted && candidates.length > 1)) && (
+          <div className="spec-config-section">
+            <div className="spec-config-section-label">
+              <span>
+                เลือกสินค้า (
+                {candidates.length > 0
+                  ? `${candidates.length} รายการ`
+                  : 'กดเพื่อเพิ่ม'}
+                )
+              </span>
+            </div>
+            <div style={{ display: 'grid', gap: '8px' }}>
+              {(steps.length === 0 ? activeModel.skus : candidates).map(
+                (sku) => {
+                  const itemKey = formatAccessoryItemName(activeModel, sku);
+                  const inCartQty = Number(cartAccessories[itemKey]) || 0;
+                  const outOfStock = isOutOfStock(sku);
 
-              return (
-                <button
-                  key={sku.id}
-                  type="button"
-                  disabled={outOfStock}
-                  onClick={() => {
-                    onAddAccessory(itemKey);
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '10px 14px',
-                    borderRadius: '8px',
-                    border: `1.5px solid ${inCartQty > 0 ? 'var(--primary, #0abab5)' : 'var(--border-color, #e2e8f0)'}`,
-                    background: inCartQty > 0 ? 'var(--primary-subtle, #f0fdf4)' : '#ffffff',
-                    cursor: outOfStock ? 'not-allowed' : 'pointer',
-                    opacity: outOfStock ? 0.45 : 1,
-                    textAlign: 'left',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                      {sku.name || activeModel.name}
-                    </div>
-                    <div className="fine muted" style={{ fontSize: '11.5px' }}>{sku.sku}</div>
-                  </div>
-                  <div>
-                    {outOfStock ? (
-                      <span style={{ fontSize: '12px', color: '#dc2626' }}>สินค้าหมด</span>
-                    ) : inCartQty > 0 ? (
-                      <span
-                        style={{
-                          fontSize: '11.5px',
-                          fontWeight: 700,
-                          color: '#007d79',
-                          background: 'rgba(10, 186, 181, 0.15)',
-                          padding: '3px 10px',
-                          borderRadius: '12px',
-                        }}
-                      >
-                        ในรายการ ({inCartQty}) +
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: '12.5px', color: 'var(--primary, #0abab5)', fontWeight: 600 }}>
-                        + เพิ่ม
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
+                  return (
+                    <button
+                      key={sku.id}
+                      type="button"
+                      disabled={outOfStock}
+                      onClick={() => {
+                        onAddAccessory(itemKey);
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        border: `1.5px solid ${inCartQty > 0 ? 'var(--primary, #0abab5)' : 'var(--border-color, #e2e8f0)'}`,
+                        background:
+                          inCartQty > 0
+                            ? 'var(--primary-subtle, #f0fdf4)'
+                            : '#ffffff',
+                        cursor: outOfStock ? 'not-allowed' : 'pointer',
+                        opacity: outOfStock ? 0.45 : 1,
+                        textAlign: 'left',
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            fontSize: '13.5px',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          {sku.name || activeModel.name}
+                        </div>
+                        <div
+                          className="fine muted"
+                          style={{ fontSize: '11.5px' }}
+                        >
+                          {sku.sku}
+                        </div>
+                      </div>
+                      <div>
+                        {outOfStock ? (
+                          <span style={{ fontSize: '12px', color: '#dc2626' }}>
+                            สินค้าหมด
+                          </span>
+                        ) : inCartQty > 0 ? (
+                          <span
+                            style={{
+                              fontSize: '11.5px',
+                              fontWeight: 700,
+                              color: '#007d79',
+                              background: 'rgba(10, 186, 181, 0.15)',
+                              padding: '3px 10px',
+                              borderRadius: '12px',
+                            }}
+                          >
+                            ในรายการ ({inCartQty})
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '12.5px',
+                              color: 'var(--primary, #0abab5)',
+                              fontWeight: 600,
+                            }}
+                          >
+                            +
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                },
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   );
 }

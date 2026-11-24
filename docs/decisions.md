@@ -2461,15 +2461,15 @@ Decisions:
 ## D191 — Direct Accessory Addition, Compact Charger Wattage Grid, & iPad Sub-Group Header Spacing (2026-11-24)
 
 Staff and Owner requested:
-1. "หาก มีปุ่ม เพิ่ม แล้ว ไม่ต้องมี/กด เพิ่มสินค้า เพื่อเพิ่มสินค้าอีก": When a `+ เพิ่ม` button is present on an accessory card or direct SKU list, clicking it adds the item directly to the cart. Do not display a duplicate/confusing bottom feedback banner requiring another "เพิ่มสินค้า" press.
+1. "หาก มีปุ่ม เพิ่ม แล้ว ไม่ต้องมี/กด เพิ่มสินค้า เพื่อเพิ่มสินค้าอีก": When a `+` button is present on an accessory card or direct SKU list, clicking it adds the item directly to the cart. Do not display a duplicate/confusing bottom feedback banner requiring another "เพิ่มสินค้า" press.
 2. "Charging Device > Wall Charger > จำนวนวัตต์ ที่แสดงต่อบรรทัด ได้หลายอัน เพื่อให้กระทัด แต่ทุกกล่องขนาดเท่ากัน": In Wall Charger, display wattage options in a compact multi-item per row grid where each button has identical dimensions.
 3. "ส่วน ประเภท และ ปุ่ม เปลี่ยนประเภท ให้มีกาเว้นห่างจากกรอบด้วย": Provide proper spacing and padding between the iPad Case sub-group bar (`[ iPad Keyboard Case ]` and `[ เปลี่ยนประเภท ]`) and the outer card borders.
 
 Decisions:
 1. **Direct Add Action without Redundant Bottom Banner:**
    - Removed the bottom confirmation banner and its duplicate `+ เพิ่มสินค้า` button.
-   - For candidate matches that resolve to a single SKU, a dedicated action row renders with `+ เพิ่ม` (or `ในรายการ (X) +`). Clicking it immediately adds the item to `cartAccessories` and updates the count in place.
-   - Direct SKU list items retain their individual `+ เพิ่ม` / `ในรายการ (X) +` action buttons with immediate cart updates.
+   - For candidate matches that resolve to a single SKU, a dedicated action row renders with `+` (or `ในรายการ (X)`). Clicking it immediately adds the item to `cartAccessories` and updates the count in place.
+   - Direct SKU list items retain their individual `+` / `ในรายการ (X)` action buttons with immediate cart updates.
 2. **Compact Uniform Wattage Grid:**
    - For `st.spec.key === 'wattage'` in `AccessoryCategoryPicker`, the options render in a CSS grid (`gridTemplateColumns: 'repeat(auto-fill, minmax(78px, 1fr))'`, `gap: 8px`, `minHeight: 46px`) with centered labels. All wattage boxes maintain uniform size and alignment across rows.
 3. **iPad Sub-Group Header Spacing:**
@@ -2493,6 +2493,22 @@ Decisions:
    - Developers work normally with `git commit` and `git push` without encountering git ref-lock conflicts.
 4. **Sidebar Display:**
    - Displays `v1.0.0`, `v1.0.1`, etc. in the navigation sidebar footer (`.sidebar-version-tag`).
+
+## D193 — Compact Wattage Grid Matching & Direct Bottom "+ เพิ่มสินค้า" Button (2026-11-24)
+
+Staff and Owner requested via `/grill-me`:
+1. "ทำไมจำนวนวัตต์ ยังคงแสดงอย่างละบรรทัด": Ensure wattage options strictly render in a compact multi-button per row grid (3-4 buttons per row) even when data keys or labels vary.
+2. "ไม่ต้องแสดง รายการสรุป(เลือกสินค้า)ด้านล่างเพิ่มเพื่อให้กดเลือก หากจบที่ สี เพิ่มปุ่ม เพิ่มสินค้า ด้านล่างไปก่อน": When attribute configuration reaches the final step (e.g. Color), do not render an extra intermediate SKU summary card or "เลือกสินค้า" section. Instead, render a prominent "+ เพิ่มสินค้า" button at the bottom of the card.
+
+Decisions:
+1. **Resilient Wattage Grid Detection:**
+   - Evaluates `isWattage` matching `st.spec.key.includes('watt')`, `st.spec.label.includes('วัตต์')`, or options conforming to `/^\d+\s*w$/i`.
+   - Renders in `repeat(auto-fill, minmax(78px, 1fr))` grid with uniform `minHeight: 46px` and centered labels.
+2. **Clean Bottom "+ เพิ่มสินค้า" Button:**
+   - When configured steps resolve to 1 candidate SKU (`allStepsCompleted && candidates.length === 1`), removes the SKU info summary card.
+   - Renders a prominent full-width action button at the bottom: `+ เพิ่มสินค้า` (or `เพิ่มแล้ว (X ชิ้น)` when in cart).
+   - Direct item lists without steps (e.g. Cables & Connectors, Earbuds) continue to display item rows with individual add buttons.
+
 
 
 

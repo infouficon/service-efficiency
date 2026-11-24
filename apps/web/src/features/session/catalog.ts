@@ -68,7 +68,8 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
     }
   } else if (key === 'language') {
     if (s.name) {
-      val = /thai/i.test(s.name) ? 'Thai' : (/us|english/i.test(s.name) ? 'US English' : '');
+      if (/thai/i.test(s.name) || /th\/[a-z]/i.test(s.sku || '')) val = 'Thai';
+      else if (/us|english/i.test(s.name) || /ll\/[a-z]/i.test(s.sku || '') || /za\/[a-z]/i.test(s.sku || '')) val = 'US English';
     }
   } else if (key === 'caseType' || key === 'type') {
     if (s.name) {
@@ -78,11 +79,11 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
       else if (/leather(?:\s*case)?/i.test(s.name)) val = 'Leather Case';
       else if (/smart\s*folio/i.test(s.name)) val = 'Smart Folio';
       else if (/magic\s*keyboard/i.test(s.name)) val = 'Magic Keyboard';
-      else if (/key\s*ring/i.test(s.name)) val = 'Key Ring';
-      else if (/loop/i.test(s.name)) val = 'Loop';
+      else if (/key\s*ring/i.test(s.name)) val = 'FineWoven Key Ring';
+      else if (/loop/i.test(s.name)) val = 'AirTag Loop';
       else if (/crossbody/i.test(s.name)) val = 'Crossbody Strap';
       else if (/wrist/i.test(s.name)) val = 'Wrist Strap';
-      else if (/wallet/i.test(s.name)) val = 'Wallet';
+      else if (/wallet/i.test(s.name)) val = 'FineWoven Wallet with MagSafe';
     }
   }
 

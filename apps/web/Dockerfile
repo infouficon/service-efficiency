@@ -14,6 +14,8 @@ COPY apps/api/package.json ./apps/api/
 
 RUN npm ci
 
+COPY version.json ./
+COPY scripts ./scripts
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "prebuild": "node ../../scripts/update-version.mjs",
+    "prebuild": "node -e \"import('node:fs').then(fs => fs.existsSync('../../scripts/update-version.mjs') && import('../../scripts/update-version.mjs'))\"",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
     "test": "node --experimental-strip-types --test tests/*.test.mjs"

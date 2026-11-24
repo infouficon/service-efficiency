@@ -2365,24 +2365,23 @@ Decisions:
 
 ## D188 — Dynamic Admin-Configurable Accessory Categories & Specs Configurator (2026-11-23)
 
-Staff and Admin requested: "ไม่ต้อง hardcode ไว้ ให้เป็นการเพิ่มเข้าไปและ admin สามารถมาแก้ไขได้เหมือนสินค้าหลัก" and "หากแสดงแค่ 1 ปุ่มก้ให้ยาวเต็มกรอบ และลบส่วน Accessories ที่ hardcode ไว้ออก"
+Staff and Admin requested: "ไม่ต้อง hardcode ไว้ ให้เป็นการเพิ่มเข้าไปและ admin สามารถมาแก้ไขได้เหมือนสินค้าหลัก", "หากแสดงแค่ 1 ปุ่มก้ให้ยาวเต็มกรอบ และลบส่วน Accessories ที่ hardcode ไว้ออก", and "ต้องการแบ่งแยกออกมาแบบรูป 2".
 
-Previously, accessory groups were either hardcoded or flat, and option buttons shrunk awkwardly to text width rather than expanding cleanly across the container.
+Previously, accessory groups were either hardcoded, flat, or lumped into a single giant "Accessories" accordion. Option buttons also shrunk awkwardly to text width.
 
 Decisions:
-1. **Zero Hardcoding — Dynamic Database Categories:**
-   - All accessory groups are driven dynamically by the database `Category` table where `isAccessory: true` and `active: true`.
-   - Admin manages accessory categories directly via `CategoriesPanel.tsx` (create, reorder, toggle active/accessory status, and edit specification templates).
-   - Categories with 0 active catalog products are hidden from the selection list to avoid visual clutter.
-2. **Dynamic Step-by-Step Specs (Category Attribute Templates):**
-   - Each category's attribute pipeline (`CategoryAttributeSpec[]`, e.g. caseSize, band, bandSize, caseType, wattage, language, color) is read dynamically from `category.attributes`.
-   - Admin configures and updates attribute keys and labels via the "สเปก" (Specs Template) modal in `CategoriesPanel`.
-   - Fallback attributes dynamically extract from SKU data (e.g. `color` if SKUs have color data) when no custom attributes are set.
+1. **Product-Level Accordion Groups (Image 2 Alignment):**
+   - Accessories are organized by their catalog product names (`Cables & Connectors`, `Charging Device`, `Device Protectors for Apple Devices`, `Earbud`, `Headphones and Speakers`, `iPad Case`, `iPhone Case`, `Lifestyle & Gadgets`, `Mice & Keyboards`, `Watch Accessories`, etc.) rather than lumped into a single "Accessories" header.
+   - Each accordion header clearly shows the group name on the left and the model count (`{modelsCount} รุ่น`) with a rotating chevron on the right.
+   - **Comprehensive Search:** The search input (`ค้นหาอุปกรณ์เสริม เช่น iPhone Case, Cable, Adapter..`) filters across group names, model names, and SKU names/colors, auto-expanding the first matched group.
+2. **Dynamic Step-by-Step Specs (Admin Templates & Smart Fallback):**
+   - Each group maps to its matching Admin `Category.attributes` template (e.g. `iPad Case`, `iPhone Case`, `Charging Device`, `Watch Accessories`) configured via `CategoriesPanel`.
+   - If Admin has not configured specs for a category, an intelligent fallback derives steps directly from SKU attributes (e.g. `caseSize`, `band`, `bandSize` for Watch; `wattage` for Chargers; `caseType` for Cases; `touchId`, `numericKeypad`, `language` for Keyboards; and `color` swatches for colors).
 3. **Apple Store-style Step-by-Step Configurator (`AccessoryCategoryPicker`):**
-   - Step cards and circular color swatches match `SkuPicker` styling.
-   - **Full-width and Grid Alignment:** When an option step has only 1 button or item, it stretches 100% full width (`cols-1`). Two short options render in equal 50/50 columns (`cols-2`).
+   - **Full-width and Grid Alignment:** When an option step has only 1 choice, it spans 100% full width (`cols-1`). Two short choices render in equal 50/50 columns (`cols-2`).
+   - **Single-model Auto-Select:** If a group has only 1 model (such as `Earbud` or `Headphones and Speakers`), it skips the redundant model picker and goes straight to the options.
    - **Deduplication:** Models with duplicate or differing casing from ERP (e.g. `APPLE Care for Apple Watch` vs `Apple Care for Apple Watch`) are merged cleanly by normalized name.
-   - **Smart Model Search:** Categories with more than 6 models (such as iPad Cases) provide a search filter input for instant filtering.
+   - **Smart Model Search:** Groups with more than 6 models (such as `iPad Case` with 17 models) provide a model search filter input for instant filtering.
    - **Smart Cart Pre-selection:** If a device (iPhone or iPad) exists in the cart, compatible accessory cases automatically pre-select that model, while allowing staff to click "เปลี่ยนรุ่น" at any time.
 4. **Instant Add to Cart:**
    - Clicking the final spec (e.g. Color) automatically adds the accessory item (+1) with clear badge feedback and immediate cart updates.

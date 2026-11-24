@@ -12,7 +12,6 @@ import batteryIcon from '../../assets/category-icons/battery.png';
 import {
   ArrowRight,
   ChevronDown,
-  ChevronRight,
   ChevronUp,
   CreditCard,
   Pencil,
@@ -52,7 +51,6 @@ import {
 } from './workflow';
 import { SkuPicker } from './SkuPicker';
 import {
-  extractAccessoryGroups,
   formatAccessoryItemName,
   getSkuAttribute,
   isAccessoryFromProduct,
@@ -259,17 +257,6 @@ export function SelectionEditor({
     return new Set(['Accessories']);
   }, [categoryList]);
 
-  const realAccessories = useMemo<string[]>(
-    () =>
-      extractAccessoryGroups(
-        catalog,
-        accessoryCategoryNames,
-        [],
-        Object.keys(value.accessories),
-      ),
-    [catalog, accessoryCategoryNames, value.accessories],
-  );
-
   const selectedAccessoryEntries = useMemo(
     () => Object.entries(value.accessories).filter(([, qty]) => Number(qty) > 0),
     [value.accessories],
@@ -290,92 +277,82 @@ export function SelectionEditor({
     return item?.product.product || item?.product.model || '';
   }, [value.items]);
 
-  // D188: Fully dynamic accessory categories from database (Admin configured, zero hardcoding)
-  const accessoryCategories = useMemo<Category[]>(() => {
-    if (categoryList && categoryList.length > 0) {
-      return categoryList
-        .filter((c) => c.isAccessory && c.active)
-        .sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-    }
-    return Array.from(accessoryCategoryNames).map((name, idx) => ({
-      id: `cat-${name}`,
-      name,
-      active: true,
-      position: idx,
-      isAccessory: true,
-      erpManaged: false,
-    }));
-  }, [categoryList, accessoryCategoryNames]);
+  // D188: Extract accessory groups directly from catalog products marked as accessory (Image 2)
+  const accessoryGroups = useMemo(() => {
+    if (!catalog || catalog.length === 0) return [];
 
-  const displayedAccessoryCategories = useMemo(() => {
-    const q = accessorySearch.trim().toLowerCase();
-    return accessoryCategories
-      .map((cat) => {
-        // Products whose category matches cat.name (case-insensitive)
-        const catProducts =
-          catalog?.filter(
-            (p) =>
-              p.category.trim().toLowerCase() === cat.name.trim().toLowerCase() ||
-              (cat.name.toLowerCase() === 'accessories' && accessoryCategoryNames.has(p.category)),
-          ) || [];
+    const map = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        category?: Category;
+        products: CatalogProduct[];
+      }
+    >();
 
-        if (!q) {
-          return { category: cat, products: catProducts };
-        }
+    for (const p of catalog) {
+      const isAccy =
+        accessoryCategoryNames.has(p.category) ||
+        p.category.toLowerCase().includes('accy') ||
+        p.category.toLowerCase().includes('accessories');
+      if (!isAccy) continue;
 
-        const catMatches = cat.name.toLowerCase().includes(q);
-        const matchedProducts = catProducts.filter((p) => {
-          if (catMatches) return true;
-          if (p.name.toLowerCase().includes(q)) return true;
-          for (const m of p.models || []) {
-            if (m.name.toLowerCase().includes(q)) return true;
-            for (const s of m.skus || []) {
-              if (
-                s.sku.toLowerCase().includes(q) ||
-                s.name?.toLowerCase().includes(q) ||
-                s.color?.toLowerCase().includes(q)
-              ) {
-                return true;
-              }
-            }
-          }
-          return false;
+      const groupName = p.name.trim();
+      if (!groupName) continue;
+
+      const key = groupName.toLowerCase();
+      const existing = map.get(key);
+      if (existing) {
+        existing.products.push(p);
+      } else {
+        const matchingCat = categoryList?.find(
+          (c) =>
+            c.name.trim().toLowerCase() === key ||
+            (key.startsWith('ipad case') && c.name.toLowerCase().startsWith('ipad case')) ||
+            (c.isAccessory && c.name.trim().toLowerCase() === p.category.trim().toLowerCase()),
+        );
+        map.set(key, {
+          id: p.id,
+          name: groupName,
+          category: matchingCat,
+          products: [p],
         });
-
-        return { category: cat, products: matchedProducts };
-      })
-      .filter((entry) => entry.products.length > 0);
-  }, [accessoryCategories, catalog, accessoryCategoryNames, accessorySearch]);
-
-  useEffect(() => {
-    if (accessorySearch.trim() && displayedAccessoryCategories.length > 0) {
-      setExpandedGroup(displayedAccessoryCategories[0].category.id);
+      }
     }
-  }, [accessorySearch, displayedAccessoryCategories]);
 
-  const handleAddAccessory = (itemKey: string) => {
-    const inCartQty = Number(value.accessories[itemKey]) || 0;
-    onChange({
-      ...value,
-      accessories: {
-        ...value.accessories,
-        [itemKey]: String(inCartQty + 1),
-      },
+    const list = Array.from(map.values()).map((g) => {
+      const modelNames = new Set<string>();
+      let skusCount = 0;
+      for (const prod of g.products) {
+        for (const m of prod.models || []) {
+          modelNames.add(m.name.trim().toLowerCase());
+          skusCount += m.skus?.length || 0;
+        }
+      }
+      return {
+        ...g,
+        modelsCount: modelNames.size,
+        skusCount,
+      };
     });
-  };
 
-  const displayedAccessories = useMemo(() => {
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'th'));
+  }, [catalog, accessoryCategoryNames, categoryList]);
+
+  const displayedAccessoryGroups = useMemo(() => {
     const q = accessorySearch.trim().toLowerCase();
-    if (!q) return realAccessories;
-    return realAccessories.filter((name) => {
-      if (name.toLowerCase().includes(q)) return true;
-      const product = catalog?.find(
-        (p) => accessoryCategoryNames.has(p.category) && p.name.trim().toLowerCase() === name.trim().toLowerCase(),
-      );
-      if (product) {
-        for (const m of product.models) {
+    if (!q) return accessoryGroups;
+
+    return accessoryGroups.filter((g) => {
+      // 1. Group name matches
+      if (g.name.toLowerCase().includes(q)) return true;
+
+      // 2. Models or SKUs match
+      for (const prod of g.products) {
+        for (const m of prod.models || []) {
           if (m.name.toLowerCase().includes(q)) return true;
-          for (const s of m.skus) {
+          for (const s of m.skus || []) {
             if (
               s.sku.toLowerCase().includes(q) ||
               s.name?.toLowerCase().includes(q) ||
@@ -388,7 +365,24 @@ export function SelectionEditor({
       }
       return false;
     });
-  }, [realAccessories, catalog, accessoryCategoryNames, accessorySearch]);
+  }, [accessoryGroups, accessorySearch]);
+
+  useEffect(() => {
+    if (accessorySearch.trim() && displayedAccessoryGroups.length > 0) {
+      setExpandedGroup(displayedAccessoryGroups[0].id);
+    }
+  }, [accessorySearch, displayedAccessoryGroups]);
+
+  const handleAddAccessory = (itemKey: string) => {
+    const inCartQty = Number(value.accessories[itemKey]) || 0;
+    onChange({
+      ...value,
+      accessories: {
+        ...value.accessories,
+        [itemKey]: String(inCartQty + 1),
+      },
+    });
+  };
 
   const models = useMemo(() => modelChoices(catalog, category), [catalog, category]);
   const skuPickerSectionRef = useRef<HTMLDivElement>(null);
@@ -1079,7 +1073,7 @@ export function SelectionEditor({
           )}
         </div>
 
-        {displayedAccessoryCategories.length === 0 ? (
+        {displayedAccessoryGroups.length === 0 ? (
           <p
             className="muted"
             style={{
@@ -1096,31 +1090,21 @@ export function SelectionEditor({
           <div
             className="accessory-list"
             style={
-              displayedAccessoryCategories.length > 6
+              displayedAccessoryGroups.length > 6
                 ? { maxHeight: '560px', overflowY: 'auto', paddingRight: '4px' }
                 : undefined
             }
           >
-            {displayedAccessoryCategories.map(({ category: cat, products: catProducts }) => {
-              const isExpanded = expandedGroup === cat.id;
+            {displayedAccessoryGroups.map((group) => {
+              const isExpanded = expandedGroup === group.id;
               const groupCartCount = selectedAccessoryEntries
-                .filter(([k]) => catProducts.some((p) => isAccessoryFromProduct(p, k)))
+                .filter(([k]) => group.products.some((p) => isAccessoryFromProduct(p, k)))
                 .reduce((sum, [, q]) => sum + (Number(q) || 0), 0);
-
-              const totalSkuCount = catProducts.reduce(
-                (sum, p) =>
-                  sum +
-                  (p.models?.reduce(
-                    (mSum, m) => mSum + (m.skus?.length || 0),
-                    0,
-                  ) || 0),
-                0,
-              );
 
               return (
                 <div
                   className={`accessory-item${isExpanded ? ' expanded' : ''}${groupCartCount > 0 ? ' selected' : ''}`}
-                  key={cat.id}
+                  key={group.id}
                   style={{
                     padding: '12px 14px',
                     borderRadius: '10px',
@@ -1137,69 +1121,78 @@ export function SelectionEditor({
                       gap: '8px',
                     }}
                     onClick={() =>
-                      setExpandedGroup(isExpanded ? null : cat.id)
+                      setExpandedGroup(isExpanded ? null : group.id)
                     }
                   >
                     <div
                       style={{
                         display: 'flex',
-                        flexDirection: 'column',
-                        gap: '2px',
-                        flex: 1,
+                        alignItems: 'center',
+                        gap: '8px',
                         minWidth: 0,
                       }}
                     >
-                      <div
+                      <strong
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '8px',
+                          fontSize: '14.5px',
+                          color: 'var(--text-primary)',
                         }}
                       >
-                        <strong
+                        {group.name}
+                      </strong>
+                      {groupCartCount > 0 && (
+                        <span
                           style={{
-                            fontSize: '14.5px',
-                            color: 'var(--text-primary)',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            color: '#0abab5',
+                            background: 'rgba(10, 186, 181, 0.12)',
+                            padding: '2px 8px',
+                            borderRadius: '12px',
                           }}
                         >
-                          {cat.name}
-                        </strong>
-                        {groupCartCount > 0 && (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              fontWeight: 600,
-                              color: '#0abab5',
-                              background: 'rgba(10, 186, 181, 0.12)',
-                              padding: '2px 8px',
-                              borderRadius: '12px',
-                            }}
-                          >
-                            เลือกแล้ว {groupCartCount} ชิ้น
-                          </span>
-                        )}
-                      </div>
-                      <span className="fine muted" style={{ fontSize: '12px' }}>
-                        {catProducts.length > 0 ? `${catProducts.length} รุ่นสินค้า · ` : ''}{totalSkuCount} รายการ
-                      </span>
+                          เลือกแล้ว {groupCartCount} ชิ้น
+                        </span>
+                      )}
                     </div>
-                    <span
+                    <div
                       style={{
-                        fontSize: '14px',
-                        color: 'var(--text-muted, #737373)',
-                        transform: isExpanded ? 'rotate(90deg)' : 'none',
-                        transition: 'transform 0.2s ease',
-                        display: 'inline-flex',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flexShrink: 0,
                       }}
                     >
-                      <ChevronRight size={18} />
-                    </span>
+                      <span className="fine muted" style={{ fontSize: '13px' }}>
+                        {group.modelsCount} รุ่น
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '14px',
+                          color: 'var(--text-muted, #737373)',
+                          transform: isExpanded ? 'rotate(180deg)' : 'none',
+                          transition: 'transform 0.2s ease',
+                          display: 'inline-flex',
+                        }}
+                      >
+                        <ChevronDown size={18} />
+                      </span>
+                    </div>
                   </div>
 
                   {isExpanded && (
                     <AccessoryCategoryPicker
-                      category={cat}
-                      products={catProducts}
+                      category={
+                        group.category || {
+                          id: group.id,
+                          name: group.name,
+                          active: true,
+                          position: 0,
+                          isAccessory: true,
+                          erpManaged: false,
+                        }
+                      }
+                      products={group.products}
                       defaultIPhoneModel={defaultIPhoneModel}
                       defaultIPadModel={defaultIPadModel}
                       cartAccessories={value.accessories}

@@ -165,10 +165,16 @@ export function ColorsPanel() {
       if (filterMode === 'unassigned' && Boolean(c.hexCode?.trim())) return false;
       if (search.trim()) {
         const q = search.toLowerCase();
-        return (
+        const matchesNameOrHex =
           c.name.toLowerCase().includes(q) ||
-          (c.hexCode && c.hexCode.toLowerCase().includes(q))
-        );
+          (c.hexCode && c.hexCode.toLowerCase().includes(q));
+        const matchesSku =
+          c.skus?.some(
+            (s) =>
+              s.sku.toLowerCase().includes(q) ||
+              s.name.toLowerCase().includes(q),
+          ) ?? false;
+        return matchesNameOrHex || matchesSku;
       }
       return true;
     });
@@ -348,7 +354,7 @@ export function ColorsPanel() {
           />
           <input
             type="text"
-            placeholder="ค้นหาชื่อสี เช่น Space Gray, Titanium, Silver..."
+            placeholder="ค้นหาชื่อสี, รหัส SKU, หรือชื่อสินค้า เช่น Saddle Brown, Case, Silicone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ paddingLeft: '34px', width: '100%', boxSizing: 'border-box' }}

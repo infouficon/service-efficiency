@@ -15,26 +15,84 @@ export interface ColorItemDto {
   skus?: ColorSkuInfoDto[];
 }
 
+/**
+ * Extract or parse color name from SKU record, attributes, or product name.
+ * Harmonized with frontend catalog.ts getSkuAttribute logic.
+ */
+function extractSkuColor(s: {
+  sku: string;
+  name: string | null;
+  color: string | null;
+  attributes: unknown;
+}): string | null {
+  // 1. Explicit color column
+  if (s.color && s.color.trim()) {
+    const raw = s.color.trim();
+    return colorOf(raw) || raw;
+  }
+
+  // 2. attributes.color (JSON)
+  if (s.attributes && typeof s.attributes === 'object') {
+    const attrColor = (s.attributes as Record<string, unknown>).color;
+    if (typeof attrColor === 'string' && attrColor.trim()) {
+      const raw = attrColor.trim();
+      return colorOf(raw) || raw;
+    }
+  }
+
+  // 3. Fallback: Parse from product / SKU name (accessories like Cases, Straps, Sleeves)
+  if (s.name && s.name.trim()) {
+    const rawName = s.name.trim();
+    const parts = rawName.split(/[-–—]/);
+    if (parts.length > 1) {
+      const candidate = parts[parts.length - 1].replace(/\([^)]*\)/g, '').trim();
+      if (
+        candidate &&
+        !/^\d+\s*(?:w|watt|gb|tb|m|cm|mm)$/i.test(candidate) &&
+        candidate.length <= 40
+      ) {
+        return colorOf(candidate) || candidate;
+      }
+    }
+
+    const parenMatch = rawName.match(/\(([^)]+)\)$/);
+    if (parenMatch && !/\b\d+\s*(?:m|cm|gb|tb|w|mm)\b/i.test(parenMatch[1])) {
+      const candidate = parenMatch[1].trim();
+      if (candidate.length <= 40) {
+        return colorOf(candidate) || candidate;
+      }
+    }
+
+    const knownColorMatch = rawName.match(
+      /\b(Black|White|Stone|Light Blue|Dark Grey|Dark Gray|Sierra Blue|Midnight|Starlight|Pink|Red|Yellow|Green|Blue|Purple|Orange|Silver|Space Gray|Space Grey|Space Black|Natural Titanium|Desert Titanium|Teal|Ultramarine|Saddle Brown|Cypress|Plum|Denim|Star Fruit|Lake Green)\b/i,
+    );
+    if (knownColorMatch) {
+      const candidate = knownColorMatch[1].trim();
+      return colorOf(candidate) || candidate;
+    }
+  }
+
+  return null;
+}
+
 @Injectable()
 export class ColorsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** List all product colors: combines defined ProductColor rows with distinct colors found on SKUs */
+  /** List all product colors: combines defined ProductColor rows with distinct colors found on SKUs (both main devices and accessories) */
   async list(): Promise<ColorItemDto[]> {
     const definedColors = await this.prisma.productColor.findMany({
       orderBy: { name: 'asc' },
     });
 
     const skus = await this.prisma.productSku.findMany({
-      where: { color: { not: null } },
-      select: { sku: true, name: true, color: true },
+      select: { sku: true, name: true, color: true, attributes: true },
     });
 
     const skuMap = new Map<string, ColorSkuInfoDto[]>();
     for (const s of skus) {
-      if (s.color && s.color.trim()) {
-        const raw = s.color.trim();
-        const c = colorOf(raw) || raw;
+      const c = extractSkuColor(s);
+      if (c) {
         const list = skuMap.get(c) ?? [];
         list.push({ sku: s.sku, name: s.name || '' });
         skuMap.set(c, list);

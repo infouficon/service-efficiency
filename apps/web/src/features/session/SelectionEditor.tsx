@@ -32,7 +32,7 @@ import type { Category, PaymentDetail, PaymentMethod, Product, Selection } from 
 import { MultiSelect, Button, Modal, Notice } from '../../components/ui';
 import {
   addItem,
-  CUSTOMER_SOURCE_OPTIONS,
+  CUSTOMER_SOURCE_SUB_OPTIONS,
   customerSourceIsValid,
   DISCOUNT_TYPE_OPTIONS,
   discountTypeIsValid,
@@ -194,6 +194,21 @@ export function SelectionEditor({
   const [accessorySearch, setAccessorySearch] = useState('');
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const [selectedModelPerGroup, setSelectedModelPerGroup] = useState<Record<string, string>>({});
+
+  const isOtherSource = Boolean(
+    value.customerSource &&
+    value.customerSource !== 'WALK_IN' &&
+    value.customerSource !== 'STORE_PICKUP',
+  );
+  const [otherExpanded, setOtherExpanded] = useState<boolean>(isOtherSource);
+
+  useEffect(() => {
+    if (isOtherSource) {
+      setOtherExpanded(true);
+    } else if (value.customerSource === 'WALK_IN' || value.customerSource === 'STORE_PICKUP') {
+      setOtherExpanded(false);
+    }
+  }, [isOtherSource, value.customerSource]);
 
   useEffect(() => {
     let active = true;
@@ -1150,7 +1165,7 @@ export function SelectionEditor({
                             borderRadius: '12px',
                           }}
                         >
-                          เลือกแล้ว {groupCartCount} ชิ้น
+                          เลือกแล้ว {groupCartCount}
                         </span>
                       )}
                     </div>
@@ -1445,44 +1460,29 @@ export function SelectionEditor({
           {RECEIPT_TYPE_OPTIONS.map((opt) => {
             const selected = value.receiptType === opt.value;
             return (
-              <label
+              <div
                 key={opt.value}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '12px 16px',
-                  border: `1px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
-                  borderRadius: '8px',
-                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
-                  cursor: 'pointer',
-                  transition: 'border-color 150ms cubic-bezier(0.22, 1, 0.36, 1), background-color 150ms cubic-bezier(0.22, 1, 0.36, 1)',
-                  userSelect: 'none',
-                }}
+                className={`custom-radio-card ${selected ? 'selected' : ''}`}
+                onClick={() =>
+                  onChange({
+                    ...value,
+                    receiptType: opt.value,
+                    taxInvoice: opt.isTaxInvoice,
+                  })
+                }
               >
-                <input
-                  type="radio"
-                  name="receiptType"
-                  value={opt.value}
-                  checked={selected}
-                  onChange={() =>
-                    onChange({
-                      ...value,
-                      receiptType: opt.value,
-                      taxInvoice: opt.isTaxInvoice,
-                    })
-                  }
-                  style={{ width: '18px', height: '18px', margin: 0, cursor: 'pointer', accentColor: 'var(--primary)' }}
-                />
+                <div className="custom-radio-circle">
+                  {selected && <div className="custom-radio-dot" />}
+                </div>
                 <div>
-                  <span style={{ display: 'block', fontWeight: 600, fontSize: '14px', color: 'var(--text-primary)' }}>
+                  <span className="custom-radio-title" style={{ display: 'block' }}>
                     {opt.label}
                   </span>
-                  <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  <span className="custom-radio-subtext" style={{ display: 'block' }}>
                     {opt.description}
                   </span>
                 </div>
-              </label>
+              </div>
             );
           })}
         </div>
@@ -1514,10 +1514,10 @@ export function SelectionEditor({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '10px 14px',
-                  border: `1.5px solid ${selected ? 'var(--primary)' : 'var(--border-color)'}`,
+                  border: `${selected ? '2px' : '1.5px'} solid ${selected ? 'var(--primary, #0abab5)' : 'var(--border-color, #e2e8f0)'}`,
                   borderRadius: '8px',
-                  background: selected ? 'var(--primary-subtle)' : 'var(--bg-surface)',
-                  color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
+                  background: selected ? 'var(--primary-subtle, #e8f7f6)' : 'var(--bg-surface, #ffffff)',
+                  color: selected ? 'var(--primary-dark, #0d3b39)' : 'var(--text-primary)',
                   fontWeight: selected ? 600 : 500,
                   fontSize: '14px',
                   cursor: 'pointer',
@@ -1570,49 +1570,121 @@ export function SelectionEditor({
       </fieldset>
       <fieldset>
         <legend>
-          ลูกค้ามาจากช่องทางใด {' '}
-          <span className="required">*</span>
+          ลูกค้ามาใช้บริการผ่านช่องทางไหน <span className="required">*</span>
         </legend>
+        <p
+          className="fine muted"
+          style={{ margin: '2px 0 12px 0', fontSize: '13px', color: '#64748b' }}
+        >
+          ตอบครั้งเดียว ระบบจะเติมให้ทุก survey ของลูกค้าคนนี้
+        </p>
+
         <div
           role="radiogroup"
-          aria-label="ลูกค้ามาจากช่องทางใด"
-          className="customer-source-grid"
+          aria-label="ลูกค้ามาใช้บริการผ่านช่องทางไหน"
+          className="customer-channel-stack"
         >
-          {CUSTOMER_SOURCE_OPTIONS.map((opt) => {
-            const selected = value.customerSource === opt.value;
-            return (
-              <label
-                key={opt.value}
-                className={`customer-source-card ${selected ? 'selected' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name="customerSource"
-                  value={opt.value}
-                  checked={selected}
-                  onChange={() => onChange({ ...value, customerSource: opt.value })}
-                  style={{
-                    width: '18px',
-                    height: '18px',
-                    margin: 0,
-                    cursor: 'pointer',
-                    accentColor: 'var(--primary)',
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: '13.5px',
-                    fontWeight: selected ? 600 : 500,
-                    color: selected ? 'var(--primary-dark, var(--text-primary))' : 'var(--text-primary)',
-                    lineHeight: 1.35,
-                  }}
-                >
-                  {opt.label}
-                </span>
-              </label>
-            );
-          })}
+          {/* 1. Walk-in */}
+          <div
+            className={`customer-channel-card ${value.customerSource === 'WALK_IN' ? 'selected' : ''}`}
+            onClick={() => {
+              setOtherExpanded(false);
+              onChange({ ...value, customerSource: 'WALK_IN' });
+            }}
+          >
+            <div className="customer-channel-row">
+              <div className="customer-channel-radio">
+                {value.customerSource === 'WALK_IN' && (
+                  <div className="customer-channel-radio-dot" />
+                )}
+              </div>
+              <div>
+                <div className="customer-channel-title">Walk-in</div>
+                <div className="customer-channel-subtext">
+                  ลูกค้าเข้ามาซื้อสินค้าหรือใช้บริการที่หน้าร้าน
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. Store Pickup */}
+          <div
+            className={`customer-channel-card ${value.customerSource === 'STORE_PICKUP' ? 'selected' : ''}`}
+            onClick={() => {
+              setOtherExpanded(false);
+              onChange({ ...value, customerSource: 'STORE_PICKUP' });
+            }}
+          >
+            <div className="customer-channel-row">
+              <div className="customer-channel-radio">
+                {value.customerSource === 'STORE_PICKUP' && (
+                  <div className="customer-channel-radio-dot" />
+                )}
+              </div>
+              <div>
+                <div className="customer-channel-title">Store Pickup</div>
+                <div className="customer-channel-subtext">
+                  ลูกค้าสั่งซื้อผ่านเว็บไซต์และเข้ามารับสินค้าที่หน้าร้าน
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3. อื่น ๆ */}
+          <div
+            className={`customer-channel-card ${otherExpanded || isOtherSource ? 'selected' : ''}`}
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest('.customer-channel-chip')) {
+                return;
+              }
+              setOtherExpanded(true);
+              if (
+                value.customerSource === 'WALK_IN' ||
+                value.customerSource === 'STORE_PICKUP' ||
+                !value.customerSource
+              ) {
+                onChange({ ...value, customerSource: 'OTHER' });
+              }
+            }}
+          >
+            <div className="customer-channel-row">
+              <div className="customer-channel-radio">
+                {(otherExpanded || isOtherSource) && (
+                  <div className="customer-channel-radio-dot" />
+                )}
+              </div>
+              <div>
+                <div className="customer-channel-title">อื่น ๆ</div>
+                <div className="customer-channel-subtext">
+                  รู้จักผ่านโซเชียล ป้ายโฆษณา หรือช่องทางออนไลน์อื่น
+                </div>
+              </div>
+            </div>
+
+            {otherExpanded && (
+              <div className="customer-channel-sub-section">
+                <div className="customer-channel-sub-label">ระบุช่องทาง</div>
+                <div className="customer-channel-chips">
+                  {CUSTOMER_SOURCE_SUB_OPTIONS.map((sub) => {
+                    const isSelected = value.customerSource === sub.value;
+                    return (
+                      <button
+                        key={sub.value}
+                        type="button"
+                        className={`customer-channel-chip ${isSelected ? 'selected' : ''}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onChange({ ...value, customerSource: sub.value });
+                        }}
+                      >
+                        {sub.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </fieldset>
       <div className="actions">

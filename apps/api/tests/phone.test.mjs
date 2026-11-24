@@ -137,10 +137,12 @@ test('D121 / D128: orderView carries vatRefund, receiptType, and derived taxInvo
   assert.equal(v4.taxInvoice, true);
 });
 
-test('D146: DISCOUNT_TYPES and CUSTOMER_SOURCES DTO constants are defined and orderView keeps them SES-internal', () => {
+test('D146, D194: DISCOUNT_TYPES and CUSTOMER_SOURCES DTO constants are defined and orderView keeps them SES-internal', () => {
   assert.deepEqual(DISCOUNT_TYPES, ['GENERAL', 'ENTERPRISE', 'EDU', 'UNIDAYS', 'MED']);
-  assert.equal(CUSTOMER_SOURCES.length, 12);
+  assert.equal(CUSTOMER_SOURCES.length, 14);
   assert.equal(CUSTOMER_SOURCES.includes('WALK_IN'), true);
+  assert.equal(CUSTOMER_SOURCES.includes('STORE_PICKUP'), true);
+  assert.equal(CUSTOMER_SOURCES.includes('OTHER'), true);
   assert.equal(CUSTOMER_SOURCES.includes('RETURNING_CUSTOMER'), true);
 
   const view = orderView(

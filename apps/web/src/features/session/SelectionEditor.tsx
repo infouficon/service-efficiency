@@ -309,13 +309,12 @@ export function SelectionEditor({
         const matchingCat = categoryList?.find(
           (c) =>
             c.name.trim().toLowerCase() === key ||
-            (key.startsWith('ipad case') && c.name.toLowerCase().startsWith('ipad case')) ||
-            (c.isAccessory && c.name.trim().toLowerCase() === p.category.trim().toLowerCase()),
+            (key.startsWith('ipad case') && c.name.toLowerCase().startsWith('ipad case')),
         );
         map.set(key, {
           id: p.id,
           name: groupName,
-          category: matchingCat,
+          category: matchingCat ? { ...matchingCat, name: groupName } : undefined,
           products: [p],
         });
       }
@@ -1182,16 +1181,15 @@ export function SelectionEditor({
 
                   {isExpanded && (
                     <AccessoryCategoryPicker
-                      category={
-                        group.category || {
-                          id: group.id,
-                          name: group.name,
-                          active: true,
-                          position: 0,
-                          isAccessory: true,
-                          erpManaged: false,
-                        }
-                      }
+                      category={{
+                        id: group.category?.id || group.id,
+                        name: group.name,
+                        active: true,
+                        position: group.category?.position ?? 0,
+                        isAccessory: true,
+                        erpManaged: group.category?.erpManaged ?? false,
+                        attributes: group.category?.attributes,
+                      }}
                       products={group.products}
                       defaultIPhoneModel={defaultIPhoneModel}
                       defaultIPadModel={defaultIPadModel}

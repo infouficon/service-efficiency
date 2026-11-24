@@ -8,9 +8,21 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
   } else if (key === 'color') {
     val = s.color?.trim() || '';
     if (!val && s.name) {
-      const parts = s.name.split('-');
+      const parts = s.name.split(/[-–—]/);
       if (parts.length > 1) {
         val = parts[parts.length - 1].replace(/\([^)]*\)/g, '').trim();
+      } else {
+        const parenMatch = s.name.match(/\(([^)]+)\)$/);
+        if (parenMatch && !/\b\d+\s*(?:m|cm|gb|tb|w)\b/i.test(parenMatch[1])) {
+          val = parenMatch[1].trim();
+        } else {
+          const colorMatch = s.name.match(
+            /\b(Black|White|Stone|Light Blue|Dark Grey|Dark Gray|Sierra Blue|Midnight|Starlight|Pink|Red|Yellow|Green|Blue|Purple|Orange|Silver|Space Gray|Space Grey|Space Black|Natural Titanium|Desert Titanium|Teal|Ultramarine)\b/i,
+          );
+          if (colorMatch) {
+            val = colorMatch[1].trim();
+          }
+        }
       }
     }
   } else if (key === 'storage') {

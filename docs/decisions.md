@@ -2392,3 +2392,32 @@ Decisions:
    - **Smart Cart Pre-selection:** If a device (iPhone or iPad) exists in the cart, compatible accessory cases automatically pre-select that model, while allowing staff to click "เปลี่ยนรุ่น" at any time.
 4. **Instant Add to Cart:**
    - Clicking the final spec (e.g. Color) automatically adds the accessory item (+1) with clear badge feedback and immediate cart updates.
+
+## D189 — Accessories Configuration Flow Refinements & Version Indicator (2026-11-24)
+
+User requested:
+- Version display in bottom-left sidebar footer
+- Remove color selection from Cables & Connectors, Earbud (AirPods Pro 2nd Gen same as 3rd Gen), Headphones and Speakers, Lifestyle & Gadgets (Pencil Tips), Pencil, Software & Care
+- Both Wall Charger and Wireless Charger divide by wattage (จำนวนวัตต์) first, without any color step
+- iPad Case split into `iPad Case` vs `iPad Keyboard Case` prior to model selection
+- Wallet & Lanyards: ensure Wrist Strap has color selection restored
+- Watch Accessories: strict order of ขนาดตัวเรือน (caseSize) > สาย (band) > ขนาดสาย Band Size (bandSize: S/M, M/L) > สี (color)
+
+Decisions:
+1. **Sidebar Version Indicator:** Added `sidebar-version-tag` (`v1.0.0`) at the bottom of the navigation sidebar footer (`App.tsx` and `styles.css`), sourced from `apps/web/src/version.ts`.
+2. **Strict Zero-Color Categories:**
+   - `Cables & Connectors`, `Charging Device`, `Earbud`, `Headphones and Speakers`, `Lifestyle & Gadgets`, `Pencil`, `Software & Care`, `Mouse`, `Trackpad`, `Remote Case`, and `Pencil Tips` strictly have zero color options. Items are added directly.
+   - For `Earbud`, AirPods Pro 2nd Gen follows the same behavior as AirPods Pro 3rd Gen (direct selection without color swatches).
+3. **Charger Wattage Flow:**
+   - Both `Wall Charger` and `Wireless Charger` under `Charging Device` divide by wattage (`จำนวนวัตต์`) first when wattage specs are present, and list items directly for selection without any color step.
+4. **iPad Case Two-Tier Hierarchy:**
+   - Opening `iPad Case` presents a top-level selection between `[ iPad Case ]` and `[ iPad Keyboard Case ]`.
+   - `iPad Case`: Filters to standard non-keyboard cases, defaulting to cart's iPad model if present. Steps: `caseType` (ประเภทเคส) > `color` (สี).
+   - `iPad Keyboard Case`: Filters to Magic Keyboard cases, defaulting to cart's iPad model if present. Steps: `language` (ภาษาแป้นพิมพ์: Thai / US English) > `color` (สี).
+   - Staff can switch sub-group with "เปลี่ยนประเภท" and switch model with "เปลี่ยนรุ่น".
+5. **Wallet & Lanyards Color Extraction:**
+   - Enhanced `getSkuAttribute(s, 'color')` to detect color from bracket, parentheses, hyphenated suffixes, and standard color keywords, ensuring `Wrist Strap` and `Crossbody Strap` reliably present color swatches.
+6. **Watch Accessories Unified 4-Step Flow:**
+   - Combines all Watch Accessories models into a single unified model so staff immediately steps through:
+     `ขนาดตัวเรือน` (caseSize) > `สายนาฬิกา` (band) > `ขนาดสาย (Band Size)` (bandSize) > `สี` (color).
+

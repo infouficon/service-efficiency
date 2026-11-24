@@ -487,3 +487,17 @@ export function isAccessoryFromProduct(product: CatalogProduct, accessoryKey: st
   }
   return false;
 }
+
+/**
+ * Sort wattage options numerically in ascending order (e.g. "20W", "30W", "35W", "70W", "96W", "140W")
+ */
+export function sortWattageOptions(options: string[]): string[] {
+  return [...options].sort((a, b) => {
+    const matchA = a.match(/(\d+)/);
+    const matchB = b.match(/(\d+)/);
+    const numA = matchA ? parseInt(matchA[1], 10) : Number.MAX_SAFE_INTEGER;
+    const numB = matchB ? parseInt(matchB[1], 10) : Number.MAX_SAFE_INTEGER;
+    if (numA !== numB) return numA - numB;
+    return a.localeCompare(b, 'th');
+  });
+}

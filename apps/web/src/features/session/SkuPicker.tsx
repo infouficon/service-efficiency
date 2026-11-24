@@ -7,6 +7,7 @@ import {
   isOutOfStock,
   isUnlimited,
   MAC_TYPES,
+  sortWattageOptions,
   type CatalogSku,
   type ModelChoice,
   type Picked,
@@ -131,7 +132,19 @@ export function SkuPicker({
     }[] = [];
 
     for (const spec of allSpecs) {
-      const available = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)));
+      let available = distinct(
+        candidates.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean),
+      );
+      const isWattage =
+        spec.key.toLowerCase().includes('watt') ||
+        spec.label.includes('วัตต์') ||
+        (available.length > 0 &&
+          available.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+
+      if (isWattage) {
+        available = sortWattageOptions(available);
+      }
+
       if (available.length > 0) {
         const val = selectedValues[spec.key] ?? '';
         computedSteps.push({

@@ -2393,6 +2393,19 @@ Decisions:
 4. **Instant Add to Cart:**
    - Clicking the final spec (e.g. Color) automatically adds the accessory item (+1) with clear badge feedback and immediate cart updates.
 
+## D189 — The real U•POS serial check is on: the index was there all along (2026-11-24)
+
+Owner, on the step left after D183: "ช่วยเข้า fmp แล้วทำให้ผมหน่อย ใน prod" (index `ProductStore_detail::product_sn` / `product_upc`, measure, switch on).
+
+1. **No index to make.** The prod UFService design copy (Save a Copy as XML, 2026-11-12) has `product_sn`, `product_upc`, `status` and `BranchStore_id` of `ProductStore_detail` indexed "All", last changed 2026-09-22 by KoB. So D104's reading of the 2026-11-05 measurement was wrong: those queries (30 s at 14:04, 15 s at 15:47) ran in shop hours with the index already in place. Nothing was changed in FileMaker.
+2. **Measured on prod, 2026-11-24 09:37 (before the shops open), one query at a time:**
+   - by serial: 2.38 s for the first request (new connection), then 0.02 s
+   - ready units of MJXQ4ZP/A at ISTA: 0.10 s (5 units)
+   - SES's own `SerialCheckService` against PRODUCTION: units 2.4 s (fresh process), a serial at another branch 0.06 s ("other-branch", with that branch's 4 units)
+3. **Switched on.** `SERIAL_CHECK=fmp` and `SERIAL_CHECK_UNITS=fmp` are set on the api app in Coolify (restarted 09:38). They act when ADMIN's push switch is "production" (or "off"). It is `uat` today, which already asks the test FileMaker. One exception acts now: the after-send lookup of an order whose bill went to the real U•POS asks the real one.
+4. **Open risk: shop hours.** The slow answers of 2026-11-05 came under shop load, not from a missing index. The D104 guards stay unchanged: one request at a time, 5 s, no retry, a 10-minute pause after a failure, and nothing around warroom's pulls. So at worst one slow query reaches the server every 10 minutes. Watch the api's `SerialCheck` log lines in the first shop hours after the push switch goes to "production". If they time out, remove `SERIAL_CHECK_UNITS` first (the serial check stays), then `SERIAL_CHECK`, and restart.
+5. **Also:** the two "off" reasons a user can see now say U•POS instead of FileMaker and drop the setting names ("ยังไม่เปิดการดูรายการเครื่องจาก U•POS จริง").
+
 ## D189 — Accessories Configuration Flow Refinements & Version Indicator (2026-11-24)
 
 User requested:

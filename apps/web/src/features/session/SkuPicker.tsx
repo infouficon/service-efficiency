@@ -38,7 +38,7 @@ const isColorSpec = (spec: CategoryAttributeSpec) =>
   spec.key.toLowerCase() === 'color' || spec.label.trim() === 'สี';
 
 const isTwoColumns = (options: string[]) =>
-  options.length <= 2 && options.every((opt) => opt.length <= 16);
+  options.length === 2 && options.every((opt) => opt.length <= 16);
 
 /** "wi-fi", "WiFi" and "wifi" are the same to someone typing on a phone. */
 const searchable = (text: string) => text.toLowerCase().replaceAll('-', '');

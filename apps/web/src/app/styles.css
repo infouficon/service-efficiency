@@ -5435,6 +5435,14 @@ input[aria-invalid='true'] {
   gap: 4px;
 }
 
+/* If a single card is rendered in a grid, make it span full width */
+.spec-card-grid.cols-2 > .spec-option-card:only-child {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  justify-content: space-between;
+  padding: 14px 18px;
+}
+
 .spec-option-card:hover:not(:disabled) {
   border-color: var(--primary-accent);
   background: var(--primary-subtle);

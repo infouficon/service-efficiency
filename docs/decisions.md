@@ -2374,9 +2374,16 @@ Decisions:
    - Accessories are organized by their catalog product names (`Cables & Connectors`, `Charging Device`, `Device Protectors for Apple Devices`, `Earbud`, `Headphones and Speakers`, `iPad Case`, `iPhone Case`, `Lifestyle & Gadgets`, `Mice & Keyboards`, `Watch Accessories`, etc.) rather than lumped into a single "Accessories" header.
    - Each accordion header clearly shows the group name on the left and the model count (`{modelsCount} รุ่น`) with a rotating chevron on the right.
    - **Comprehensive Search:** The search input (`ค้นหาอุปกรณ์เสริม เช่น iPhone Case, Cable, Adapter..`) filters across group names, model names, and SKU names/colors, auto-expanding the first matched group.
-2. **Dynamic Step-by-Step Specs (Admin Templates & Smart Fallback):**
-   - Each group maps to its matching Admin `Category.attributes` template (e.g. `iPad Case`, `iPhone Case`, `Charging Device`, `Watch Accessories`) configured via `CategoriesPanel`.
-   - If Admin has not configured specs for a category, an intelligent fallback derives steps directly from SKU attributes (e.g. `caseSize`, `band`, `bandSize` for Watch; `wattage` for Chargers; `caseType` for Cases; `touchId`, `numericKeypad`, `language` for Keyboards; and `color` swatches for colors).
+2. **Customized Group Branching & Spec Rules:**
+   - **No Color Step:** `Cables & Connectors`, `Charging Device`, `Earbud`, `Headphones and Speakers`, and `Lifestyle & Gadgets` do not divide by color (items add directly without color swatches).
+   - **Charging Device:** Sub-models `Wall Charger` (spec: `wattage` only, no color) and `Wireless Charger` (direct items with add button).
+   - **Watch Accessories:** `caseSize` (ขนาดตัวเรือน) > `band` (สายนาฬิกา) > `bandSize` (ขนาดสาย S/M, M/L) > `color` (สี).
+   - **Wallet & Lanyards:** Sub-models `Wallet` (`FineWoven Wallet with MagSafe` > `color`) vs `Lanyards` (`Crossbody Strap` / `Wrist Strap` > `color`).
+   - **Pencil:** Directly presents Pencil models/SKUs without a redundant "Pencil" model selector.
+   - **Mice & Keyboards:** Sub-models `Mouse` (direct items), `Magic Keyboard` (`touchId` > `numericKeypad` > `language` > `color`), and `Trackpad` (direct items).
+   - **iPhone Case:** iPhone model (default to cart's iPhone if present) > `caseType` > `color`.
+   - **iPad Case & Keyboard:** iPad Case (`caseType` > `color`) and Magic Keyboard for iPad (`type` > `language` > `color`), both defaulting to cart's iPad if present.
+   - **Device Protectors for Apple Devices:** Sub-models `AirTag Case` (`type` > `color`) and `Remote Case` (direct items).
 3. **Apple Store-style Step-by-Step Configurator (`AccessoryCategoryPicker`):**
    - **Full-width and Grid Alignment:** When an option step has only 1 choice, it spans 100% full width (`cols-1`). Two short choices render in equal 50/50 columns (`cols-2`).
    - **Single-model Auto-Select:** If a group has only 1 model (such as `Earbud` or `Headphones and Speakers`), it skips the redundant model picker and goes straight to the options.

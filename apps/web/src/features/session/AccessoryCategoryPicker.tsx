@@ -95,18 +95,47 @@ export function AccessoryCategoryPicker({
   }, [allModels, selectedModelId]);
 
   // Dynamic specs template from Category (configured by Admin in CategoriesPanel)
+  // with intelligent fallback from SKU attributes if Admin hasn't configured specs yet
   const specs = useMemo<CategoryAttributeSpec[]>(() => {
     if (category.attributes && category.attributes.length > 0) {
       return category.attributes;
     }
-    // Dynamic fallback when Admin hasn't configured specs yet: check color in SKUs
+    // Intelligent fallback from SKU attributes
     const fallback: CategoryAttributeSpec[] = [];
     const skus = activeModel ? activeModel.skus : allModels.flatMap((m) => m.skus);
-    if (skus.some((s) => s.color)) {
+
+    const checkSpec = (key: string, label: string) => {
+      const distinctVals = distinct(skus.map((s) => getSkuAttribute(s, key)).filter(Boolean));
+      if (distinctVals.length > 1 || (distinctVals.length === 1 && distinctVals[0])) {
+        fallback.push({ key, label, required: true });
+      }
+    };
+
+    const groupNameLower = category.name.toLowerCase();
+    if (groupNameLower.includes('watch')) {
+      checkSpec('caseSize', 'ขนาดตัวเรือน');
+      checkSpec('band', 'สายนาฬิกา');
+      checkSpec('bandSize', 'ขนาดสาย');
+    } else if (groupNameLower.includes('charge') || groupNameLower.includes('wall')) {
+      checkSpec('wattage', 'จำนวนวัตต์');
+    } else if (groupNameLower.includes('case')) {
+      checkSpec('caseType', 'ประเภทเคส');
+      checkSpec('type', 'ประเภท');
+    } else if (groupNameLower.includes('keyboard') || groupNameLower.includes('mice')) {
+      checkSpec('touchId', 'Touch ID');
+      checkSpec('numericKeypad', 'Numeric Keypad');
+      checkSpec('language', 'ภาษาแป้นพิมพ์');
+    } else {
+      checkSpec('type', 'ประเภท');
+    }
+
+    // Color is always last
+    if (skus.some((s) => s.color || getSkuAttribute(s, 'color'))) {
       fallback.push({ key: 'color', label: 'สี', required: true });
     }
+
     return fallback;
-  }, [category.attributes, activeModel, allModels]);
+  }, [category.attributes, category.name, activeModel, allModels]);
 
   // Compute steps and remaining SKUs based on current selections
   const { steps, candidates } = useMemo(() => {

@@ -3,17 +3,19 @@ INSERT IGNORE INTO `Category` (`id`, `name`, `active`, `position`, `isAccessory`
 VALUES
   (UUID(), 'Watch Accessories', true, 10, true, false, CURRENT_TIMESTAMP(3)),
   (UUID(), 'iPhone Case', true, 11, true, false, CURRENT_TIMESTAMP(3)),
-  (UUID(), 'iPad Case & Keyboard', true, 12, true, false, CURRENT_TIMESTAMP(3)),
-  (UUID(), 'Pencil', true, 13, true, false, CURRENT_TIMESTAMP(3)),
-  (UUID(), 'Wallet & Lanyards', true, 14, true, false, CURRENT_TIMESTAMP(3)),
-  (UUID(), 'Mice & Keyboards', true, 15, true, false, CURRENT_TIMESTAMP(3)),
-  (UUID(), 'Device Protectors for Apple Devices', true, 16, true, false, CURRENT_TIMESTAMP(3)),
-  (UUID(), 'Charging Device', true, 17, true, false, CURRENT_TIMESTAMP(3));
+  (UUID(), 'iPad Case', true, 12, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'iPad Case & Keyboard', true, 13, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'Pencil', true, 14, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'Wallet & Lanyards', true, 15, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'Mice & Keyboards', true, 16, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'Device Protectors for Apple Devices', true, 17, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'Charging Device', true, 18, true, false, CURRENT_TIMESTAMP(3)),
+  (UUID(), 'Cables & Connectors', true, 19, true, false, CURRENT_TIMESTAMP(3));
 
 -- Ensure isAccessory is true for accessory categories
 UPDATE `Category` SET `isAccessory` = true WHERE `name` IN (
-  'Watch Accessories', 'iPhone Case', 'iPad Case & Keyboard', 'Pencil',
-  'Wallet & Lanyards', 'Mice & Keyboards', 'Device Protectors for Apple Devices', 'Charging Device'
+  'Watch Accessories', 'iPhone Case', 'iPad Case', 'iPad Case & Keyboard', 'Pencil',
+  'Wallet & Lanyards', 'Mice & Keyboards', 'Device Protectors for Apple Devices', 'Charging Device', 'Cables & Connectors'
 );
 
 -- Default attributes for each accessory category if not yet configured
@@ -24,7 +26,7 @@ UPDATE `Category` SET `attributes` = '[{"key":"caseType","label":"ประเ�
 WHERE `name` = 'iPhone Case' AND (`attributes` IS NULL OR JSON_LENGTH(`attributes`) = 0);
 
 UPDATE `Category` SET `attributes` = '[{"key":"type","label":"ประเภท","required":true},{"key":"language","label":"ภาษาแป้นพิมพ์"},{"key":"color","label":"สี","required":true}]'
-WHERE `name` = 'iPad Case & Keyboard' AND (`attributes` IS NULL OR JSON_LENGTH(`attributes`) = 0);
+WHERE `name` IN ('iPad Case', 'iPad Case & Keyboard') AND (`attributes` IS NULL OR JSON_LENGTH(`attributes`) = 0);
 
 UPDATE `Category` SET `attributes` = '[{"key":"type","label":"ประเภท","required":true},{"key":"color","label":"สี","required":true}]'
 WHERE `name` = 'Wallet & Lanyards' AND (`attributes` IS NULL OR JSON_LENGTH(`attributes`) = 0);

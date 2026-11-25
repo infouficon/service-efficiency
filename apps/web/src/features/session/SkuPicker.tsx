@@ -8,7 +8,10 @@ import {
   isOutOfStock,
   isUnlimited,
   MAC_TYPES,
+  resolveColorHex,
   sortWattageOptions,
+  sortCaseSizeOptions,
+  sortBandSizeOptions,
   type CatalogSku,
   type ModelChoice,
   type Picked,
@@ -38,25 +41,6 @@ function getOptionStockText(skusForOption: CatalogSku[]): { text: string; outOfS
 
 const isColorSpec = (spec: CategoryAttributeSpec) =>
   spec.key.toLowerCase() === 'color' || spec.label.trim() === 'สี';
-
-/** Standard Apple color palette fallback if not configured in database */
-const getAppleFallbackHex = (name: string): string | null => {
-  const n = name.trim().toLowerCase();
-  if (/(?:space\s+)?black|midnight|jet\s+black/.test(n)) return '#1f2022';
-  if (/white|starlight|silver/.test(n)) return '#e3e4e6';
-  if (/space\s*gr[ea]y|graphite/.test(n)) return '#535150';
-  if (/natural\s+titanium/.test(n)) return '#9f9587';
-  if (/desert\s+titanium|gold|rose\s+gold/.test(n)) return '#c5a98d';
-  if (/blue|ultramarine|sierra\s+blue|pacific\s+blue/.test(n)) return '#2c4664';
-  if (/teal/.test(n)) return '#2d777d';
-  if (/pink/.test(n)) return '#e8c4c7';
-  if (/green|alpine\s+green/.test(n)) return '#394c38';
-  if (/yellow/.test(n)) return '#f2d366';
-  if (/purple/.test(n)) return '#b6b3cd';
-  if (/red/.test(n)) return '#e2231a';
-  if (/orange/.test(n)) return '#f47920';
-  return null;
-};
 
 const isTwoColumns = (options: string[]) =>
   options.length === 2 && options.every((opt) => opt.length <= 16);
@@ -113,14 +97,6 @@ export function SkuPicker({
     };
   }, []);
 
-  const resolveColorHex = (colorName: string): string => {
-    const trimmed = colorName.trim();
-    const lower = trimmed.toLowerCase();
-    if (colorMap[lower]) return colorMap[lower];
-    if (colorMap[trimmed]) return colorMap[trimmed];
-    return getAppleFallbackHex(trimmed) || '#cbd5e1';
-  };
-
   const chosen = models.find((m) => m.key === modelKey) ?? null;
   const modelSkus = useMemo(() => chosen?.model.skus ?? [], [chosen]);
 
@@ -135,16 +111,16 @@ export function SkuPicker({
       )?.attributes;
       if (fromCat && fromCat.length > 0) return fromCat;
     }
-    // Dynamic fallback when no template: check if memory or storage or color exist in SKUs
+    // Dynamic fallback when no template: check if color or storage or memory exist in SKUs
     const fallback: CategoryAttributeSpec[] = [];
-    if (modelSkus.some((s) => s.memory)) {
-      fallback.push({ key: 'memory', label: 'RAM', required: true });
+    if (modelSkus.some((s) => s.color || getSkuAttribute(s, 'color'))) {
+      fallback.push({ key: 'color', label: 'สี', required: true });
     }
-    if (modelSkus.some((s) => s.storage)) {
+    if (modelSkus.some((s) => s.storage || getSkuAttribute(s, 'storage'))) {
       fallback.push({ key: 'storage', label: 'ความจุ', required: true });
     }
-    if (modelSkus.some((s) => s.color)) {
-      fallback.push({ key: 'color', label: 'สี', required: true });
+    if (modelSkus.some((s) => s.memory || getSkuAttribute(s, 'memory'))) {
+      fallback.push({ key: 'memory', label: 'RAM', required: true });
     }
     return fallback;
   }, [chosen, categorySpecs, categories, categoryName, modelSkus]);
@@ -175,13 +151,24 @@ export function SkuPicker({
     }
     // Ensure color is present in specs if SKUs have colors
     if (
-      modelSkus.some((s) => s.color || s.attributes?.color) &&
+      modelSkus.some((s) => s.color || getSkuAttribute(s, 'color')) &&
       !list.some(isColorSpec)
     ) {
       list.push({ key: 'color', label: 'สี', required: true });
     }
+
+    // For iPad (and iPhone), staff choose Color first (D144)
+    const catLower = categoryName.toLowerCase();
+    if (catLower === 'ipad' || catLower === 'iphone') {
+      const colorSpecIndex = list.findIndex(isColorSpec);
+      if (colorSpecIndex > 0) {
+        const [colorSpec] = list.splice(colorSpecIndex, 1);
+        list.unshift(colorSpec);
+      }
+    }
+
     return list;
-  }, [resolvedSpecs, modelSkus]);
+  }, [resolvedSpecs, modelSkus, categoryName]);
 
   // Compute available choices and candidate SKUs for each step
   const { steps, remainingSkus } = useMemo(() => {
@@ -202,9 +189,23 @@ export function SkuPicker({
         spec.label.includes('วัตต์') ||
         (options.length > 0 &&
           options.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+      const isCaseSize =
+        spec.key.toLowerCase().includes('casesize') ||
+        spec.label.includes('ขนาดตัวเรือน') ||
+        (options.length > 0 &&
+          options.every((opt) => /^\d+\s*mm$/i.test(opt.trim())));
+      const isBandSize =
+        spec.key.toLowerCase().includes('bandsize') ||
+        spec.label.includes('ขนาดสาย') ||
+        (options.length > 0 &&
+          options.every((opt) => /^(?:s\/m|m\/l|size\s*\d+|xs|s|m|l|xl|one\s*size)$/i.test(opt.trim())));
 
       if (isWattage) {
         options = sortWattageOptions(options);
+      } else if (isCaseSize) {
+        options = sortCaseSizeOptions(options);
+      } else if (isBandSize) {
+        options = sortBandSizeOptions(options);
       }
 
       const currentVal = selectedValues[spec.key] || '';
@@ -428,6 +429,22 @@ export function SkuPicker({
           {/* Sequential Specification Steps */}
           {steps.map((st) => {
             const isColor = isColorSpec(st.spec);
+            const isWattage =
+              st.spec.key.toLowerCase().includes('watt') ||
+              st.spec.label.includes('วัตต์') ||
+              (st.options.length > 0 &&
+                st.options.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+            const isCaseSize =
+              st.spec.key.toLowerCase().includes('casesize') ||
+              st.spec.label.includes('ขนาดตัวเรือน') ||
+              (st.options.length > 0 &&
+                st.options.every((opt) => /^\d+\s*mm$/i.test(opt.trim())));
+            const isBandSize =
+              st.spec.key.toLowerCase().includes('bandsize') ||
+              st.spec.label.includes('ขนาดสาย') ||
+              (st.options.length > 0 &&
+                st.options.every((opt) => /^(?:s\/m|m\/l|size\s*\d+|xs|s|m|l|xl|one\s*size)$/i.test(opt.trim())));
+            const isCompact = isWattage || isCaseSize || isBandSize;
             const gridColsClass = isTwoColumns(st.options) ? 'cols-2' : 'cols-1';
 
             return (
@@ -448,7 +465,7 @@ export function SkuPicker({
                       );
                       const stockInfo = getOptionStockText(matchingSkus);
                       const isSelected = st.selectedValue === opt;
-                      const hex = resolveColorHex(opt);
+                      const hex = resolveColorHex(opt, colorMap);
 
                       const isImg =
                         typeof hex === 'string' &&
@@ -478,6 +495,56 @@ export function SkuPicker({
                             }}
                           />
                           {isSelected && <span className="spec-swatch-ring" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : isCompact ? (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))',
+                      gap: '8px',
+                    }}
+                  >
+                    {st.options.map((opt) => {
+                      const matchingSkus = st.skusAtStep.filter(
+                        (s) => getSkuAttribute(s, st.spec.key) === opt,
+                      );
+                      const stockInfo = getOptionStockText(matchingSkus);
+                      const isSelected = st.selectedValue === opt;
+
+                      return (
+                        <button
+                          type="button"
+                          key={opt}
+                          disabled={!allowOutOfStock && stockInfo.outOfStock}
+                          className={`spec-option-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleStepChange(st.spec.key, opt)}
+                          style={{
+                            padding: '10px 8px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minHeight: '46px',
+                          }}
+                        >
+                          <span
+                            className="spec-option-title"
+                            style={{ fontSize: '13.5px', fontWeight: 600 }}
+                          >
+                            {opt}
+                          </span>
+                          {stockInfo.outOfStock && (
+                            <span
+                              className="spec-option-sub out-of-stock"
+                              style={{ fontSize: '10px' }}
+                            >
+                              หมด
+                            </span>
+                          )}
                         </button>
                       );
                     })}

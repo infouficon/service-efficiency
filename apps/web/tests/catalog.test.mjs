@@ -345,4 +345,140 @@ test('D196: isNonColor filters out sizes, wattages, languages, adapters, chips, 
     name: 'Apple Silicone Case - Citrus Eng',
   };
   assert.equal(getSkuAttribute(skuCitrus, 'color'), 'Citrus');
+
+  // getSkuAttribute cleans leading dashes from attributes.color
+  const skuLeadingDash = {
+    id: 's-dash',
+    sku: 'TEST/DASH',
+    name: 'Leather Sleeve - Saddle Brown',
+    attributes: { color: '- Saddle Brown' },
+  };
+  assert.equal(getSkuAttribute(skuLeadingDash, 'color'), 'Saddle Brown');
+
+  // getSkuAttribute cleans release year tags from iPad colors like (Early 2026)
+  const skuIPadSpaceGrey = {
+    id: 's-ipad-sg',
+    sku: 'MH304TH/A',
+    name: 'iPad Air 11 M4 Wi-Fi 128GB - Space Grey (Early 2026) (MH304TH/A)',
+    color: 'Space Grey (Early 2026)',
+    attributes: { color: 'Space Grey (Early 2026)', connectivity: 'Wi-Fi', storage: '128GB' },
+  };
+  assert.equal(getSkuAttribute(skuIPadSpaceGrey, 'color'), 'Space Grey');
+
+  const skuIPadBlue = {
+    id: 's-ipad-bl',
+    sku: 'MH305TH/A',
+    name: 'iPad Air 11 M4 Wi-Fi 128GB - Blue (Early 2026)',
+    color: 'Blue (Early 2026)',
+    attributes: { color: 'Blue (Early 2026)', connectivity: 'Wi-Fi', storage: '128GB' },
+  };
+  assert.equal(getSkuAttribute(skuIPadBlue, 'color'), 'Blue');
+});
+
+test('resolveColorHex resolves dirty strings and spelling variants from colorMap strictly', async () => {
+  const { resolveColorHex } = await import('../src/features/session/catalog.ts');
+  const customMap = {
+    'Saddle Brown': '#8B4513',
+    'Custom Mint': '#2af598',
+    'Space Gray': '#535150',
+    'Gold': '#fae7cf',
+  };
+
+  assert.equal(resolveColorHex('Saddle Brown', customMap), '#8B4513');
+  assert.equal(resolveColorHex('- Saddle Brown', customMap), '#8B4513');
+  assert.equal(resolveColorHex('Saddle Brown - THA', customMap), '#8B4513');
+  assert.equal(resolveColorHex('SaddleBrown', customMap), '#8B4513');
+  assert.equal(resolveColorHex('Space Grey', customMap), '#535150');
+  assert.equal(resolveColorHex('Space Grey (Early 2026)', customMap), '#535150');
+  assert.equal(resolveColorHex('space gray', customMap), '#535150');
+  assert.equal(resolveColorHex('Gold', customMap), '#fae7cf');
+  assert.equal(resolveColorHex('- Custom Mint - US', customMap), '#2af598');
+  assert.equal(resolveColorHex('Natural Titanium', customMap), '#d1d5db');
+  assert.equal(resolveColorHex('UnknownColor123', customMap), '#d1d5db');
+});
+
+test('bound SKUs and color options sort alphabetically (A-Z)', () => {
+  const skus = [
+    { sku: 'MYW43TH/A', name: 'iPhone 16 Pro Max 256GB Desert Titanium' },
+    { sku: 'MH304TH/A', name: 'iPad Air 11 M4 Wi-Fi 128GB - Space Grey' },
+    { sku: 'MH305TH/A', name: 'iPad Air 11 M4 Wi-Fi 128GB - Blue' },
+    { sku: 'MYW13TH/A', name: 'iPhone 16 Pro Max 256GB Black Titanium' },
+  ];
+
+  const sortedSkus = [...skus].sort(
+    (a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+      a.sku.localeCompare(b.sku, undefined, { sensitivity: 'base' }),
+  );
+
+  assert.deepEqual(
+    sortedSkus.map((s) => s.sku),
+    ['MH305TH/A', 'MH304TH/A', 'MYW13TH/A', 'MYW43TH/A'],
+  );
+
+  const colors = [
+    { name: 'Space Grey' },
+    { name: 'Blue' },
+    { name: 'Desert Titanium' },
+    { name: 'Black Titanium' },
+  ];
+
+  const sortedColors = [...colors].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  );
+
+  assert.deepEqual(
+    sortedColors.map((c) => c.name),
+    ['Black Titanium', 'Blue', 'Desert Titanium', 'Space Grey'],
+  );
+});
+
+test('sortCaseSizeOptions sorts watch case sizes from lowest to highest', async () => {
+  const { sortCaseSizeOptions, sortBandSizeOptions } = await import('../src/features/session/catalog.ts');
+  const sizes = ['45mm', '40mm', '49mm', '41mm', '42mm', '38mm', '46mm', '44mm'];
+  assert.deepEqual(sortCaseSizeOptions(sizes), [
+    '38mm', '40mm', '41mm', '42mm', '44mm', '45mm', '46mm', '49mm',
+  ]);
+
+  const bandSizes = ['M/L', 'S/M'];
+  assert.deepEqual(sortBandSizeOptions(bandSizes), ['S/M', 'M/L']);
+
+  const numberedSizes = ['Size 8', 'Size 2', 'Size 10', 'Size 1'];
+  assert.deepEqual(sortBandSizeOptions(numberedSizes), ['Size 1', 'Size 2', 'Size 8', 'Size 10']);
+});
+
+test('getSkuAttribute extracts color for watch bands with trailing band size', async () => {
+  const { getSkuAttribute } = await import('../src/features/session/catalog.ts');
+  const sportBandSm = {
+    id: 'sb-1',
+    sku: 'MXE63FE/A',
+    name: 'Apple Watch 45mm Sport Band - Midnight - S/M',
+  };
+  assert.equal(getSkuAttribute(sportBandSm, 'caseSize'), '45mm');
+  assert.equal(getSkuAttribute(sportBandSm, 'band'), 'Sport Band');
+  assert.equal(getSkuAttribute(sportBandSm, 'bandSize'), 'S/M');
+  assert.equal(getSkuAttribute(sportBandSm, 'color'), 'Midnight');
+
+  const sportBandMl = {
+    id: 'sb-2',
+    sku: 'MXE73FE/A',
+    name: '46mm Sport Band - Lake Green - M/L (Late 2024)',
+  };
+  assert.equal(getSkuAttribute(sportBandMl, 'caseSize'), '46mm');
+  assert.equal(getSkuAttribute(sportBandMl, 'bandSize'), 'M/L');
+  assert.equal(getSkuAttribute(sportBandMl, 'color'), 'Lake Green');
+
+  const milanese = {
+    id: 'sb-3',
+    sku: 'MXE83FE/A',
+    name: '45mm Milanese Loop - Silver',
+  };
+  assert.equal(getSkuAttribute(milanese, 'color'), 'Silver');
+
+  const watchCharger = {
+    id: 'ch-1',
+    sku: 'MX6Y3FE/A',
+    name: 'Apple Watch Magnetic Fast Charger to USB-C Cable (1m)',
+  };
+  assert.equal(getSkuAttribute(watchCharger, 'color'), '');
 });

@@ -212,6 +212,29 @@ export function ColorsPanel() {
     });
   }, [colors, filterMode, search]);
 
+  const sortedManagingSkus = useMemo(() => {
+    if (!managingColor?.skus) return [];
+    return [...managingColor.skus].sort(
+      (a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+        a.sku.localeCompare(b.sku, undefined, { sensitivity: 'base' }),
+    );
+  }, [managingColor?.skus]);
+
+  const reassignColorOptions = useMemo(() => {
+    if (!managingColor) return [];
+    return colors
+      .filter((c) => c.name !== managingColor.name)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }, [colors, managingColor]);
+
+  const deleteMigrateColorOptions = useMemo(() => {
+    if (!deletingColor) return [];
+    return colors
+      .filter((c) => c.name !== deletingColor.name)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }, [colors, deletingColor]);
+
   const handleHexChange = (name: string, val: string) => {
     setDraftHex((prev) => ({
       ...prev,
@@ -797,7 +820,7 @@ export function ColorsPanel() {
                 </p>
               ) : (
                 <div style={{ maxHeight: '280px', overflowY: 'auto', display: 'grid', gap: '8px' }}>
-                  {managingColor.skus.map((s) => (
+                  {sortedManagingSkus.map((s) => (
                     <div
                       key={s.sku}
                       style={{
@@ -828,13 +851,11 @@ export function ColorsPanel() {
                           style={{ fontSize: '12px', padding: '4px 6px', maxWidth: '120px' }}
                         >
                           <option value="">ย้ายไปสี...</option>
-                          {colors
-                            .filter((c) => c.name !== managingColor.name)
-                            .map((c) => (
-                              <option key={c.name} value={c.name}>
-                                {c.name}
-                              </option>
-                            ))}
+                          {reassignColorOptions.map((c) => (
+                            <option key={c.name} value={c.name}>
+                              {c.name}
+                            </option>
+                          ))}
                         </select>
                         <Button
                           size="sm"
@@ -925,13 +946,11 @@ export function ColorsPanel() {
                           style={{ width: '100%', fontSize: '13px', padding: '6px 8px' }}
                         >
                           <option value="">-- เลือกสีปลายทาง --</option>
-                          {colors
-                            .filter((c) => c.name !== deletingColor.name)
-                            .map((c) => (
-                              <option key={c.name} value={c.name}>
-                                {c.name} ({c.skuCount} SKU)
-                              </option>
-                            ))}
+                          {deleteMigrateColorOptions.map((c) => (
+                            <option key={c.name} value={c.name}>
+                              {c.name} ({c.skuCount} SKU)
+                            </option>
+                          ))}
                         </select>
                       )}
                     </div>

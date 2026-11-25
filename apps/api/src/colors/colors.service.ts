@@ -28,7 +28,7 @@ export function isNonColor(candidate: string): boolean {
   if (s.replace(/[()[\]{},./\-_:\s]/g, '').length <= 1) return true;
 
   // Sizes: S/M, M/L, Large, Small, S, M, L, XL, XXL, 40mm, 1m, etc.
-  if (/^(?:s\/m|m\/l|xs|s|m|l|xl|xxl|large|small|medium|inch|in|demo|fae)$/i.test(s)) return true;
+  if (/^(?:s\/m|m\/l|xs|s|m|l|xl|xxl|large|small|medium|inch|in|demo|fae|late|early|mid)$/i.test(s)) return true;
   if (/^\d+\s*(?:mm|cm|m|inch|in)$/i.test(s)) return true;
 
   // Storage / Capacity / Memory / Wattage: 256GB, 512GB, 20W, etc.
@@ -75,13 +75,22 @@ export function isNonColor(candidate: string): boolean {
   return false;
 }
 
+export function cleanColorName(candidate: string): string {
+  if (!candidate) return '';
+  let s = candidate.trim();
+  s = s.replace(/\s*\([^)]*(?:\d{4}|[a-z]{2}\d+[a-z0-9\/]+)[^)]*\)/gi, '').trim();
+  s = s.replace(/\s+(?:early|late|mid)?\s*\d{4}\)?$/i, '').trim();
+  s = s.replace(/^[-–—·:/\s]+|[-–—·:/\s]+$/g, '').trim();
+  s = s.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+  return s;
+}
+
 /**
  * Normalizes color candidates by stripping trailing language/region tokens.
  * e.g. "Citrus Eng" -> "Citrus"
  */
 export function normalizeColorName(name: string): string {
-  let cleaned = name.trim();
-  cleaned = cleaned.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+  const cleaned = cleanColorName(name);
   return colorOf(cleaned) || cleaned;
 }
 
@@ -119,14 +128,16 @@ function extractSkuColor(s: {
     const rawName = s.name.trim();
     const parts = rawName.split(/[-–—]/);
     if (parts.length > 1) {
-      const candidate = parts[parts.length - 1].replace(/\([^)]*\)/g, '').trim();
-      const normalized = normalizeColorName(candidate);
-      if (
-        normalized &&
-        !isNonColor(normalized) &&
-        normalized.length <= 40
-      ) {
-        return normalized;
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const candidate = parts[i].replace(/\([^)]*\)/g, '').trim();
+        const normalized = normalizeColorName(candidate);
+        if (
+          normalized &&
+          !isNonColor(normalized) &&
+          normalized.length <= 40
+        ) {
+          return normalized;
+        }
       }
     }
 
@@ -190,6 +201,11 @@ export class ColorsService {
     const result: ColorItemDto[] = Array.from(allNames).map((name) => {
       const def = definedMap.get(name);
       const skuList = skuMap.get(name) ?? [];
+      skuList.sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+          a.sku.localeCompare(b.sku, undefined, { sensitivity: 'base' }),
+      );
       return {
         id: def?.id ?? null,
         name,
@@ -349,19 +365,32 @@ export class ColorsService {
     });
   }
 
-  /** Return a map of color name -> hexCode (with case-insensitive keys) */
+  /** Return a map of color name -> hexCode with normalized keys and spelling variants */
   async getColorMap(): Promise<Record<string, string>> {
     const colors = await this.prisma.productColor.findMany();
     const map: Record<string, string> = {};
     for (const c of colors) {
-      const hex = c.hexCode?.trim() || '';
-      if (!hex) continue;
-      map[c.name] = hex;
-      map[c.name.trim().toLowerCase()] = hex;
-      const cleanName = colorOf(c.name);
+      if (!c.hexCode?.trim()) continue;
+      const hex = c.hexCode.trim();
+      const rawName = c.name.trim();
+
+      map[rawName] = hex;
+      const lower = rawName.toLowerCase();
+      map[lower] = hex;
+      map[lower.replace(/[^a-z0-9]/g, '')] = hex;
+
+      const cleanName = colorOf(rawName);
       if (cleanName) {
         map[cleanName] = hex;
-        map[cleanName.trim().toLowerCase()] = hex;
+        const cleanLower = cleanName.toLowerCase();
+        map[cleanLower] = hex;
+        map[cleanLower.replace(/[^a-z0-9]/g, '')] = hex;
+      }
+
+      if (lower.includes('gray')) {
+        map[lower.replace('gray', 'grey')] = hex;
+      } else if (lower.includes('grey')) {
+        map[lower.replace('grey', 'gray')] = hex;
       }
     }
     return map;

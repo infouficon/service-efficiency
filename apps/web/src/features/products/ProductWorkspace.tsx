@@ -620,19 +620,46 @@ export function ProductWorkspace({
     }
   };
 
-  // The tabs: every active category, plus a switched-off one that still has products (so the back office can find them).
+  // The tabs: every active main category (or 'Accessories'), plus any category that actually has products.
+  // Accessory sub-groups (e.g. 'Watch Accessories', 'Charging Device') that have no direct products are not shown as tabs.
   const tabCategories = useMemo(() => {
-    const names = categories
-      .filter((c) => c.active || (c.productCount ?? 0) > 0)
-      .map((c) => c.name);
-    for (const p of products)
-      if (!names.includes(p.category)) names.push(p.category);
+    const directProductCategories = new Set(products.map((p) => p.category));
+    const names: string[] = [];
+
+    for (const c of categories) {
+      // 1. All main device categories (isAccessory === false) if active or having products
+      if (!c.isAccessory && (c.active || (c.productCount ?? 0) > 0 || directProductCategories.has(c.name))) {
+        if (!names.includes(c.name)) names.push(c.name);
+      }
+      // 2. The main 'Accessories' category
+      else if (c.name === 'Accessories') {
+        if (!names.includes(c.name)) names.push(c.name);
+      }
+      // 3. Any other accessory category that ACTUALLY has products assigned directly to it (e.g. Third Party Accy)
+      else if ((c.productCount ?? 0) > 0 || directProductCategories.has(c.name)) {
+        if (!names.includes(c.name)) names.push(c.name);
+      }
+    }
+
+    // Also include any product categories from products not already present
+    for (const p of products) {
+      if (p.category && !names.includes(p.category)) {
+        names.push(p.category);
+      }
+    }
     return names;
   }, [categories, products]);
-  const activeCategoryNames = useMemo(
-    () => categories.filter((c) => c.active).map((c) => c.name),
-    [categories],
-  );
+
+  const activeCategoryNames = useMemo(() => {
+    const directProductCategories = new Set(products.map((p) => p.category));
+    return categories
+      .filter(
+        (c) =>
+          c.active &&
+          (!c.isAccessory || c.name === 'Accessories' || (c.productCount ?? 0) > 0 || directProductCategories.has(c.name)),
+      )
+      .map((c) => c.name);
+  }, [categories, products]);
   // The category select of the product form: the active categories, plus the one the product being edited already has.
   const categoryChoices = useMemo(
     () =>
@@ -1879,7 +1906,9 @@ export function ProductWorkspace({
               );
               const currentCategory = currentProduct
                 ? categories.find(
-                    (c) => c.name.toLowerCase() === currentProduct.category.toLowerCase(),
+                    (c) =>
+                      c.name.toLowerCase() === currentProduct.name.toLowerCase() ||
+                      c.name.toLowerCase() === currentProduct.category.toLowerCase(),
                   )
                 : null;
               const categorySpecs =

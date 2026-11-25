@@ -97,17 +97,34 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
     if (!val && s.name) {
       const parts = s.name.split(/[-–—]/);
       if (parts.length > 1) {
-        val = parts[parts.length - 1].replace(/\([^)]*\)/g, '').trim();
-      } else {
+        // Search parts from right to left for a valid color candidate (e.g. "Sport Band - Midnight - S/M" -> "Midnight")
+        for (let i = parts.length - 1; i >= 1; i--) {
+          const candidate = cleanColorName(parts[i]);
+          if (candidate && !isNonColor(candidate)) {
+            val = candidate;
+            break;
+          }
+        }
+      }
+
+      if (!val) {
         const parenMatch = s.name.match(/\(([^)]+)\)$/);
-        if (parenMatch && !/\b\d+\s*(?:m|cm|gb|tb|w)\b/i.test(parenMatch[1])) {
-          val = parenMatch[1].trim();
-        } else {
-          const colorMatch = s.name.match(
-            /\b(Black|White|Stone|Light Blue|Dark Grey|Dark Gray|Sierra Blue|Midnight|Starlight|Pink|Red|Yellow|Green|Blue|Purple|Orange|Silver|Space Gray|Space Grey|Space Black|Natural Titanium|Desert Titanium|Teal|Ultramarine|Saddle Brown|Cypress|Plum|Denim|Star Fruit|Lake Green|Citrus)\b/i,
-          );
-          if (colorMatch) {
-            val = colorMatch[1].trim();
+        if (parenMatch && !/\b\d+\s*(?:m|cm|gb|tb|w|mm)\b/i.test(parenMatch[1])) {
+          const candidate = cleanColorName(parenMatch[1]);
+          if (candidate && !isNonColor(candidate)) {
+            val = candidate;
+          }
+        }
+      }
+
+      if (!val) {
+        const colorMatch = s.name.match(
+          /\b(Black|White|Stone|Light Blue|Dark Grey|Dark Gray|Sierra Blue|Midnight|Starlight|Pink|Red|Yellow|Green|Blue|Purple|Orange|Silver|Space Gray|Space Grey|Space Black|Natural Titanium|Desert Titanium|Teal|Ultramarine|Saddle Brown|Cypress|Plum|Denim|Star Fruit|Lake Green|Citrus)\b/i,
+        );
+        if (colorMatch) {
+          const candidate = cleanColorName(colorMatch[1]);
+          if (candidate && !isNonColor(candidate)) {
+            val = candidate;
           }
         }
       }
@@ -592,6 +609,40 @@ export function sortWattageOptions(options: string[]): string[] {
     const numA = matchA ? parseInt(matchA[1], 10) : Number.MAX_SAFE_INTEGER;
     const numB = matchB ? parseInt(matchB[1], 10) : Number.MAX_SAFE_INTEGER;
     if (numA !== numB) return numA - numB;
+    return a.localeCompare(b, 'th');
+  });
+}
+
+/**
+ * Sort case size options numerically in ascending order (e.g. "38mm", "40mm", "41mm", "42mm", "44mm", "45mm", "46mm", "49mm")
+ */
+export function sortCaseSizeOptions(options: string[]): string[] {
+  return [...options].sort((a, b) => {
+    const matchA = a.match(/(\d+)/);
+    const matchB = b.match(/(\d+)/);
+    const numA = matchA ? parseInt(matchA[1], 10) : Number.MAX_SAFE_INTEGER;
+    const numB = matchB ? parseInt(matchB[1], 10) : Number.MAX_SAFE_INTEGER;
+    if (numA !== numB) return numA - numB;
+    return a.localeCompare(b, 'th');
+  });
+}
+
+/**
+ * Sort band size options in intuitive standard order (S/M, M/L, Size 1, Size 2...)
+ */
+export function sortBandSizeOptions(options: string[]): string[] {
+  const order = ['s/m', 'm/l', 'xs', 's', 'm', 'l', 'xl', 'small', 'medium', 'large', 'one size'];
+  return [...options].sort((a, b) => {
+    const lowerA = a.toLowerCase().trim();
+    const lowerB = b.toLowerCase().trim();
+    const idxA = order.indexOf(lowerA);
+    const idxB = order.indexOf(lowerB);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    const numA = a.match(/(\d+)/);
+    const numB = b.match(/(\d+)/);
+    if (numA && numB) return parseInt(numA[1], 10) - parseInt(numB[1], 10);
     return a.localeCompare(b, 'th');
   });
 }

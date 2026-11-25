@@ -9,6 +9,8 @@ import {
   MAC_TYPES,
   resolveColorHex,
   sortWattageOptions,
+  sortCaseSizeOptions,
+  sortBandSizeOptions,
   type CatalogSku,
   type ModelChoice,
   type Picked,
@@ -155,9 +157,23 @@ export function SkuPicker({
         spec.label.includes('วัตต์') ||
         (available.length > 0 &&
           available.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+      const isCaseSize =
+        spec.key.toLowerCase().includes('casesize') ||
+        spec.label.includes('ขนาดตัวเรือน') ||
+        (available.length > 0 &&
+          available.every((opt) => /^\d+\s*mm$/i.test(opt.trim())));
+      const isBandSize =
+        spec.key.toLowerCase().includes('bandsize') ||
+        spec.label.includes('ขนาดสาย') ||
+        (available.length > 0 &&
+          available.every((opt) => /^(?:s\/m|m\/l|size\s*\d+|xs|s|m|l|xl|one\s*size)$/i.test(opt.trim())));
 
       if (isWattage) {
         available = sortWattageOptions(available);
+      } else if (isCaseSize) {
+        available = sortCaseSizeOptions(available);
+      } else if (isBandSize) {
+        available = sortBandSizeOptions(available);
       }
 
       if (available.length > 0) {
@@ -391,6 +407,22 @@ export function SkuPicker({
             if (!prevStepsDone) return null;
 
             const isColor = isColorSpec(st.spec);
+            const isWattage =
+              st.spec.key.toLowerCase().includes('watt') ||
+              st.spec.label.includes('วัตต์') ||
+              (st.options.length > 0 &&
+                st.options.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+            const isCaseSize =
+              st.spec.key.toLowerCase().includes('casesize') ||
+              st.spec.label.includes('ขนาดตัวเรือน') ||
+              (st.options.length > 0 &&
+                st.options.every((opt) => /^\d+\s*mm$/i.test(opt.trim())));
+            const isBandSize =
+              st.spec.key.toLowerCase().includes('bandsize') ||
+              st.spec.label.includes('ขนาดสาย') ||
+              (st.options.length > 0 &&
+                st.options.every((opt) => /^(?:s\/m|m\/l|size\s*\d+|xs|s|m|l|xl|one\s*size)$/i.test(opt.trim())));
+            const isCompact = isWattage || isCaseSize || isBandSize;
             const cols2 = isTwoColumns(st.options);
 
             return (
@@ -439,6 +471,56 @@ export function SkuPicker({
                               opacity: stockInfo.outOfStock ? 0.35 : 1,
                             }}
                           />
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : isCompact ? (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(70px, 1fr))',
+                      gap: '8px',
+                    }}
+                  >
+                    {st.options.map((opt) => {
+                      const matchingSkus = st.candidatesForStep.filter(
+                        (s) => getSkuAttribute(s, st.spec.key) === opt,
+                      );
+                      const stockInfo = getOptionStockText(matchingSkus);
+                      const isSelected = st.selectedValue === opt;
+
+                      return (
+                        <button
+                          type="button"
+                          key={opt}
+                          disabled={stockInfo.outOfStock}
+                          className={`spec-option-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleStepChange(st.spec.key, opt)}
+                          style={{
+                            padding: '10px 8px',
+                            textAlign: 'center',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            minHeight: '46px',
+                          }}
+                        >
+                          <span
+                            className="spec-option-title"
+                            style={{ fontSize: '13.5px', fontWeight: 600 }}
+                          >
+                            {opt}
+                          </span>
+                          {stockInfo.outOfStock && (
+                            <span
+                              className="spec-option-sub out-of-stock"
+                              style={{ fontSize: '10px' }}
+                            >
+                              หมด
+                            </span>
+                          )}
                         </button>
                       );
                     })}

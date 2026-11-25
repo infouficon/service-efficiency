@@ -8,6 +8,8 @@ import {
   isOutOfStock,
   resolveColorHex,
   sortWattageOptions,
+  sortCaseSizeOptions,
+  sortBandSizeOptions,
 } from './catalog';
 import { api } from '../../services/api';
 
@@ -490,9 +492,23 @@ export function AccessoryCategoryPicker({
         spec.label.includes('วัตต์') ||
         (available.length > 0 &&
           available.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+      const isCaseSize =
+        spec.key.toLowerCase().includes('casesize') ||
+        spec.label.includes('ขนาดตัวเรือน') ||
+        (available.length > 0 &&
+          available.every((opt) => /^\d+\s*mm$/i.test(opt.trim())));
+      const isBandSize =
+        spec.key.toLowerCase().includes('bandsize') ||
+        spec.label.includes('ขนาดสาย') ||
+        (available.length > 0 &&
+          available.every((opt) => /^(?:s\/m|m\/l|size\s*\d+|xs|s|m|l|xl|one\s*size)$/i.test(opt.trim())));
 
       if (isWattage) {
         available = sortWattageOptions(available);
+      } else if (isCaseSize) {
+        available = sortCaseSizeOptions(available);
+      } else if (isBandSize) {
+        available = sortBandSizeOptions(available);
       }
 
       if (available.length > 0) {
@@ -743,6 +759,17 @@ export function AccessoryCategoryPicker({
             st.spec.label.includes('วัตต์') ||
             (st.options.length > 0 &&
               st.options.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+          const isCaseSize =
+            st.spec.key.toLowerCase().includes('casesize') ||
+            st.spec.label.includes('ขนาดตัวเรือน') ||
+            (st.options.length > 0 &&
+              st.options.every((opt) => /^\d+\s*mm$/i.test(opt.trim())));
+          const isBandSize =
+            st.spec.key.toLowerCase().includes('bandsize') ||
+            st.spec.label.includes('ขนาดสาย') ||
+            (st.options.length > 0 &&
+              st.options.every((opt) => /^(?:s\/m|m\/l|size\s*\d+|xs|s|m|l|xl|one\s*size)$/i.test(opt.trim())));
+          const isCompact = isWattage || isCaseSize || isBandSize;
           const isStepTwoCols =
             st.options.length === 2 &&
             st.options.every((opt) => opt.length <= 16);
@@ -804,7 +831,7 @@ export function AccessoryCategoryPicker({
                     );
                   })}
                 </div>
-              ) : isWattage ? (
+              ) : isCompact ? (
                 <div
                   style={{
                     display: 'grid',

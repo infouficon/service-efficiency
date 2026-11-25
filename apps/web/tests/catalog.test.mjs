@@ -351,3 +351,53 @@ test('bound SKUs and color options sort alphabetically (A-Z)', () => {
     ['Black Titanium', 'Blue', 'Desert Titanium', 'Space Grey'],
   );
 });
+
+test('sortCaseSizeOptions sorts watch case sizes from lowest to highest', async () => {
+  const { sortCaseSizeOptions, sortBandSizeOptions } = await import('../src/features/session/catalog.ts');
+  const sizes = ['45mm', '40mm', '49mm', '41mm', '42mm', '38mm', '46mm', '44mm'];
+  assert.deepEqual(sortCaseSizeOptions(sizes), [
+    '38mm', '40mm', '41mm', '42mm', '44mm', '45mm', '46mm', '49mm',
+  ]);
+
+  const bandSizes = ['M/L', 'S/M'];
+  assert.deepEqual(sortBandSizeOptions(bandSizes), ['S/M', 'M/L']);
+
+  const numberedSizes = ['Size 8', 'Size 2', 'Size 10', 'Size 1'];
+  assert.deepEqual(sortBandSizeOptions(numberedSizes), ['Size 1', 'Size 2', 'Size 8', 'Size 10']);
+});
+
+test('getSkuAttribute extracts color for watch bands with trailing band size', async () => {
+  const { getSkuAttribute } = await import('../src/features/session/catalog.ts');
+  const sportBandSm = {
+    id: 'sb-1',
+    sku: 'MXE63FE/A',
+    name: 'Apple Watch 45mm Sport Band - Midnight - S/M',
+  };
+  assert.equal(getSkuAttribute(sportBandSm, 'caseSize'), '45mm');
+  assert.equal(getSkuAttribute(sportBandSm, 'band'), 'Sport Band');
+  assert.equal(getSkuAttribute(sportBandSm, 'bandSize'), 'S/M');
+  assert.equal(getSkuAttribute(sportBandSm, 'color'), 'Midnight');
+
+  const sportBandMl = {
+    id: 'sb-2',
+    sku: 'MXE73FE/A',
+    name: '46mm Sport Band - Lake Green - M/L (Late 2024)',
+  };
+  assert.equal(getSkuAttribute(sportBandMl, 'caseSize'), '46mm');
+  assert.equal(getSkuAttribute(sportBandMl, 'bandSize'), 'M/L');
+  assert.equal(getSkuAttribute(sportBandMl, 'color'), 'Lake Green');
+
+  const milanese = {
+    id: 'sb-3',
+    sku: 'MXE83FE/A',
+    name: '45mm Milanese Loop - Silver',
+  };
+  assert.equal(getSkuAttribute(milanese, 'color'), 'Silver');
+
+  const watchCharger = {
+    id: 'ch-1',
+    sku: 'MX6Y3FE/A',
+    name: 'Apple Watch Magnetic Fast Charger to USB-C Cable (1m)',
+  };
+  assert.equal(getSkuAttribute(watchCharger, 'color'), '');
+});

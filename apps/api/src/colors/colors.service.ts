@@ -128,14 +128,16 @@ function extractSkuColor(s: {
     const rawName = s.name.trim();
     const parts = rawName.split(/[-–—]/);
     if (parts.length > 1) {
-      const candidate = parts[parts.length - 1].replace(/\([^)]*\)/g, '').trim();
-      const normalized = normalizeColorName(candidate);
-      if (
-        normalized &&
-        !isNonColor(normalized) &&
-        normalized.length <= 40
-      ) {
-        return normalized;
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const candidate = parts[i].replace(/\([^)]*\)/g, '').trim();
+        const normalized = normalizeColorName(candidate);
+        if (
+          normalized &&
+          !isNonColor(normalized) &&
+          normalized.length <= 40
+        ) {
+          return normalized;
+        }
       }
     }
 

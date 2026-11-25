@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 export class UpsertColorDto {
   @Transform(({ value }: { value: unknown }) =>
@@ -24,4 +24,36 @@ export class UpsertColorDto {
   )
   @MaxLength(512)
   hexCode!: string;
+}
+
+export class BindSkuDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  sku!: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() ? value.trim() : null,
+  )
+  @IsOptional()
+  @IsString()
+  colorName?: string | null;
+}
+
+export class MigrateSkusDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
+  @IsString()
+  @IsNotEmpty()
+  fromColor!: string;
+
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value.trim() ? value.trim() : null,
+  )
+  @IsOptional()
+  @IsString()
+  toColor?: string | null;
 }

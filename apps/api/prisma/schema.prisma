@@ -416,6 +416,8 @@ model ProductSku {
   sku       String            @unique @db.VarChar(64)
   name      String            @db.VarChar(191)
   color     String?           @db.VarChar(64)
+  /// D196: manual color assignment overrides ERP sync
+  colorOverride Boolean         @default(false)
   storage   String?           @db.VarChar(64)
   // memory (RAM) of a Mac, e.g. "16GB"; parsed from the warroom names by the sync (D79)
   memory    String?           @db.VarChar(32)

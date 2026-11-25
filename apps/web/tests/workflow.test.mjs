@@ -38,6 +38,7 @@ import {
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 import { stages } from '../src/constants/options.ts';
+import { sortWattageOptions } from '../src/features/session/catalog.ts';
 const fixture = () => ({
   reference: 'fixture',
   phone: '1234567890',
@@ -856,4 +857,17 @@ test('D127, D188: credit card payment validation (card type required for Full CC
   assert.equal(formatPaymentLabel('0% Credit Card', details), '0% Credit Card (TTB 10 เดือน)');
   assert.equal(formatPaymentLabel('Cash', details), 'Cash');
   assert.equal(formatPaymentLabel('Transfer', details), 'Transfer');
+});
+
+test('sortWattageOptions sorts wattage numbers from lowest to highest', () => {
+  const unsorted = ['70W', '20W', '140W', '35W Dual Port', '30W', '35W Compact'];
+  const sorted = sortWattageOptions(unsorted);
+  assert.deepEqual(sorted, [
+    '20W',
+    '30W',
+    '35W Compact',
+    '35W Dual Port',
+    '70W',
+    '140W',
+  ]);
 });

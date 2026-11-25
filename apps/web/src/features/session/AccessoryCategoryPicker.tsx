@@ -6,6 +6,7 @@ import {
   formatAccessoryItemName,
   getSkuAttribute,
   isOutOfStock,
+  sortWattageOptions,
 } from './catalog';
 import { api } from '../../services/api';
 
@@ -477,11 +478,21 @@ export function AccessoryCategoryPicker({
     }[] = [];
 
     for (const spec of specs) {
-      const available = distinct(
+      let available = distinct(
         currentCandidates
           .map((s) => getSkuAttribute(s, spec.key))
           .filter(Boolean),
       );
+
+      const isWattage =
+        spec.key.toLowerCase().includes('watt') ||
+        spec.label.includes('วัตต์') ||
+        (available.length > 0 &&
+          available.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+
+      if (isWattage) {
+        available = sortWattageOptions(available);
+      }
 
       if (available.length > 0) {
         const val = selectedValues[spec.key] ?? '';
@@ -885,7 +896,7 @@ export function AccessoryCategoryPicker({
           );
         })}
 
-      {/* If steps are configured and completed, show single prominent "+ เพิ่มสินค้า" button at bottom without redundant SKU card */}
+      {/* If steps are configured and completed, show single prominent "เพิ่มสินค้า" button at bottom without redundant SKU card */}
       {singleResolvedSku && (
         <div
           style={{
@@ -929,7 +940,7 @@ export function AccessoryCategoryPicker({
               ? 'สินค้าหมด'
               : singleInCartQty > 0
                 ? `เพิ่มแล้ว (${singleInCartQty} ชิ้น) +`
-                : '+ เพิ่มสินค้า'}
+                : 'เพิ่มสินค้า'}
           </button>
         </div>
       )}

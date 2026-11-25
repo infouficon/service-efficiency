@@ -8,6 +8,7 @@ import {
   isOutOfStock,
   isUnlimited,
   MAC_TYPES,
+  sortWattageOptions,
   type CatalogSku,
   type ModelChoice,
   type Picked,
@@ -193,8 +194,18 @@ export function SkuPicker({
     }[] = [];
 
     for (const spec of allSpecs) {
-      const options = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean));
+      let options = distinct(candidates.map((s) => getSkuAttribute(s, spec.key)).filter(Boolean));
       if (options.length === 0) continue;
+
+      const isWattage =
+        spec.key.toLowerCase().includes('watt') ||
+        spec.label.includes('วัตต์') ||
+        (options.length > 0 &&
+          options.every((opt) => /^\d+\s*w$/i.test(opt.trim())));
+
+      if (isWattage) {
+        options = sortWattageOptions(options);
+      }
 
       const currentVal = selectedValues[spec.key] || '';
       computedSteps.push({

@@ -2,6 +2,43 @@
 import type { Product } from '../../types/session';
 
 /** Get the attribute value for a spec key from a SKU (D142, D157, D188) */
+export function isNonColor(candidate: string): boolean {
+  if (!candidate) return true;
+  const s = candidate.trim();
+  if (s.length <= 1) return true;
+  if (s.replace(/[()[\]{},./\-_:\s]/g, '').length <= 1) return true;
+  if (/^(?:s\/m|m\/l|xs|s|m|l|xl|xxl|large|small|medium|inch|in|demo|fae)$/i.test(s)) return true;
+  if (/^\d+\s*(?:mm|cm|m|inch|in)$/i.test(s)) return true;
+  if (/^\d+\s*(?:gb|tb|mb|w|watt)$/i.test(s)) return true;
+  if (/^\d+\s*pack$/i.test(s)) return true;
+  if (
+    /^(?:us\s+english|uk\s+english|intl?\s+english|thai(?:\s*[\/-]\s*eng(?:lish)?)?|thai|tha|eng|english|us|int|ci\/ar|za\/a|th\/a|ll\/a|japanese|korean|arabic|chinese|russian)$/i.test(
+      s,
+    )
+  )
+    return true;
+  if (/\b(?:left|right|front|back|top|bottom)\b/i.test(s)) return true;
+  if (
+    /\b(?:adapter|cable|charger|multiport|connector|headphone|jack|reader|thunderbolt|magsafe|lightning|power\s*adapter)\b/i.test(
+      s,
+    )
+  )
+    return true;
+  if (
+    /\b(?:a\d{2}|m[1-4](?:\s*pro|\s*max|\s*ultra)?|late\s*\d{4}|early\s*\d{4}|mid\s*\d{4}|\d{4}\)?)\b/i.test(
+      s,
+    )
+  )
+    return true;
+  if (
+    /\b(?:macbook|imac|mac\s*mini|mac\s*studio|mac\s*pro|ipad|iphone|apple\s*watch|airpods|airtag|pencil|keyboard|mouse|trackpad|touch\s*surface|surface|demo)\b/i.test(
+      s,
+    )
+  )
+    return true;
+  return false;
+}
+
 export function getSkuAttribute(s: CatalogSku, key: string): string {
   let val = '';
   if (s.attributes && typeof s.attributes[key] === 'string' && s.attributes[key].trim()) {
@@ -18,12 +55,18 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
           val = parenMatch[1].trim();
         } else {
           const colorMatch = s.name.match(
-            /\b(Black|White|Stone|Light Blue|Dark Grey|Dark Gray|Sierra Blue|Midnight|Starlight|Pink|Red|Yellow|Green|Blue|Purple|Orange|Silver|Space Gray|Space Grey|Space Black|Natural Titanium|Desert Titanium|Teal|Ultramarine)\b/i,
+            /\b(Black|White|Stone|Light Blue|Dark Grey|Dark Gray|Sierra Blue|Midnight|Starlight|Pink|Red|Yellow|Green|Blue|Purple|Orange|Silver|Space Gray|Space Grey|Space Black|Natural Titanium|Desert Titanium|Teal|Ultramarine|Saddle Brown|Cypress|Plum|Denim|Star Fruit|Lake Green|Citrus)\b/i,
           );
           if (colorMatch) {
             val = colorMatch[1].trim();
           }
         }
+      }
+    }
+    if (val) {
+      val = val.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+      if (isNonColor(val)) {
+        val = '';
       }
     }
   } else if (key === 'storage') {
@@ -546,4 +589,18 @@ export function isAccessoryFromProduct(product: CatalogProduct, accessoryKey: st
     }
   }
   return false;
+}
+
+/**
+ * Sort wattage options numerically in ascending order (e.g. "20W", "30W", "35W", "70W", "96W", "140W")
+ */
+export function sortWattageOptions(options: string[]): string[] {
+  return [...options].sort((a, b) => {
+    const matchA = a.match(/(\d+)/);
+    const matchB = b.match(/(\d+)/);
+    const numA = matchA ? parseInt(matchA[1], 10) : Number.MAX_SAFE_INTEGER;
+    const numB = matchB ? parseInt(matchB[1], 10) : Number.MAX_SAFE_INTEGER;
+    if (numA !== numB) return numA - numB;
+    return a.localeCompare(b, 'th');
+  });
 }

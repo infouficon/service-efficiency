@@ -3132,7 +3132,7 @@ Decisions:
    - Wired into `.git/hooks/pre-push` and `apps/web/package.json` (`prebuild` hook) to ensure the version is refreshed before builds and pushes.
 2. **Explicit "เพิ่มสินค้า" Workflow:**
    - Instead of immediately auto-adding an accessory upon selecting the last attribute, staff reviews their selected specifications and clicks a prominent **"เพิ่มสินค้า"** (+1) button.
-   - For direct SKU lists (e.g. Cables, Earbuds), items display a clear `+ เพิ่มสินค้า` action.
+   - For direct SKU lists (e.g. Cables, Earbuds), items display a clear `เพิ่มสินค้า` action.
    - The feedback banner confirms the addition and provides `เพิ่มสินค้า (+1)` and `เลือกแบบอื่น` actions.
 3. **Image URL Support in Color Palette:**
    - Widened `ProductColor.hexCode` from `VarChar(16)` to `VarChar(512)` in `apps/api/prisma/schema.prisma` and applied migration `202611240001_widen_product_color_hex_code`.
@@ -3151,7 +3151,7 @@ Staff and Owner requested:
 
 Decisions:
 1. **Direct Add Action without Redundant Bottom Banner:**
-   - Removed the bottom confirmation banner and its duplicate `+ เพิ่มสินค้า` button.
+   - Removed the bottom confirmation banner and its duplicate `เพิ่มสินค้า` button.
    - For candidate matches that resolve to a single SKU, a dedicated action row renders with `+` (or `ในรายการ (X)`). Clicking it immediately adds the item to `cartAccessories` and updates the count in place.
    - Direct SKU list items retain their individual `+` / `ในรายการ (X)` action buttons with immediate cart updates.
 2. **Compact Uniform Wattage Grid:**
@@ -3178,19 +3178,19 @@ Decisions:
 4. **Sidebar Display:**
    - Displays `v1.0.0`, `v1.0.1`, etc. in the navigation sidebar footer (`.sidebar-version-tag`).
 
-## D193 — Compact Wattage Grid Matching & Direct Bottom "+ เพิ่มสินค้า" Button (2026-11-24)
+## D193 — Compact Wattage Grid Matching & Direct Bottom "เพิ่มสินค้า" Button (2026-11-24)
 
 Staff and Owner requested via `/grill-me`:
 1. "ทำไมจำนวนวัตต์ ยังคงแสดงอย่างละบรรทัด": Ensure wattage options strictly render in a compact multi-button per row grid (3-4 buttons per row) even when data keys or labels vary.
-2. "ไม่ต้องแสดง รายการสรุป(เลือกสินค้า)ด้านล่างเพิ่มเพื่อให้กดเลือก หากจบที่ สี เพิ่มปุ่ม เพิ่มสินค้า ด้านล่างไปก่อน": When attribute configuration reaches the final step (e.g. Color), do not render an extra intermediate SKU summary card or "เลือกสินค้า" section. Instead, render a prominent "+ เพิ่มสินค้า" button at the bottom of the card.
+2. "ไม่ต้องแสดง รายการสรุป(เลือกสินค้า)ด้านล่างเพิ่มเพื่อให้กดเลือก หากจบที่ สี เพิ่มปุ่ม เพิ่มสินค้า ด้านล่างไปก่อน": When attribute configuration reaches the final step (e.g. Color), do not render an extra intermediate SKU summary card or "เลือกสินค้า" section. Instead, render a prominent "เพิ่มสินค้า" button at the bottom of the card.
 
 Decisions:
 1. **Resilient Wattage Grid Detection:**
    - Evaluates `isWattage` matching `st.spec.key.includes('watt')`, `st.spec.label.includes('วัตต์')`, or options conforming to `/^\d+\s*w$/i`.
    - Renders in `repeat(auto-fill, minmax(78px, 1fr))` grid with uniform `minHeight: 46px` and centered labels.
-2. **Clean Bottom "+ เพิ่มสินค้า" Button:**
+2. **Clean Bottom "เพิ่มสินค้า" Button:**
    - When configured steps resolve to 1 candidate SKU (`allStepsCompleted && candidates.length === 1`), removes the SKU info summary card.
-   - Renders a prominent full-width action button at the bottom: `+ เพิ่มสินค้า` (or `เพิ่มแล้ว (X ชิ้น)` when in cart).
+   - Renders a prominent full-width action button at the bottom: `เพิ่มสินค้า` (or `เพิ่มแล้ว (X ชิ้น)` when in cart).
    - Direct item lists without steps (e.g. Cables & Connectors, Earbuds) continue to display item rows with individual add buttons.
 
 ## D194 — Hierarchical Customer Acquisition Channel Survey UI & Store Pickup (2026-11-24)
@@ -3238,7 +3238,25 @@ Decisions:
    - **Item Replacement Selection (`ChangeItemModal.tsx`):** Replaced default blue radio styling with system theme `.custom-radio-card`.
    - **Discount Type (`SelectionEditor.tsx`):** Standardized active border to 2px `var(--primary, #0abab5)` and background to `var(--primary-subtle, #e8f7f6)`.
 
-## D196 — Instant Scroll-to-Top on Step and Stage Transitions (2026-11-23)
+## D196 — Color Palette Garbage Filter & Manual SKU-to-Color Management (2026-11-24)
+
+Staff and Admin reported via `/grill-me`:
+"Thai , S/M , M/L , C Power Adapter , THA , FAE , Large , Natural , Touch Surface , (Late 2024) , inch , M , XL , 4 Pack , 512GB , C Cable , C Digital AV Multiport Adapter , C to 3.5 mm Headphone Jack Adapter , C to Lightning Cable , C to SD Card Reader , Demo , in, M4, 2025) , Late 2022 , 1 Pack , 256GB, 4 pack, A16, C , C Charge Cable, C to Apple Pencil Adapter, C to Lightning Adapter, C to Magsafe 3 Cable, C to USB Adapter, C VGA Multiport Adapter, C Woven Charge Cable, C, Left, CI/AR, INT, C, Right, CI/AR, INT, C), C) to Thunderbolt 2 Adapter, Citrus Eng เป็น Citrus, in MacBook Pro, inch MacBook Air ไม่ใช่สี และอีกหลายอย่าง ให้สามารถจัดการส่วนนี้ด้วยได้ไหม เช่น เพิ่มและผูก sku เอง ลบ อันที่ไม่ใช่เองได้และผูกเอง"
+
+Decisions:
+1. **Automated Non-Color Filter (`isNonColor`):**
+   - Implemented in both backend (`colors.service.ts`) and frontend (`catalog.ts`).
+   - Automatically filters out band sizes (S/M, M/L, Large), capacities (256GB, 512GB), wattages, pack counts (4 Pack), layout/region codes (Thai, THA, ENG, INT), hardware accessories (Cables, Adapters, Multiports), chipset/year tags (M4, A16, Late 2024), and stray leftovers.
+   - Normalizes color names (e.g. `Citrus Eng` -> `Citrus`).
+2. **Permanent SKU Color Binding (`colorOverride` on ProductSku):**
+   - Added `colorOverride Boolean @default(false)` column to `ProductSku`.
+   - When Admin manually binds or reassigns a SKU to a color, `colorOverride` is set to `true`.
+   - ERP Warroom sync respects `colorOverride` and does not overwrite manually bound colors.
+3. **Admin SKU Management & Migration UI (`ColorsPanel.tsx`):**
+   - Added SKU Management modal allowing Admin to view, bind new SKUs, or transfer SKUs to other colors.
+   - When deleting a color with bound SKUs, Admin can choose to migrate all SKUs to another color (e.g. `Citrus Eng` -> `Citrus`) or unbind all SKUs.
+
+## D197 — Instant Scroll-to-Top on Step and Stage Transitions (2026-11-23)
 
 Staff reported: "เวลาเปลี่ยน step เลื่อนกลับมาที่บนสุด บางทีเลื่อนอยู่ล่างสุด แต่พอไปที่ step ถัดไปหน้าจอกลับอยู่ด้านล่าง ทั้งที่ควรเริ่มที่บนสุด"
 

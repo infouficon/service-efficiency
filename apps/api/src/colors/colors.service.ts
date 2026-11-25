@@ -37,8 +37,13 @@ export function isNonColor(candidate: string): boolean {
   // Pack counts: 1 Pack, 4 Pack, 4 pack
   if (/^\d+\s*pack$/i.test(s)) return true;
 
-  // Language / Region / Layout: Thai, THA, ENG, US, INT, CI/AR, LL/A, etc.
-  if (/^(?:thai|tha|eng|english|us|int|ci\/ar|za\/a|th\/a|ll\/a)$/i.test(s)) return true;
+  // Language / Region / Layout: Thai, THA, ENG, US, INT, CI/AR, LL/A, US English, etc.
+  if (
+    /^(?:us\s+english|uk\s+english|intl?\s+english|thai(?:\s*[\/-]\s*eng(?:lish)?)?|thai|tha|eng|english|us|int|ci\/ar|za\/a|th\/a|ll\/a|japanese|korean|arabic|chinese|russian)$/i.test(
+      s,
+    )
+  )
+    return true;
 
   // Direction / part / channel
   if (/\b(?:left|right|front|back|top|bottom)\b/i.test(s)) return true;

@@ -235,6 +235,7 @@ test('D196: isNonColor filters out sizes, wattages, languages, adapters, chips, 
     'C) to Thunderbolt 2 Adapter',
     'in MacBook Pro',
     'inch MacBook Air',
+    'US English',
   ];
 
   for (const item of nonColors) {

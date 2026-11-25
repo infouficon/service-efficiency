@@ -10,7 +10,12 @@ export function isNonColor(candidate: string): boolean {
   if (/^\d+\s*(?:mm|cm|m|inch|in)$/i.test(s)) return true;
   if (/^\d+\s*(?:gb|tb|mb|w|watt)$/i.test(s)) return true;
   if (/^\d+\s*pack$/i.test(s)) return true;
-  if (/^(?:thai|tha|eng|english|us|int|ci\/ar|za\/a|th\/a|ll\/a)$/i.test(s)) return true;
+  if (
+    /^(?:us\s+english|uk\s+english|intl?\s+english|thai(?:\s*[\/-]\s*eng(?:lish)?)?|thai|tha|eng|english|us|int|ci\/ar|za\/a|th\/a|ll\/a|japanese|korean|arabic|chinese|russian)$/i.test(
+      s,
+    )
+  )
+    return true;
   if (/\b(?:left|right|front|back|top|bottom)\b/i.test(s)) return true;
   if (
     /\b(?:adapter|cable|charger|multiport|connector|headphone|jack|reader|thunderbolt|magsafe|lightning|power\s*adapter)\b/i.test(

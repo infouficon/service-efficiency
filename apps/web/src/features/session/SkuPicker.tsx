@@ -7,6 +7,7 @@ import {
   isOutOfStock,
   isUnlimited,
   MAC_TYPES,
+  resolveColorHex,
   sortWattageOptions,
   type CatalogSku,
   type ModelChoice,
@@ -396,7 +397,7 @@ export function SkuPicker({
                         (s) => getSkuAttribute(s, st.spec.key) === opt,
                       );
                       const stockInfo = getOptionStockText(matchingSkus);
-                      const hex = colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
+                      const hex = resolveColorHex(opt, colorMap);
                       const isSelected = st.selectedValue === opt;
 
                       const isImg =

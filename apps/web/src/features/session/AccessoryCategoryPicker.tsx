@@ -6,6 +6,7 @@ import {
   formatAccessoryItemName,
   getSkuAttribute,
   isOutOfStock,
+  resolveColorHex,
   sortWattageOptions,
 } from './catalog';
 import { api } from '../../services/api';
@@ -767,8 +768,7 @@ export function AccessoryCategoryPicker({
                     const outOfStock = matchingSkus.every((s) =>
                       isOutOfStock(s),
                     );
-                    const hex =
-                      colorMap[opt] || colorMap[opt.toLowerCase()] || '#d1d5db';
+                    const hex = resolveColorHex(opt, colorMap);
                     const isSelected = st.selectedValue === opt;
                     const isImg =
                       typeof hex === 'string' &&

@@ -264,4 +264,34 @@ test('D196: isNonColor filters out sizes, wattages, languages, adapters, chips, 
     name: 'Apple Silicone Case - Citrus Eng',
   };
   assert.equal(getSkuAttribute(skuCitrus, 'color'), 'Citrus');
+
+  // getSkuAttribute cleans leading dashes from attributes.color
+  const skuLeadingDash = {
+    id: 's-dash',
+    sku: 'TEST/DASH',
+    name: 'Leather Sleeve - Saddle Brown',
+    attributes: { color: '- Saddle Brown' },
+  };
+  assert.equal(getSkuAttribute(skuLeadingDash, 'color'), 'Saddle Brown');
+});
+
+test('resolveColorHex resolves dirty strings and spelling variants from colorMap strictly', async () => {
+  const { resolveColorHex } = await import('../src/features/session/catalog.ts');
+  const customMap = {
+    'Saddle Brown': '#8B4513',
+    'Custom Mint': '#2af598',
+    'Space Gray': '#535150',
+    'Gold': '#fae7cf',
+  };
+
+  assert.equal(resolveColorHex('Saddle Brown', customMap), '#8B4513');
+  assert.equal(resolveColorHex('- Saddle Brown', customMap), '#8B4513');
+  assert.equal(resolveColorHex('Saddle Brown - THA', customMap), '#8B4513');
+  assert.equal(resolveColorHex('SaddleBrown', customMap), '#8B4513');
+  assert.equal(resolveColorHex('Space Grey', customMap), '#535150');
+  assert.equal(resolveColorHex('space gray', customMap), '#535150');
+  assert.equal(resolveColorHex('Gold', customMap), '#fae7cf');
+  assert.equal(resolveColorHex('- Custom Mint - US', customMap), '#2af598');
+  assert.equal(resolveColorHex('Natural Titanium', customMap), '#d1d5db');
+  assert.equal(resolveColorHex('UnknownColor123', customMap), '#d1d5db');
 });

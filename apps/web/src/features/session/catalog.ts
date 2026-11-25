@@ -38,6 +38,36 @@ export function isNonColor(candidate: string): boolean {
   return false;
 }
 
+/**
+ * Resolves a color name (including aliases, leading dashes, language tags, casing)
+ * strictly against dynamic database colorMap configured by Admin.
+ */
+export function resolveColorHex(
+  raw: string | null | undefined,
+  colorMap?: Record<string, string>,
+): string {
+  if (!raw || typeof raw !== 'string' || !colorMap) return '#d1d5db';
+  let s = raw.trim();
+  s = s.replace(/^[-–—·:/\s]+|[-–—·:/\s]+$/g, '').trim();
+  s = s.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+
+  // Exact key match
+  if (colorMap[s]) return colorMap[s];
+
+  const lower = s.toLowerCase();
+  if (colorMap[lower]) return colorMap[lower];
+
+  // Normalized alphanumeric match with grey/gray equivalence
+  const normAlpha = lower.replace(/[^a-z0-9]/g, '').replace(/grey/g, 'gray');
+  for (const [k, v] of Object.entries(colorMap)) {
+    if (!v) continue;
+    const keyAlpha = k.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/grey/g, 'gray');
+    if (keyAlpha === normAlpha) return v;
+  }
+
+  return '#d1d5db';
+}
+
 export function getSkuAttribute(s: CatalogSku, key: string): string {
   let val = '';
   if (s.attributes && typeof s.attributes[key] === 'string' && s.attributes[key].trim()) {
@@ -62,11 +92,13 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
         }
       }
     }
-    if (val) {
-      val = val.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
-      if (isNonColor(val)) {
-        val = '';
-      }
+  }
+
+  if (key === 'color' && val) {
+    val = val.replace(/^[-–—·:/\s]+|[-–—·:/\s]+$/g, '').trim();
+    val = val.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+    if (isNonColor(val)) {
+      val = '';
     }
   } else if (key === 'storage') {
     val = s.storage?.trim() || '';

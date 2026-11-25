@@ -349,17 +349,32 @@ export class ColorsService {
     });
   }
 
-  /** Return a map of color name -> hexCode */
+  /** Return a map of color name -> hexCode with normalized keys and spelling variants */
   async getColorMap(): Promise<Record<string, string>> {
     const colors = await this.prisma.productColor.findMany();
     const map: Record<string, string> = {};
     for (const c of colors) {
-      map[c.name] = c.hexCode;
-      map[c.name.trim().toLowerCase()] = c.hexCode;
-      const cleanName = colorOf(c.name);
+      if (!c.hexCode?.trim()) continue;
+      const hex = c.hexCode.trim();
+      const rawName = c.name.trim();
+
+      map[rawName] = hex;
+      const lower = rawName.toLowerCase();
+      map[lower] = hex;
+      map[lower.replace(/[^a-z0-9]/g, '')] = hex;
+
+      const cleanName = colorOf(rawName);
       if (cleanName) {
-        map[cleanName] = c.hexCode;
-        map[cleanName.trim().toLowerCase()] = c.hexCode;
+        map[cleanName] = hex;
+        const cleanLower = cleanName.toLowerCase();
+        map[cleanLower] = hex;
+        map[cleanLower.replace(/[^a-z0-9]/g, '')] = hex;
+      }
+
+      if (lower.includes('gray')) {
+        map[lower.replace('gray', 'grey')] = hex;
+      } else if (lower.includes('grey')) {
+        map[lower.replace('grey', 'gray')] = hex;
       }
     }
     return map;

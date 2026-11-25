@@ -273,6 +273,25 @@ test('D196: isNonColor filters out sizes, wattages, languages, adapters, chips, 
     attributes: { color: '- Saddle Brown' },
   };
   assert.equal(getSkuAttribute(skuLeadingDash, 'color'), 'Saddle Brown');
+
+  // getSkuAttribute cleans release year tags from iPad colors like (Early 2026)
+  const skuIPadSpaceGrey = {
+    id: 's-ipad-sg',
+    sku: 'MH304TH/A',
+    name: 'iPad Air 11 M4 Wi-Fi 128GB - Space Grey (Early 2026) (MH304TH/A)',
+    color: 'Space Grey (Early 2026)',
+    attributes: { color: 'Space Grey (Early 2026)', connectivity: 'Wi-Fi', storage: '128GB' },
+  };
+  assert.equal(getSkuAttribute(skuIPadSpaceGrey, 'color'), 'Space Grey');
+
+  const skuIPadBlue = {
+    id: 's-ipad-bl',
+    sku: 'MH305TH/A',
+    name: 'iPad Air 11 M4 Wi-Fi 128GB - Blue (Early 2026)',
+    color: 'Blue (Early 2026)',
+    attributes: { color: 'Blue (Early 2026)', connectivity: 'Wi-Fi', storage: '128GB' },
+  };
+  assert.equal(getSkuAttribute(skuIPadBlue, 'color'), 'Blue');
 });
 
 test('resolveColorHex resolves dirty strings and spelling variants from colorMap strictly', async () => {
@@ -289,6 +308,7 @@ test('resolveColorHex resolves dirty strings and spelling variants from colorMap
   assert.equal(resolveColorHex('Saddle Brown - THA', customMap), '#8B4513');
   assert.equal(resolveColorHex('SaddleBrown', customMap), '#8B4513');
   assert.equal(resolveColorHex('Space Grey', customMap), '#535150');
+  assert.equal(resolveColorHex('Space Grey (Early 2026)', customMap), '#535150');
   assert.equal(resolveColorHex('space gray', customMap), '#535150');
   assert.equal(resolveColorHex('Gold', customMap), '#fae7cf');
   assert.equal(resolveColorHex('- Custom Mint - US', customMap), '#2af598');

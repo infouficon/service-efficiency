@@ -6,7 +6,12 @@ export function isNonColor(candidate: string): boolean {
   const s = candidate.trim();
   if (s.length <= 1) return true;
   if (s.replace(/[()[\]{},./\-_:\s]/g, '').length <= 1) return true;
-  if (/^(?:s\/m|m\/l|xs|s|m|l|xl|xxl|large|small|medium|inch|in|demo|fae)$/i.test(s)) return true;
+  if (
+    /^(?:s\/m|m\/l|xs|s|m|l|xl|xxl|large|small|medium|inch|in|demo|fae|late|early|mid)$/i.test(
+      s,
+    )
+  )
+    return true;
   if (/^\d+\s*(?:mm|cm|m|inch|in)$/i.test(s)) return true;
   if (/^\d+\s*(?:gb|tb|mb|w|watt)$/i.test(s)) return true;
   if (/^\d+\s*pack$/i.test(s)) return true;
@@ -39,6 +44,23 @@ export function isNonColor(candidate: string): boolean {
 }
 
 /**
+ * Cleans extra tokens from a color candidate:
+ * - Strips parenthesized year/release tags or part codes: e.g. (Early 2026), (Late 2024), (MH304TH/A)
+ * - Strips trailing standalone year tokens: e.g. Early 2026, Late 2024, 2025)
+ * - Strips leading/trailing punctuation, dashes, slashes, whitespace
+ * - Strips trailing language/region tokens: e.g. Eng, THA, US
+ */
+export function cleanColorName(candidate: string): string {
+  if (!candidate) return '';
+  let s = candidate.trim();
+  s = s.replace(/\s*\([^)]*(?:\d{4}|[a-z]{2}\d+[a-z0-9\/]+)[^)]*\)/gi, '').trim();
+  s = s.replace(/\s+(?:early|late|mid)?\s*\d{4}\)?$/i, '').trim();
+  s = s.replace(/^[-–—·:/\s]+|[-–—·:/\s]+$/g, '').trim();
+  s = s.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+  return s;
+}
+
+/**
  * Resolves a color name (including aliases, leading dashes, language tags, casing)
  * strictly against dynamic database colorMap configured by Admin.
  */
@@ -47,9 +69,7 @@ export function resolveColorHex(
   colorMap?: Record<string, string>,
 ): string {
   if (!raw || typeof raw !== 'string' || !colorMap) return '#d1d5db';
-  let s = raw.trim();
-  s = s.replace(/^[-–—·:/\s]+|[-–—·:/\s]+$/g, '').trim();
-  s = s.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+  const s = cleanColorName(raw);
 
   // Exact key match
   if (colorMap[s]) return colorMap[s];
@@ -95,8 +115,7 @@ export function getSkuAttribute(s: CatalogSku, key: string): string {
   }
 
   if (key === 'color' && val) {
-    val = val.replace(/^[-–—·:/\s]+|[-–—·:/\s]+$/g, '').trim();
-    val = val.replace(/\s+(?:eng|thai|tha|us|int)$/i, '').trim();
+    val = cleanColorName(val);
     if (isNonColor(val)) {
       val = '';
     }

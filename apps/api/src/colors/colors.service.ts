@@ -199,6 +199,11 @@ export class ColorsService {
     const result: ColorItemDto[] = Array.from(allNames).map((name) => {
       const def = definedMap.get(name);
       const skuList = skuMap.get(name) ?? [];
+      skuList.sort(
+        (a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+          a.sku.localeCompare(b.sku, undefined, { sensitivity: 'base' }),
+      );
       return {
         id: def?.id ?? null,
         name,

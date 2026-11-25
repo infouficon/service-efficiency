@@ -315,3 +315,39 @@ test('resolveColorHex resolves dirty strings and spelling variants from colorMap
   assert.equal(resolveColorHex('Natural Titanium', customMap), '#d1d5db');
   assert.equal(resolveColorHex('UnknownColor123', customMap), '#d1d5db');
 });
+
+test('bound SKUs and color options sort alphabetically (A-Z)', () => {
+  const skus = [
+    { sku: 'MYW43TH/A', name: 'iPhone 16 Pro Max 256GB Desert Titanium' },
+    { sku: 'MH304TH/A', name: 'iPad Air 11 M4 Wi-Fi 128GB - Space Grey' },
+    { sku: 'MH305TH/A', name: 'iPad Air 11 M4 Wi-Fi 128GB - Blue' },
+    { sku: 'MYW13TH/A', name: 'iPhone 16 Pro Max 256GB Black Titanium' },
+  ];
+
+  const sortedSkus = [...skus].sort(
+    (a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+      a.sku.localeCompare(b.sku, undefined, { sensitivity: 'base' }),
+  );
+
+  assert.deepEqual(
+    sortedSkus.map((s) => s.sku),
+    ['MH305TH/A', 'MH304TH/A', 'MYW13TH/A', 'MYW43TH/A'],
+  );
+
+  const colors = [
+    { name: 'Space Grey' },
+    { name: 'Blue' },
+    { name: 'Desert Titanium' },
+    { name: 'Black Titanium' },
+  ];
+
+  const sortedColors = [...colors].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  );
+
+  assert.deepEqual(
+    sortedColors.map((c) => c.name),
+    ['Black Titanium', 'Blue', 'Desert Titanium', 'Space Grey'],
+  );
+});

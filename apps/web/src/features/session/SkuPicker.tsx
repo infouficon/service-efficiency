@@ -99,28 +99,42 @@ export function SkuPicker({
       )?.attributes;
       if (fromCat && fromCat.length > 0) return fromCat;
     }
-    // Dynamic fallback when no template: check if memory or storage or color exist in SKUs
+    // Dynamic fallback when no template: check if color or storage or memory exist in SKUs
     const fallback: CategoryAttributeSpec[] = [];
-    if (modelSkus.some((s) => s.memory)) {
-      fallback.push({ key: 'memory', label: 'RAM', required: true });
+    if (modelSkus.some((s) => s.color || getSkuAttribute(s, 'color'))) {
+      fallback.push({ key: 'color', label: 'สี', required: true });
     }
-    if (modelSkus.some((s) => s.storage)) {
+    if (modelSkus.some((s) => s.storage || getSkuAttribute(s, 'storage'))) {
       fallback.push({ key: 'storage', label: 'ความจุ', required: true });
     }
-    if (modelSkus.some((s) => s.color)) {
-      fallback.push({ key: 'color', label: 'สี', required: true });
+    if (modelSkus.some((s) => s.memory || getSkuAttribute(s, 'memory'))) {
+      fallback.push({ key: 'memory', label: 'RAM', required: true });
     }
     return fallback;
   }, [chosen, categorySpecs, categories, categoryName, modelSkus]);
 
-  // Ensure color is present in specs if SKUs have colors
+  // Ensure color is present in specs if SKUs have colors, and prioritize color first for iPad and iPhone
   const allSpecs = useMemo<CategoryAttributeSpec[]>(() => {
     const list = [...resolvedSpecs];
-    if (modelSkus.some((s) => s.color) && !list.some(isColorSpec)) {
+    if (
+      modelSkus.some((s) => s.color || getSkuAttribute(s, 'color')) &&
+      !list.some(isColorSpec)
+    ) {
       list.push({ key: 'color', label: 'สี', required: true });
     }
+
+    // For iPad (and iPhone), staff choose Color first (D144)
+    const catLower = categoryName.toLowerCase();
+    if (catLower === 'ipad' || catLower === 'iphone') {
+      const colorSpecIndex = list.findIndex(isColorSpec);
+      if (colorSpecIndex > 0) {
+        const [colorSpec] = list.splice(colorSpecIndex, 1);
+        list.unshift(colorSpec);
+      }
+    }
+
     return list;
-  }, [resolvedSpecs, modelSkus]);
+  }, [resolvedSpecs, modelSkus, categoryName]);
 
   // Compute available choices and candidate SKUs for each step
   const { steps, remainingSkus } = useMemo(() => {
@@ -200,8 +214,8 @@ export function SkuPicker({
       )?.attributes;
       currentSpecs = fromCat && fromCat.length > 0 ? fromCat : [];
     }
-    if (choice.model.skus.some((s) => s.color) && !currentSpecs.some(isColorSpec)) {
-      currentSpecs = [...currentSpecs, { key: 'color', label: 'สี', required: true }];
+    if (choice.model.skus.some((s) => s.color || getSkuAttribute(s, 'color')) && !currentSpecs.some(isColorSpec)) {
+      currentSpecs = [{ key: 'color', label: 'สี', required: true }, ...currentSpecs];
     }
 
     const hasAnySpecs = currentSpecs.some((spec) => {

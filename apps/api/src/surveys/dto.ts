@@ -147,6 +147,11 @@ export class SubmitSurveyResponseDto {
   @IsBoolean()
   completed?: boolean;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  unboughtProducts?: string[];
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => SurveyAnswerDto)

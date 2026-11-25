@@ -745,14 +745,23 @@ export function StaffWorkspace({
     }
   };
 
-  const handleSurveyComplete = (response?: SurveyResponseItem) => {
-    if (response && surveyModal?.session) {
-      const existing = (surveyModal.session.surveyResponses ?? []).filter(
-        (r) => r.target !== response.target,
-      );
+  const handleSurveyComplete = (
+    response?: SurveyResponseItem,
+    allResponses?: SurveyResponseItem[],
+  ) => {
+    if (surveyModal?.session) {
+      let finalResponses = surveyModal.session.surveyResponses ?? [];
+      if (allResponses && allResponses.length > 0) {
+        finalResponses = allResponses;
+      } else if (response) {
+        const existing = finalResponses.filter(
+          (r) => r.target !== response.target,
+        );
+        finalResponses = [...existing, response];
+      }
       const updatedS: MockSession = {
         ...surveyModal.session,
-        surveyResponses: [...existing, response],
+        surveyResponses: finalResponses,
       };
       onUpdateSession(updatedS);
     }

@@ -3269,3 +3269,32 @@ Decision:
 1. **Instant scroll (`behavior: 'instant'`):** Scroll resets immediately to `top: 0` without smooth animation to avoid disorienting staff or delaying interaction.
 2. **Multi-container reset:** Automatically resets `scrollTop = 0` on `window`, `document.documentElement`, `document.body`, `main`, `.staff-main-panel`, `.staff-layout`, and `.staff-workspace`.
 3. **Step & stage trigger:** Tracks `currentStepIndex`, `form`, session state, survey completion, and active session switches, executing both immediately and via `requestAnimationFrame`/`setTimeout(50ms)` to ensure newly mounted DOM content and layout reflows start at the top. Also directly hooked into review ("ถัดไป") and back ("กลับไปแก้ไข") button actions.
+
+## D198 — Dual Customer Survey for Purchase & Unbought Recommended Products (2026-11-25)
+
+Staff and Admin reported via `/grill-me`:
+"แบบสำรวจ จำเป็นต้องทำทั้ง ซื้อ และ ไม่ซื้อ โดย ไม่ซื้อมาจากสินค้าที่แนะนำ และไม่ได้ซื้อ"
+
+Previously (D160), sessions only triggered a `BUY` survey if purchase was confirmed, or a `NOT_BUY` survey if the session was cancelled (`CUSTOMER_CANCELLED`). However, in real customer journeys, staff recommend accessories and ecosystem devices in Step 3 (`ProductRecommendationsStep`), and customers often purchase their main device while declining some or all recommended accessories/devices.
+
+Decisions:
+1. **Unbought Recommended Products Definition (`getUnboughtRecommendedProducts`):**
+   - Automatically identified as any item marked as `RECOMMENDED` or `INTERESTED` in Step 3 that was not included in the finalized order (`session.selection.items` or `session.selection.accessories`).
+   - If customer purchases all recommended items, or no recommendations were made, the session only performs the `BUY` survey (skipping `NOT_BUY`).
+   - If the entire session is cancelled (`CUSTOMER_CANCELLED`), only the standard `NOT_BUY` survey is presented as before.
+2. **Two-Step Survey Modal Flow (`SessionSurveyModal.tsx`):**
+   - When purchase is confirmed and unbought recommended items exist, the survey modal presents a 2-step flow:
+     - Step 1: แบบสำรวจ: การซื้อสินค้า (`BUY`)
+     - Step 2: แบบสำรวจ: สินค้าแนะนำที่ไม่ซื้อ (`NOT_BUY`)
+   - In Step 2, a highlighted amber card prominently lists all unbought recommended product names (`unboughtProducts`), prompting staff to record the customer's reasons for declining those specific items.
+   - Staff can click "ไว้ทำทีหลัง" (Postpone) at any step to unblock their screen for the next customer.
+3. **Survey Workspace & Nav-Counter (`SurveyWorkspace.tsx`, `App.tsx`):**
+   - Sessions with dual surveys remain consolidated into a single card per queue in the Survey Workspace.
+   - Distinct badges (`[ซื้อ: สำเร็จ / ค้างทำ]`, `[สินค้าแนะนำ: สำเร็จ / ค้างทำ]`) display the completion status of each survey part.
+   - The action button dynamically prompts the remaining step (e.g., "ทำแบบสำรวจสินค้าแนะนำ").
+   - Nav-counter dynamically tracks sessions where either survey remains pending.
+   - "ดูผลสำรวจ" displays both survey responses and the unbought recommended items.
+4. **Data Persistence & CSV Export:**
+   - Added `unboughtProducts JSON NULL` to `SurveyResponse` model and migration `202611250002_survey_unbought_products`.
+   - Included unbought recommended products in survey CSV exports and in Session Logs details.
+

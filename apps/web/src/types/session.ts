@@ -339,6 +339,7 @@ export interface SurveyResponseItem {
   target: SurveyTarget;
   actorStaffId: string;
   completed?: boolean;
+  unboughtProducts?: string[];
   answers: SurveyAnswer[];
   createdAt: string;
   updatedAt?: string;

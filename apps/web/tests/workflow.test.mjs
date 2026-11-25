@@ -35,6 +35,7 @@ import {
   customerSourceLabel,
   serialsLeft,
   serialsComplete,
+  getUnboughtRecommendedProducts,
 } from '../src/features/session/workflow.ts';
 import { qrCode } from '../src/utils/qr.ts';
 import { stages } from '../src/constants/options.ts';
@@ -870,4 +871,90 @@ test('sortWattageOptions sorts wattage numbers from lowest to highest', () => {
     '70W',
     '140W',
   ]);
+});
+
+test('D198: getUnboughtRecommendedProducts extracts items marked RECOMMENDED or INTERESTED that were not purchased', () => {
+  const session = {
+    ...fixture(),
+    selection: {
+      items: [
+        {
+          product: {
+            sku: 'SKU-IPHONE-16-128',
+            product: 'iPhone 16',
+            model: 'iPhone 16 128GB Teal',
+          },
+        },
+      ],
+      accessories: {
+        '20w usb-c power adapter': '1',
+      },
+    },
+    recommendationRecords: [
+      {
+        id: 'rec-1',
+        name: '20W USB-C Power Adapter',
+        skuCode: 'SKU-APL-20W',
+        status: 'INTERESTED',
+      },
+      {
+        id: 'rec-2',
+        name: 'Wiwu Defender Smart Folio Case',
+        skuCode: 'SKU-WIWU-FOLIO',
+        status: 'RECOMMENDED',
+      },
+      {
+        id: 'rec-3',
+        name: 'AppleCare+ for iPhone',
+        skuCode: 'SKU-AC-IPHONE',
+        status: 'INTERESTED',
+      },
+      {
+        id: 'rec-4',
+        name: 'AirPods Pro 2',
+        skuCode: 'SKU-AIRPODS-PRO',
+        status: 'OWNED',
+      },
+      {
+        id: 'rec-5',
+        name: 'iPad 10th Gen',
+        skuCode: 'SKU-IPAD-10',
+        status: 'NONE',
+      },
+    ],
+  };
+
+  const unbought = getUnboughtRecommendedProducts(session);
+  // '20W USB-C Power Adapter' was purchased in accessories
+  // 'Wiwu Defender Smart Folio Case' was RECOMMENDED but not bought
+  // 'AppleCare+ for iPhone' was INTERESTED but not bought
+  // 'AirPods Pro 2' was OWNED (skipped)
+  // 'iPad 10th Gen' was NONE (skipped)
+  assert.deepEqual(unbought, [
+    'Wiwu Defender Smart Folio Case',
+    'AppleCare+ for iPhone',
+  ]);
+
+  // If all recommended items are purchased, returns empty array
+  const fullPurchasedSession = {
+    ...session,
+    recommendationRecords: [
+      {
+        id: 'rec-1',
+        name: '20W USB-C Power Adapter',
+        skuCode: 'SKU-APL-20W',
+        status: 'INTERESTED',
+      },
+      {
+        id: 'rec-4',
+        name: 'AirPods Pro 2',
+        skuCode: 'SKU-AIRPODS-PRO',
+        status: 'OWNED',
+      },
+    ],
+  };
+  assert.deepEqual(getUnboughtRecommendedProducts(fullPurchasedSession), []);
+
+  // If no recommendationRecords, returns empty array
+  assert.deepEqual(getUnboughtRecommendedProducts({ ...session, recommendationRecords: [] }), []);
 });

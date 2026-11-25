@@ -1,5 +1,10 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, FileQuestion } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  CheckCircle2,
+  ClipboardCheck,
+  FileQuestion,
+  PackageX,
+} from 'lucide-react';
 import { Button, Modal, Notice } from '../../components/ui';
 import {
   fetchSurveyQuestionsApi,
@@ -12,18 +17,55 @@ import type {
   SurveyResponseItem,
   SurveyTarget,
 } from '../../types/session';
+import { getUnboughtRecommendedProducts } from './workflow';
 
 interface SessionSurveyModalProps {
   session: MockSession;
   target: SurveyTarget;
-  onComplete: (surveyResponse?: SurveyResponseItem) => void;
+  initialStep?: SurveyTarget;
+  onComplete: (
+    surveyResponse?: SurveyResponseItem,
+    allResponses?: SurveyResponseItem[],
+  ) => void;
 }
 
 export function SessionSurveyModal({
   session,
   target,
+  initialStep,
   onComplete,
 }: SessionSurveyModalProps) {
+  const unboughtProducts = useMemo(
+    () => getUnboughtRecommendedProducts(session),
+    [session],
+  );
+  const isCancelled =
+    session.outcome === 'CUSTOMER_CANCELLED' ||
+    Boolean(session.timestamps.cancelled_at);
+  const isDualSurvey = !isCancelled && unboughtProducts.length > 0;
+
+  const [recordedResponses, setRecordedResponses] = useState<
+    SurveyResponseItem[]
+  >(session.surveyResponses ?? []);
+
+  const buyCompleted = Boolean(
+    recordedResponses.find((r) => r.target === 'BUY' && r.completed !== false),
+  );
+  const notBuyCompleted = Boolean(
+    recordedResponses.find(
+      (r) => r.target === 'NOT_BUY' && r.completed !== false,
+    ),
+  );
+
+  const [currentTarget, setCurrentTarget] = useState<SurveyTarget>(() => {
+    if (initialStep) return initialStep;
+    if (isDualSurvey) {
+      if (buyCompleted && !notBuyCompleted) return 'NOT_BUY';
+      return 'BUY';
+    }
+    return target;
+  });
+
   const [questions, setQuestions] = useState<SurveyQuestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -33,15 +75,17 @@ export function SessionSurveyModal({
 
   useEffect(() => {
     let active = true;
-    fetchSurveyQuestionsApi(target, false)
+    setLoading(true);
+    setError('');
+    fetchSurveyQuestionsApi(currentTarget, false)
       .then((list) => {
         if (active) {
           setQuestions(list);
           const initial: Record<string, string | string[]> = {};
           const initialOthers: Record<string, string> = {};
 
-          const existingResponse = session.surveyResponses?.find(
-            (r) => r.target === target,
+          const existingResponse = recordedResponses.find(
+            (r) => r.target === currentTarget,
           );
           const existingMap = new Map<string, string | string[]>();
           if (existingResponse?.answers) {
@@ -98,7 +142,7 @@ export function SessionSurveyModal({
     return () => {
       active = false;
     };
-  }, [target, session]);
+  }, [currentTarget, recordedResponses]);
 
   const isQuestionAnswered = (q: SurveyQuestion): boolean => {
     const val = answers[q.id];
@@ -139,7 +183,7 @@ export function SessionSurveyModal({
 
   const handlePostpone = async () => {
     if (!session.id) {
-      onComplete();
+      onComplete(undefined, recordedResponses);
       return;
     }
 
@@ -181,14 +225,20 @@ export function SessionSurveyModal({
 
         const res = await submitSurveyResponseApi({
           sessionId: session.id,
-          target,
+          target: currentTarget,
           answers: formattedAnswers,
           completed: false,
+          unboughtProducts:
+            currentTarget === 'NOT_BUY' ? unboughtProducts : undefined,
         });
 
-        onComplete(res);
+        const nextResponses = [
+          ...recordedResponses.filter((r) => r.target !== currentTarget),
+          res,
+        ];
+        onComplete(res, nextResponses);
       } else {
-        onComplete();
+        onComplete(undefined, recordedResponses);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'บันทึกคำตอบไม่สำเร็จ');
@@ -199,7 +249,7 @@ export function SessionSurveyModal({
 
   const handleSubmit = async () => {
     if (!session.id) {
-      onComplete();
+      onComplete(undefined, recordedResponses);
       return;
     }
 
@@ -237,12 +287,25 @@ export function SessionSurveyModal({
 
       const res = await submitSurveyResponseApi({
         sessionId: session.id,
-        target,
+        target: currentTarget,
         answers: formattedAnswers,
         completed: true,
+        unboughtProducts:
+          currentTarget === 'NOT_BUY' ? unboughtProducts : undefined,
       });
 
-      onComplete(res);
+      const nextResponses = [
+        ...recordedResponses.filter((r) => r.target !== currentTarget),
+        res,
+      ];
+      setRecordedResponses(nextResponses);
+
+      if (isDualSurvey && currentTarget === 'BUY' && !notBuyCompleted) {
+        // Advance to step 2: NOT_BUY
+        setCurrentTarget('NOT_BUY');
+      } else {
+        onComplete(res, nextResponses);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'บันทึกแบบสำรวจไม่สำเร็จ');
     } finally {
@@ -250,15 +313,14 @@ export function SessionSurveyModal({
     }
   };
 
-  const titleText = 'แบบสำรวจความคิดเห็นของลูกค้า';
+  const titleText = isDualSurvey
+    ? 'แบบสำรวจความคิดเห็นของลูกค้า (2 ขั้นตอน)'
+    : 'แบบสำรวจความคิดเห็นของลูกค้า';
+
   const modalFooter =
     !loading && questions.length > 0 ? (
       <div className="survey-modal-footer">
-        <Button
-          variant="secondary"
-          onClick={handlePostpone}
-          disabled={busy}
-        >
+        <Button variant="secondary" onClick={handlePostpone} disabled={busy}>
           ไว้ทำทีหลัง
         </Button>
         <Button
@@ -274,7 +336,11 @@ export function SessionSurveyModal({
             }}
           >
             <ClipboardCheck size={16} />
-            {busy ? 'กำลังบันทึก...' : 'บันทึก'}
+            {busy
+              ? 'กำลังบันทึก...'
+              : isDualSurvey && currentTarget === 'BUY' && !notBuyCompleted
+                ? 'บันทึกและไปขั้นตอนถัดไป (2/2)'
+                : 'บันทึก'}
           </span>
         </Button>
       </div>
@@ -285,7 +351,11 @@ export function SessionSurveyModal({
       title={titleText}
       onClose={() => {
         if (questions.length === 0) {
-          onComplete();
+          if (isDualSurvey && currentTarget === 'BUY' && !notBuyCompleted) {
+            setCurrentTarget('NOT_BUY');
+          } else {
+            onComplete(undefined, recordedResponses);
+          }
         } else {
           void handlePostpone();
         }
@@ -297,6 +367,180 @@ export function SessionSurveyModal({
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {error && <Notice error>{error}</Notice>}
+
+        {/* D198: 2-Step indicator for dual surveys */}
+        {isDualSurvey && (
+          <div
+            style={{
+              display: 'flex',
+              gap: '8px',
+              paddingBottom: '4px',
+              borderBottom: '1px solid #e2e8f0',
+              marginBottom: '4px',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setCurrentTarget('BUY')}
+              style={{
+                flex: 1,
+                padding: '9px 12px',
+                borderRadius: '8px',
+                border: `1.5px solid ${currentTarget === 'BUY' ? '#0abab5' : '#e2e8f0'}`,
+                background: currentTarget === 'BUY' ? '#f0fdfa' : '#f8fafc',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                textAlign: 'left',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span
+                style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: buyCompleted
+                    ? '#0d9488'
+                    : currentTarget === 'BUY'
+                      ? '#0abab5'
+                      : '#94a3b8',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {buyCompleted ? '✓' : '1'}
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: currentTarget === 'BUY' ? 700 : 500,
+                    color: currentTarget === 'BUY' ? '#0f766e' : '#475569',
+                  }}
+                >
+                  1. แบบสำรวจ: การซื้อสินค้า
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  {buyCompleted ? 'บันทึกแล้ว' : 'ขั้นตอนที่ 1'}
+                </span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCurrentTarget('NOT_BUY')}
+              style={{
+                flex: 1,
+                padding: '9px 12px',
+                borderRadius: '8px',
+                border: `1.5px solid ${currentTarget === 'NOT_BUY' ? '#0abab5' : '#e2e8f0'}`,
+                background: currentTarget === 'NOT_BUY' ? '#f0fdfa' : '#f8fafc',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                textAlign: 'left',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              <span
+                style={{
+                  width: '22px',
+                  height: '22px',
+                  borderRadius: '50%',
+                  background: notBuyCompleted
+                    ? '#0d9488'
+                    : currentTarget === 'NOT_BUY'
+                      ? '#0abab5'
+                      : '#94a3b8',
+                  color: '#ffffff',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                {notBuyCompleted ? '✓' : '2'}
+              </span>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <span
+                  style={{
+                    fontSize: '13px',
+                    fontWeight: currentTarget === 'NOT_BUY' ? 700 : 500,
+                    color: currentTarget === 'NOT_BUY' ? '#0f766e' : '#475569',
+                  }}
+                >
+                  2. แบบสำรวจ: สินค้าแนะนำที่ไม่ซื้อ
+                </span>
+                <span style={{ fontSize: '11px', color: '#64748b' }}>
+                  {notBuyCompleted ? 'บันทึกแล้ว' : 'ขั้นตอนที่ 2'}
+                </span>
+              </div>
+            </button>
+          </div>
+        )}
+
+        {/* D198: Highlight unbought recommended items if on NOT_BUY step */}
+        {currentTarget === 'NOT_BUY' && unboughtProducts.length > 0 && (
+          <div
+            style={{
+              background: '#fffbeb',
+              border: '1.5px solid #fcd34d',
+              borderRadius: '10px',
+              padding: '12px 14px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                marginBottom: '8px',
+              }}
+            >
+              <PackageX size={18} color="#d97706" style={{ flexShrink: 0 }} />
+              <strong style={{ fontSize: '13.5px', color: '#92400e' }}>
+                รายการสินค้าที่แนะนำ และลูกค้าไม่ได้ซื้อ ({unboughtProducts.length} รายการ):
+              </strong>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {unboughtProducts.map((pName, pIdx) => (
+                <span
+                  key={pIdx}
+                  style={{
+                    background: '#fef3c7',
+                    color: '#92400e',
+                    fontSize: '12.5px',
+                    fontWeight: 600,
+                    padding: '3px 10px',
+                    borderRadius: '6px',
+                    border: '1px solid #fde68a',
+                  }}
+                >
+                  • {pName}
+                </span>
+              ))}
+            </div>
+            <p
+              style={{
+                margin: '8px 0 0',
+                fontSize: '12px',
+                color: '#78350f',
+              }}
+            >
+              พนักงานสอบถามเหตุผลที่ไม่ซื้อสินค้าแนะนำข้างต้น และบันทึกคำตอบลงในแบบสำรวจ
+            </p>
+          </div>
+        )}
 
         {loading ? (
           <p
@@ -328,9 +572,19 @@ export function SessionSurveyModal({
               style={{ margin: '0 0 16px', fontSize: '13px' }}
             >
               ยังไม่มีคำถามที่เปิดใช้งานสำหรับ
-              {target === 'BUY' ? 'กรณีซื้อ' : 'กรณีไม่ซื้อ'}ในระบบ
+              {currentTarget === 'BUY' ? 'กรณีซื้อ' : 'กรณีไม่ซื้อ'}ในระบบ
             </p>
-            <Button onClick={() => onComplete()}>ดำเนินการต่อ</Button>
+            <Button
+              onClick={() => {
+                if (isDualSurvey && currentTarget === 'BUY' && !notBuyCompleted) {
+                  setCurrentTarget('NOT_BUY');
+                } else {
+                  onComplete(undefined, recordedResponses);
+                }
+              }}
+            >
+              ดำเนินการต่อ
+            </Button>
           </div>
         ) : (
           <>

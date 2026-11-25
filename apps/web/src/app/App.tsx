@@ -42,6 +42,7 @@ import {
 import {
   isToday,
   getSessionMissingDescription,
+  getUnboughtRecommendedProducts,
   goodsToReturn,
   itemChangeNotice,
   needsStockAck,
@@ -237,7 +238,7 @@ export function App({
       ['STOCK_REQUESTED', 'SEARCHING'].includes(s.state),
   ).length;
 
-  // D141 & D144: Count of pending customer surveys for today in this branch
+  // D141, D144 & D198: Count of pending customer surveys for today in this branch
   const pendingSurveysCount = useMemo(() => {
     return branchSessions.filter((s) => {
       if (!isToday(s.timestamps.customer_walk_in_at)) return false;
@@ -249,6 +250,17 @@ export function App({
         Boolean(s.timestamps.product_selection_confirmed_at) ||
         s.state === 'COMPLETED';
       if (!isCancelled && !isBought) return false;
+
+      const unbought = getUnboughtRecommendedProducts(s);
+      const isDual = !isCancelled && unbought.length > 0;
+      if (isDual) {
+        const existingBuy = s.surveyResponses?.find((sr) => sr.target === 'BUY');
+        const existingNotBuy = s.surveyResponses?.find((sr) => sr.target === 'NOT_BUY');
+        const buyDone = existingBuy && existingBuy.completed !== false;
+        const notBuyDone = existingNotBuy && existingNotBuy.completed !== false;
+        return !buyDone || !notBuyDone;
+      }
+
       const target = isCancelled ? 'NOT_BUY' : 'BUY';
       const existing = s.surveyResponses?.find((sr) => sr.target === target);
       const isCompleted = existing && existing.completed !== false;

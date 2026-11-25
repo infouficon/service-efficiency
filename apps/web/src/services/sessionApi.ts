@@ -870,6 +870,7 @@ export async function submitSurveyResponseApi(data: {
   sessionId: string;
   target: SurveyTarget;
   completed?: boolean;
+  unboughtProducts?: string[];
   answers: SurveyAnswer[];
 }): Promise<SurveyResponseItem> {
   return api<SurveyResponseItem>('/surveys/responses', 'POST', data);

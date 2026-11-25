@@ -350,6 +350,22 @@ const EXPORT_CATEGORIES: ExportCategory[] = [
         },
       },
       {
+        key: 'unboughtRecommended',
+        label: 'สินค้าแนะนำที่ไม่ได้ซื้อ',
+        getValue: (s) => {
+          const notBuySr = (s.surveyResponses || []).find(
+            (sr) =>
+              sr.target === 'NOT_BUY' &&
+              Array.isArray(sr.unboughtProducts) &&
+              sr.unboughtProducts.length > 0,
+          );
+          if (notBuySr && Array.isArray(notBuySr.unboughtProducts)) {
+            return notBuySr.unboughtProducts.join('; ');
+          }
+          return '';
+        },
+      },
+      {
         key: 'category',
         label: 'หมวดหมู่สินค้า',
         getValue: (s) =>
@@ -1696,6 +1712,23 @@ export function SessionLogsWorkspace({
                     <div style={{ fontSize: '12px', color: '#64748b' }}>
                       ประเภท: <strong>{sr.target === 'BUY' ? 'กรณีซื้อ (BUY)' : 'กรณีไม่ซื้อ (NOT_BUY)'}</strong> · บันทึกโดย Staff: {sr.actorStaffId} ({new Date(sr.createdAt).toLocaleString('th-TH')})
                     </div>
+                    {sr.target === 'NOT_BUY' &&
+                      Array.isArray(sr.unboughtProducts) &&
+                      sr.unboughtProducts.length > 0 && (
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: '#92400e',
+                            background: '#fef3c7',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #fde68a',
+                          }}
+                        >
+                          สินค้าแนะนำที่ไม่ได้ซื้อ:{' '}
+                          <strong>{sr.unboughtProducts.join(', ')}</strong>
+                        </div>
+                      )}
                     {sr.answers && Array.isArray(sr.answers) && sr.answers.map((ans, aIdx) => (
                       <div key={aIdx} style={{ background: '#ffffff', padding: '8px 12px', borderRadius: '6px', border: '1px solid #ccfbf1' }}>
                         <div style={{ fontWeight: 600, fontSize: '13px', color: '#0f172a' }}>

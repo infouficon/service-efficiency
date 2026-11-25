@@ -919,3 +919,59 @@ export function settleChoice(
   };
 }
 
+/**
+ * D198: Extracts the list of recommended product names that the customer did not buy.
+ * Includes items marked as 'RECOMMENDED' or 'INTERESTED' during Step 3 recommendations
+ * that were not included in the finalized order (items or accessories).
+ */
+export function getUnboughtRecommendedProducts(session: MockSession): string[] {
+  if (!session.recommendationRecords || session.recommendationRecords.length === 0) {
+    return [];
+  }
+
+  const purchasedNames = new Set<string>();
+  const purchasedSkus = new Set<string>();
+
+  // Main items
+  for (const it of session.selection?.items || []) {
+    if (it.product) {
+      if (it.product.sku) purchasedSkus.add(it.product.sku.toLowerCase().trim());
+      if (it.product.product) purchasedNames.add(it.product.product.toLowerCase().trim());
+      if (it.product.model) purchasedNames.add(it.product.model.toLowerCase().trim());
+      if (it.product.modelName) purchasedNames.add(it.product.modelName.toLowerCase().trim());
+    }
+  }
+
+  // Accessories
+  if (session.selection?.accessories) {
+    for (const [key, qty] of Object.entries(session.selection.accessories)) {
+      if (Number(qty) > 0) {
+        purchasedNames.add(key.toLowerCase().trim());
+        purchasedSkus.add(key.toLowerCase().trim());
+      }
+    }
+  }
+
+  const unbought: string[] = [];
+  for (const rec of session.recommendationRecords) {
+    const recNameLower = (rec.name || '').toLowerCase().trim();
+    const recSkuLower = (rec.skuCode || '').toLowerCase().trim();
+
+    const isPurchased =
+      (recSkuLower && purchasedSkus.has(recSkuLower)) ||
+      (recNameLower && purchasedNames.has(recNameLower));
+
+    if (rec.status === 'RECOMMENDED') {
+      if (!isPurchased) {
+        unbought.push(rec.name.trim());
+      }
+    } else if (rec.status === 'INTERESTED') {
+      if (!isPurchased) {
+        unbought.push(rec.name.trim());
+      }
+    }
+  }
+
+  return [...new Set(unbought.filter(Boolean))];
+}
+

@@ -676,6 +676,7 @@ model SurveyResponse {
   target       SurveyTarget
   actorStaffId String          @db.VarChar(64)
   completed    Boolean         @default(true)
+  unboughtProducts Json?       // D198: string[] array of recommended product names that were not bought
   answers      Json            // Array of { questionId, questionTitle, questionType, answer: string | string[] }
   createdAt    DateTime        @default(now()) @db.DateTime(3)
   updatedAt    DateTime        @default(now()) @updatedAt @db.DateTime(3)

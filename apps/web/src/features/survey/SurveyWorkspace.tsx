@@ -12,6 +12,7 @@ import {
 import { Button, Modal, Panel } from '../../components/ui';
 import { useToast } from '../../components/Toast';
 import { SessionSurveyModal } from '../session/SessionSurveyModal';
+import { getUnboughtRecommendedProducts } from '../session/workflow';
 import type {
   MockSession,
   MockUser,
@@ -97,29 +98,64 @@ export function SurveyWorkspace({
   }, [sessions, user, isStaff]);
 
   const { pendingList, completedList } = useMemo(() => {
-    const pending: {
+    interface SurveyWorkspaceItem {
       session: MockSession;
       target: SurveyTarget;
       isPartial?: boolean;
-    }[] = [];
-    const completed: {
-      session: MockSession;
-      target: SurveyTarget;
-      isPartial?: boolean;
-    }[] = [];
+      isDual?: boolean;
+      buyDone?: boolean;
+      notBuyDone?: boolean;
+      unboughtProducts?: string[];
+    }
+    const pending: SurveyWorkspaceItem[] = [];
+    const completed: SurveyWorkspaceItem[] = [];
 
     for (const s of eligibleSessions) {
       const isCancelled =
         s.outcome === 'CUSTOMER_CANCELLED' ||
         Boolean(s.timestamps.cancelled_at);
-      const target: SurveyTarget = isCancelled ? 'NOT_BUY' : 'BUY';
-      const existing = s.surveyResponses?.find((r) => r.target === target);
+      const unbought = getUnboughtRecommendedProducts(s);
+      const isDual = !isCancelled && unbought.length > 0;
 
-      if (existing && existing.completed !== false) {
-        completed.push({ session: s, target });
+      if (isDual) {
+        const existingBuy = s.surveyResponses?.find((r) => r.target === 'BUY');
+        const existingNotBuy = s.surveyResponses?.find((r) => r.target === 'NOT_BUY');
+        const buyDone = Boolean(existingBuy && existingBuy.completed !== false);
+        const notBuyDone = Boolean(existingNotBuy && existingNotBuy.completed !== false);
+
+        if (buyDone && notBuyDone) {
+          completed.push({
+            session: s,
+            target: 'BUY',
+            isDual: true,
+            buyDone: true,
+            notBuyDone: true,
+            unboughtProducts: unbought,
+          });
+        } else {
+          const isPartial =
+            existingBuy?.completed === false || existingNotBuy?.completed === false;
+          const nextTarget: SurveyTarget = !buyDone ? 'BUY' : 'NOT_BUY';
+          pending.push({
+            session: s,
+            target: nextTarget,
+            isPartial,
+            isDual: true,
+            buyDone,
+            notBuyDone,
+            unboughtProducts: unbought,
+          });
+        }
       } else {
-        const isPartial = existing?.completed === false;
-        pending.push({ session: s, target, isPartial });
+        const target: SurveyTarget = isCancelled ? 'NOT_BUY' : 'BUY';
+        const existing = s.surveyResponses?.find((r) => r.target === target);
+
+        if (existing && existing.completed !== false) {
+          completed.push({ session: s, target });
+        } else {
+          const isPartial = existing?.completed === false;
+          pending.push({ session: s, target, isPartial });
+        }
       }
     }
 
@@ -145,18 +181,27 @@ export function SurveyWorkspace({
     });
   }, [activeTab, pendingList, completedList, search]);
 
-  const handleSurveyComplete = (response?: SurveyResponseItem) => {
-    if (response && surveyModal?.session) {
-      const existing = (surveyModal.session.surveyResponses ?? []).filter(
-        (r) => r.target !== response.target,
-      );
+  const handleSurveyComplete = (
+    response?: SurveyResponseItem,
+    allResponses?: SurveyResponseItem[],
+  ) => {
+    if (surveyModal?.session) {
+      let finalResponses = surveyModal.session.surveyResponses ?? [];
+      if (allResponses && allResponses.length > 0) {
+        finalResponses = allResponses;
+      } else if (response) {
+        const existing = finalResponses.filter(
+          (r) => r.target !== response.target,
+        );
+        finalResponses = [...existing, response];
+      }
       const updatedS: MockSession = {
         ...surveyModal.session,
-        surveyResponses: [...existing, response],
+        surveyResponses: finalResponses,
       };
       onUpdateSession(updatedS);
       toast.success(
-        response.completed === false
+        response?.completed === false
           ? 'บันทึกคำตอบเบื้องต้นแล้ว (ค้างทำแบบสำรวจต่อในภายหลัง)'
           : 'บันทึกผลการทำแบบสำรวจสำเร็จ',
       );
@@ -375,7 +420,15 @@ export function SurveyWorkspace({
           <div
             style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
           >
-            {filteredItems.map(({ session, target, isPartial }) => {
+            {filteredItems.map((item) => {
+              const {
+                session,
+                target,
+                isPartial,
+                isDual,
+                buyDone,
+                notBuyDone,
+              } = item;
               const isBuy = target === 'BUY';
               const timeStr = formatTime(
                 session.timestamps.customer_walk_in_at,
@@ -481,20 +534,55 @@ export function SurveyWorkspace({
                         น.
                       </span>
 
-                      <span
-                        style={{
-                          fontSize: '10.5px',
-                          padding: '1px 6px',
-                          borderRadius: '4px',
-                          fontWeight: 600,
-                          background: isBuy ? '#dcfce7' : '#fee2e2',
-                          color: isBuy ? '#166534' : '#991b1b',
-                          whiteSpace: 'nowrap',
-                          flexShrink: 0,
-                        }}
-                      >
-                        {isBuy ? 'ซื้อสินค้า' : 'ไม่ซื้อ / ยกเลิก'}
-                      </span>
+                      {isDual ? (
+                        <>
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 600,
+                              background: buyDone ? '#dcfce7' : '#fef3c7',
+                              color: buyDone ? '#166534' : '#b45309',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {buyDone ? 'ซื้อ: สำเร็จ' : 'ซื้อ: ค้างทำ'}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '10.5px',
+                              padding: '1px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 600,
+                              background: notBuyDone ? '#dcfce7' : '#fee2e2',
+                              color: notBuyDone ? '#166534' : '#991b1b',
+                              whiteSpace: 'nowrap',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {notBuyDone
+                              ? 'สินค้าแนะนำ: สำเร็จ'
+                              : 'สินค้าแนะนำ: ค้างทำ'}
+                          </span>
+                        </>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '10.5px',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            fontWeight: 600,
+                            background: isBuy ? '#dcfce7' : '#fee2e2',
+                            color: isBuy ? '#166534' : '#991b1b',
+                            whiteSpace: 'nowrap',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isBuy ? 'ซื้อสินค้า' : 'ไม่ซื้อ / ยกเลิก'}
+                        </span>
+                      )}
 
                       {!isStaff && (
                         <span
@@ -522,7 +610,7 @@ export function SurveyWorkspace({
                           height: '28px',
                           minHeight: '28px',
                           maxHeight: '28px',
-                          padding:'0 8px',
+                          padding: isLongQueue ? '0 8px' : '0 10px',
                           borderRadius: '6px',
                           fontSize: '12px',
                           fontWeight: 600,
@@ -532,12 +620,22 @@ export function SurveyWorkspace({
                           gap: '5px',
                           boxSizing: 'border-box',
                         }}
-                        title={isPartial ? 'ทำแบบสำรวจต่อ' : 'ทำแบบสำรวจ'}
+                        title={
+                          isDual && buyDone && !notBuyDone
+                            ? 'ทำแบบสำรวจสินค้าแนะนำ'
+                            : isPartial
+                              ? 'ทำแบบสำรวจต่อ'
+                              : 'ทำแบบสำรวจ'
+                        }
                       >
                         <ClipboardList size={13} />
                         {!isLongQueue && (
                           <span className="survey-btn-text">
-                            {isPartial ? 'ทำแบบสำรวจต่อ' : 'ทำแบบสำรวจ'}
+                            {isDual && buyDone && !notBuyDone
+                              ? 'ทำแบบสำรวจสินค้าแนะนำ'
+                              : isPartial
+                                ? 'ทำแบบสำรวจต่อ'
+                                : 'ทำแบบสำรวจ'}
                           </span>
                         )}
                       </Button>
@@ -622,46 +720,102 @@ export function SurveyWorkspace({
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: '12px',
+                  gap: '16px',
                   maxHeight: '60vh',
                   overflowY: 'auto',
                 }}
               >
-                {viewingResponseSession.surveyResponses[0].answers.map(
-                  (ans, idx) => (
+                {viewingResponseSession.surveyResponses.map((sr, srIdx) => (
+                  <div
+                    key={sr.id || srIdx}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px',
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      padding: '12px',
+                    }}
+                  >
                     <div
-                      key={idx}
                       style={{
-                        background: '#f8fafc',
-                        borderRadius: '8px',
-                        padding: '10px 12px',
-                        border: '1px solid #e2e8f0',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        paddingBottom: '6px',
+                        borderBottom: '1px solid #f1f5f9',
                       }}
                     >
-                      <div
+                      <strong
                         style={{
                           fontSize: '13.5px',
-                          fontWeight: 600,
-                          color: '#0f172a',
-                          marginBottom: '4px',
+                          color: sr.target === 'BUY' ? '#0f766e' : '#b45309',
                         }}
                       >
-                        {idx + 1}. {ans.questionTitle}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: '13px',
-                          color: '#0f766e',
-                          fontWeight: 500,
-                        }}
-                      >
-                        {Array.isArray(ans.answer)
-                          ? ans.answer.join(', ')
-                          : ans.answer}
-                      </div>
+                        {sr.target === 'BUY'
+                          ? 'แบบสำรวจ: การซื้อสินค้า (BUY)'
+                          : 'แบบสำรวจ: สินค้าแนะนำที่ไม่ได้ซื้อ (NOT_BUY)'}
+                      </strong>
+                      <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                        {new Date(sr.createdAt).toLocaleString('th-TH')}
+                      </span>
                     </div>
-                  ),
-                )}
+
+                    {sr.target === 'NOT_BUY' &&
+                      Array.isArray(sr.unboughtProducts) &&
+                      sr.unboughtProducts.length > 0 && (
+                        <div
+                          style={{
+                            fontSize: '12px',
+                            color: '#92400e',
+                            background: '#fef3c7',
+                            padding: '6px 10px',
+                            borderRadius: '6px',
+                            border: '1px solid #fde68a',
+                          }}
+                        >
+                          สินค้าแนะนำที่ไม่ได้ซื้อ:{' '}
+                          <strong>{sr.unboughtProducts.join(', ')}</strong>
+                        </div>
+                      )}
+
+                    {sr.answers &&
+                      sr.answers.map((ans, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            background: '#f8fafc',
+                            borderRadius: '6px',
+                            padding: '8px 10px',
+                            border: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: '13px',
+                              fontWeight: 600,
+                              color: '#0f172a',
+                              marginBottom: '3px',
+                            }}
+                          >
+                            {idx + 1}. {ans.questionTitle}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: '12.5px',
+                              color: '#0f766e',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {Array.isArray(ans.answer)
+                              ? ans.answer.join(', ')
+                              : ans.answer}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="muted" style={{ textAlign: 'center' }}>

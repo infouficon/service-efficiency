@@ -201,6 +201,11 @@ export class SurveysService {
             actorStaffId: user.staffId,
             completed: dto.completed ?? true,
             answers: dto.answers as unknown as Prisma.InputJsonValue,
+            ...(dto.unboughtProducts !== undefined
+              ? {
+                  unboughtProducts: dto.unboughtProducts as unknown as Prisma.InputJsonValue,
+                }
+              : {}),
             updatedAt: now,
           },
         });
@@ -212,6 +217,11 @@ export class SurveysService {
             actorStaffId: user.staffId,
             completed: dto.completed ?? true,
             answers: dto.answers as unknown as Prisma.InputJsonValue,
+            ...(dto.unboughtProducts !== undefined
+              ? {
+                  unboughtProducts: dto.unboughtProducts as unknown as Prisma.InputJsonValue,
+                }
+              : {}),
             createdAt: now,
             updatedAt: now,
           },
@@ -229,6 +239,7 @@ export class SurveysService {
             surveyResponseId: response.id,
             completed: response.completed,
             answersCount: dto.answers.length,
+            unboughtProducts: dto.unboughtProducts,
           },
         },
       });
@@ -291,6 +302,7 @@ export class SurveysService {
       'Branch',
       'Staff',
       'Target',
+      'Unbought Products',
       'Question',
       'Type',
       'Answer',
@@ -311,6 +323,10 @@ export class SurveysService {
           }>)
         : [];
 
+      const unboughtText = Array.isArray(r.unboughtProducts)
+        ? (r.unboughtProducts as string[]).join(', ')
+        : '';
+
       for (const a of answers) {
         const answerText = Array.isArray(a.answer)
           ? a.answer.join(', ')
@@ -325,6 +341,7 @@ export class SurveysService {
               `${r.session?.staff?.firstName ?? ''} ${r.session?.staff?.lastName ?? ''}`.trim(),
             ),
             escapeCsv(r.target),
+            escapeCsv(unboughtText),
             escapeCsv(a.questionTitle ?? ''),
             escapeCsv(a.questionType ?? ''),
             escapeCsv(answerText),

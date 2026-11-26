@@ -1274,6 +1274,12 @@ export class SessionsService {
           receiptType: nextReceiptType,
           discountType: nextDiscountType,
           customerSource: nextCustomerSource,
+          ...(dto.recommendationRecords !== undefined
+            ? {
+                recommendationRecords:
+                  dto.recommendationRecords as unknown as Prisma.InputJsonValue,
+              }
+            : {}),
         },
         include: sessionInclude,
       });

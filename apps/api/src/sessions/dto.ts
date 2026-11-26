@@ -340,6 +340,11 @@ export class UpdateSelectionDto {
   @IsOptional()
   @IsIn(CUSTOMER_SOURCES)
   customerSource?: CustomerSourceValue;
+
+  /** D198: customer recommendation records from Step 3 */
+  @IsOptional()
+  @IsArray()
+  recommendationRecords?: Record<string, unknown>[];
 }
 
 export class ReportStockMissingDto {

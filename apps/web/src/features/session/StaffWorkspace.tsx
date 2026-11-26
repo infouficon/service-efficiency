@@ -537,6 +537,7 @@ export function StaffWorkspace({
           updatedSelection,
           activeSession.phone || '',
           activeSession.currentAppleDevices,
+          records,
         );
         onUpdateSession({
           ...updated,
@@ -582,6 +583,7 @@ export function StaffWorkspace({
           activeSession.selection,
           currentPhone,
           activeSession.currentAppleDevices,
+          activeSession.recommendationRecords,
         );
         onUpdateSession({
           ...updated,
@@ -678,7 +680,16 @@ export function StaffWorkspace({
       let updated: MockSession;
 
       if (activeSession.id) {
-        updated = await confirmPurchaseApi(activeSession.id);
+        const res = await confirmPurchaseApi(activeSession.id);
+        updated = {
+          ...res,
+          recommendationsReviewed:
+            activeSession.recommendationsReviewed ?? res.recommendationsReviewed,
+          recommendationRecords:
+            activeSession.recommendationRecords ?? res.recommendationRecords,
+          currentAppleDevices:
+            activeSession.currentAppleDevices ?? res.currentAppleDevices,
+        };
         onUpdateSession(updated);
       } else {
         updated = confirmSelection(activeSession, new Date().toISOString());
@@ -720,7 +731,16 @@ export function StaffWorkspace({
       let updated: MockSession;
 
       if (activeSession.id) {
-        updated = await cancelSessionApi(activeSession.id, reason, text);
+        const res = await cancelSessionApi(activeSession.id, reason, text);
+        updated = {
+          ...res,
+          recommendationsReviewed:
+            activeSession.recommendationsReviewed ?? res.recommendationsReviewed,
+          recommendationRecords:
+            activeSession.recommendationRecords ?? res.recommendationRecords,
+          currentAppleDevices:
+            activeSession.currentAppleDevices ?? res.currentAppleDevices,
+        };
       } else {
         updated = {
           ...activeSession,

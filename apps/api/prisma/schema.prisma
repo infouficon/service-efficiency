@@ -474,6 +474,8 @@ model CustomerSession {
   otherReason String?      @db.Text
   cancelledBy String?      @db.VarChar(64)
   stockReview Json?
+  // D198: Step 3 recommendation records [{ id, name, skuCode, section, status }]
+  recommendationRecords Json?
   // D57: the type chosen at the phone step and the queue number it produced ("A012"); the letter is frozen here so
   // renaming or re-lettering a type never rewrites history. Null on sessions created before D57 (queueNo then holds
   // the old per-day running number).

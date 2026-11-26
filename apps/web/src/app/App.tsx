@@ -176,27 +176,31 @@ export function App({
                 ...serverS,
               };
 
-              if (local && !local.confirmed && !local.outcome) {
-                merged.phone = local.phone || serverS.phone;
-                merged.currentAppleDevices =
-                  local.currentAppleDevices ?? serverS.currentAppleDevices;
+              if (local) {
                 merged.recommendationsReviewed =
-                  local.recommendationsReviewed ?? serverS.recommendationsReviewed;
+                  local.recommendationsReviewed ??
+                  serverS.recommendationsReviewed;
                 merged.recommendationRecords =
                   local.recommendationRecords ?? serverS.recommendationRecords;
-                merged.selection =
-                  local.selection &&
-                  (local.selection.items.length > 0 ||
-                    Object.keys(local.selection.accessories).length > 0)
-                    ? {
-                        ...serverS.selection,
-                        ...local.selection,
-                        accessories: {
-                          ...serverS.selection.accessories,
-                          ...local.selection.accessories,
-                        },
-                      }
-                    : serverS.selection;
+                merged.currentAppleDevices =
+                  local.currentAppleDevices ?? serverS.currentAppleDevices;
+
+                if (!local.confirmed && !local.outcome) {
+                  merged.phone = local.phone || serverS.phone;
+                  merged.selection =
+                    local.selection &&
+                    (local.selection.items.length > 0 ||
+                      Object.keys(local.selection.accessories).length > 0)
+                      ? {
+                          ...serverS.selection,
+                          ...local.selection,
+                          accessories: {
+                            ...serverS.selection.accessories,
+                            ...local.selection.accessories,
+                          },
+                        }
+                      : serverS.selection;
+                }
               }
               return merged;
             });

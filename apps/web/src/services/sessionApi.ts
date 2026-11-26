@@ -538,6 +538,7 @@ export async function updateSelectionApi(
   selection: Selection,
   phone: string,
   currentAppleDevices?: string[],
+  recommendationRecords?: MockSession['recommendationRecords'],
 ): Promise<MockSession> {
   const accessoriesList = Object.entries(selection.accessories).map(
     ([accessoryName, qty]) => ({
@@ -563,6 +564,7 @@ export async function updateSelectionApi(
     discountType: selection.discountType ?? undefined,
     customerSource: selection.customerSource ?? undefined,
     currentAppleDevices,
+    recommendationRecords,
     // F3: the main products as a whole list (SKU id + quantity)
     items: selection.items.map((item) => ({
       skuId: item.product.id,
